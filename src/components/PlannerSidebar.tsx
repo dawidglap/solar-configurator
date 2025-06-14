@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   FiChevronLeft,
   FiChevronRight,
@@ -11,7 +11,10 @@ import {
   FiCpu,
   FiSettings,
   FiThermometer,
+
 } from "react-icons/fi";
+import { FaChevronDown } from "react-icons/fa";
+
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -25,17 +28,29 @@ const items = [
   { label: "Boileranst.", icon: <FiThermometer />, options: ["100L", "200L"] },
 ];
 
-export default function PlannerSidebar() {
+export default function PlannerSidebar({ visible }: { visible: boolean }) {
+  const [show, setShow] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [selections, setSelections] = useState<{ [key: string]: string }>(
     Object.fromEntries(items.map((i) => [i.label, i.options[0]]))
   );
 
+  useEffect(() => {
+    if (visible) {
+      const timer = setTimeout(() => setShow(true), 3000); // 3 sec delay
+      return () => clearTimeout(timer);
+    } else {
+      setShow(false);
+    }
+  }, [visible]);
+
+  if (!show) return null;
+
   return (
     <motion.div
-      initial={{ x: 100 }}
-      animate={{ x: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
+      initial={{ x: -80, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      transition={{ duration: 0.3, ease: "easeIn" }}
       className={cn(
         "fixed top-0 left-52 h-full z-40 flex transition-all",
         collapsed ? "w-16" : "w-60"
@@ -45,7 +60,6 @@ export default function PlannerSidebar() {
         className="relative h-full w-full px-3 pt-[98px] pb-6 flex flex-col items-center gap-3
                    bg-white/50 backdrop-blur-sm border-l border-white/30 shadow-xl"
       >
-        {/* Collapse button */}
         <button
           onClick={() => setCollapsed((prev) => !prev)}
           className="absolute top-6 -right-4 w-7 h-7 rounded-full bg-white/30 backdrop-blur-sm
@@ -58,7 +72,6 @@ export default function PlannerSidebar() {
           )}
         </button>
 
-        {/* Menu Items */}
         <div className="flex-1 w-full flex flex-col gap-3">
           {items.map(({ label, icon, options }) => (
             <div key={label} className="flex flex-col gap-1 relative group">
@@ -69,19 +82,16 @@ export default function PlannerSidebar() {
                                   backdrop-blur-sm text-black shadow transition hover:bg-white/30">
                     {icon}
                   </div>
-                  {/* Tooltip con motion */}
-             {/* Tooltip con solo Tailwind, visibile solo al hover */}
-<div
-  className="absolute left-12 top-1/2 -translate-y-1/2 
-             px-2 py-0.5 text-[10px] rounded-full 
-             bg-white/50 backdrop-blur-sm text-black font-semibold
-             border border-white/30 shadow 
-             opacity-0 group-hover:opacity-100 
-             transition-all duration-300 pointer-events-none z-50"
->
-  {label}
-</div>
-
+                  <div
+                    className="absolute left-12 top-1/2 -translate-y-1/2 
+                               px-2 py-0.5 text-[10px] rounded-full 
+                               bg-white/50 backdrop-blur-sm text-black font-semibold
+                               border border-white/30 shadow 
+                               opacity-0 group-hover:opacity-100 
+                               transition-all duration-300 pointer-events-none z-50"
+                  >
+                    {label}
+                  </div>
                 </>
               ) : (
                 <>
@@ -89,24 +99,32 @@ export default function PlannerSidebar() {
                     <span className="text-base">{icon}</span>
                     <span>{label}</span>
                   </div>
-                  <select
-                    value={selections[label]}
-                    onChange={(e) =>
-                      setSelections((prev) => ({
-                        ...prev,
-                        [label]: e.target.value,
-                      }))
-                    }
-                    className="w-[90%] mx-auto rounded-full bg-white/40 backdrop-blur-sm
-                               border border-white/30 px-3 py-1 text-sm font-medium
-                               text-black shadow hover:bg-white/50 transition-colors"
-                  >
-                    {options.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
+                 <div className="relative w-[90%] mx-auto">
+  <select
+    value={selections[label]}
+    onChange={(e) =>
+      setSelections((prev) => ({
+        ...prev,
+        [label]: e.target.value,
+      }))
+    }
+    className="w-full appearance-none rounded-full bg-white/30 backdrop-blur-md
+               border border-white/30 pl-4 pr-8 py-1.5 text-sm font-semibold
+               text-black shadow-inner hover:bg-white/40 transition-colors
+               focus:outline-none focus:ring-2 focus:ring-white/40"
+  >
+    {options.map((opt) => (
+      <option key={opt} value={opt} className="text-black bg-white">
+        {opt}
+      </option>
+    ))}
+  </select>
+  {/* Freccia custom con posizione assoluta */}
+  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black text-sm">
+    <FaChevronDown />
+  </div>
+</div>
+
                 </>
               )}
             </div>

@@ -8,6 +8,7 @@ import {
   Polygon,
   useMap,
 } from "react-leaflet";
+import { motion } from "framer-motion";
 
 import AddressSearch from "./AddressSearch";
 import axios from "axios";
@@ -16,6 +17,7 @@ import ZoomControls from "./ZoomControls";
 import L from "leaflet";
 import { Toolbar } from "./Toolbar";
 import PlannerSidebar from "./PlannerSidebar";
+import Footbar from "./Footbar";
 
 
 function FlyToLocation({ lat, lon }: { lat: number; lon: number }) {
@@ -79,13 +81,15 @@ export default function Map() {
             tolerance: 3,
             mapExtent: `${lon - 0.001},${lat - 0.001},${lon + 0.001},${lat + 0.001}`,
             imageDisplay: "600,400,96",
-            lang: "it",
+            lang: "de",
           },
         }
       );
 
       const results = identifyResponse.data?.results ?? [];
       if (results.length === 0) return;
+      console.log("✅ Raw API response:", results[0]?.attributes);
+
 
       const polygons: RoofPolygon[] = [];
 
@@ -101,6 +105,10 @@ export default function Map() {
         }
       });
 
+      if (polygons.length > 0) {
+  setSelectedRoofInfo(polygons[0].attributes);
+}
+
       setRoofPolygons(polygons);
     } catch (error: any) {
       console.error("❌ Errore:", error?.message || error);
@@ -109,7 +117,10 @@ export default function Map() {
 
   return (
     <div className="relative h-screen w-screen">
-        <PlannerSidebar />
+<PlannerSidebar visible={!!selectedPosition} />
+
+
+
       <div className="absolute inset-0 z-0">
         <MapContainer
           center={[47.3769, 8.5417]}
@@ -154,7 +165,7 @@ export default function Map() {
         </MapContainer>
       </div>
 
-      <RoofInfoPanel data={selectedRoofInfo} />
+      {/* <RoofInfoPanel data={selectedRoofInfo} /> */}
       <Toolbar value={mode} onChange={(val) => val && setMode(val)} />
 
       <div
@@ -163,6 +174,8 @@ export default function Map() {
       >
         <AddressSearch onSelectLocation={handleSelectLocation} />
       </div>
+      <Footbar data={selectedRoofInfo} />
+
     </div>
   );
 }
