@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { CheckCircle, Sun } from "lucide-react";
+import { CheckCircle } from "lucide-react";
 import { FaArrowRight } from "react-icons/fa";
 
 export default function Home() {

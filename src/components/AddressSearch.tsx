@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { FiSearch, FiMapPin } from "react-icons/fi";
-import { FaArrowRight } from "react-icons/fa";
+
 
 import { FaLocationArrow } from "react-icons/fa6";
 

@@ -8,12 +8,12 @@ import {
   Polygon,
   useMap,
 } from "react-leaflet";
-import { motion } from "framer-motion";
+
 import SolarModulesPlacer from "./SolarModulesPlacer";
 
 import AddressSearch from "./AddressSearch";
 import axios from "axios";
-import RoofInfoPanel from "./Map/RoofInfoPanel";
+
 import ZoomControls from "./ZoomControls";
 import L from "leaflet";
 import { Toolbar } from "./Toolbar";
