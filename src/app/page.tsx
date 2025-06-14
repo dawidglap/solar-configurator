@@ -1,15 +1,7 @@
-"use client";
-
-
-import dynamic from "next/dynamic";
-
-// Import dinamico per evitare problemi con SSR
-const Map = dynamic(() => import("@/components/Map"), { ssr: false });
-
 export default function Home() {
   return (
-    <main className="h-screen">
-      <Map />
+    <main className="h-full w-full flex items-center justify-center text-2xl text-gray-600">
+      Benvenuto su SOLA 🌞
     </main>
   );
 }

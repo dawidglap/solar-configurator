@@ -7,6 +7,7 @@ import AddressSearch from "./AddressSearch";
 import axios from "axios";
 import { Toolbar } from "@/components/Toolbar";
 import RoofInfoPanel from "./Map/RoofInfoPanel";
+import WrapperLayout from "./Layout/WrapperLayout";
 
 function FlyToLocation({ lat, lon }: { lat: number; lon: number }) {
   const map = useMap();
@@ -90,48 +91,51 @@ export default function Map() {
   };
 
   return (
-    <>
-      <RoofInfoPanel data={selectedRoofInfo} />
+  <>
+    <RoofInfoPanel data={selectedRoofInfo} />
 
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1000]">
-        <Toolbar value={mode} onChange={(val) => val && setMode(val)} />
-      </div>
+    {/* Toolbar sopra la mappa */}
+    <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[1000]">
+      <Toolbar value={mode} onChange={(val) => val && setMode(val)} />
+    </div>
 
-      <div className="relative h-screen w-full">
-        <MapContainer
-          center={[47.3769, 8.5417]}
-          zoom={13}
-          scrollWheelZoom={true}
-          style={{ height: "100%", width: "100%" }}
-        >
-          <TileLayer
-            attribution="© swisstopo"
-            url="https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg"
-            maxZoom={20}
+    {/* Mappa principale */}
+    <div className="relative ml-64 mt-0 h-[calc(100vh-4rem)] w-[calc(100vw-16rem)] overflow-hidden">
+      <MapContainer
+        center={[47.3769, 8.5417]}
+        zoom={13}
+        scrollWheelZoom={true}
+        style={{ height: "100%", width: "100%" }}
+      >
+        <TileLayer
+          attribution="© swisstopo"
+          url="https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg"
+          maxZoom={20}
+        />
+
+        {selectedPosition && (
+          <FlyToLocation lat={selectedPosition.lat} lon={selectedPosition.lon} />
+        )}
+
+        {roofPolygons.map((polygon, idx) => (
+          <Polygon
+            key={idx}
+            positions={polygon.coords}
+            pathOptions={{
+              color: getColor(polygon.eignung),
+              weight: 2,
+              fillOpacity: 0.4,
+            }}
+            eventHandlers={{
+              click: () => setSelectedRoofInfo(polygon.attributes),
+            }}
           />
+        ))}
+      </MapContainer>
 
-          {selectedPosition && (
-            <FlyToLocation lat={selectedPosition.lat} lon={selectedPosition.lon} />
-          )}
+      <AddressSearch onSelectLocation={handleSelectLocation} />
+    </div>
+  </>
+);
 
-          {roofPolygons.map((polygon, idx) => (
-            <Polygon
-              key={idx}
-              positions={polygon.coords}
-              pathOptions={{
-                color: getColor(polygon.eignung),
-                weight: 2,
-                fillOpacity: 0.4,
-              }}
-              eventHandlers={{
-                click: () => setSelectedRoofInfo(polygon.attributes),
-              }}
-            />
-          ))}
-        </MapContainer>
-
-        <AddressSearch onSelectLocation={handleSelectLocation} />
-      </div>
-    </>
-  );
 }
