@@ -19,6 +19,7 @@ import L from "leaflet";
 import { Toolbar } from "./Toolbar";
 import PlannerSidebar from "./PlannerSidebar";
 import Footbar from "./Footbar";
+import SingleSolarModule from "./SingleSolarModule";
 
 
 function FlyToLocation({ lat, lon }: { lat: number; lon: number }) {
@@ -141,14 +142,23 @@ export default function Map() {
             maxZoom={20}
           />
 {roofPolygons[0]?.coords && mode === "fill" && (
-  <SolarModulesPlacer
+<SolarModulesPlacer
   polygonCoords={roofPolygons[0]?.coords}
   ausrichtung={roofPolygons[0]?.attributes?.ausrichtung}
-  visible={mode === "fill"}
+  visible={mode === "fill" || mode === "single"}
+  mode={mode}
 />
 
 
+
 )}
+
+<SingleSolarModule
+  visible={mode === "single"}
+  ausrichtung={selectedRoofInfo?.ausrichtung}
+
+/>
+
 
           <ZoomControls />
 
