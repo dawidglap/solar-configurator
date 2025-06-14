@@ -21,7 +21,8 @@ import PlannerSidebar from "./PlannerSidebar";
 import Footbar from "./Footbar";
 import SingleSolarModule from "./SingleSolarModule";
 import StromverbrauchInput from "./StromverbrauchInput";
-import ElektroautoFrage from "./ElektroAutoFrage";
+import ElektroautoFrage from "./ElektroautoFrage";
+
 
 
 function FlyToLocation({ lat, lon }: { lat: number; lon: number }) {
@@ -78,10 +79,7 @@ const [stromverbrauch, setStromverbrauch] = useState(10000);
 
   const handleSelectLocation = async (lat: number, lon: number) => {
     setSelectedPosition({ lat, lon });
-    setStep("none"); // reset eventuale
-setTimeout(() => {
-  setStep("strom");
-}, 2500); 
+    setStep("strom"); // mostra la prima domanda
 
 
     try {
