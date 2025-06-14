@@ -20,6 +20,8 @@ import { Toolbar } from "./Toolbar";
 import PlannerSidebar from "./PlannerSidebar";
 import Footbar from "./Footbar";
 import SingleSolarModule from "./SingleSolarModule";
+import StromverbrauchInput from "./StromverbrauchInput";
+import ElektroautoFrage from "./ElektroAutoFrage";
 
 
 function FlyToLocation({ lat, lon }: { lat: number; lon: number }) {
@@ -43,6 +45,10 @@ export default function Map() {
   const [selectedRoofInfo, setSelectedRoofInfo] = useState<any>(null);
   const [mode, setMode] = useState("single");
   const [resetModules, setResetModules] = useState(false);
+const [step, setStep] = useState<"none" | "strom" | "auto">("none");
+const [stromverbrauch, setStromverbrauch] = useState(10000);
+
+
 
 
   const mapRef = useRef<L.Map | null>(null);
@@ -72,6 +78,11 @@ export default function Map() {
 
   const handleSelectLocation = async (lat: number, lon: number) => {
     setSelectedPosition({ lat, lon });
+    setStep("none"); // reset eventuale
+setTimeout(() => {
+  setStep("strom");
+}, 2500); 
+
 
     try {
       const identifyResponse = await axios.get(
@@ -122,6 +133,25 @@ export default function Map() {
   return (
     <div className="relative h-screen w-screen">
 <PlannerSidebar visible={!!selectedPosition} />
+
+
+{step === "strom" && (
+  <StromverbrauchInput
+    value={stromverbrauch}
+    onChange={setStromverbrauch}
+    onNext={() => setStep("auto")}
+  />
+)}
+
+
+{step === "auto" && (
+  <ElektroautoFrage
+    onNext={(antwort) => {
+      console.log("🚗 Risposta auto:", antwort);
+      setStep("weiter");
+    }}
+  />
+)}
 
 
 
