@@ -42,6 +42,8 @@ export default function Map() {
   const [roofPolygons, setRoofPolygons] = useState<RoofPolygon[]>([]);
   const [selectedRoofInfo, setSelectedRoofInfo] = useState<any>(null);
   const [mode, setMode] = useState("single");
+  const [resetModules, setResetModules] = useState(false);
+
 
   const mapRef = useRef<L.Map | null>(null);
 
@@ -156,7 +158,7 @@ export default function Map() {
 <SingleSolarModule
   visible={mode === "single"}
   ausrichtung={selectedRoofInfo?.ausrichtung}
-
+resetTrigger={resetModules}
 />
 
 
@@ -186,7 +188,15 @@ export default function Map() {
       </div>
 
       {/* <RoofInfoPanel data={selectedRoofInfo} /> */}
-      <Toolbar value={mode} onChange={(val) => val && setMode(val)} />
+      <Toolbar value={mode}  onChange={(val) => {
+    if (!val) return;
+    setMode(val);
+
+    if (val === "deleteAll") {
+      setResetModules(true);
+      setTimeout(() => setResetModules(false), 100); // reset il trigger
+    }
+  }}/>
 
       <div
         className="fixed top-16 z-50"

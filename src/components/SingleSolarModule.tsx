@@ -1,18 +1,21 @@
 "use client";
 
 import { useMapEvents, Rectangle } from "react-leaflet";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import * as L from "leaflet";
 
 type Props = {
   ausrichtung?: number;
   moduleSizeMeters?: [number, number]; // [altezza, larghezza]
   visible: boolean;
+  resetTrigger?: boolean; // ✅ nuova prop per il reset
 };
 
 export default function SingleSolarModule({
   ausrichtung = 0,
   moduleSizeMeters = [1, 2],
   visible,
+  resetTrigger,
 }: Props) {
   const [modules, setModules] = useState<Array<[[number, number], [number, number]]>>([]);
 
@@ -37,6 +40,14 @@ export default function SingleSolarModule({
     return [rotatedLat, rotatedLng];
   };
 
+  // ✅ reset dei moduli quando cambia il trigger
+  useEffect(() => {
+    if (resetTrigger) {
+      console.log("♻️ Resetting modules...");
+      setModules([]);
+    }
+  }, [resetTrigger]);
+
   useMapEvents({
     click(e) {
       if (!visible) return;
@@ -45,7 +56,6 @@ export default function SingleSolarModule({
       const centerLat = e.latlng.lat;
       const centerLng = e.latlng.lng;
 
-      // Calcola angoli relativi
       const halfLat = moduleLat / 2;
       const halfLng = moduleLng / 2;
 
@@ -60,20 +70,27 @@ export default function SingleSolarModule({
 
   return (
     <>
-      {modules.map((bounds, idx) => (
-        <Rectangle
-          key={idx}
-          bounds={bounds}
-          pathOptions={{
-            color: "#0a192f",
-            weight: 0.5,
-            fillColor: "#1e293b",
-            fillOpacity: 0.85,
-            dashArray: "0",
-            pane: "overlayPane",
-          }}
-        />
-      ))}
+      {modules.map((bounds, idx) => {
+        const boundsObj = L.latLngBounds(
+          L.latLng(bounds[0][0], bounds[0][1]),
+          L.latLng(bounds[1][0], bounds[1][1])
+        );
+
+        return (
+          <Rectangle
+            key={idx}
+            bounds={boundsObj}
+            pathOptions={{
+              color: "#0a192f",
+              weight: 0.5,
+              fillColor: "#1e293b",
+              fillOpacity: 0.85,
+              dashArray: "0",
+              pane: "overlayPane",
+            }}
+          />
+        );
+      })}
     </>
   );
 }
