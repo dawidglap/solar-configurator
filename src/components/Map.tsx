@@ -9,6 +9,7 @@ import {
   useMap,
 } from "react-leaflet";
 import { motion } from "framer-motion";
+import SolarModulesPlacer from "./SolarModulesPlacer";
 
 import AddressSearch from "./AddressSearch";
 import axios from "axios";
@@ -139,6 +140,15 @@ export default function Map() {
             url="https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg"
             maxZoom={20}
           />
+{roofPolygons[0]?.coords && mode === "fill" && (
+  <SolarModulesPlacer
+  polygonCoords={roofPolygons[0]?.coords}
+  ausrichtung={roofPolygons[0]?.attributes?.ausrichtung}
+  visible={mode === "fill"}
+/>
+
+
+)}
 
           <ZoomControls />
 

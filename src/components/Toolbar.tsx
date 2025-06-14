@@ -6,6 +6,8 @@ import {
   Grid3x3,
   SquareDashedBottom,
   RotateCcw,
+  Eraser,
+  Trash2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -21,6 +23,8 @@ export function Toolbar({
     { value: "fill", icon: <Grid3x3 className="h-5 w-5" />, label: "Füllen" },
     { value: "select", icon: <SquareDashedBottom className="h-5 w-5" />, label: "Auswählen" },
     { value: "rotate", icon: <RotateCcw className="h-5 w-5" />, label: "Drehen" },
+    { value: "delete", icon: <Eraser className="h-5 w-5" />, label: "Löschen" },
+    { value: "deleteAll", icon: <Trash2 className="h-5 w-5" />, label: "Alle Löschen" },
   ];
 
   return (
