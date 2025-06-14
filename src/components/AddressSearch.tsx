@@ -95,14 +95,14 @@ export default function AddressSearch({ onSelectLocation }: Props) {
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="absolute top-4 left-[calc(50%+16rem)] -translate-x-1/2 z-[1000] w-[480px]"
+      className="absolute top-4 left-[calc(50%+17rem)] -translate-x-1/2 z-[1000] w-[480px]"
        onClick={(e) => e.stopPropagation()}
     >
       {/* Search bar */}
       <div
   className="relative flex items-center rounded-full px-4 py-2
              bg-gradient-to-br from-white/30 to-white/10
-             backdrop-blur-md border border-white/30
+             backdrop-blur-sm border border-white/30
              shadow-[inset_1px_1px_4px_rgba(255,255,255,0.4),_inset_-1px_-1px_4px_rgba(0,0,0,0.05)]"
 >
   <FiSearch className="text-gray-600 text-xl mr-3" />

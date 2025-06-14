@@ -15,6 +15,7 @@ import RoofInfoPanel from "./Map/RoofInfoPanel";
 import ZoomControls from "./ZoomControls";
 import L from "leaflet";
 import { Toolbar } from "./Toolbar";
+import PlannerSidebar from "./PlannerSidebar";
 
 
 function FlyToLocation({ lat, lon }: { lat: number; lon: number }) {
@@ -108,6 +109,7 @@ export default function Map() {
 
   return (
     <div className="relative h-screen w-screen">
+        <PlannerSidebar />
       <div className="absolute inset-0 z-0">
         <MapContainer
           center={[47.3769, 8.5417]}

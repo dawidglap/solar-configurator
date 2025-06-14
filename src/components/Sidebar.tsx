@@ -19,19 +19,19 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 
-      backdrop-blur-xs bg-white/50 border-r border-white/20 
-      text-black shadow-xl z-50 flex flex-col justify-between">
+    <aside className="fixed left-0 top-0 h-full w-52 
+  backdrop-blur-xs bg-white/50 border-r border-white/20 
+  text-black shadow-xl z-50 flex flex-col justify-between">
 
       {/* Navigation */}
       <nav className="px-6 pt-6">
         {/* Logo */}
-        <div className="ms-5 text-4xl font-black tracking-tight mb-10 select-none">
-          SOLA
-        </div>
+        <div className="ms-2 text-3xl font-black tracking-tight mb-10 select-none">
+  S O L A
+</div>
 
         {/* Menu items */}
-        <div className="flex flex-col gap-5 text-lg font-light">
+        <div className="flex flex-col gap-3 text-sm font-light">
           <SidebarLink href="/" icon={<FiHome />} label="Home" pathname={pathname} />
           <SidebarLink href="/kunden" icon={<FiUsers />} label="Kunden" pathname={pathname} />
           <SidebarLink href="/auftraege" icon={<FiClipboard />} label="Aufträge" pathname={pathname} />
@@ -44,7 +44,7 @@ export default function Sidebar() {
 
       {/* Profilo in basso */}
       <div className="px-6 pb-6">
-        <div className="flex items-center gap-3 text-lg cursor-not-allowed text-black opacity-80 select-none">
+        <div className="flex items-center gap-3 text-md cursor-not-allowed text-black opacity-80 select-none">
           <FiUser className="text-xl" />
           <span>Mein Profil</span>
         </div>
