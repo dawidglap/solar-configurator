@@ -14,9 +14,11 @@ import { motion } from "framer-motion";
 export function Toolbar({
   value,
   onChange,
+  onAddSingleModule,
 }: {
   value: string;
   onChange: (val: string) => void;
+  onAddSingleModule?: () => void;
 }) {
   const buttons = [
     { value: "single", icon: <MousePointerClick className="h-5 w-5" />, label: "Einzel" },
@@ -37,7 +39,12 @@ export function Toolbar({
       <ToggleGroup
         type="single"
         value={value}
-        onValueChange={onChange}
+        onValueChange={(val) => {
+          onChange(val);
+          if (val === "single" && onAddSingleModule) {
+            onAddSingleModule();
+          }
+        }}
         className="flex flex-col gap-2"
       >
         {buttons.map((btn) => (
