@@ -1,6 +1,8 @@
 "use client";
+
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   FiHome,
   FiUsers,
@@ -11,28 +13,32 @@ import {
   FiBox,
   FiUser,
 } from "react-icons/fi";
-import { BsChevronDown } from "react-icons/bs";
 
 export default function Sidebar() {
   const [showProducts, setShowProducts] = useState(false);
+  const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-white text-black shadow-md flex flex-col justify-between">
+    <aside className="fixed left-0 top-0 h-full w-64 
+      backdrop-blur-xs bg-white/50 border-r border-white/20 
+      text-black shadow-xl z-50 flex flex-col justify-between">
+
+      {/* Navigation */}
       <nav className="px-6 pt-6">
         {/* Logo */}
-        <div className="text-4xl font-black tracking-tight mb-10 select-none">
+        <div className="ms-5 text-4xl font-black tracking-tight mb-10 select-none">
           SOLA
         </div>
 
         {/* Menu items */}
         <div className="flex flex-col gap-5 text-lg font-light">
-          <SidebarItem icon={<FiHome />} label="Home" />
-          <SidebarItem icon={<FiUsers />} label="Kunden" />
-          <SidebarItem icon={<FiClipboard />} label="Aufträge" />
-          <SidebarItem icon={<FiBarChart2 />} label="Umsatz" />
-          <SidebarItem icon={<FiBell />} label="Aufgaben" />
-          <SidebarLink href="/planung" icon={<FiSettings />} label="Planung" />
-          <SidebarItem icon={<FiBox />} label="Produkte" />
+          <SidebarLink href="/" icon={<FiHome />} label="Home" pathname={pathname} />
+          <SidebarLink href="/kunden" icon={<FiUsers />} label="Kunden" pathname={pathname} />
+          <SidebarLink href="/auftraege" icon={<FiClipboard />} label="Aufträge" pathname={pathname} />
+          <SidebarLink href="/umsatz" icon={<FiBarChart2 />} label="Umsatz" pathname={pathname} />
+          <SidebarLink href="/aufgaben" icon={<FiBell />} label="Aufgaben" pathname={pathname} />
+          <SidebarLink href="/planung" icon={<FiSettings />} label="Planung" pathname={pathname} />
+          <SidebarLink href="/produkte" icon={<FiBox />} label="Produkte" pathname={pathname} />
         </div>
       </nav>
 
@@ -47,33 +53,38 @@ export default function Sidebar() {
   );
 }
 
-// ✅ Link cliccabile (solo Planung)
+// ✅ Link attivo con effetto glass
 function SidebarLink({
   href,
   icon,
   label,
+  pathname,
 }: {
   href: string;
   icon: React.ReactNode;
   label: string;
+  pathname: string;
 }) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-3 text-black hover:text-neutral-500 transition"
-    >
-      <span className="text-xl">{icon}</span>
-      <span>{label}</span>
-    </Link>
-  );
-}
+  const isActive = pathname === href;
 
-// ❌ Voci disabilitate
-function SidebarItem({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
-    <div className="flex items-center gap-3 text-black opacity-50 cursor-not-allowed select-none">
-      <span className="text-xl">{icon}</span>
-      <span>{label}</span>
-    </div>
+<Link
+  href={href}
+  className={`relative flex items-center gap-3 px-4 py-2 rounded-full transition-all duration-300
+    ${isActive ? "text-black font-semibold" : "text-black hover:text-neutral-500"}`}
+>
+  {isActive && (
+    <span
+      className="absolute inset-0 rounded-full z-[-1]
+                 bg-white/20 backdrop-blur-[6px]
+                 border border-white/30
+                 shadow-[inset_1px_1px_1px_rgba(255,255,255,0.4),inset_-1px_-1px_1px_rgba(0,0,0,0.1)]
+                 transition-all duration-300"
+    />
+  )}
+  <span className="text-xl">{icon}</span>
+  <span>{label}</span>
+</Link>
+
   );
 }

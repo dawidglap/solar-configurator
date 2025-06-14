@@ -1,13 +1,21 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
-import { useState } from "react";
-import { MapContainer, TileLayer, Polygon, useMap } from "react-leaflet";
+import { useEffect, useRef, useState } from "react";
+import {
+  MapContainer,
+  TileLayer,
+  Polygon,
+  useMap,
+} from "react-leaflet";
+
 import AddressSearch from "./AddressSearch";
 import axios from "axios";
-import { Toolbar } from "@/components/Toolbar";
 import RoofInfoPanel from "./Map/RoofInfoPanel";
-import WrapperLayout from "./Layout/WrapperLayout";
+import ZoomControls from "./ZoomControls";
+import L from "leaflet";
+import { Toolbar } from "./Toolbar";
+
 
 function FlyToLocation({ lat, lon }: { lat: number; lon: number }) {
   const map = useMap();
@@ -26,9 +34,34 @@ type RoofPolygon = {
 
 export default function Map() {
   const [selectedPosition, setSelectedPosition] = useState<{ lat: number; lon: number } | null>(null);
-  const [mode, setMode] = useState("single");
   const [roofPolygons, setRoofPolygons] = useState<RoofPolygon[]>([]);
   const [selectedRoofInfo, setSelectedRoofInfo] = useState<any>(null);
+  const [mode, setMode] = useState("single");
+
+  const mapRef = useRef<L.Map | null>(null);
+
+  // ✅ Movimento automatico fluido
+  useEffect(() => {
+    if (selectedPosition || !mapRef.current) return;
+
+    let frame = 0;
+    const interval = setInterval(() => {
+      if (!mapRef.current) return;
+
+      const center = mapRef.current.getCenter();
+      const lat = center.lat + Math.sin(frame / 200) * 0.0001;
+      const lng = center.lng + 0.00015;
+
+      mapRef.current.flyTo([lat, lng], mapRef.current.getZoom(), {
+        duration: 3,
+        easeLinearity: 0.1,
+      });
+
+      frame++;
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [selectedPosition]);
 
   const handleSelectLocation = async (lat: number, lon: number) => {
     setSelectedPosition({ lat, lon });
@@ -51,10 +84,7 @@ export default function Map() {
       );
 
       const results = identifyResponse.data?.results ?? [];
-      if (results.length === 0) {
-        console.warn("⚠️ Nessun risultato da identify");
-        return;
-      }
+      if (results.length === 0) return;
 
       const polygons: RoofPolygon[] = [];
 
@@ -70,72 +100,67 @@ export default function Map() {
         }
       });
 
-      console.log("✅ Poligoni totali:", polygons.length);
       setRoofPolygons(polygons);
     } catch (error: any) {
       console.error("❌ Errore:", error?.message || error);
     }
   };
 
-  const getColor = (eignung: number) => {
-    switch (eignung) {
-      case 1:
-        return "#f97316"; // Ottimo
-      case 2:
-        return "#eab308"; // Buono
-      case 3:
-        return "#ef4444"; // Limitato
-      default:
-        return "#22c55e"; // fallback
-    }
-  };
-
   return (
-  <>
-    <RoofInfoPanel data={selectedRoofInfo} />
+    <div className="relative h-screen w-screen">
+      <div className="absolute inset-0 z-0">
+        <MapContainer
+          center={[47.3769, 8.5417]}
+          zoom={13}
+          scrollWheelZoom={true}
+          zoomControl={false}
+          style={{ height: "100%", width: "100%" }}
+          whenCreated={(mapInstance) => {
+            mapRef.current = mapInstance;
+          }}
+        >
+            
 
-    {/* Toolbar sopra la mappa */}
-    <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[1000]">
-      <Toolbar value={mode} onChange={(val) => val && setMode(val)} />
-    </div>
-
-    {/* Mappa principale */}
-    <div className="relative ml-64 mt-0 h-[calc(100vh-4rem)] w-[calc(100vw-16rem)] overflow-hidden">
-      <MapContainer
-        center={[47.3769, 8.5417]}
-        zoom={13}
-        scrollWheelZoom={true}
-        style={{ height: "100%", width: "100%" }}
-      >
-        <TileLayer
-          attribution="© swisstopo"
-          url="https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg"
-          maxZoom={20}
-        />
-
-        {selectedPosition && (
-          <FlyToLocation lat={selectedPosition.lat} lon={selectedPosition.lon} />
-        )}
-
-        {roofPolygons.map((polygon, idx) => (
-          <Polygon
-            key={idx}
-            positions={polygon.coords}
-            pathOptions={{
-              color: getColor(polygon.eignung),
-              weight: 2,
-              fillOpacity: 0.4,
-            }}
-            eventHandlers={{
-              click: () => setSelectedRoofInfo(polygon.attributes),
-            }}
+          <TileLayer
+            attribution="© swisstopo"
+            url="https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg"
+            maxZoom={20}
           />
-        ))}
-      </MapContainer>
 
-      <AddressSearch onSelectLocation={handleSelectLocation} />
+          <ZoomControls />
+
+          {selectedPosition && (
+            <FlyToLocation lat={selectedPosition.lat} lon={selectedPosition.lon} />
+          )}
+
+          {roofPolygons.map((polygon, idx) => (
+            <Polygon
+              key={idx}
+              positions={polygon.coords}
+              pathOptions={{
+                color: "rgba(255, 255, 255, 0.8)",
+                weight: 2,
+                dashArray: "6 6",
+                fillColor: "rgba(255, 255, 255, 0.35)",
+                fillOpacity: 1,
+              }}
+              eventHandlers={{
+                click: () => setSelectedRoofInfo(polygon.attributes),
+              }}
+            />
+          ))}
+        </MapContainer>
+      </div>
+
+      <RoofInfoPanel data={selectedRoofInfo} />
+      <Toolbar value={mode} onChange={(val) => val && setMode(val)} />
+
+      <div
+        className="fixed top-16 z-50"
+        style={{ left: "calc(50% - 8rem)", transform: "translateX(-50%)" }}
+      >
+        <AddressSearch onSelectLocation={handleSelectLocation} />
+      </div>
     </div>
-  </>
-);
-
+  );
 }

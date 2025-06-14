@@ -30,7 +30,7 @@ export default function RootLayout({
         {/* Contenuto a destra della sidebar */}
         <div className="flex flex-col flex-1 overflow-hidden">
           {/* Navbar fissa in alto */}
-          <Navbar />
+          {/* <Navbar /> */}
 
           {/* Contenuto scrollabile sotto la navbar */}
           <main className="flex-1 overflow-auto relative">{children}</main>
