@@ -212,7 +212,7 @@ resetTrigger={resetModules}
           {roofPolygons.map((polygon, idx) => (
             <Polygon
               key={idx}
-              positions={polygon.coords}
+              positions={polygon.coords as [number, number][]}
               pathOptions={{
                 color: "rgba(255, 255, 255, 0.8)",
                 weight: 2,
