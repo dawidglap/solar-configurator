@@ -10,6 +10,7 @@ type Props = {
   moduleSizeMeters?: [number, number];
   fillMode?: boolean;
   visible: boolean;
+   mode?: string;
 };
 
 export default function SolarModulesPlacer({
