@@ -40,6 +40,17 @@ type RoofPolygon = {
   attributes: any; //eslint-disable-line @typescript-eslint/no-explicit-any
 };
 
+function AssignMapRef({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null> }) {
+  const map = useMap();
+
+  useEffect(() => {
+    mapRef.current = map;
+  }, [map]);
+
+  return null;
+}
+
+
 export default function Map() {
   const [selectedPosition, setSelectedPosition] = useState<{ lat: number; lon: number } | null>(null);
   const [roofPolygons, setRoofPolygons] = useState<RoofPolygon[]>([]);
@@ -156,17 +167,16 @@ const [stromverbrauch, setStromverbrauch] = useState(10000);
 
 
       <div className="absolute inset-0 z-0">
-        <MapContainer
-          center={[47.3769, 8.5417]}
-          zoom={13}
-          scrollWheelZoom={true}
-          zoomControl={false}
-          style={{ height: "100%", width: "100%" }}
-          
-          whenCreated={(mapInstance) => { 
-            mapRef.current = mapInstance;
-          }}
-        >
+<MapContainer
+  center={[47.3769, 8.5417]}
+  zoom={13}
+  scrollWheelZoom={true}
+  zoomControl={false}
+  style={{ height: "100%", width: "100%" }}
+>
+  <AssignMapRef mapRef={mapRef} />
+
+
             
 
           <TileLayer
