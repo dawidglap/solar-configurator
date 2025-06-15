@@ -21,7 +21,8 @@ export default function SolarModulesPlacer({
   visible,
 }: Props) {
   const map = useMap(); //eslint-disable-line @typescript-eslint/no-unused-vars
-  const [modules, setModules] = useState<Array<[number, number][]>[]>([]);
+  const [modules, setModules] = useState<Array<[[number, number], [number, number]]>>([]);
+
 
   useEffect(() => {
     if (!visible || !fillMode || polygonCoords.length === 0) return;
