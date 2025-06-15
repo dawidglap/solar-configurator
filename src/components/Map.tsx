@@ -47,7 +47,8 @@ export default function Map() {
 
   const [mode, setMode] = useState("single");
   const [resetModules, setResetModules] = useState(false);
-const [step, setStep] = useState<"none" | "strom" | "auto">("none");
+const [step, setStep] = useState<"none" | "strom" | "auto" | "weiter">("none");
+
 const [stromverbrauch, setStromverbrauch] = useState(10000);
 
 
@@ -161,7 +162,8 @@ const [stromverbrauch, setStromverbrauch] = useState(10000);
           scrollWheelZoom={true}
           zoomControl={false}
           style={{ height: "100%", width: "100%" }}
-          whenCreated={(mapInstance) => {
+          
+          whenCreated={(mapInstance) => { 
             mapRef.current = mapInstance;
           }}
         >
