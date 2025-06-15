@@ -107,7 +107,7 @@ const [stromverbrauch, setStromverbrauch] = useState(10000);
 
       const polygons: RoofPolygon[] = [];
 
-      results.forEach((res: any) => {
+      results.forEach((res: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
         const rings = res.geometry?.rings;
         const eignung = res.attributes?.dach_eignung;
 
@@ -124,7 +124,7 @@ const [stromverbrauch, setStromverbrauch] = useState(10000);
 }
 
       setRoofPolygons(polygons);
-    } catch (error: any) {
+    } catch (error: any) { //eslint-disable-line @typescript-eslint/no-explicit-any
       console.error("❌ Errore:", error?.message || error);
     }
   };

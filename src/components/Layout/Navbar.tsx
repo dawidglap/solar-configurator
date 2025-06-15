@@ -10,7 +10,7 @@ type Props = {
 
 export default function Navbar({ onSelectLocation }: Props) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<any[]>([]);// eslint-disable-line @typescript-eslint/no-explicit-any
   const [loading, setLoading] = useState(false);
 
   const handleSearch = async () => {
