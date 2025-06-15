@@ -61,7 +61,8 @@ export default function SolarModulesPlacer({
       return [rotatedLat, rotatedLng];
     };
 
-    const newModules: Array<[number, number][]> = [];
+    const newModules: Array<[[number, number], [number, number]]> = [];
+
 
     for (
       let lat = sw.lat + marginLat;
