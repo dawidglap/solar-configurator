@@ -19,7 +19,7 @@ export default function SolarModulesPlacer({
   fillMode = true,
   visible,
 }: Props) {
-  const map = useMap();
+  const map = useMap(); //eslint-disable-line @typescript-eslint/no-unused-vars
   const [modules, setModules] = useState<Array<[number, number][]>[]>([]);
 
   useEffect(() => {

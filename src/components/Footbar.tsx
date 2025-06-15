@@ -12,37 +12,37 @@ import {
 } from "react-icons/fi";
 import { BsCircleFill } from "react-icons/bs";
 
-export default function Footbar({ data }: { data: any }) {
+interface Data {
+  flaeche?: number;
+  stromertrag?: number;
+  klasse?: 1 | 2 | 3 | 4;
+}
+
+export default function Footbar({ data }: { data: Data }) {
   if (!data) return null;
 
   const flaeche = data.flaeche ?? 0;
-  const spezifischerErtrag = data.stromertrag && data.flaeche ? Math.round(data.stromertrag / (data.flaeche * 0.2)) : 0;
+  const spezifischerErtrag =
+    data.stromertrag && data.flaeche ? Math.round(data.stromertrag / (data.flaeche * 0.2)) : 0;
   const leistungKwp = parseFloat((flaeche * 0.2).toFixed(1));
   const energiePV = parseFloat((leistungKwp * spezifischerErtrag).toFixed(0));
   const preis = parseFloat((leistungKwp * 97).toFixed(2));
   const flaecheRounded = Math.round(flaeche);
 
-  const klasse = (data.klasse ?? 0) as number;
-const classi = {
-  1: { label: "Sehr schlecht", color: "text-red-500" },
-  2: { label: "Schlecht", color: "text-orange-500" },
-  3: { label: "Gut", color: "text-yellow-400" },
-  4: { label: "Sehr gut", color: "text-green-500" },
-};
-
-
-  const formatCHF = (value: number) =>
-    value.toLocaleString("de-CH", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+  const klasse = data.klasse ?? 0;
+  const classi: Record<number, { label: string; color: string }> = {
+    1: { label: "Sehr schlecht", color: "text-red-500" },
+    2: { label: "Schlecht", color: "text-orange-500" },
+    3: { label: "Gut", color: "text-yellow-400" },
+    4: { label: "Sehr gut", color: "text-green-500" },
+  };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="fixed bottom-6  left-1/2 -translate-x-1/2 z-50 
+      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 
                  bg-white/10 backdrop-blur-lg border border-white/30 shadow-xl 
                  rounded-full px-6 py-2 flex items-center gap-8 text-sm"
     >
@@ -53,11 +53,10 @@ const classi = {
       <AnimatedValue icon={<FiBarChart2 />} value={spezifischerErtrag} suffix="kWh/kWp" />
       <AnimatedValue icon={<FiDollarSign />} value={preis} suffix="CHF" isCHF />
 
-      {/* Classe */}
-     <div className="flex items-center gap-2 text-black/90 min-w-[100px] text-sm font-medium">
-  <BsCircleFill className={`text-sm ${classi[klasse]?.color}`} />
-  <span>{classi[klasse]?.label}</span>
-</div>
+      <div className="flex items-center gap-2 text-black/90 min-w-[100px] text-sm font-medium">
+        <BsCircleFill className={`text-sm ${classi[klasse]?.color || ""}`} />
+        <span>{classi[klasse]?.label || "Unbekannt"}</span>
+      </div>
     </motion.div>
   );
 }
@@ -94,8 +93,7 @@ function AnimatedValue({
   useEffect(() => {
     const delay = setTimeout(() => {
       spring.set(value);
-    }, 1000); // Delay 1s before animating
-
+    }, 1000);
     return () => clearTimeout(delay);
   }, [value, spring]);
 

@@ -37,13 +37,14 @@ function FlyToLocation({ lat, lon }: { lat: number; lon: number }) {
 type RoofPolygon = {
   coords: number[][];
   eignung: number;
-  attributes: any;
+  attributes: any; //eslint-disable-line @typescript-eslint/no-explicit-any
 };
 
 export default function Map() {
   const [selectedPosition, setSelectedPosition] = useState<{ lat: number; lon: number } | null>(null);
   const [roofPolygons, setRoofPolygons] = useState<RoofPolygon[]>([]);
-  const [selectedRoofInfo, setSelectedRoofInfo] = useState<any>(null);
+  const [selectedRoofInfo, setSelectedRoofInfo] = useState<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+
   const [mode, setMode] = useState("single");
   const [resetModules, setResetModules] = useState(false);
 const [step, setStep] = useState<"none" | "strom" | "auto">("none");

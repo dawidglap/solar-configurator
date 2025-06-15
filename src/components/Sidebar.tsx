@@ -15,7 +15,7 @@ import {
 } from "react-icons/fi";
 
 export default function Sidebar() {
-  const [showProducts, setShowProducts] = useState(false);
+  const [showProducts, setShowProducts] = useState(false); //eslint-disable-line @typescript-eslint/no-unused-vars
   const pathname = usePathname();
 
   return (
