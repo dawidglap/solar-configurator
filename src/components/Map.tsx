@@ -112,7 +112,7 @@ export default function Map() {
       }
 
       setRoofPolygons(polygons);
-      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("❌ Errore:", error?.message || error);
     }
