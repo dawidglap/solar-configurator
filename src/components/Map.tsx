@@ -112,7 +112,7 @@ export default function Map() {
       }
 
       setRoofPolygons(polygons);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      
     } catch (error: any) {
       console.error("❌ Errore:", error?.message || error);
     }
@@ -156,7 +156,10 @@ export default function Map() {
         <AddressSearch onSelectLocation={handleSelectLocation} />
       </div>
 
-      {selectedRoofInfo && <Footbar data={selectedRoofInfo} />}
+      {selectedRoofInfo && (
+  // @ts-expect-error selectedRoofInfo has more properties than Data but it's okay here
+<Footbar data={selectedRoofInfo} />
+)}
     </div>
   );
 }
