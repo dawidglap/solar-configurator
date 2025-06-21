@@ -53,9 +53,12 @@ export default function Footbar({ data }: { data: Data }) {
       <AnimatedValue icon={<FiBarChart2 />} value={spezifischerErtrag} suffix="kWh/kWp" />
       <AnimatedValue icon={<FiDollarSign />} value={preis} suffix="CHF" isCHF />
 
-      <div className="flex items-center gap-2 text-black/90 min-w-[100px] text-sm font-medium">
+      <div className="flex items-center gap-2 text-black/90 min-w-[120px] text-sm font-medium">
         <BsCircleFill className={`text-sm ${classi[klasse]?.color || ""}`} />
-        <span>{classi[klasse]?.label || "Unbekannt"}</span>
+        <span className="whitespace-nowrap">
+  {classi[klasse]?.label || "Unbekannt"}
+</span>
+
       </div>
     </motion.div>
   );
@@ -100,7 +103,15 @@ function AnimatedValue({
   return (
     <div className="flex items-center gap-2 text-black/90 min-w-[100px] text-sm font-medium">
       <div className="text-base">{icon}</div>
-      <motion.span>{display}</motion.span>
+      <motion.span
+  className="inline-block text-right tabular-nums"
+  style={{
+    minWidth: isCHF ? "70px" : decimals > 0 ? "60px" : "50px",
+  }}
+>
+  {display}
+</motion.span>
+
       <span>{suffix}</span>
     </div>
   );

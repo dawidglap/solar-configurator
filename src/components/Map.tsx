@@ -59,6 +59,8 @@ export default function Map() {
   const [mode, setMode] = useState("single");
   const [resetModules, setResetModules] = useState(false);
 const [step, setStep] = useState<"none" | "strom" | "auto" | "weiter">("none");
+const [activePolygonIndex, setActivePolygonIndex] = useState<number | null>(null);
+
 
 const [stromverbrauch, setStromverbrauch] = useState(10000);
 
@@ -66,6 +68,31 @@ const [stromverbrauch, setStromverbrauch] = useState(10000);
 
 
   const mapRef = useRef<L.Map | null>(null);
+
+  const previousPosition = useRef<{ lat: number; lon: number } | null>(null);
+
+useEffect(() => {
+  if (!mapRef.current || !selectedPosition) return;
+
+  const map = mapRef.current;
+  const currentCenter = map.getCenter();
+  const dx = Math.abs(currentCenter.lat - selectedPosition.lat);
+  const dy = Math.abs(currentCenter.lng - selectedPosition.lon);
+
+  const distanceThreshold = 0.001; // ≈ 100 metri
+
+  const isFarEnough = dx > distanceThreshold || dy > distanceThreshold;
+
+  // Solo se ci si sposta "lontano"
+  if (isFarEnough) {
+    map.flyTo([selectedPosition.lat, selectedPosition.lon], 20, {
+      duration: 2,
+    });
+
+    previousPosition.current = selectedPosition;
+  }
+}, [selectedPosition]);
+
 
   // ✅ Movimento automatico fluido
   useEffect(() => {
@@ -91,7 +118,10 @@ const [stromverbrauch, setStromverbrauch] = useState(10000);
   }, [selectedPosition]);
 
   const handleSelectLocation = async (lat: number, lon: number) => {
-    setSelectedPosition({ lat, lon });
+    if (!selectedPosition) {
+  setSelectedPosition({ lat, lon });
+}
+
     setStep("strom"); // mostra la prima domanda
 
 
@@ -104,8 +134,8 @@ const [stromverbrauch, setStromverbrauch] = useState(10000);
             geometry: `${lon},${lat}`,
             sr: 4326,
             layers: "all:ch.bfe.solarenergie-eignung-daecher",
-            tolerance: 3,
-            mapExtent: `${lon - 0.001},${lat - 0.001},${lon + 0.001},${lat + 0.001}`,
+            tolerance: 10,
+            mapExtent: `${lon - 0.002},${lat - 0.002},${lon + 0.002},${lat + 0.002}`,
             imageDisplay: "600,400,96",
             lang: "de",
           },
@@ -205,26 +235,30 @@ resetTrigger={resetModules}
 
           <ZoomControls />
 
-          {selectedPosition && (
+          {/* {selectedPosition && (
             <FlyToLocation lat={selectedPosition.lat} lon={selectedPosition.lon} />
-          )}
+          )} */}
 
-          {roofPolygons.map((polygon, idx) => (
-            <Polygon
-              key={idx}
-              positions={polygon.coords as [number, number][]}
-              pathOptions={{
-                color: "rgba(255, 255, 255, 0.8)",
-                weight: 2,
-                dashArray: "6 6",
-                fillColor: "rgba(255, 255, 255, 0.35)",
-                fillOpacity: 1,
-              }}
-              eventHandlers={{
-                click: () => setSelectedRoofInfo(polygon.attributes),
-              }}
-            />
-          ))}
+       {roofPolygons.map((polygon, idx) => (
+  <Polygon
+    key={idx}
+    positions={polygon.coords as [number, number][]}
+    pathOptions={{
+      color: idx === activePolygonIndex ? "#00FF00" : "rgba(255, 255, 255, 0.8)",
+      weight: 2,
+      dashArray: idx === activePolygonIndex ? "0" : "6 6",
+      fillColor: "rgba(255, 255, 255, 0.35)",
+      fillOpacity: 1,
+    }}
+    eventHandlers={{
+      click: () => {
+        setSelectedRoofInfo(polygon.attributes);
+        setActivePolygonIndex(idx);
+      },
+    }}
+  />
+))}
+
         </MapContainer>
       </div>
 
