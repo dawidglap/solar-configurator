@@ -5,96 +5,47 @@ import { useEffect, useRef, useState } from "react";
 import {
   MapContainer,
   TileLayer,
-  Polygon,
-  useMap,
 } from "react-leaflet";
 
-import SolarModulesPlacer from "./SolarModulesPlacer";
+import AssignMapRef from "./MapComplete/AssignMapRef";
+import type { RoofPolygon, RoofAttributes } from "@/types/roof";
 
 import AddressSearch from "./AddressSearch";
 import axios from "axios";
-
 import ZoomControls from "./ZoomControls";
 import L from "leaflet";
-import { Toolbar } from "./Toolbar";
 import PlannerSidebar from "./PlannerSidebar";
 import Footbar from "./Footbar";
-import SingleSolarModule from "./SingleSolarModule";
-import StromverbrauchInput from "./StromverbrauchInput";
-import ElektroautoFrage from "./ElektroautoFrage";
-
-
-
-function FlyToLocation({ lat, lon }: { lat: number; lon: number }) {
-  const map = useMap();
-  map.flyTo([lat, lon], 20, {
-    duration: 2,
-    easeLinearity: 0.25,
-  });
-  return null;
-}
-
-type RoofPolygon = {
-  coords: number[][];
-  eignung: number;
-  attributes: any; //eslint-disable-line @typescript-eslint/no-explicit-any
-};
-
-function AssignMapRef({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null> }) {
-  const map = useMap();
-
-  useEffect(() => {
-    mapRef.current = map;
-  }, [map]);
-
-  return null;
-}
-
+import RoofPolygonsRenderer from "./MapComplete/RoofPolygonsRenderer";
 
 export default function Map() {
   const [selectedPosition, setSelectedPosition] = useState<{ lat: number; lon: number } | null>(null);
   const [roofPolygons, setRoofPolygons] = useState<RoofPolygon[]>([]);
-  const [selectedRoofInfo, setSelectedRoofInfo] = useState<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
-
-  const [mode, setMode] = useState("single");
-  const [resetModules, setResetModules] = useState(false);
-const [step, setStep] = useState<"none" | "strom" | "auto" | "weiter">("none");
-const [activePolygonIndex, setActivePolygonIndex] = useState<number | null>(null);
-
-
-const [stromverbrauch, setStromverbrauch] = useState(10000);
-
-
-
+  const [selectedRoofInfo, setSelectedRoofInfo] = useState<RoofAttributes | null>(null);
+  const [activePolygonIndex, setActivePolygonIndex] = useState<number | null>(null);
 
   const mapRef = useRef<L.Map | null>(null);
-
   const previousPosition = useRef<{ lat: number; lon: number } | null>(null);
 
-useEffect(() => {
-  if (!mapRef.current || !selectedPosition) return;
+  useEffect(() => {
+    if (!mapRef.current || !selectedPosition) return;
 
-  const map = mapRef.current;
-  const currentCenter = map.getCenter();
-  const dx = Math.abs(currentCenter.lat - selectedPosition.lat);
-  const dy = Math.abs(currentCenter.lng - selectedPosition.lon);
+    const map = mapRef.current;
+    const currentCenter = map.getCenter();
+    const dx = Math.abs(currentCenter.lat - selectedPosition.lat);
+    const dy = Math.abs(currentCenter.lng - selectedPosition.lon);
 
-  const distanceThreshold = 0.001; // ≈ 100 metri
+    const distanceThreshold = 0.001; // ≈ 100 metri
+    const isFarEnough = dx > distanceThreshold || dy > distanceThreshold;
 
-  const isFarEnough = dx > distanceThreshold || dy > distanceThreshold;
+    if (isFarEnough) {
+      map.flyTo([selectedPosition.lat, selectedPosition.lon], 20, {
+        duration: 2,
+      });
+      previousPosition.current = selectedPosition;
+    }
+  }, [selectedPosition]);
 
-  // Solo se ci si sposta "lontano"
-  if (isFarEnough) {
-    map.flyTo([selectedPosition.lat, selectedPosition.lon], 20, {
-      duration: 2,
-    });
-
-    previousPosition.current = selectedPosition;
-  }
-}, [selectedPosition]);
-
-
-  // ✅ Movimento automatico fluido
   useEffect(() => {
     if (selectedPosition || !mapRef.current) return;
 
@@ -119,11 +70,8 @@ useEffect(() => {
 
   const handleSelectLocation = async (lat: number, lon: number) => {
     if (!selectedPosition) {
-  setSelectedPosition({ lat, lon });
-}
-
-    setStep("strom"); // mostra la prima domanda
-
+      setSelectedPosition({ lat, lon });
+    }
 
     try {
       const identifyResponse = await axios.get(
@@ -144,12 +92,10 @@ useEffect(() => {
 
       const results = identifyResponse.data?.results ?? [];
       if (results.length === 0) return;
-      console.log("✅ Raw API response:", results[0]?.attributes);
-
 
       const polygons: RoofPolygon[] = [];
 
-      results.forEach((res: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      results.forEach((res: any) => {
         const rings = res.geometry?.rings;
         const eignung = res.attributes?.dach_eignung;
 
@@ -162,116 +108,45 @@ useEffect(() => {
       });
 
       if (polygons.length > 0) {
-  setSelectedRoofInfo(polygons[0].attributes);
-}
+        setSelectedRoofInfo(polygons[0].attributes);
+      }
 
       setRoofPolygons(polygons);
-    } catch (error: any) { //eslint-disable-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
       console.error("❌ Errore:", error?.message || error);
     }
   };
 
   return (
     <div className="relative h-screen w-screen">
-<PlannerSidebar visible={!!selectedPosition} />
-
-
-{step === "strom" && (
-  <StromverbrauchInput
-    value={stromverbrauch}
-    onChange={setStromverbrauch}
-    onNext={() => setStep("auto")}
-  />
-)}
-
-
-{step === "auto" && (
-  <ElektroautoFrage
-    onNext={(antwort) => {
-      console.log("🚗 Risposta auto:", antwort);
-      setStep("weiter");
-    }}
-  />
-)}
-
-
+      <PlannerSidebar visible={!!selectedPosition} />
 
       <div className="absolute inset-0 z-0">
-<MapContainer
-  center={[47.3769, 8.5417]}
-  zoom={13}
-  scrollWheelZoom={true}
-  zoomControl={false}
-  style={{ height: "100%", width: "100%" }}
->
-  <AssignMapRef mapRef={mapRef} />
-
-
-            
+        <MapContainer
+          center={[47.3769, 8.5417]}
+          zoom={13}
+          scrollWheelZoom={true}
+          zoomControl={false}
+          style={{ height: "100%", width: "100%" }}
+        >
+          <AssignMapRef mapRef={mapRef} />
 
           <TileLayer
             attribution="© swisstopo"
             url="https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg"
             maxZoom={20}
           />
-{roofPolygons[0]?.coords && mode === "fill" && (
-<SolarModulesPlacer
-  polygonCoords={roofPolygons[0]?.coords}
-  ausrichtung={roofPolygons[0]?.attributes?.ausrichtung}
-  visible={mode === "fill" || mode === "single"}
-  mode={mode}
-/>
-
-
-
-)}
-
-<SingleSolarModule
-  visible={mode === "single"}
-  ausrichtung={selectedRoofInfo?.ausrichtung}
-resetTrigger={resetModules}
-/>
-
 
           <ZoomControls />
 
-          {/* {selectedPosition && (
-            <FlyToLocation lat={selectedPosition.lat} lon={selectedPosition.lon} />
-          )} */}
-
-       {roofPolygons.map((polygon, idx) => (
-  <Polygon
-    key={idx}
-    positions={polygon.coords as [number, number][]}
-    pathOptions={{
-      color: idx === activePolygonIndex ? "#00FF00" : "rgba(255, 255, 255, 0.8)",
-      weight: 2,
-      dashArray: idx === activePolygonIndex ? "0" : "6 6",
-      fillColor: "rgba(255, 255, 255, 0.35)",
-      fillOpacity: 1,
-    }}
-    eventHandlers={{
-      click: () => {
-        setSelectedRoofInfo(polygon.attributes);
-        setActivePolygonIndex(idx);
-      },
-    }}
-  />
-))}
-
+          <RoofPolygonsRenderer
+            roofPolygons={roofPolygons}
+            activePolygonIndex={activePolygonIndex}
+            setSelectedRoofInfo={setSelectedRoofInfo}
+            setActivePolygonIndex={setActivePolygonIndex}
+          />
         </MapContainer>
       </div>
-
-      {/* <RoofInfoPanel data={selectedRoofInfo} /> */}
-      <Toolbar value={mode}  onChange={(val) => {
-    if (!val) return;
-    setMode(val);
-
-    if (val === "deleteAll") {
-      setResetModules(true);
-      setTimeout(() => setResetModules(false), 100); // reset il trigger
-    }
-  }}/>
 
       <div
         className="fixed top-16 z-50"
@@ -279,8 +154,8 @@ resetTrigger={resetModules}
       >
         <AddressSearch onSelectLocation={handleSelectLocation} />
       </div>
-      <Footbar data={selectedRoofInfo} />
 
+      {selectedRoofInfo && <Footbar data={selectedRoofInfo} />}
     </div>
   );
 }

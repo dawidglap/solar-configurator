@@ -29,12 +29,15 @@ export default function Footbar({ data }: { data: Data }) {
   const preis = parseFloat((leistungKwp * 97).toFixed(2));
   const flaecheRounded = Math.round(flaeche);
 
+
+
+
   const klasse = data.klasse ?? 0;
   const classi: Record<number, { label: string; color: string }> = {
-    1: { label: "Sehr schlecht", color: "text-red-500" },
-    2: { label: "Schlecht", color: "text-orange-500" },
-    3: { label: "Gut", color: "text-yellow-400" },
-    4: { label: "Sehr gut", color: "text-green-500" },
+    1: { label: "Hervorragend", color: "text-red-500" },
+    2: { label: "Mittel", color: "text-yellow-500" },
+    3: { label: "Gut", color: "text-orange-400" },
+    4: { label: "Sehr gut", color: "text-green-500" },  
   };
 
   return (
