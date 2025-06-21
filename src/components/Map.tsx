@@ -94,7 +94,7 @@ export default function Map() {
       if (results.length === 0) return;
 
       const polygons: RoofPolygon[] = [];
-
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       results.forEach((res: any) => {
         const rings = res.geometry?.rings;
         const eignung = res.attributes?.dach_eignung;
@@ -112,6 +112,7 @@ export default function Map() {
       }
 
       setRoofPolygons(polygons);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("❌ Errore:", error?.message || error);
     }
