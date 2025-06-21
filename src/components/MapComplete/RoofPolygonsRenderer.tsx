@@ -5,13 +5,13 @@ import { Polygon } from "react-leaflet";
 type RoofPolygon = {
   coords: number[][];
   eignung: number;
-  attributes: any;
+  attributes: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 };
 
 type Props = {
   roofPolygons: RoofPolygon[];
   activePolygonIndex: number | null;
-  setSelectedRoofInfo: (info: any) => void;
+  setSelectedRoofInfo: (info: any) => void; // eslint-disable-line @typescript-eslint/no-explicit-any
   setActivePolygonIndex: (idx: number) => void;
 };
 

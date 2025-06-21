@@ -5,7 +5,7 @@ import { useMap } from "react-leaflet";
 import L from "leaflet";
 
 type Props = {
-  mapRef: React.MutableRefObject<L.Map | null>;
+  mapRef: React.RefObject<L.Map | null>;
 };
 
 export default function AssignMapRef({ mapRef }: Props) {
@@ -13,7 +13,7 @@ export default function AssignMapRef({ mapRef }: Props) {
 
   useEffect(() => {
     mapRef.current = map;
-  }, [map]);
+  }, [map, mapRef]);
 
   return null;
 }

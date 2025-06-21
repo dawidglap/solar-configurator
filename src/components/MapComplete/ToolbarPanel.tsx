@@ -1,7 +1,9 @@
 "use client";
 
-import { Toolbar } from "@/components/Toolbar";
-import { useEffect } from "react";
+import { Toolbar } from "../Toolbar";
+
+
+
 
 type Props = {
   mode: string;
