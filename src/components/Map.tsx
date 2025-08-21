@@ -15,7 +15,7 @@ import PlannerSidebar from "./PlannerSidebar";
 import Footbar from "./Footbar";
 import RoofPolygonsRenderer from "./MapComplete/RoofPolygonsRenderer";
 
-// layer pannelli
+// ⬇️ layer pannelli
 import SolarModulesPlacer from "./SolarModulesPlacer";
 
 export default function Map() {
@@ -23,7 +23,7 @@ export default function Map() {
   const [roofPolygons, setRoofPolygons] = useState<RoofPolygon[]>([]);
   const [selectedRoofAreas, setSelectedRoofAreas] = useState<RoofAttributes[]>([]);
   const [planningParams, setPlanningParams] = useState({
-    targetKwp: 8.8,            // non usato ora, ma teniamo il campo
+    targetKwp: 8.8,
     margin: 0.3,
     spacing: 0.02,
     orientation: "portrait" as "portrait" | "landscape",
@@ -35,7 +35,7 @@ export default function Map() {
     areaPlan: 0,
   });
 
-  // Log controllato per debug
+  // Log controllato per debug (evita spam in console)
   useEffect(() => {
     // eslint-disable-next-line no-console
     console.log("[MAP][STATS from placer]", moduleStats);
@@ -60,14 +60,14 @@ export default function Map() {
     }
   }, [selectedPosition]);
 
-  // Idle pan discreto
+  // Idle pan (discreto): massimo N step, nessuna animazione (evita loop e ricarichi tile)
   const idlePanIntervalRef = useRef<number | null>(null);
   useEffect(() => {
     if (selectedPosition || !mapRef.current) return;
-    if (idlePanIntervalRef.current) return;
+    if (idlePanIntervalRef.current) return; // protegge da doppio mount in Strict Mode
 
     let frame = 0;
-    const MAX_STEPS = 6;
+    const MAX_STEPS = 6; // ~30s totali con intervallo 5s
     idlePanIntervalRef.current = window.setInterval(() => {
       const map = mapRef.current;
       if (!map) return;
@@ -76,6 +76,7 @@ export default function Map() {
       const lat = center.lat + Math.sin(frame / 200) * 0.0001;
       const lng = center.lng + 0.00015;
 
+      // setView senza animazione = niente ricarichi aggressivi
       map.setView([lat, lng], map.getZoom(), { animate: false });
 
       frame++;
@@ -149,55 +150,12 @@ export default function Map() {
     return roofPolygons.find((p, i) => `${p.attributes.id}::${i}` === selectedKey);
   }, [roofPolygons, selectedKey]);
 
-  // Callback stabile per stats
+  // Callback stabile per stats, evita setState inutili
   const handleStats = useCallback((stats: { count: number; areaPlan: number }) => {
     setModuleStats(prev =>
       prev.count === stats.count && prev.areaPlan === stats.areaPlan ? prev : stats
     );
   }, []);
-
-  // 🔹 MICRO-STEP: Export JSON per preventivo
-  const handleExportJSON = useCallback(() => {
-    const attrs = (selectedRoofAreas[0] as any) || {};
-    const modKwp = 0.4; // 400 W per modulo (MVP)
-    const estimatedKwp = Number((moduleStats.count * modKwp).toFixed(1));
-
-    const exportData = {
-      timestamp: new Date().toISOString(),
-      location: selectedPosition ? { lat: selectedPosition.lat, lon: selectedPosition.lon } : null,
-      roof: {
-        id: attrs.id ?? null,
-        area_m2: attrs.flaeche ?? null,
-        class: attrs.klasse ?? null,
-        ausrichtung_deg: attrs.ausrichtung ?? null,
-        neigung_deg: attrs.neigung ?? null,
-        stromertrag_kwh: attrs.stromertrag ?? null,
-      },
-      planningParams,
-      modules: {
-        count: moduleStats.count,
-        orientation: planningParams.orientation,
-        moduleSize_m: [1.722, 1.134], // preset MVP
-        spacing_m: planningParams.spacing,
-        margin_m: planningParams.margin,
-        area_plan_m2: Number(moduleStats.areaPlan.toFixed(2)),
-        estimated_kwp: estimatedKwp,
-      },
-      // stima prezzo semplice, coerente con la tua footbar (97 CHF per kWp "area-based"): qui la leghiamo ai moduli
-      priceEstimateCHF: Number((estimatedKwp * 97).toFixed(2)),
-    };
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const roofId = attrs.id ? String(attrs.id) : "roof";
-    a.href = url;
-    a.download = `SOLA_plan_${roofId}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }, [selectedRoofAreas, selectedPosition, planningParams, moduleStats]);
 
   return (
     <div className="relative h-screen w-screen">
@@ -255,21 +213,53 @@ export default function Map() {
       >
         <AddressSearch onSelectLocation={handleSelectLocation} />
       </div>
+{/* === Export JSON (microstep) === */}
+{selectedRoofAreas.length > 0 && (
+  <div className="fixed bottom-8 right-6 z-[60]">
+    <button
+      onClick={() => {
+        const attrs = (selectedRoofAreas[0] as any) ?? {};
+        const payload = {
+          timestamp: new Date().toISOString(),
+          location: selectedPosition, // lat/lon centro scelto
+          roof: {
+            id: attrs.id ?? null,
+            ausrichtung: attrs.ausrichtung ?? null,
+            neigung: attrs.neigung ?? null,
+            flaeche_m2: attrs.flaeche ?? null,
+            klasse: attrs.klasse ?? null,
+          },
+          planning: {
+            margin_m: planningParams.margin,
+            spacing_m: planningParams.spacing,
+            orientation: planningParams.orientation,
+            moduleSize_m: [1.722, 1.134], // MVP: 400W portrait
+            moduleWatt: 400,
+          },
+          modules: {
+            count: moduleStats.count,
+            areaPlan_m2: Number((moduleStats.areaPlan ?? 0).toFixed(2)),
+            estimatedCapacity_kWp: Number((moduleStats.count * 0.4).toFixed(1)),
+          },
+        };
 
-      {selectedRoofAreas.length > 0 && <Footbar data={selectedRoofAreas} />}
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `SOLA_export_${attrs.id ?? "roof"}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }}
+      className="rounded-full px-4 py-2 bg-white/80 hover:bg-white text-black border border-black/10 shadow"
+      title="Scarica JSON della pianificazione"
+    >
+      Esporta JSON
+    </button>
+  </div>
+)}
 
-      {/* 🔹 Bottone Export JSON (visibile solo con una falda selezionata) */}
-      {selectedRoofAreas.length > 0 && (
-        <div className="fixed bottom-6 right-6 z-50">
-          <button
-            onClick={handleExportJSON}
-            className="px-4 py-2 rounded-full bg-black/70 text-white shadow hover:bg-black transition"
-            title="Esporta piano in JSON"
-          >
-            Export JSON
-          </button>
-        </div>
-      )}
+      {selectedRoofAreas.length > 0 && <Footbar data={selectedRoofAreas} modsStats={moduleStats}  />}
     </div>
   );
 }

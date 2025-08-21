@@ -99,7 +99,7 @@ export default function AddressSearch({ onSelectLocation }: Props) {
       {/* Search bar */}
       <div
         className="relative flex items-center rounded-full px-4 py-2
-                   bg-gradient-to-br from-white/30 to-white/10
+                   bg-white from-white/30 to-white/10
                    backdrop-blur-sm border border-white/30
                    shadow-[inset_1px_1px_4px_rgba(255,255,255,0.4),_inset_-1px_-1px_4px_rgba(0,0,0,0.05)]"
       >
@@ -124,11 +124,11 @@ export default function AddressSearch({ onSelectLocation }: Props) {
               }
             }}
             className="ml-3 p-2 rounded-full 
-                       bg-gradient-to-br from-white/30 to-white/10
+                       bg-gradient-to-br from-blue-400 to-blue-200
                        text-black 
                        border border-white/30 
                        backdrop-blur-md 
-                       hover:from-white/40 hover:to-white/20
+                       hover:from-blue-600 hover:to-blue-400 cursor-pointer
                        shadow-[inset_1px_1px_4px_rgba(255,255,255,0.4),_inset_-1px_-1px_4px_rgba(0,0,0,0.05)]
                        transition-all duration-300"
           >
@@ -139,7 +139,7 @@ export default function AddressSearch({ onSelectLocation }: Props) {
           <div
             className="absolute -top-8 left-1/2 -translate-x-1/2 
                        px-2 py-0.5 text-[10px] rounded-full 
-                       bg-white/50 backdrop-blur-md text-black font-semibold
+                       bg-white backdrop-blur-md text-black font-semibold
                        border border-white/30 shadow 
                        opacity-0 group-hover:opacity-100 
                        transition-all duration-300 pointer-events-none"
@@ -157,7 +157,7 @@ export default function AddressSearch({ onSelectLocation }: Props) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.2 }}
-            className="mt-2 rounded-xl bg-white/30 backdrop-blur-lg border border-white/20 shadow-xl overflow-hidden"
+            className="mt-2 rounded-xl bg-white backdrop-blur-lg border border-white/20 shadow-xl overflow-hidden"
           >
             {results.map((place, index) => {
               const { title, subtitle } = formatLabel(place.display_name);

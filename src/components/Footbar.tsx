@@ -59,7 +59,7 @@ const kwpDaModuli = (modsStats?.count ?? 0) * kwpPerModulo;
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
       className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 
-                 bg-white/10 backdrop-blur-lg border border-white/30 shadow-xl 
+                 bg-white backdrop-blur-lg border border-white/30 shadow-xl 
                  rounded-full px-6 py-2 flex items-center gap-8 text-sm"
     >
       <InfoItem

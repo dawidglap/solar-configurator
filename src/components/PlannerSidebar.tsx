@@ -73,18 +73,18 @@ export default function PlannerSidebar({
     >
       <div
         className="relative h-full w-full px-3 pt-[98px] pb-6 flex flex-col items-center gap-3
-                   bg-white/50 backdrop-blur-sm border-l border-white/30 shadow-xl"
+                   bg-neutral-50 backdrop-blur-sm border-l border-white/30 shadow-xl"
       >
         <button
           onClick={() => setCollapsed((prev) => !prev)}
-          className="absolute top-6 -right-4 w-7 h-7 rounded-full bg-white/30 backdrop-blur-sm
-                     border border-white/20 shadow flex items-center justify-center hover:bg-white/40 transition"
+          className="absolute top-6 -right-4 w-7 h-7 rounded-full bg-blue-100 backdrop-blur-sm
+                     border border-white/20 shadow flex items-center justify-center hover:bg-blue-300 transition"
         >
           {collapsed ? <FiChevronRight className="text-black w-4 h-4" /> : <FiChevronLeft className="text-black w-4 h-4" />}
         </button>
 
         {!collapsed && (
-          <div className="w-full rounded-xl bg-white/40 border border-white/40 shadow-inner p-3 mb-2">
+          <div className="w-full rounded-xl bg-neutral-50 border border-white/40 shadow-inner p-3 mb-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-black mb-2">
               <FiSliders />
               <span>Planungs-Parameter</span>
@@ -145,9 +145,9 @@ export default function PlannerSidebar({
     onChange={(e) =>
       onChangeParams({ ...params, orientation: e.target.value as "portrait" | "landscape" })
     }
-    className="w-[90%] rounded-full bg-white/30 backdrop-blur-md border border-white/30
+    className="w-[90%] rounded-full bg-blue-100 backdrop-blur-md border border-white/30
                pl-4 pr-8 py-1.5 text-sm font-semibold text-black shadow-inner
-               hover:bg-white/40 focus:outline-none focus:ring-2 focus:ring-white/40"
+               hover:bg-blue-300 focus:outline-none focus:ring-2 focus:ring-white/40"
   >
     <option value="portrait" className="text-black bg-white">Portrait (verticale)</option>
     <option value="landscape" className="text-black bg-white">Landscape (orizzontale)</option>
@@ -164,8 +164,8 @@ export default function PlannerSidebar({
               {collapsed ? (
                 <>
                   <div className="w-10 h-10 mx-auto flex items-center justify-center 
-                                  bg-white/20 border border-white/30 rounded-full 
-                                  backdrop-blur-sm text-black shadow transition hover:bg-white/30">
+                                  bg-white border border-white/30 rounded-full 
+                                  backdrop-blur-sm text-black shadow transition hover:bg-blue-300">
                     {icon}
                   </div>
                   <div className="absolute left-12 top-1/2 -translate-y-1/2 px-2 py-0.5 text-[10px] rounded-full 
@@ -186,9 +186,9 @@ export default function PlannerSidebar({
                       onChange={(e) =>
                         setSelections((prev) => ({ ...prev, [label]: e.target.value }))
                       }
-                      className="w-full appearance-none rounded-full bg-white/30 backdrop-blur-md
+                      className="w-full appearance-none rounded-full bg-blue-100 backdrop-blur-md
                                  border border-white/30 pl-4 pr-8 py-1.5 text-sm font-semibold
-                                 text-black shadow-inner hover:bg-white/40 transition-colors
+                                 text-black shadow-inner hover:bg-blue-300 transition-colors
                                  focus:outline-none focus:ring-2 focus:ring-white/40"
                     >
                       {options.map((opt) => (

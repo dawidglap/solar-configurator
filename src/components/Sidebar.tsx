@@ -20,7 +20,7 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed left-0 top-0 h-full w-52 
-  backdrop-blur-xs bg-white/50 border-r border-white/20 
+  backdrop-blur-xs bg-white border-r border-white/20 
   text-black shadow-xl z-50 flex flex-col justify-between">
 
       {/* Navigation */}
@@ -71,12 +71,12 @@ function SidebarLink({
 <Link
   href={href}
   className={`relative flex items-center gap-3 px-4 py-2 rounded-full transition-all duration-300
-    ${isActive ? "text-black font-semibold" : "text-black hover:text-neutral-500"}`}
+    ${isActive ? "text-black font-semibold" : "text-black hover:text-blue-500"}`}
 >
   {isActive && (
     <span
       className="absolute inset-0 rounded-full z-[-1]
-                 bg-white/20 backdrop-blur-[6px]
+                 bg-blue-200 backdrop-blur-[6px]
                  border border-white/30
                  shadow-[inset_1px_1px_1px_rgba(255,255,255,0.4),inset_-1px_-1px_1px_rgba(0,0,0,0.1)]
                  transition-all duration-300"
