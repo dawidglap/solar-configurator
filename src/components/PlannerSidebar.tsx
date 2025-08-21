@@ -11,7 +11,7 @@ import {
   FiCpu,
   FiSettings,
   FiThermometer,
-
+  FiSliders,
 } from "react-icons/fi";
 import { FaChevronDown } from "react-icons/fa";
 
@@ -31,6 +31,14 @@ const items = [
 export default function PlannerSidebar({ visible }: { visible: boolean }) {
   const [show, setShow] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+
+  // NUOVO: parametri locali (per ora solo UI)
+  const [params, setParams] = useState({
+    targetKwp: 8.8,
+    margin: 0.3,
+    spacing: 0.02,
+  });
+
   const [selections, setSelections] = useState<{ [key: string]: string }>(
     Object.fromEntries(items.map((i) => [i.label, i.options[0]]))
   );
@@ -72,6 +80,61 @@ export default function PlannerSidebar({ visible }: { visible: boolean }) {
           )}
         </button>
 
+        {/* Sezione NUOVA: Planungs-Parameter (mostrata solo quando non è collassata) */}
+        {!collapsed && (
+          <div className="w-full rounded-xl bg-white/40 border border-white/40 shadow-inner p-3 mb-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-black mb-2">
+              <FiSliders />
+              <span>Planungs-Parameter</span>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-black/80">Target</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={params.targetKwp}
+                    onChange={(e) => setParams((p) => ({ ...p, targetKwp: Number(e.target.value) }))}
+                    className="w-20 text-right rounded-md bg-white/70 border border-white/50 px-2 py-1 focus:outline-none"
+                  />
+                  <span className="text-black/70">kWp</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-black/80">Margine</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={params.margin}
+                    onChange={(e) => setParams((p) => ({ ...p, margin: Number(e.target.value) }))}
+                    className="w-20 text-right rounded-md bg-white/70 border border-white/50 px-2 py-1 focus:outline-none"
+                  />
+                  <span className="text-black/70">m</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-black/80">Spaziatura</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={params.spacing}
+                    onChange={(e) => setParams((p) => ({ ...p, spacing: Number(e.target.value) }))}
+                    className="w-20 text-right rounded-md bg-white/70 border border-white/50 px-2 py-1 focus:outline-none"
+                  />
+                  <span className="text-black/70">m</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Selettori esistenti */}
         <div className="flex-1 w-full flex flex-col gap-3">
           {items.map(({ label, icon, options }) => (
             <div key={label} className="flex flex-col gap-1 relative group">
@@ -99,32 +162,31 @@ export default function PlannerSidebar({ visible }: { visible: boolean }) {
                     <span className="text-base">{icon}</span>
                     <span>{label}</span>
                   </div>
-                 <div className="relative w-[90%] mx-auto">
-  <select
-    value={selections[label]}
-    onChange={(e) =>
-      setSelections((prev) => ({
-        ...prev,
-        [label]: e.target.value,
-      }))
-    }
-    className="w-full appearance-none rounded-full bg-white/30 backdrop-blur-md
-               border border-white/30 pl-4 pr-8 py-1.5 text-sm font-semibold
-               text-black shadow-inner hover:bg-white/40 transition-colors
-               focus:outline-none focus:ring-2 focus:ring-white/40"
-  >
-    {options.map((opt) => (
-      <option key={opt} value={opt} className="text-black bg-white">
-        {opt}
-      </option>
-    ))}
-  </select>
-  {/* Freccia custom con posizione assoluta */}
-  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black text-sm">
-    <FaChevronDown />
-  </div>
-</div>
-
+                  <div className="relative w-[90%] mx-auto">
+                    <select
+                      value={selections[label]}
+                      onChange={(e) =>
+                        setSelections((prev) => ({
+                          ...prev,
+                          [label]: e.target.value,
+                        }))
+                      }
+                      className="w-full appearance-none rounded-full bg-white/30 backdrop-blur-md
+                               border border-white/30 pl-4 pr-8 py-1.5 text-sm font-semibold
+                               text-black shadow-inner hover:bg-white/40 transition-colors
+                               focus:outline-none focus:ring-2 focus:ring-white/40"
+                    >
+                      {options.map((opt) => (
+                        <option key={opt} value={opt} className="text-black bg-white">
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    {/* Freccia custom */}
+                    <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black text-sm">
+                      <FaChevronDown />
+                    </div>
+                  </div>
                 </>
               )}
             </div>
