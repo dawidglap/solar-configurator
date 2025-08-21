@@ -31,6 +31,7 @@ type PlanningParams = {
   targetKwp: number;
   margin: number;
   spacing: number;
+   orientation: "portrait" | "landscape"; 
 };
 
 export default function PlannerSidebar({
@@ -137,6 +138,22 @@ export default function PlannerSidebar({
                   <span className="text-black/70">m</span>
                 </div>
               </div>
+              <div className="mt-2">
+  <label className="block text-xs text-black/70 mb-1">Orientamento</label>
+  <select
+    value={params.orientation}
+    onChange={(e) =>
+      onChangeParams({ ...params, orientation: e.target.value as "portrait" | "landscape" })
+    }
+    className="w-[90%] rounded-full bg-white/30 backdrop-blur-md border border-white/30
+               pl-4 pr-8 py-1.5 text-sm font-semibold text-black shadow-inner
+               hover:bg-white/40 focus:outline-none focus:ring-2 focus:ring-white/40"
+  >
+    <option value="portrait" className="text-black bg-white">Portrait (verticale)</option>
+    <option value="landscape" className="text-black bg-white">Landscape (orizzontale)</option>
+  </select>
+</div>
+
             </div>
           </div>
         )}

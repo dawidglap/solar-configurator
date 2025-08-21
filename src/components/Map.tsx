@@ -26,7 +26,9 @@ export default function Map() {
     targetKwp: 8.8,
     margin: 0.3,
     spacing: 0.02,
+    orientation: "portrait" as "portrait" | "landscape",
   });
+
 
   const mapRef = useRef<L.Map | null>(null);
   const previousPosition = useRef<{ lat: number; lon: number } | null>(null);
@@ -124,11 +126,11 @@ export default function Map() {
 
   return (
     <div className="relative h-screen w-screen">
-      <PlannerSidebar
-        visible={!!selectedPosition}
-        params={planningParams}
-        onChangeParams={setPlanningParams}
-      />
+    <PlannerSidebar
+  visible={!!selectedPosition}
+  params={planningParams}
+  onChangeParams={setPlanningParams}
+/>
 
       <div className="absolute inset-0 z-0">
         <MapContainer
@@ -156,13 +158,17 @@ export default function Map() {
 
           {/* ⬇️ NUOVO: layer pannelli sulla falda attiva (visibile) */}
           {selectedPolygon && (
-            <SolarModulesPlacer
-              polygonCoords={selectedPolygon.coords as [number, number][]}
-              ausrichtung={(selectedRoofAreas[0] as any)?.ausrichtung || 0}
-              moduleSizeMeters={[1.722, 1.134]} // 400 W demo
-              fillMode={true}
-              visible={true}
-            />
+<SolarModulesPlacer
+  polygonCoords={selectedPolygon.coords as [number, number][]}
+  ausrichtung={(selectedRoofAreas[0] as any)?.ausrichtung}
+  neigung={(selectedRoofAreas[0] as any)?.neigung}   // 👈 AGGIUNGI QUESTA
+  marginMeters={planningParams.margin}
+  spacingMeters={planningParams.spacing}
+  orientation={planningParams.orientation} 
+  fillMode
+  visible
+/>
+
           )}
         </MapContainer>
       </div>
