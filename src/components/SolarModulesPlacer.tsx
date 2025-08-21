@@ -16,7 +16,8 @@ type Props = {
   fillMode?: boolean;
   visible: boolean;
   orientation?: Orientation;
-  onStats?: (s: { count: number; areaPlan: number }) => void; // 👈 nuovo
+  exclusions?: [number, number][][];    // ⬅️ nuovo: poligoni di esclusione (lat,lng)
+  onStats?: (s: { count: number; areaPlan: number }) => void; // già usato in Map
 };
 
 export default function SolarModulesPlacer({
@@ -29,12 +30,15 @@ export default function SolarModulesPlacer({
   fillMode = true,
   visible,
   orientation = "portrait",
+  exclusions = [],                      // ⬅️ default vuoto
   onStats,
 }: Props) {
   useMap(); // per rimanere nel contesto mappa
 
-  const modules = useMemo(() => {
-    if (!visible || !fillMode || polygonCoords.length === 0) return [];
+  const { modules, areaPlanPerPanel } = useMemo(() => {
+    if (!visible || !fillMode || polygonCoords.length === 0) {
+      return { modules: [] as Array<[number, number][]>, areaPlanPerPanel: 0 };
+    }
 
     // --- 1) Falda in METRI (EPSG:3857) ---
     const polyM = polygonCoords.map(([lat, lng]) => latLngToMeters(lat, lng));
@@ -53,6 +57,7 @@ export default function SolarModulesPlacer({
       return { x: cx + dx * ca - dy * sa, y: cy + dx * sa + dy * ca };
     };
 
+    // Falda ruotata nel frame del tetto
     const polyR = polyM.map((p) => rot(p.x, p.y, -theta));
 
     const xs = polyR.map((p) => p.x), ys = polyR.map((p) => p.y);
@@ -65,11 +70,11 @@ export default function SolarModulesPlacer({
     for (let i = 0; i < polyR.length; i++) {
       edgesR.push([polyR[i], polyR[(i + 1) % polyR.length]]);
     }
-    const pointInPolyR = (pt: Pt) => {
+    const pointInPolyGeneric = (pt: Pt, poly: Pt[]) => {
       let inside = false;
-      for (let i = 0, j = polyR.length - 1; i < polyR.length; j = i++) {
-        const xi = polyR[i].x, yi = polyR[i].y;
-        const xj = polyR[j].x, yj = polyR[j].y;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i].x, yi = poly[i].y;
+        const xj = poly[j].x, yj = poly[j].y;
         const inter =
           yi > pt.y !== yj > pt.y &&
           pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi;
@@ -77,6 +82,8 @@ export default function SolarModulesPlacer({
       }
       return inside;
     };
+    const pointInPolyR = (pt: Pt) => pointInPolyGeneric(pt, polyR);
+
     const dist2PointToSeg = (p: Pt, a: Pt, b: Pt) => {
       const vx = b.x - a.x, vy = b.y - a.y;
       const wx = p.x - a.x, wy = p.y - a.y;
@@ -94,6 +101,12 @@ export default function SolarModulesPlacer({
       return true;
     };
 
+    // --- 3b) Esclusioni trasformate nel frame ruotato del tetto ---
+    const exclusionsR: Pt[][] = exclusions.map((poly) => {
+      const inMeters = poly.map(([lat, lng]) => latLngToMeters(lat, lng));
+      return inMeters.map((p) => rot(p.x, p.y, -theta));
+    });
+
     const snapM = (v: number) => Math.round(v * 100) / 100; // 1 cm in metri
 
     // --- 4) Dimensioni modulo in PIANTA (tilt-aware) ---
@@ -109,7 +122,7 @@ export default function SolarModulesPlacer({
     const stepY = modH + spacingMeters * scale;
     const marginMap = marginMeters * scale;
 
-    // --- 5) Griglia "da gronda": ancorata ai margini, NESSUN mezzo passo ---
+    // --- 5) Griglia "da gronda": ancorata ai margini ---
     const x0 = minX + marginMap;
     const y0 = minY + marginMap;
     const xMax = maxX - marginMap;
@@ -119,15 +132,23 @@ export default function SolarModulesPlacer({
 
     for (let y = y0; y + modH <= yMax + 1e-6; y += stepY) {
       for (let x = x0; x + modW <= xMax + 1e-6; x += stepX) {
+        // 4 angoli (frame ruotato)
         const p1 = { x,          y          };
         const p2 = { x: x + modW, y          };
         const p3 = { x: x + modW, y: y + modH };
         const p4 = { x,          y: y + modH };
 
+        // Dentro falda + margini
         if (!pointInPolyR(p1) || !pointInPolyR(p2) || !pointInPolyR(p3) || !pointInPolyR(p4)) continue;
         if (!minDistToEdgesOKR(p1, marginMap) || !minDistToEdgesOKR(p2, marginMap) ||
             !minDistToEdgesOKR(p3, marginMap) || !minDistToEdgesOKR(p4, marginMap)) continue;
 
+        // ⬇️ NUOVO: blocco su zone escluse (test sul CENTRO del modulo)
+        const center: Pt = { x: x + modW / 2, y: y + modH / 2 };
+        const hitExclusion = exclusionsR.some((poly) => pointInPolyGeneric(center, poly));
+        if (hitExclusion) continue;
+
+        // Torna al frame mappa per disegnare
         const q1 = rot(p1.x, p1.y, +theta);
         const q2 = rot(p2.x, p2.y, +theta);
         const q3 = rot(p3.x, p3.y, +theta);
@@ -148,17 +169,17 @@ export default function SolarModulesPlacer({
       }
     }
 
-    // Log una sola volta per recompute
-    const areaSlopedPerPanel = Hsurf * Wsurf;
-    const areaPlanPerPanel   = Hplan_ground * Wplan_ground;
+    const areaPlanPerPanel = Hplan_ground * Wplan_ground;
+
+    // log sintetico
     // eslint-disable-next-line no-console
     console.log(
       `[PLACER] used angle=${ausrichtung}°, tilt=${neigung}° | count=${candidate.length} | ` +
-      `panelAreas sloped=${areaSlopedPerPanel.toFixed(3)} m² plan=${areaPlanPerPanel.toFixed(3)} m² | ` +
+      `panelAreas sloped=${(Hsurf*Wsurf).toFixed(3)} m² plan=${areaPlanPerPanel.toFixed(3)} m² | ` +
       `totalPlan=${(candidate.length*areaPlanPerPanel).toFixed(1)} m²`
     );
 
-    return candidate;
+    return { modules: candidate, areaPlanPerPanel };
   }, [
     polygonCoords,
     ausrichtung,
@@ -169,24 +190,16 @@ export default function SolarModulesPlacer({
     fillMode,
     visible,
     orientation,
+    exclusions, // ⬅️ fa ricomputare se cambiano le zone escluse
   ]);
 
-  // === NUOVO: calcolo area per modulo in pianta + notifiche stats ===
-  const areaPlanPerPanel = useMemo(() => {
-    const Hsurf = orientation === "portrait" ? moduleSizeMeters[0] : moduleSizeMeters[1];
-    const Wsurf = orientation === "portrait" ? moduleSizeMeters[1] : moduleSizeMeters[0];
-    const cosTilt = Math.cos(Math.max(0, Math.min(90, neigung ?? 0)) * Math.PI / 180);
-    return (Hsurf * cosTilt) * Wsurf; // m² in pianta per modulo
-  }, [orientation, moduleSizeMeters, neigung]);
-
+  // invia stats al Map (se usato)
   useEffect(() => {
-    if (!visible) return;
-    const count = modules.length;
-    const areaPlan = count * areaPlanPerPanel;
-    // eslint-disable-next-line no-console
-    console.log("[PLACER][STATS]", { count, areaPlan: Number(areaPlan.toFixed(2)) });
-    onStats?.({ count, areaPlan });
-  }, [modules, areaPlanPerPanel, visible, onStats]);
+    onStats?.({
+      count: modules.length,
+      areaPlan: modules.length * areaPlanPerPanel,
+    });
+  }, [modules.length, areaPlanPerPanel, onStats]);
 
   if (!visible || modules.length === 0) return null;
 

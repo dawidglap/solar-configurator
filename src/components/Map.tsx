@@ -2,7 +2,7 @@
 
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { MapContainer, TileLayer } from "react-leaflet";
+import { MapContainer, TileLayer, useMapEvents, Polygon as RLPolygon } from "react-leaflet";
 
 import AssignMapRef from "./MapComplete/AssignMapRef";
 import type { RoofPolygon, RoofAttributes } from "@/types/roof";
@@ -14,9 +14,64 @@ import L from "leaflet";
 import PlannerSidebar from "./PlannerSidebar";
 import Footbar from "./Footbar";
 import RoofPolygonsRenderer from "./MapComplete/RoofPolygonsRenderer";
-
-// ⬇️ layer pannelli
 import SolarModulesPlacer from "./SolarModulesPlacer";
+
+// --- piccolo helper UI (floating action button)
+function Fab({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`fixed right-6 bottom-24 z-[1000] px-3 py-2 rounded-full shadow-lg border
+        ${active ? "bg-red-600 text-white border-red-700" : "bg-white/80 text-black border-black/10"}
+        backdrop-blur hover:bg-white`}
+      title="Disegna zona esclusa (2 click)"
+    >
+      {active ? "🛑 Fine disegno" : "🚫 Zona esclusa"}
+    </button>
+  );
+}
+
+// --- cattura 2 click e produce un rettangolo [lat,lng][]; solo quando active=true
+function ExclusionDrawer({
+  active,
+  onRectDone,
+}: {
+  active: boolean;
+  onRectDone: (poly: [number, number][]) => void;
+}) {
+  const clicksRef = useRef<[number, number][]>([]);
+
+  useMapEvents({
+    click(e) {
+      if (!active) return;
+      clicksRef.current.push([e.latlng.lat, e.latlng.lng]);
+      if (clicksRef.current.length === 2) {
+        const [aLat, aLng] = clicksRef.current[0];
+        const [bLat, bLng] = clicksRef.current[1];
+        const minLat = Math.min(aLat, bLat);
+        const maxLat = Math.max(aLat, bLat);
+        const minLng = Math.min(aLng, bLng);
+        const maxLng = Math.max(aLng, bLng);
+        const rect: [number, number][] = [
+          [minLat, minLng],
+          [minLat, maxLng],
+          [maxLat, maxLng],
+          [maxLat, minLng],
+          [minLat, minLng],
+        ];
+        onRectDone(rect);
+        clicksRef.current = [];
+      }
+    },
+    // se esci con ESC azzera (facoltativo)
+    keydown(e: any) {
+      if (!active) return;
+      if (e.originalEvent?.key === "Escape") clicksRef.current = [];
+    },
+  });
+
+  return null;
+}
 
 export default function Map() {
   const [selectedPosition, setSelectedPosition] = useState<{ lat: number; lon: number } | null>(null);
@@ -27,8 +82,11 @@ export default function Map() {
     margin: 0.3,
     spacing: 0.02,
     orientation: "portrait" as "portrait" | "landscape",
-    excludePoor: false, // ⬅️ nuovo
   });
+
+  // ⬇️ NUOVO: esclusioni e modalità disegno
+  const [exclusions, setExclusions] = useState<[number, number][][]>([]);
+  const [drawExclude, setDrawExclude] = useState(false);
 
   // Stats dai moduli
   const [moduleStats, setModuleStats] = useState<{ count: number; areaPlan: number }>({
@@ -36,50 +94,37 @@ export default function Map() {
     areaPlan: 0,
   });
 
-  // Log controllato per debug (evita spam in console)
   useEffect(() => {
-    // eslint-disable-next-line no-console
     console.log("[MAP][STATS from placer]", moduleStats);
   }, [moduleStats.count, moduleStats.areaPlan]);
 
   const mapRef = useRef<L.Map | null>(null);
 
-  // FlyTo verso la posizione selezionata solo se serve
   useEffect(() => {
     if (!mapRef.current || !selectedPosition) return;
-
     const map = mapRef.current;
     const currentCenter = map.getCenter();
     const dx = Math.abs(currentCenter.lat - selectedPosition.lat);
     const dy = Math.abs(currentCenter.lng - selectedPosition.lon);
-
     const distanceThreshold = 0.001; // ≈ 100 m
     const isFarEnough = dx > distanceThreshold || dy > distanceThreshold;
-
-    if (isFarEnough) {
-      map.flyTo([selectedPosition.lat, selectedPosition.lon], 20, { duration: 2 });
-    }
+    if (isFarEnough) map.flyTo([selectedPosition.lat, selectedPosition.lon], 20, { duration: 2 });
   }, [selectedPosition]);
 
-  // Idle pan (discreto): massimo N step, nessuna animazione (evita loop e ricarichi tile)
   const idlePanIntervalRef = useRef<number | null>(null);
   useEffect(() => {
     if (selectedPosition || !mapRef.current) return;
-    if (idlePanIntervalRef.current) return; // protegge da doppio mount in Strict Mode
+    if (idlePanIntervalRef.current) return;
 
     let frame = 0;
-    const MAX_STEPS = 6; // ~30s totali con intervallo 5s
+    const MAX_STEPS = 6;
     idlePanIntervalRef.current = window.setInterval(() => {
       const map = mapRef.current;
       if (!map) return;
-
       const center = map.getCenter();
       const lat = center.lat + Math.sin(frame / 200) * 0.0001;
       const lng = center.lng + 0.00015;
-
-      // setView senza animazione = niente ricarichi aggressivi
       map.setView([lat, lng], map.getZoom(), { animate: false });
-
       frame++;
       if (frame >= MAX_STEPS) {
         window.clearInterval(idlePanIntervalRef.current!);
@@ -96,9 +141,7 @@ export default function Map() {
   }, [selectedPosition]);
 
   const handleSelectLocation = async (lat: number, lon: number) => {
-    if (!selectedPosition) {
-      setSelectedPosition({ lat, lon });
-    }
+    if (!selectedPosition) setSelectedPosition({ lat, lon });
 
     try {
       const identifyResponse = await axios.get(
@@ -127,7 +170,6 @@ export default function Map() {
       results.forEach((res: any) => {
         const rings = res.geometry?.rings;
         const eignung = res.attributes?.dach_eignung;
-
         if (rings && Array.isArray(rings)) {
           rings.forEach((ring: number[][]) => {
             const converted = ring.map(([lng2, lat2]) => [lat2, lng2]);
@@ -138,7 +180,6 @@ export default function Map() {
 
       setRoofPolygons(polygons);
     } catch (error: any) {
-      // eslint-disable-next-line no-console
       console.error("❌ Errore:", error?.message || error);
     }
   };
@@ -151,12 +192,18 @@ export default function Map() {
     return roofPolygons.find((p, i) => `${p.attributes.id}::${i}` === selectedKey);
   }, [roofPolygons, selectedKey]);
 
-  // Callback stabile per stats, evita setState inutili
+  // Callback stabile per stats
   const handleStats = useCallback((stats: { count: number; areaPlan: number }) => {
-    setModuleStats(prev =>
+    setModuleStats((prev) =>
       prev.count === stats.count && prev.areaPlan === stats.areaPlan ? prev : stats
     );
   }, []);
+
+  // quando chiudi/riapri la selezione posizione, reset esclusioni (facoltativo)
+  useEffect(() => {
+    // resetta le esclusioni se cambi tetto selezionato
+    setExclusions([]);
+  }, [selectedKey]);
 
   return (
     <div className="relative h-screen w-screen">
@@ -165,6 +212,9 @@ export default function Map() {
         params={planningParams}
         onChangeParams={setPlanningParams}
       />
+
+      {/* FAB per disegnare zona esclusa */}
+      <Fab active={drawExclude} onClick={() => setDrawExclude((v) => !v)} />
 
       <div className="absolute inset-0 z-0">
         <MapContainer
@@ -189,10 +239,33 @@ export default function Map() {
             roofPolygons={roofPolygons}
             selectedRoofAreas={selectedRoofAreas}
             setSelectedRoofAreas={setSelectedRoofAreas}
-            excludePoor={planningParams.excludePoor} 
+            excludePoor // mantieni filtro aree scadenti attivo
           />
 
-          {/* layer pannelli sulla falda attiva (visibile) */}
+          {/* Disegno rettangolo di esclusione quando attivo */}
+          <ExclusionDrawer
+            active={drawExclude}
+            onRectDone={(poly) => {
+              setExclusions((prev) => [...prev, poly]);
+              setDrawExclude(false);
+            }}
+          />
+
+          {/* Visualizza poligoni di esclusione (rosso) */}
+          {exclusions.map((poly, i) => (
+            <RLPolygon
+              key={`ex-${i}`}
+              positions={poly as [number, number][]}
+              pathOptions={{
+                color: "rgba(220, 38, 38, 1)",      // rosso
+                weight: 1,
+                fillColor: "rgba(220, 38, 38, 0.35)",
+                fillOpacity: 0.7,
+              }}
+            />
+          ))}
+
+          {/* layer pannelli sulla falda attiva */}
           {selectedPolygon && (
             <SolarModulesPlacer
               polygonCoords={selectedPolygon.coords as [number, number][]}
@@ -201,6 +274,7 @@ export default function Map() {
               marginMeters={planningParams.margin}
               spacingMeters={planningParams.spacing}
               orientation={planningParams.orientation}
+              exclusions={exclusions}          // ⬅️ PASSIAMO LE ESCLUSIONI
               fillMode
               visible
               onStats={handleStats}
@@ -215,53 +289,10 @@ export default function Map() {
       >
         <AddressSearch onSelectLocation={handleSelectLocation} />
       </div>
-{/* === Export JSON (microstep) === */}
-{selectedRoofAreas.length > 0 && (
-  <div className="fixed bottom-8 right-6 z-[60]">
-    <button
-      onClick={() => {
-        const attrs = (selectedRoofAreas[0] as any) ?? {};
-        const payload = {
-          timestamp: new Date().toISOString(),
-          location: selectedPosition, // lat/lon centro scelto
-          roof: {
-            id: attrs.id ?? null,
-            ausrichtung: attrs.ausrichtung ?? null,
-            neigung: attrs.neigung ?? null,
-            flaeche_m2: attrs.flaeche ?? null,
-            klasse: attrs.klasse ?? null,
-          },
-          planning: {
-            margin_m: planningParams.margin,
-            spacing_m: planningParams.spacing,
-            orientation: planningParams.orientation,
-            moduleSize_m: [1.722, 1.134], // MVP: 400W portrait
-            moduleWatt: 400,
-          },
-          modules: {
-            count: moduleStats.count,
-            areaPlan_m2: Number((moduleStats.areaPlan ?? 0).toFixed(2)),
-            estimatedCapacity_kWp: Number((moduleStats.count * 0.4).toFixed(1)),
-          },
-        };
 
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `SOLA_export_${attrs.id ?? "roof"}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-      }}
-      className="rounded-full px-4 py-2 bg-white/80 hover:bg-white text-black border border-black/10 shadow"
-      title="Scarica JSON della pianificazione"
-    >
-      Esporta JSON
-    </button>
-  </div>
-)}
-
-      {selectedRoofAreas.length > 0 && <Footbar data={selectedRoofAreas} modsStats={moduleStats}  />}
+      {selectedRoofAreas.length > 0 && (
+        <Footbar data={selectedRoofAreas} modsStats={moduleStats} />
+      )}
     </div>
   );
 }
