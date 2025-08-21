@@ -19,6 +19,12 @@ export default function Map() {
   const [selectedPosition, setSelectedPosition] = useState<{ lat: number; lon: number } | null>(null);
   const [roofPolygons, setRoofPolygons] = useState<RoofPolygon[]>([]);
   const [selectedRoofAreas, setSelectedRoofAreas] = useState<RoofAttributes[]>([]);
+  const [planningParams, setPlanningParams] = useState({
+  targetKwp: 8.8,
+  margin: 0.3,
+  spacing: 0.02,
+});
+
 
   const mapRef = useRef<L.Map | null>(null);
   const previousPosition = useRef<{ lat: number; lon: number } | null>(null);
@@ -110,7 +116,12 @@ export default function Map() {
 
   return (
     <div className="relative h-screen w-screen">
-      <PlannerSidebar visible={!!selectedPosition} />
+      <PlannerSidebar
+  visible={!!selectedPosition}
+  params={planningParams}
+  onChangeParams={setPlanningParams}
+/>
+
 
       <div className="absolute inset-0 z-0">
         <MapContainer

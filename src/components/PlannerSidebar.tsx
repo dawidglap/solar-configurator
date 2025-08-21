@@ -14,7 +14,6 @@ import {
   FiSliders,
 } from "react-icons/fi";
 import { FaChevronDown } from "react-icons/fa";
-
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -28,16 +27,23 @@ const items = [
   { label: "Boileranst.", icon: <FiThermometer />, options: ["100L", "200L"] },
 ];
 
-export default function PlannerSidebar({ visible }: { visible: boolean }) {
+type PlanningParams = {
+  targetKwp: number;
+  margin: number;
+  spacing: number;
+};
+
+export default function PlannerSidebar({
+  visible,
+  params,
+  onChangeParams,
+}: {
+  visible: boolean;
+  params: PlanningParams;
+  onChangeParams: (p: PlanningParams) => void;
+}) {
   const [show, setShow] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-
-  // NUOVO: parametri locali (per ora solo UI)
-  const [params, setParams] = useState({
-    targetKwp: 8.8,
-    margin: 0.3,
-    spacing: 0.02,
-  });
 
   const [selections, setSelections] = useState<{ [key: string]: string }>(
     Object.fromEntries(items.map((i) => [i.label, i.options[0]]))
@@ -45,7 +51,7 @@ export default function PlannerSidebar({ visible }: { visible: boolean }) {
 
   useEffect(() => {
     if (visible) {
-      const timer = setTimeout(() => setShow(true), 3000); // 3 sec delay
+      const timer = setTimeout(() => setShow(true), 3000);
       return () => clearTimeout(timer);
     } else {
       setShow(false);
@@ -73,14 +79,9 @@ export default function PlannerSidebar({ visible }: { visible: boolean }) {
           className="absolute top-6 -right-4 w-7 h-7 rounded-full bg-white/30 backdrop-blur-sm
                      border border-white/20 shadow flex items-center justify-center hover:bg-white/40 transition"
         >
-          {collapsed ? (
-            <FiChevronRight className="text-black w-4 h-4" />
-          ) : (
-            <FiChevronLeft className="text-black w-4 h-4" />
-          )}
+          {collapsed ? <FiChevronRight className="text-black w-4 h-4" /> : <FiChevronLeft className="text-black w-4 h-4" />}
         </button>
 
-        {/* Sezione NUOVA: Planungs-Parameter (mostrata solo quando non è collassata) */}
         {!collapsed && (
           <div className="w-full rounded-xl bg-white/40 border border-white/40 shadow-inner p-3 mb-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-black mb-2">
@@ -96,7 +97,9 @@ export default function PlannerSidebar({ visible }: { visible: boolean }) {
                     type="number"
                     step="0.1"
                     value={params.targetKwp}
-                    onChange={(e) => setParams((p) => ({ ...p, targetKwp: Number(e.target.value) }))}
+                    onChange={(e) =>
+                      onChangeParams({ ...params, targetKwp: Number(e.target.value) })
+                    }
                     className="w-20 text-right rounded-md bg-white/70 border border-white/50 px-2 py-1 focus:outline-none"
                   />
                   <span className="text-black/70">kWp</span>
@@ -110,7 +113,9 @@ export default function PlannerSidebar({ visible }: { visible: boolean }) {
                     type="number"
                     step="0.01"
                     value={params.margin}
-                    onChange={(e) => setParams((p) => ({ ...p, margin: Number(e.target.value) }))}
+                    onChange={(e) =>
+                      onChangeParams({ ...params, margin: Number(e.target.value) })
+                    }
                     className="w-20 text-right rounded-md bg-white/70 border border-white/50 px-2 py-1 focus:outline-none"
                   />
                   <span className="text-black/70">m</span>
@@ -124,7 +129,9 @@ export default function PlannerSidebar({ visible }: { visible: boolean }) {
                     type="number"
                     step="0.01"
                     value={params.spacing}
-                    onChange={(e) => setParams((p) => ({ ...p, spacing: Number(e.target.value) }))}
+                    onChange={(e) =>
+                      onChangeParams({ ...params, spacing: Number(e.target.value) })
+                    }
                     className="w-20 text-right rounded-md bg-white/70 border border-white/50 px-2 py-1 focus:outline-none"
                   />
                   <span className="text-black/70">m</span>
@@ -134,7 +141,6 @@ export default function PlannerSidebar({ visible }: { visible: boolean }) {
           </div>
         )}
 
-        {/* Selettori esistenti */}
         <div className="flex-1 w-full flex flex-col gap-3">
           {items.map(({ label, icon, options }) => (
             <div key={label} className="flex flex-col gap-1 relative group">
@@ -145,14 +151,9 @@ export default function PlannerSidebar({ visible }: { visible: boolean }) {
                                   backdrop-blur-sm text-black shadow transition hover:bg-white/30">
                     {icon}
                   </div>
-                  <div
-                    className="absolute left-12 top-1/2 -translate-y-1/2 
-                               px-2 py-0.5 text-[10px] rounded-full 
-                               bg-white/50 backdrop-blur-sm text-black font-semibold
-                               border border-white/30 shadow 
-                               opacity-0 group-hover:opacity-100 
-                               transition-all duration-300 pointer-events-none z-50"
-                  >
+                  <div className="absolute left-12 top-1/2 -translate-y-1/2 px-2 py-0.5 text-[10px] rounded-full 
+                                  bg-white/50 backdrop-blur-sm text-black font-semibold border border-white/30 shadow 
+                                  opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-50">
                     {label}
                   </div>
                 </>
@@ -166,15 +167,12 @@ export default function PlannerSidebar({ visible }: { visible: boolean }) {
                     <select
                       value={selections[label]}
                       onChange={(e) =>
-                        setSelections((prev) => ({
-                          ...prev,
-                          [label]: e.target.value,
-                        }))
+                        setSelections((prev) => ({ ...prev, [label]: e.target.value }))
                       }
                       className="w-full appearance-none rounded-full bg-white/30 backdrop-blur-md
-                               border border-white/30 pl-4 pr-8 py-1.5 text-sm font-semibold
-                               text-black shadow-inner hover:bg-white/40 transition-colors
-                               focus:outline-none focus:ring-2 focus:ring-white/40"
+                                 border border-white/30 pl-4 pr-8 py-1.5 text-sm font-semibold
+                                 text-black shadow-inner hover:bg-white/40 transition-colors
+                                 focus:outline-none focus:ring-2 focus:ring-white/40"
                     >
                       {options.map((opt) => (
                         <option key={opt} value={opt} className="text-black bg-white">
@@ -182,7 +180,6 @@ export default function PlannerSidebar({ visible }: { visible: boolean }) {
                         </option>
                       ))}
                     </select>
-                    {/* Freccia custom */}
                     <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black text-sm">
                       <FaChevronDown />
                     </div>
