@@ -2,10 +2,7 @@
 
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState } from "react";
-import {
-  MapContainer,
-  TileLayer,
-} from "react-leaflet";
+import { MapContainer, TileLayer } from "react-leaflet";
 
 import AssignMapRef from "./MapComplete/AssignMapRef";
 import type { RoofPolygon, RoofAttributes } from "@/types/roof";
@@ -21,8 +18,7 @@ import RoofPolygonsRenderer from "./MapComplete/RoofPolygonsRenderer";
 export default function Map() {
   const [selectedPosition, setSelectedPosition] = useState<{ lat: number; lon: number } | null>(null);
   const [roofPolygons, setRoofPolygons] = useState<RoofPolygon[]>([]);
-  const [selectedRoofInfo, setSelectedRoofInfo] = useState<RoofAttributes | null>(null);
-  const [activePolygonIndex, setActivePolygonIndex] = useState<number | null>(null);
+  const [selectedRoofAreas, setSelectedRoofAreas] = useState<RoofAttributes[]>([]);
 
   const mapRef = useRef<L.Map | null>(null);
   const previousPosition = useRef<{ lat: number; lon: number } | null>(null);
@@ -94,7 +90,6 @@ export default function Map() {
       if (results.length === 0) return;
 
       const polygons: RoofPolygon[] = [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
       results.forEach((res: any) => {
         const rings = res.geometry?.rings;
         const eignung = res.attributes?.dach_eignung;
@@ -107,12 +102,7 @@ export default function Map() {
         }
       });
 
-      if (polygons.length > 0) {
-        setSelectedRoofInfo(polygons[0].attributes);
-      }
-
       setRoofPolygons(polygons);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("❌ Errore:", error?.message || error);
     }
@@ -142,9 +132,8 @@ export default function Map() {
 
           <RoofPolygonsRenderer
             roofPolygons={roofPolygons}
-            activePolygonIndex={activePolygonIndex}
-            setSelectedRoofInfo={setSelectedRoofInfo}
-            setActivePolygonIndex={setActivePolygonIndex}
+            selectedRoofAreas={selectedRoofAreas}
+            setSelectedRoofAreas={setSelectedRoofAreas}
           />
         </MapContainer>
       </div>
@@ -156,10 +145,9 @@ export default function Map() {
         <AddressSearch onSelectLocation={handleSelectLocation} />
       </div>
 
-      {selectedRoofInfo && (
-  // @ts-expect-error selectedRoofInfo has more properties than Data but it's okay here
-<Footbar data={selectedRoofInfo} />
-)}
+      {selectedRoofAreas.length > 0 && (
+        <Footbar data={selectedRoofAreas} />
+      )}
     </div>
   );
 }

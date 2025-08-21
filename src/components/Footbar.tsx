@@ -11,33 +11,37 @@ import {
   FiDollarSign,
 } from "react-icons/fi";
 import { BsCircleFill } from "react-icons/bs";
+import type { RoofAttributes } from "@/types/roof";
 
-interface Data {
-  flaeche?: number;
-  stromertrag?: number;
-  klasse?: 1 | 2 | 3 | 4;
-}
+export default function Footbar({ data }: { data: RoofAttributes[] }) {
+  if (!data || data.length === 0) return null;
 
-export default function Footbar({ data }: { data: Data }) {
-  if (!data) return null;
+  const totalFlaeche = data.reduce((sum, item) => sum + (item.flaeche ?? 0), 0);
+  const totalStromertrag = data.reduce((sum, item) => sum + (item.stromertrag ?? 0), 0);
 
-  const flaeche = data.flaeche ?? 0;
   const spezifischerErtrag =
-    data.stromertrag && data.flaeche ? Math.round(data.stromertrag / (data.flaeche * 0.2)) : 0;
-  const leistungKwp = parseFloat((flaeche * 0.2).toFixed(1));
+    totalStromertrag && totalFlaeche ? Math.round(totalStromertrag / (totalFlaeche * 0.2)) : 0;
+
+  const leistungKwp = parseFloat((totalFlaeche * 0.2).toFixed(1));
   const energiePV = parseFloat((leistungKwp * spezifischerErtrag).toFixed(0));
   const preis = parseFloat((leistungKwp * 97).toFixed(2));
-  const flaecheRounded = Math.round(flaeche);
+  const flaecheRounded = Math.round(totalFlaeche);
 
+  // Trova la classe più comune tra i tetti selezionati
+  const classCounter = data.reduce((acc: Record<number, number>, item) => {
+    const cls = item.klasse;
+    if (cls) acc[cls] = (acc[cls] || 0) + 1;
+    return acc;
+  }, {});
+  const mostCommonClass = Number(
+    Object.entries(classCounter).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0
+  );
 
-
-
-  const klasse = data.klasse ?? 0;
   const classi: Record<number, { label: string; color: string }> = {
     1: { label: "Hervorragend", color: "text-red-500" },
     2: { label: "Mittel", color: "text-yellow-500" },
     3: { label: "Gut", color: "text-orange-400" },
-    4: { label: "Sehr gut", color: "text-green-500" },  
+    4: { label: "Sehr gut", color: "text-green-500" },
   };
 
   return (
@@ -57,11 +61,10 @@ export default function Footbar({ data }: { data: Data }) {
       <AnimatedValue icon={<FiDollarSign />} value={preis} suffix="CHF" isCHF />
 
       <div className="flex items-center gap-2 text-black/90 min-w-[120px] text-sm font-medium">
-        <BsCircleFill className={`text-sm ${classi[klasse]?.color || ""}`} />
+        <BsCircleFill className={`text-sm ${classi[mostCommonClass]?.color || ""}`} />
         <span className="whitespace-nowrap">
-  {classi[klasse]?.label || "Unbekannt"}
-</span>
-
+          {classi[mostCommonClass]?.label || "Unbekannt"}
+        </span>
       </div>
     </motion.div>
   );
@@ -107,14 +110,13 @@ function AnimatedValue({
     <div className="flex items-center gap-2 text-black/90 min-w-[100px] text-sm font-medium">
       <div className="text-base">{icon}</div>
       <motion.span
-  className="inline-block text-right tabular-nums"
-  style={{
-    minWidth: isCHF ? "70px" : decimals > 0 ? "60px" : "50px",
-  }}
->
-  {display}
-</motion.span>
-
+        className="inline-block text-right tabular-nums"
+        style={{
+          minWidth: isCHF ? "70px" : decimals > 0 ? "60px" : "50px",
+        }}
+      >
+        {display}
+      </motion.span>
       <span>{suffix}</span>
     </div>
   );
