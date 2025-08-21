@@ -27,6 +27,7 @@ export default function Map() {
     margin: 0.3,
     spacing: 0.02,
     orientation: "portrait" as "portrait" | "landscape",
+    excludePoor: false, // ⬅️ nuovo
   });
 
   // Stats dai moduli
@@ -188,6 +189,7 @@ export default function Map() {
             roofPolygons={roofPolygons}
             selectedRoofAreas={selectedRoofAreas}
             setSelectedRoofAreas={setSelectedRoofAreas}
+            excludePoor={planningParams.excludePoor} 
           />
 
           {/* layer pannelli sulla falda attiva (visibile) */}

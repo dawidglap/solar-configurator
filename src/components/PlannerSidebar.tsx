@@ -32,6 +32,7 @@ type PlanningParams = {
   margin: number;
   spacing: number;
    orientation: "portrait" | "landscape"; 
+   excludePoor: boolean; // ⬅️ nuovo
 };
 
 export default function PlannerSidebar({
@@ -138,6 +139,16 @@ export default function PlannerSidebar({
                   <span className="text-black/70">m</span>
                 </div>
               </div>
+              <div className="flex items-center justify-between gap-2">
+  <label className="text-black/80">Escludi zone scadenti</label>
+  <input
+    type="checkbox"
+    checked={params.excludePoor}
+    onChange={(e) => onChangeParams({ ...params, excludePoor: e.target.checked })}
+    className="w-4 h-4"
+  />
+</div>
+
               <div className="mt-2">
   <label className="block text-xs text-black/70 mb-1">Orientamento</label>
   <select
