@@ -15,16 +15,18 @@ import PlannerSidebar from "./PlannerSidebar";
 import Footbar from "./Footbar";
 import RoofPolygonsRenderer from "./MapComplete/RoofPolygonsRenderer";
 
+// ⬇️ NUOVO: layer pannelli
+import SolarModulesPlacer from "./SolarModulesPlacer";
+
 export default function Map() {
   const [selectedPosition, setSelectedPosition] = useState<{ lat: number; lon: number } | null>(null);
   const [roofPolygons, setRoofPolygons] = useState<RoofPolygon[]>([]);
   const [selectedRoofAreas, setSelectedRoofAreas] = useState<RoofAttributes[]>([]);
   const [planningParams, setPlanningParams] = useState({
-  targetKwp: 8.8,
-  margin: 0.3,
-  spacing: 0.02,
-});
-
+    targetKwp: 8.8,
+    margin: 0.3,
+    spacing: 0.02,
+  });
 
   const mapRef = useRef<L.Map | null>(null);
   const previousPosition = useRef<{ lat: number; lon: number } | null>(null);
@@ -114,14 +116,19 @@ export default function Map() {
     }
   };
 
+  // ⬇️ NUOVO: individua la falda selezionata tramite la chiave __polyKey
+  const selectedKey = (selectedRoofAreas[0] as any)?.__polyKey as string | undefined;
+  const selectedPolygon: RoofPolygon | undefined = selectedKey
+    ? roofPolygons.find((p, i) => `${p.attributes.id}::${i}` === selectedKey)
+    : undefined;
+
   return (
     <div className="relative h-screen w-screen">
       <PlannerSidebar
-  visible={!!selectedPosition}
-  params={planningParams}
-  onChangeParams={setPlanningParams}
-/>
-
+        visible={!!selectedPosition}
+        params={planningParams}
+        onChangeParams={setPlanningParams}
+      />
 
       <div className="absolute inset-0 z-0">
         <MapContainer
@@ -146,6 +153,17 @@ export default function Map() {
             selectedRoofAreas={selectedRoofAreas}
             setSelectedRoofAreas={setSelectedRoofAreas}
           />
+
+          {/* ⬇️ NUOVO: layer pannelli sulla falda attiva (visibile) */}
+          {selectedPolygon && (
+            <SolarModulesPlacer
+              polygonCoords={selectedPolygon.coords as [number, number][]}
+              ausrichtung={(selectedRoofAreas[0] as any)?.ausrichtung || 0}
+              moduleSizeMeters={[1.722, 1.134]} // 400 W demo
+              fillMode={true}
+              visible={true}
+            />
+          )}
         </MapContainer>
       </div>
 
@@ -156,9 +174,7 @@ export default function Map() {
         <AddressSearch onSelectLocation={handleSelectLocation} />
       </div>
 
-      {selectedRoofAreas.length > 0 && (
-        <Footbar data={selectedRoofAreas} />
-      )}
+      {selectedRoofAreas.length > 0 && <Footbar data={selectedRoofAreas} />}
     </div>
   );
 }

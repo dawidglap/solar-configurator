@@ -2,105 +2,116 @@
 
 import { useEffect, useState } from "react";
 import { Rectangle, useMap } from "react-leaflet";
-import L from "leaflet";
+import {
+  latLngToMeters,
+  metersToLatLng,
+} from "@/lib/utils";
 
 type Props = {
-  polygonCoords?: number[][];
-  ausrichtung?: number;
-  moduleSizeMeters?: [number, number];
+  polygonCoords?: [number, number][];      // lat,lng
+  ausrichtung?: number;                    // gradi (0=N)
+  moduleSizeMeters?: [number, number];     // [altezza(Y), larghezza(X)] in metri
+  marginMeters?: number;                   // default 0.30 m
+  spacingMeters?: number;                  // default 0.02 m
   fillMode?: boolean;
   visible: boolean;
-   mode?: string;
+  mode?: string;
 };
 
 export default function SolarModulesPlacer({
   polygonCoords = [],
   ausrichtung = 0,
-  moduleSizeMeters = [1, 2],
+  moduleSizeMeters = [1.722, 1.134], // preset 400 W residenziale
+  marginMeters = 0.30,
+  spacingMeters = 0.02,
   fillMode = true,
   visible,
 }: Props) {
-  const map = useMap(); //eslint-disable-line @typescript-eslint/no-unused-vars
+  useMap(); // manteniamo la subscription al contesto mappa
   const [modules, setModules] = useState<Array<[[number, number], [number, number]]>>([]);
-
 
   useEffect(() => {
     if (!visible || !fillMode || polygonCoords.length === 0) return;
 
-    const bounds = L.latLngBounds(polygonCoords.map(([lat, lng]) => L.latLng(lat, lng)));
-    const sw = bounds.getSouthWest();
-    const ne = bounds.getNorthEast();
+    // 1) Poligono -> METRI (EPSG:3857)
+    const polyMeters = polygonCoords.map(([lat, lng]) => latLngToMeters(lat, lng));
+    const xs = polyMeters.map((p) => p.x);
+    const ys = polyMeters.map((p) => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
 
-    const latPerMeter = 0.000009;
-    const lngPerMeter = 0.00001325;
+    // 2) BBox interna con margine reale
+    const innerMinX = minX + marginMeters;
+    const innerMaxX = maxX - marginMeters;
+    const innerMinY = minY + marginMeters;
+    const innerMaxY = maxY - marginMeters;
 
-    const spacingLat = latPerMeter * 0.2; // 20 cm tra le righe
-    const spacingLng = lngPerMeter * 0.2; // 20 cm tra le colonne
+    if (innerMaxX - innerMinX <= 0 || innerMaxY - innerMinY <= 0) {
+      setModules([]);
+      return;
+    }
 
-    const marginLat = latPerMeter * 2; // 2m top/bottom
-    const marginLng = lngPerMeter * 2; // 2m left/right
+    // 3) Dimensione modulo e passo griglia (in metri)
+    const modH = moduleSizeMeters[0]; // lungo Y
+    const modW = moduleSizeMeters[1]; // lungo X
+    const stepX = modW + spacingMeters;
+    const stepY = modH + spacingMeters;
 
-    const moduleLat = latPerMeter * moduleSizeMeters[0]; // altezza
-    const moduleLng = lngPerMeter * moduleSizeMeters[1]; // larghezza
+    // 4) Centro bbox (se in futuro ruotiamo, useremo questo pivot)
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
 
-    const stepLat = moduleLat + spacingLat;
-    const stepLng = moduleLng + spacingLng;
+    // NB: Rectangle di Leaflet non supporta rettangoli ruotati.
+    // Quindi per l’MVP manteniamo i rettangoli axis-aligned alla proiezione.
+    // (La rotazione reale e il clipping al poligono arriveranno nello step 3b.3)
+    // const angle = -(ausrichtung * Math.PI) / 180; // per futuro uso
 
-    const angle = -(ausrichtung * Math.PI / 180);
-    const cosA = Math.cos(angle);
-    const sinA = Math.sin(angle);
+    const nextModules: Array<[[number, number], [number, number]]> = [];
 
-    const cx = (sw.lng + ne.lng) / 2;
-    const cy = (sw.lat + ne.lat) / 2;
+    for (let y = innerMinY; y + modH <= innerMaxY; y += stepY) {
+      for (let x = innerMinX; x + modW <= innerMaxX; x += stepX) {
+        // Rettangolo in metri (axis-aligned)
+        const x2 = x + modW;
+        const y2 = y + modH;
 
-    const rotate = (lng: number, lat: number): [number, number] => {
-      const dx = lng - cx;
-      const dy = lat - cy;
-      const rotatedLng = dx * cosA - dy * sinA + cx;
-      const rotatedLat = dx * sinA + dy * cosA + cy;
-      return [rotatedLat, rotatedLng];
-    };
+        // Converti i due angoli in lat/lng per il <Rectangle />
+        const p1 = metersToLatLng(x, y);
+        const p2 = metersToLatLng(x2, y2);
 
-    const newModules: Array<[[number, number], [number, number]]> = [];
-
-
-    for (
-      let lat = sw.lat + marginLat;
-      lat + moduleLat < ne.lat - marginLat;
-      lat += stepLat
-    ) {
-      for (
-        let lng = sw.lng + marginLng;
-        lng + moduleLng < ne.lng - marginLng;
-        lng += stepLng
-      ) {
-        const corner1 = rotate(lng, lat);
-        const corner2 = rotate(lng + moduleLng, lat + moduleLat);
-        newModules.push([corner1, corner2]);
+        nextModules.push([[p1.lat, p1.lng], [p2.lat, p2.lng]]);
       }
     }
 
-    setModules(newModules);
-  }, [polygonCoords, ausrichtung, fillMode, visible, moduleSizeMeters]);
+    setModules(nextModules);
+  }, [
+    polygonCoords,
+    ausrichtung,
+    moduleSizeMeters,
+    marginMeters,
+    spacingMeters,
+    fillMode,
+    visible,
+  ]);
 
   if (!visible) return null;
 
   return (
     <>
       {modules.map((bounds, idx) => (
-       <Rectangle
-  key={idx}
-  bounds={bounds as [[number, number], [number, number]]}
-  pathOptions={{
-    color: "#0a192f",           // bordo blu notte
-    weight: 0.5,                // bordo sottile
-    fillColor: "#1e293b",       // riempimento grigio-blu (antracite)
-    fillOpacity: 0.85,          // opaco, effetto solido
-    dashArray: "0",             // rimuove tratteggio
-    pane: "overlayPane"         // livello sopra la mappa
-  }}
-/>
-
+        <Rectangle
+          key={idx}
+          bounds={bounds as [[number, number], [number, number]]}
+          pathOptions={{
+            color: "#0a192f",
+            weight: 0.5,
+            fillColor: "#1e293b",
+            fillOpacity: 0.85,
+            dashArray: "0",
+            pane: "overlayPane",
+          }}
+        />
       ))}
     </>
   );
