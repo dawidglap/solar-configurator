@@ -13,7 +13,13 @@ import {
 import { BsCircleFill } from "react-icons/bs";
 import type { RoofAttributes } from "@/types/roof";
 
-export default function Footbar({ data }: { data: RoofAttributes[] }) {
+export default function Footbar({
+  data,
+  modsStats,
+}: {
+  data: RoofAttributes[];
+  modsStats?: { count: number; areaPlan: number };
+}) {
   if (!data || data.length === 0) return null;
 
   const totalFlaeche = data.reduce((sum, item) => sum + (item.flaeche ?? 0), 0);
@@ -26,6 +32,9 @@ export default function Footbar({ data }: { data: RoofAttributes[] }) {
   const energiePV = parseFloat((leistungKwp * spezifischerErtrag).toFixed(0));
   const preis = parseFloat((leistungKwp * 97).toFixed(2));
   const flaecheRounded = Math.round(totalFlaeche);
+  const kwpPerModulo = 0.4; // MVP: 400 W/modulo
+const kwpDaModuli = (modsStats?.count ?? 0) * kwpPerModulo;
+
 
   // Trova la classe più comune tra i tetti selezionati
   const classCounter = data.reduce((acc: Record<number, number>, item) => {
@@ -53,7 +62,11 @@ export default function Footbar({ data }: { data: RoofAttributes[] }) {
                  bg-white/10 backdrop-blur-lg border border-white/30 shadow-xl 
                  rounded-full px-6 py-2 flex items-center gap-8 text-sm"
     >
-      <AnimatedValue icon={<FiGrid />} value={leistungKwp} suffix="kWp" decimals={1} />
+      <InfoItem
+  icon={<FiGrid />}
+  label={`${modsStats?.count ?? 0} moduli • ${kwpDaModuli.toFixed(1)} kWp`}
+/>
+
       <InfoItem icon={<FiTrendingUp />} label="-- % Ersparnis" />
       <AnimatedValue icon={<FiZap />} value={energiePV} suffix="kWh/Jahr" />
       <AnimatedValue icon={<FiMaximize2 />} value={flaecheRounded} suffix="m²" />

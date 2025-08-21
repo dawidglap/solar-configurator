@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import { Polygon as LPolygon, useMap } from "react-leaflet";
 import { latLngToMeters, metersToLatLng } from "@/lib/utils";
 
@@ -16,6 +16,7 @@ type Props = {
   fillMode?: boolean;
   visible: boolean;
   orientation?: Orientation;
+  onStats?: (s: { count: number; areaPlan: number }) => void; // 👈 nuovo
 };
 
 export default function SolarModulesPlacer({
@@ -28,6 +29,7 @@ export default function SolarModulesPlacer({
   fillMode = true,
   visible,
   orientation = "portrait",
+  onStats,
 }: Props) {
   useMap(); // per rimanere nel contesto mappa
 
@@ -107,50 +109,42 @@ export default function SolarModulesPlacer({
     const stepY = modH + spacingMeters * scale;
     const marginMap = marginMeters * scale;
 
-    // --- 5) Griglia "da gronda": ancorata ai margini, mezzo passo SOLO in X ---
+    // --- 5) Griglia "da gronda": ancorata ai margini, NESSUN mezzo passo ---
     const x0 = minX + marginMap;
     const y0 = minY + marginMap;
     const xMax = maxX - marginMap;
     const yMax = maxY - marginMap;
 
-    const offsetsX = [0, stepX / 2]; // colonne alternate
-    const offsetsY: number[] = [0];  // niente mezzo passo in Y
+    const candidate: Array<[number, number][]> = [];
 
-    let best: Array<[number, number][]> = [];
+    for (let y = y0; y + modH <= yMax + 1e-6; y += stepY) {
+      for (let x = x0; x + modW <= xMax + 1e-6; x += stepX) {
+        const p1 = { x,          y          };
+        const p2 = { x: x + modW, y          };
+        const p3 = { x: x + modW, y: y + modH };
+        const p4 = { x,          y: y + modH };
 
-    for (const offY of offsetsY) {
-      for (const offX of offsetsX) {
-        const candidate: Array<[number, number][]> = [];
-        for (let y = y0; y + modH <= yMax + 1e-6; y += stepY) {
-          for (let x = x0 + offX; x + modW <= xMax + 1e-6; x += stepX) {
-            const p1 = { x,          y          };
-            const p2 = { x: x + modW, y          };
-            const p3 = { x: x + modW, y: y + modH };
-            const p4 = { x,          y: y + modH };
+        if (!pointInPolyR(p1) || !pointInPolyR(p2) || !pointInPolyR(p3) || !pointInPolyR(p4)) continue;
+        if (!minDistToEdgesOKR(p1, marginMap) || !minDistToEdgesOKR(p2, marginMap) ||
+            !minDistToEdgesOKR(p3, marginMap) || !minDistToEdgesOKR(p4, marginMap)) continue;
 
-            if (!pointInPolyR(p1) || !pointInPolyR(p2) || !pointInPolyR(p3) || !pointInPolyR(p4)) continue;
-            if (!minDistToEdgesOKR(p1, marginMap) || !minDistToEdgesOKR(p2, marginMap) ||
-                !minDistToEdgesOKR(p3, marginMap) || !minDistToEdgesOKR(p4, marginMap)) continue;
+        const q1 = rot(p1.x, p1.y, +theta);
+        const q2 = rot(p2.x, p2.y, +theta);
+        const q3 = rot(p3.x, p3.y, +theta);
+        const q4 = rot(p4.x, p4.y, +theta);
 
-            const q1 = rot(p1.x, p1.y, +theta);
-            const q2 = rot(p2.x, p2.y, +theta);
-            const q3 = rot(p3.x, p3.y, +theta);
-            const q4 = rot(p4.x, p4.y, +theta);
+        const ll1 = metersToLatLng(snapM(q1.x), snapM(q1.y));
+        const ll2 = metersToLatLng(snapM(q2.x), snapM(q2.y));
+        const ll3 = metersToLatLng(snapM(q3.x), snapM(q3.y));
+        const ll4 = metersToLatLng(snapM(q4.x), snapM(q4.y));
 
-            const ll1 = metersToLatLng(snapM(q1.x), snapM(q1.y));
-            const ll2 = metersToLatLng(snapM(q2.x), snapM(q2.y));
-            const ll3 = metersToLatLng(snapM(q3.x), snapM(q3.y));
-            const ll4 = metersToLatLng(snapM(q4.x), snapM(q4.y));
-            candidate.push([
-              [ll1.lat, ll1.lng],
-              [ll2.lat, ll2.lng],
-              [ll3.lat, ll3.lng],
-              [ll4.lat, ll4.lng],
-              [ll1.lat, ll1.lng],
-            ]);
-          }
-        }
-        if (candidate.length > best.length) best = candidate;
+        candidate.push([
+          [ll1.lat, ll1.lng],
+          [ll2.lat, ll2.lng],
+          [ll3.lat, ll3.lng],
+          [ll4.lat, ll4.lng],
+          [ll1.lat, ll1.lng],
+        ]);
       }
     }
 
@@ -159,12 +153,12 @@ export default function SolarModulesPlacer({
     const areaPlanPerPanel   = Hplan_ground * Wplan_ground;
     // eslint-disable-next-line no-console
     console.log(
-      `[PLACER] used angle=${ausrichtung}°, tilt=${neigung}° | count=${best.length} | ` +
+      `[PLACER] used angle=${ausrichtung}°, tilt=${neigung}° | count=${candidate.length} | ` +
       `panelAreas sloped=${areaSlopedPerPanel.toFixed(3)} m² plan=${areaPlanPerPanel.toFixed(3)} m² | ` +
-      `totalPlan=${(best.length*areaPlanPerPanel).toFixed(1)} m²`
+      `totalPlan=${(candidate.length*areaPlanPerPanel).toFixed(1)} m²`
     );
 
-    return best;
+    return candidate;
   }, [
     polygonCoords,
     ausrichtung,
@@ -176,6 +170,23 @@ export default function SolarModulesPlacer({
     visible,
     orientation,
   ]);
+
+  // === NUOVO: calcolo area per modulo in pianta + notifiche stats ===
+  const areaPlanPerPanel = useMemo(() => {
+    const Hsurf = orientation === "portrait" ? moduleSizeMeters[0] : moduleSizeMeters[1];
+    const Wsurf = orientation === "portrait" ? moduleSizeMeters[1] : moduleSizeMeters[0];
+    const cosTilt = Math.cos(Math.max(0, Math.min(90, neigung ?? 0)) * Math.PI / 180);
+    return (Hsurf * cosTilt) * Wsurf; // m² in pianta per modulo
+  }, [orientation, moduleSizeMeters, neigung]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const count = modules.length;
+    const areaPlan = count * areaPlanPerPanel;
+    // eslint-disable-next-line no-console
+    console.log("[PLACER][STATS]", { count, areaPlan: Number(areaPlan.toFixed(2)) });
+    onStats?.({ count, areaPlan });
+  }, [modules, areaPlanPerPanel, visible, onStats]);
 
   if (!visible || modules.length === 0) return null;
 
