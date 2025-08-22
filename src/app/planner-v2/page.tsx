@@ -1,6 +1,7 @@
 'use client';
 
 import PlannerShell from '@/components_v2/layout/PlannerShell';
+import ResponsiveGuard from '@/components_v2/layout/ResponsiveGuard';
 
 export default function PlannerV2Page() {
   return (
@@ -11,7 +12,11 @@ export default function PlannerV2Page() {
           Canva-ähnlicher Editor für PV-Planung – Rastermodus auf Screenshot.
         </p>
       </div>
-      <PlannerShell />
+
+      {/* ⬇️ blocco sotto 900px */}
+      <ResponsiveGuard minWidth={900}>
+        <PlannerShell />
+      </ResponsiveGuard>
     </main>
   );
 }
