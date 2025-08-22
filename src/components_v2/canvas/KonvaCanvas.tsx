@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer, Rect, Image as KImage, Text } from 'react-konva';
+import { Stage, Layer, Rect, Image as KImage, Text, Group } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import ScaleBar from '../overlays/ScaleBar';
+import Attribution from '../overlays/Attribution';
+
 
 export default function KonvaCanvas() {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -92,7 +94,16 @@ export default function KonvaCanvas() {
           {/* Scale bar (in alto a sinistra per ora) */}
           <ScaleBar meters={5} />
         </Layer>
-
+{/* Overlay attribuzione ancorato in basso a destra */}
+<Layer>
+  <Group
+    x={Math.max(0, size.w - 250)}
+    y={Math.max(0, size.h - 30)}
+    listening={false}
+  >
+    <Attribution />
+  </Group>
+</Layer>
         {/* Future layers: guides, vectors, selections... */}
       </Stage>
     </div>
