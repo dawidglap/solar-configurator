@@ -33,7 +33,7 @@ function Fab({ active, onClick }: { active: boolean; onClick: () => void }) {
         backdrop-blur hover:bg-white`}
       title="Disegna zona esclusa (2 click)"
     >
-      {active ? "🛑 Fine disegno" : "🚫 Zona esclusa"}
+      {active ? "🛑 Zeichnen beenden" : "🚫 Ausschluss zeichnen"}
     </button>
   );
 }
@@ -207,6 +207,39 @@ function ExclusionDrawer({
     </>
   );
 }
+
+function UndoBtn({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`fixed right-6 bottom-36 z-[1000] px-3 py-2 rounded-full shadow-lg border backdrop-blur
+        ${disabled
+          ? "bg-white/60 text-black/40 border-black/10 cursor-not-allowed"
+          : "bg-white/80 text-black border-black/10 hover:bg-white"}`}
+      title="Annulla ultima zona esclusa"
+    >
+      Letzten Ausschluss rückgängig
+    </button>
+  );
+}
+
+function ClearBtn({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`fixed right-6 bottom-48 z-[1000] px-3 py-2 rounded-full shadow-lg border backdrop-blur
+        ${disabled
+          ? "bg-white/60 text-black/40 border-black/10 cursor-not-allowed"
+          : "bg-white/80 text-black border-black/10 hover:bg-white"}`}
+      title="Rimuovi tutte le zone escluse"
+    >
+      Alle Ausschlüsse löschen
+    </button>
+  );
+}
+
 
 export default function Map() {
   const [selectedPosition, setSelectedPosition] = useState<{ lat: number; lon: number } | null>(null);
@@ -402,6 +435,17 @@ export default function Map() {
       {/* FAB per disegnare zona esclusa */}
       <Fab active={drawExclude} onClick={() => setDrawExclude((v) => !v)} />
 
+        <UndoBtn
+  disabled={exclusions.length === 0}
+  onClick={() => setExclusions(prev => prev.slice(0, -1))}
+/>
+
+<ClearBtn
+  disabled={exclusions.length === 0}
+  onClick={() => setExclusions([])}
+/>
+
+
       {/* Export JSON */}
       <ExportBtn disabled={!selectedPolygon} onClick={handleExportJSON} />
 
@@ -442,18 +486,24 @@ export default function Map() {
           />
 
           {/* Visualizza poligoni di esclusione (rosso) */}
-          {exclusions.map((poly, i) => (
-            <RLPolygon
-              key={`ex-${i}`}
-              positions={poly as [number, number][]}
-              pathOptions={{
-                color: "rgba(220, 38, 38, 1)", // rosso
-                weight: 1,
-                fillColor: "rgba(220, 38, 38, 0.35)",
-                fillOpacity: 0.7,
-              }}
-            />
-          ))}
+    {exclusions.map((poly, i) => (
+  <RLPolygon
+    key={`ex-${i}`}
+    positions={poly as [number, number][]}
+    pathOptions={{
+      color: "rgba(220, 38, 38, 1)",
+      weight: 1,
+      fillColor: "rgba(220, 38, 38, 0.35)",
+      fillOpacity: 0.7,
+    }}
+    eventHandlers={{
+      click: () => setExclusions(prev => prev.filter((_, j) => j !== i)),
+      mouseover: (e) => e.target.setStyle({ weight: 2, fillOpacity: 0.5 }),
+      mouseout:  (e) => e.target.setStyle({ weight: 1, fillOpacity: 0.7 }),
+    }}
+  />
+))}
+
 
           {/* layer pannelli sulla falda attiva */}
           {selectedPolygon && (
