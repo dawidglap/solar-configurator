@@ -2,7 +2,14 @@
 
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { MapContainer, TileLayer, useMapEvents, Polygon as RLPolygon } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  useMapEvents,
+  Polygon as RLPolygon,
+  Rectangle,
+  CircleMarker,
+} from "react-leaflet";
 
 import AssignMapRef from "./MapComplete/AssignMapRef";
 import type { RoofPolygon, RoofAttributes } from "@/types/roof";
@@ -31,60 +38,192 @@ function Fab({ active, onClick }: { active: boolean; onClick: () => void }) {
   );
 }
 
+// opzionale: tieni traccia del modulo usato nell’MVP
+const DEFAULT_MODULE_SIZE: [number, number] = [1.722, 1.134]; // 400 W portrait
+
+function downloadJSON(filename: string, data: unknown) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function ExportBtn({
+  disabled,
+  onClick,
+}: {
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`fixed top-6 right-6 z-[1000] px-3 py-2 rounded-full shadow-lg border backdrop-blur
+        ${disabled
+          ? "bg-white/60 text-black/40 border-black/10 cursor-not-allowed"
+          : "bg-white/80 text-black border-black/10 hover:bg-white"}`}
+      title="Esporta layout in JSON"
+    >
+      ⬇️ Export JSON
+    </button>
+  );
+}
+
 // --- cattura 2 click e produce un rettangolo [lat,lng][]; solo quando active=true
 function ExclusionDrawer({
   active,
+  allowedArea,
   onRectDone,
 }: {
   active: boolean;
+  allowedArea?: [number, number][];
   onRectDone: (poly: [number, number][]) => void;
 }) {
-  const clicksRef = useRef<[number, number][]>([]);
+  const [anchor, setAnchor] = useState<[number, number] | null>(null);
+  const [hover, setHover] = useState<[number, number] | null>(null);
+
+  // ray-casting in lat/lng
+  const pointInPolyLatLng = (pt: [number, number], poly?: [number, number][]) => {
+    if (!poly || poly.length < 3) return true;
+    const [lat, lng] = pt;
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [lati, lngi] = poly[i];
+      const [latj, lngj] = poly[j];
+      const intersect =
+        (lngi > lng) !== (lngj > lng) &&
+        lat < ((latj - lati) * (lng - lngi)) / (lngj - lngi) + lati;
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
 
   useMapEvents({
     click(e) {
       if (!active) return;
-      clicksRef.current.push([e.latlng.lat, e.latlng.lng]);
-      if (clicksRef.current.length === 2) {
-        const [aLat, aLng] = clicksRef.current[0];
-        const [bLat, bLng] = clicksRef.current[1];
-        const minLat = Math.min(aLat, bLat);
-        const maxLat = Math.max(aLat, bLat);
-        const minLng = Math.min(aLng, bLng);
-        const maxLng = Math.max(aLng, bLng);
-        const rect: [number, number][] = [
-          [minLat, minLng],
-          [minLat, maxLng],
-          [maxLat, maxLng],
-          [maxLat, minLng],
-          [minLat, minLng],
-        ];
-        onRectDone(rect);
-        clicksRef.current = [];
+      const pt: [number, number] = [e.latlng.lat, e.latlng.lng];
+
+      // Primo click: set anchor solo se dentro falda
+      if (!anchor) {
+        if (!pointInPolyLatLng(pt, allowedArea)) return;
+        setAnchor(pt);
+        setHover(pt);
+        return;
       }
+
+      // Secondo click: prova a chiudere
+      const [aLat, aLng] = anchor;
+      const [bLat, bLng] = pt;
+      const minLat = Math.min(aLat, bLat);
+      const maxLat = Math.max(aLat, bLat);
+      const minLng = Math.min(aLng, bLng);
+      const maxLng = Math.max(aLng, bLng);
+      const rect: [number, number][] = [
+        [minLat, minLng],
+        [minLat, maxLng],
+        [maxLat, maxLng],
+        [maxLat, minLng],
+        [minLat, minLng],
+      ];
+
+      const cornersInside = rect.slice(0, 4).every((c) => pointInPolyLatLng(c, allowedArea));
+      if (cornersInside) onRectDone(rect);
+
+      // reset stato disegno, comunque
+      setAnchor(null);
+      setHover(null);
     },
-    // se esci con ESC azzera (facoltativo)
+
+    mousemove(e) {
+      if (!active || !anchor) return;
+      setHover([e.latlng.lat, e.latlng.lng]);
+    },
+
     keydown(e: any) {
       if (!active) return;
-      if (e.originalEvent?.key === "Escape") clicksRef.current = [];
+      if (e.originalEvent?.key === "Escape") {
+        setAnchor(null);
+        setHover(null);
+      }
     },
   });
 
-  return null;
+  // Preview live del rettangolo + puntino di ancoraggio
+  let previewBounds: [[number, number], [number, number]] | null = null;
+  let previewValid = true;
+
+  if (anchor && hover) {
+    const minLat = Math.min(anchor[0], hover[0]);
+    const maxLat = Math.max(anchor[0], hover[0]);
+    const minLng = Math.min(anchor[1], hover[1]);
+    const maxLng = Math.max(anchor[1], hover[1]);
+    previewBounds = [
+      [minLat, minLng],
+      [maxLat, maxLng],
+    ];
+
+    const rectCorners: [number, number][] = [
+      [minLat, minLng],
+      [minLat, maxLng],
+      [maxLat, maxLng],
+      [maxLat, minLng],
+    ];
+    previewValid = rectCorners.every((c) => pointInPolyLatLng(c, allowedArea));
+  }
+
+  return (
+    <>
+      {anchor && (
+        <CircleMarker
+          center={anchor}
+          radius={4}
+          pathOptions={{
+            color: "#22d3ee",
+            weight: 2,
+            fillColor: "#22d3ee",
+            fillOpacity: 1,
+          }}
+        />
+      )}
+
+      {previewBounds && (
+        <Rectangle
+          bounds={previewBounds}
+          pathOptions={{
+            color: previewValid ? "#22c55e" : "#ef4444",
+            weight: 2,
+            dashArray: "4 4",
+            fillColor: previewValid ? "#22c55e" : "#ef4444",
+            fillOpacity: 0.15,
+          }}
+        />
+      )}
+    </>
+  );
 }
 
 export default function Map() {
   const [selectedPosition, setSelectedPosition] = useState<{ lat: number; lon: number } | null>(null);
   const [roofPolygons, setRoofPolygons] = useState<RoofPolygon[]>([]);
   const [selectedRoofAreas, setSelectedRoofAreas] = useState<RoofAttributes[]>([]);
+  // in cima ai tuoi state
+
+
   const [planningParams, setPlanningParams] = useState({
     targetKwp: 8.8,
     margin: 0.3,
     spacing: 0.02,
     orientation: "portrait" as "portrait" | "landscape",
+    excludePoor: false,
   });
 
-  // ⬇️ NUOVO: esclusioni e modalità disegno
+  // esclusioni e modalità disegno
   const [exclusions, setExclusions] = useState<[number, number][][]>([]);
   const [drawExclude, setDrawExclude] = useState(false);
 
@@ -95,6 +234,7 @@ export default function Map() {
   });
 
   useEffect(() => {
+    // eslint-disable-next-line no-console
     console.log("[MAP][STATS from placer]", moduleStats);
   }, [moduleStats.count, moduleStats.areaPlan]);
 
@@ -180,6 +320,7 @@ export default function Map() {
 
       setRoofPolygons(polygons);
     } catch (error: any) {
+      // eslint-disable-next-line no-console
       console.error("❌ Errore:", error?.message || error);
     }
   };
@@ -199,11 +340,56 @@ export default function Map() {
     );
   }, []);
 
-  // quando chiudi/riapri la selezione posizione, reset esclusioni (facoltativo)
+  // reset esclusioni se cambi falda
   useEffect(() => {
-    // resetta le esclusioni se cambi tetto selezionato
     setExclusions([]);
   }, [selectedKey]);
+
+  // >>> QUI: callback EXPORT spostata DENTRO il componente (prima era fuori e rompeva)
+  const handleExportJSON = useCallback(() => {
+    if (!selectedPolygon) return;
+
+    const roofAttrs = (selectedRoofAreas[0] as any) ?? {};
+    const payload = {
+      meta: {
+        generatedAt: new Date().toISOString(),
+        app: "planung-mvp",
+        version: "0.1",
+      },
+      map: {
+        selectedPosition,
+        tileLayer:
+          "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg",
+      },
+      planningParams: {
+        ...planningParams,
+      },
+      selection: {
+        roofId: roofAttrs.id ?? null,
+        attributes: roofAttrs,
+        polygonCoords: selectedPolygon.coords, // lat,lng[]
+      },
+      panels: {
+        count: moduleStats.count,
+        planAreaM2: Number(moduleStats.areaPlan?.toFixed(2) ?? 0),
+        moduleSizeMeters: DEFAULT_MODULE_SIZE,
+        orientation: planningParams.orientation,
+        marginMeters: planningParams.margin,
+        spacingMeters: planningParams.spacing,
+      },
+      exclusions, // Array di poligoni [lat,lng][]
+    };
+
+    const fname = `planung_export_${roofAttrs.id ?? "roof"}_${Date.now()}.json`;
+    downloadJSON(fname, payload);
+  }, [
+    selectedPolygon,
+    selectedRoofAreas,
+    planningParams,
+    moduleStats,
+    exclusions,
+    selectedPosition,
+  ]);
 
   return (
     <div className="relative h-screen w-screen">
@@ -215,6 +401,9 @@ export default function Map() {
 
       {/* FAB per disegnare zona esclusa */}
       <Fab active={drawExclude} onClick={() => setDrawExclude((v) => !v)} />
+
+      {/* Export JSON */}
+      <ExportBtn disabled={!selectedPolygon} onClick={handleExportJSON} />
 
       <div className="absolute inset-0 z-0">
         <MapContainer
@@ -239,12 +428,13 @@ export default function Map() {
             roofPolygons={roofPolygons}
             selectedRoofAreas={selectedRoofAreas}
             setSelectedRoofAreas={setSelectedRoofAreas}
-            excludePoor // mantieni filtro aree scadenti attivo
+            excludePoor={planningParams.excludePoor} 
           />
 
           {/* Disegno rettangolo di esclusione quando attivo */}
           <ExclusionDrawer
             active={drawExclude}
+            allowedArea={selectedPolygon?.coords as [number, number][]}
             onRectDone={(poly) => {
               setExclusions((prev) => [...prev, poly]);
               setDrawExclude(false);
@@ -257,7 +447,7 @@ export default function Map() {
               key={`ex-${i}`}
               positions={poly as [number, number][]}
               pathOptions={{
-                color: "rgba(220, 38, 38, 1)",      // rosso
+                color: "rgba(220, 38, 38, 1)", // rosso
                 weight: 1,
                 fillColor: "rgba(220, 38, 38, 0.35)",
                 fillOpacity: 0.7,
@@ -274,7 +464,7 @@ export default function Map() {
               marginMeters={planningParams.margin}
               spacingMeters={planningParams.spacing}
               orientation={planningParams.orientation}
-              exclusions={exclusions}          // ⬅️ PASSIAMO LE ESCLUSIONI
+              exclusions={exclusions}
               fillMode
               visible
               onStats={handleStats}
