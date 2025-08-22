@@ -145,7 +145,7 @@ function ExclusionDrawer({
       setHover([e.latlng.lat, e.latlng.lng]);
     },
 
-    keydown(e: any) {
+    keydown(e: any) { 
       if (!active) return;
       if (e.originalEvent?.key === "Escape") {
         setAnchor(null);
