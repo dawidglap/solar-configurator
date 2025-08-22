@@ -12,14 +12,14 @@ export default function PlannerShell() {
     <div className="h-[calc(100vh-64px)] w-full bg-neutral-100">
       {/* Stepper (oben) */}
       <div className="w-full border-b bg-white">
-        <div className="mx-auto max-w-[1600px] px-4">
+        <div className="mx-auto max-w-[1440px] px-4">
           <Stepper />
         </div>
       </div>
 
       {/* Toolbar */}
       <div className="w-full border-b bg-white">
-        <div className="mx-auto max-w-[1600px] px-4">
+        <div className="mx-auto max-w-[1440px] px-4">
           <TopToolbar />
         </div>
       </div>
@@ -28,7 +28,7 @@ export default function PlannerShell() {
       <div
         className="
           mx-auto
-          max-w-[1600px]
+          max-w-[1440px]
           px-4 py-4
           grid
           gap-4
