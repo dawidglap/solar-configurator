@@ -25,7 +25,19 @@ export default function PlannerShell() {
       </div>
 
       {/* Drei-Spalten Layout */}
-      <div className="mx-auto grid max-w-[1600px] grid-cols-[280px_1fr_320px] gap-4 px-4 py-4">
+      <div
+        className="
+          mx-auto
+          max-w-[1600px]
+          px-4 py-4
+          grid
+          gap-4
+          /* tablet: pannelli più stretti */
+          lg:grid-cols-[240px_1fr_280px]
+          /* desktop xl: dimensioni piene */
+          xl:grid-cols-[280px_1fr_320px]
+        "
+      >
         <div className="h-[calc(100vh-64px-96px)] overflow-hidden rounded-2xl border bg-white">
           <LeftLayersPanel />
         </div>
