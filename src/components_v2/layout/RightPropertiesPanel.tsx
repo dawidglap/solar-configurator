@@ -3,21 +3,27 @@
 import { ChangeEvent, useState } from 'react';
 import type { PlannerStep } from '../state/plannerV2Store';
 import { usePlannerV2Store } from '../state/plannerV2Store';
-import { buildMapTilerStaticURL, metersPerPixelAtLat } from '../utils/mapStatic';
 import AddressSearchOSM from '../geocoding/AddressSearchOSM';
-import { geocodeMapTiler } from '../utils/geocode';
-import { buildOSMSnapshot } from '../utils/stitchTilesOSM';
+import { buildTiledSnapshot, TILE_SWISSTOPO_SAT } from '../utils/stitchTilesWMTS';
 
+/** ground-resolution 3857 (m/px) */
+function metersPerPixel3857(latDeg: number, zoom: number) {
+  const EARTH_CIRCUMFERENCE = 40075016.68557849; // meters
+  const latRad = (latDeg * Math.PI) / 180;
+  const resEquator = EARTH_CIRCUMFERENCE / 256 / Math.pow(2, zoom);
+  return resEquator * Math.cos(latRad);
+}
 
-export default function RightPropertiesPanel({ currentStep }: { currentStep: PlannerStep }) {
+export default function RightPropertiesPanel({ currentStep }: { currentStep?: PlannerStep }) {
+  const step = currentStep ?? 'building';
   return (
     <div className="flex h-full flex-col">
       <header className="border-b p-3 text-sm font-medium">Eigenschaften</header>
       <div className="flex-1 overflow-y-auto p-3 text-sm">
-        {currentStep === 'building' && <BuildingPanel />}
-        {currentStep === 'modules' && <p className="text-neutral-600">Modultyp, Orientierung, Abstände – kommen gleich.</p>}
-        {currentStep === 'strings' && <p className="text-neutral-600">Stringplanung (später).</p>}
-        {currentStep === 'parts' && <p className="text-neutral-600">Stückliste & Preise (später).</p>}
+        {step === 'building' && <BuildingPanel />}
+        {step === 'modules' && <p className="text-neutral-600">Modultyp, Orientierung, Abstände – kommen gleich.</p>}
+        {step === 'strings' && <p className="text-neutral-600">Stringplanung (später).</p>}
+        {step === 'parts' && <p className="text-neutral-600">Stückliste & Preise (später).</p>}
       </div>
     </div>
   );
@@ -28,17 +34,17 @@ function BuildingPanel() {
   const setSnapshot = usePlannerV2Store((s) => s.setSnapshot);
   const view = usePlannerV2Store((s) => s.view);
 
-  // ---- Adresse → Static Snapshot (lat/lon minimi per partire)
+  const selectedId = usePlannerV2Store((s) => s.selectedId);
+  const layer = usePlannerV2Store((s) => s.layers.find((l) => l.id === s.selectedId));
+  const updateRoof = usePlannerV2Store((s) => s.updateRoof);
+
+  const [address, setAddress] = useState('');
   const [lat, setLat] = useState<number | ''>('');
   const [lon, setLon] = useState<number | ''>('');
-  const [zoom, setZoom] = useState<number>(18);
-  const [style, setStyle] = useState<'streets' | 'satellite'>('streets');
+  const [zoom, setZoom] = useState<number>(20);
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [address, setAddress] = useState('');
-  const [source, setSource] = useState<'osm' | 'maptiler'>('osm'); // swisstopo lo aggiungeremo dopo
-
-
 
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -56,177 +62,95 @@ function BuildingPanel() {
     reader.readAsDataURL(f);
   };
 
-const loadStaticSnapshot = async (
-  override?: { lat: number; lon: number; zoom?: number }
-) => {
-  setErr(null);
+  const loadStaticSnapshot = async (
+    override?: { lat: number; lon: number; zoom?: number }
+  ) => {
+    setErr(null);
 
-  let usedLat: number | '' = override?.lat ?? lat;
-  let usedLon: number | '' = lon ?? override?.lon ?? lon;
-  let usedZoom: number = override?.zoom ?? zoom;
+    const usedLat = override?.lat ?? lat;
+    const usedLon = override?.lon ?? lon;
+    const usedZoom = override?.zoom ?? zoom;
 
-  // fallback: se hai solo l'indirizzo (opzionale)
-  if ((usedLat === '' || usedLon === '') && address?.trim()) {
-    const best = await geocodeMapTiler(address, { country: 'ch', language: 'de' });
-    if (best) {
-      usedLat = best.lat; usedLon = best.lon;
-      setLat(best.lat); setLon(best.lon);
+    if (usedLat === '' || usedLon === '') {
+      setErr('Bitte Koordinaten (Lat/Lon) angeben.');
+      return;
     }
-  }
-  if (usedLat === '' || usedLon === '') {
-    setErr('Bitte Koordinaten (Lat/Lon) angeben.');
-    return;
-  }
 
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    if (source === 'osm') {
-      // 🔹 OSM stitcher – nessuna key richiesta
-      const width = 1400, height = 900, scale = 1 as const;
-      const { dataUrl, width: w, height: h } = await buildOSMSnapshot({
+      // swisstopo – mosaico WMTS
+      const width = 2800;
+      const height = 1800;
+
+      const { dataUrl, width: w, height: h } = await buildTiledSnapshot({
         lat: Number(usedLat),
         lon: Number(usedLon),
         zoom: usedZoom,
         width,
         height,
-        scale,
-        drawAttribution: true,
+        scale: 1, // non influenza i metri sul terreno
+        tileUrl: TILE_SWISSTOPO_SAT,
+        attribution: '© swisstopo',
       });
 
-      const mpp = metersPerPixelAtLat(Number(usedLat), usedZoom, scale);
+      // ✅ mpp dell’immagine: SOLO funzione di latitudine & zoom (EPSG:3857)
+      const mpp = metersPerPixel3857(Number(usedLat), usedZoom);
+
       setSnapshot({ url: dataUrl, width: w, height: h, mppImage: mpp });
-      return;
+    } catch (e: any) {
+      setErr(e?.message ?? 'Unbekannter Fehler.');
+    } finally {
+      setLoading(false);
     }
-
-    // 🔹 MapTiler (opzionale)
-    const reqWidth = 1400, reqHeight = 900, reqScale: 1 | 2 = 1;
-    const { url } = buildMapTilerStaticURL({
-      lat: Number(usedLat),
-      lon: Number(usedLon),
-      zoom: usedZoom,
-      width: reqWidth,
-      height: reqHeight,
-      scale: reqScale,
-      style,
-    });
-
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error('Bild konnte nicht geladen werden.'));
-      img.src = url;
-    });
-
-    const mpp = metersPerPixelAtLat(Number(usedLat), usedZoom, reqScale);
-    setSnapshot({ url, width: img.naturalWidth, height: img.naturalHeight, mppImage: mpp });
-  } catch (e: any) {
-    setErr(e?.message ?? 'Unbekannter Fehler.');
-  } finally {
-    setLoading(false);
-  }
-};
-
-
-
-
-
-      
-
+  };
 
   return (
     <div className="space-y-6">
       {/* A) Adresse / Snapshot */}
       <section>
         <h3 className="mb-2 text-sm font-semibold text-neutral-900">Adresse / Snapshot</h3>
-<div className="mb-2">
-  <label className="block text-xs text-neutral-600">Adresse</label>
- <AddressSearchOSM
-  onPick={(r) => {
-    setAddress(r.label);
-    setLat(r.lat);
-    setLon(r.lon);
-    setZoom(18);
-    loadStaticSnapshot({ lat: r.lat, lon: r.lon, zoom: 18 });
-  }}
-/>
 
-  <p className="mt-1 text-[11px] text-neutral-500">
-    Tipp: Einen Eintrag aus der Liste wählen oder Enter drücken.
-  </p>
-</div>
-
-
+        <div className="mb-2">
+          <label className="block text-xs text-neutral-600">Adresse</label>
+          <AddressSearchOSM
+            onPick={(r) => {
+              setAddress(r.label);
+              setLat(r.lat);
+              setLon(r.lon);
+              setZoom(20);
+              loadStaticSnapshot({ lat: r.lat, lon: r.lon, zoom: 20 });
+            }}
+          />
+          <p className="mt-1 text-[11px] text-neutral-500">
+            Tipp: Einen Eintrag aus der Liste wählen oder Enter drücken.
+          </p>
+        </div>
 
         <div className="grid grid-cols-2 gap-2">
-            <div>
-  <label className="block text-xs text-neutral-600">Quelle</label>
-  <select
-    value={source}
-    onChange={(e) => setSource(e.target.value as any)}
-    className="w-full rounded-lg border px-3 py-1.5 text-sm"
-    title="Kartenquelle"
-  >
-    <option value="osm">OSM (kostenlos)</option>
-    <option value="maptiler">MapTiler (Key)</option>
-  </select>
-</div>
-
-          <div>
-            <label className="block text-xs text-neutral-600">Lat</label>
-            <input
-              type="number"
-              value={lat}
-              onChange={(e) => setLat(e.target.value === '' ? '' : Number(e.target.value))}
-              step="0.000001"
-              className="w-full rounded-lg border px-3 py-1.5 text-sm"
-              placeholder="z.B. 47.3769"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-neutral-600">Lon</label>
-            <input
-              type="number"
-              value={lon}
-              onChange={(e) => setLon(e.target.value === '' ? '' : Number(e.target.value))}
-              step="0.000001"
-              className="w-full rounded-lg border px-3 py-1.5 text-sm"
-              placeholder="z.B. 8.5417"
-            />
-          </div>
           <div>
             <label className="block text-xs text-neutral-600">Zoom</label>
             <input
               type="number"
               min={14}
-              max={22}
+              max={20}
               value={zoom}
               onChange={(e) => setZoom(Number(e.target.value))}
               className="w-full rounded-lg border px-3 py-1.5 text-sm"
             />
-          </div>
-          <div>
-            <label className="block text-xs text-neutral-600">Stil</label>
-            <select
-              value={style}
-              onChange={(e) => setStyle(e.target.value as any)}
-              className="w-full rounded-lg border px-3 py-1.5 text-sm"
-            >
-              <option value="streets">Streets</option>
-              <option value="satellite">Satellite</option>
-            </select>
+            <p className="mt-1 text-[11px] text-neutral-500">Max: 20 (swisstopo)</p>
           </div>
         </div>
 
         <button
-          onClick={loadStaticSnapshot}
+          onClick={() => loadStaticSnapshot()}
           disabled={loading}
           className="mt-3 rounded-lg border px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
           title="Statisches Kartenbild laden"
         >
           {loading ? 'Lädt…' : 'Statisches Snapshot laden'}
         </button>
+
         {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
         {snapshot.url && (
           <p className="mt-2 text-xs text-neutral-500">
@@ -261,7 +185,9 @@ const loadStaticSnapshot = async (
             min="0"
             placeholder="z.B. 0.25"
             value={snapshot.mppImage ?? ''}
-            onChange={(e) => setSnapshot({ mppImage: e.target.value ? Number(e.target.value) : undefined })}
+            onChange={(e) => usePlannerV2Store.getState().setSnapshot({
+              mppImage: e.target.value ? Number(e.target.value) : undefined
+            })}
             className="w-40 rounded-lg border px-3 py-1.5 text-sm"
             title="Metermass des Bildes (m/px)"
           />
@@ -272,6 +198,42 @@ const loadStaticSnapshot = async (
           )}
         </div>
       </section>
+
+      {/* D) Dach-Eigenschaften */}
+      {selectedId && layer && (
+        <section className="mt-6">
+          <h3 className="mb-2 text-sm font-semibold text-neutral-900">Dach-Eigenschaften</h3>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-neutral-600">ΔX (°)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={layer.slopeX ?? ''}
+                onChange={(e) =>
+                  updateRoof(layer.id, { slopeX: e.target.value === '' ? undefined : Number(e.target.value) })
+                }
+                className="w-full rounded-lg border px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-neutral-600">ΔY (°)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={layer.slopeY ?? ''}
+                onChange={(e) =>
+                  updateRoof(layer.id, { slopeY: e.target.value === '' ? undefined : Number(e.target.value) })
+                }
+                className="w-full rounded-lg border px-3 py-1.5 text-sm"
+              />
+            </div>
+          </div>
+          <p className="mt-1 text-[11px] text-neutral-500">
+            Tragen Sie die Neigung (Grad) ein. Pfeile/Schraffur folgen im nächsten Schritt.
+          </p>
+        </section>
+      )}
     </div>
   );
 }
