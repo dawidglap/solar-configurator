@@ -4,7 +4,9 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type PlannerStep = 'building' | 'modules' | 'strings' | 'parts';
-export type Tool = 'select' | 'draw-roof' | 'draw-reserved';
+
+/** ➕ aggiunto 'draw-rect' per il rettangolo in 3 click */
+export type Tool = 'select' | 'draw-roof' | 'draw-rect' | 'draw-reserved';
 
 export type Pt = { x: number; y: number };
 
@@ -23,7 +25,8 @@ type Snapshot = {
     mppImage?: number;
 };
 
-type View = { scale: number; offsetX: number; offsetY: number };
+/** ➕ fitScale?: number per memorizzare lo zoom di “fit to screen” */
+type View = { scale: number; offsetX: number; offsetY: number; fitScale?: number };
 
 type PlannerV2State = {
     step: PlannerStep;
@@ -32,7 +35,7 @@ type PlannerV2State = {
     snapshot: Snapshot;
     setSnapshot: (s: Partial<Snapshot>) => void;
 
-    // ⬇️ nuovo: qualità dello snapshot (HiDPI)
+    // qualità dello snapshot (HiDPI)
     snapshotScale: 1 | 2 | 3;
     setSnapshotScale: (n: 1 | 2 | 3) => void;
 
@@ -60,11 +63,11 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             snapshot: {},
             setSnapshot: (s) => set((st) => ({ snapshot: { ...st.snapshot, ...s } })),
 
-            // ⬇️ default 2× per una buona nitidezza
+            // default 2× per una buona nitidezza
             snapshotScale: 2,
             setSnapshotScale: (n) => set({ snapshotScale: n }),
 
-            view: { scale: 1, offsetX: 0, offsetY: 0 },
+            view: { scale: 1, offsetX: 0, offsetY: 0, fitScale: 1 },
             setView: (v) => set((st) => ({ view: { ...st.view, ...v } })),
 
             tool: 'select',
@@ -87,11 +90,11 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             // NON persistiamo lo snapshot (base64)
             partialize: (s) => ({
                 step: s.step,
-                view: s.view,
+                view: s.view,                // include anche fitScale
                 tool: s.tool,
                 layers: s.layers,
                 selectedId: s.selectedId,
-                snapshotScale: s.snapshotScale, // sì, questo è piccolo
+                snapshotScale: s.snapshotScale,
             }),
             migrate: (persisted: any) => {
                 if (!persisted) return persisted;
