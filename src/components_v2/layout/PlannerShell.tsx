@@ -8,45 +8,37 @@ import { usePlannerV2Store } from '../state/plannerV2Store';
 
 export default function PlannerShell() {
   const step = usePlannerV2Store((s) => s.step);
+
   return (
-    <div className="h-[calc(100vh-64px)] w-full bg-neutral-100">
-      {/* Stepper (oben) */}
-      <div className="w-full border-b bg-white">
-        <div className="mx-auto max-w-[1440px] px-4">
-          <Stepper />
-        </div>
+    <div className="h-[calc(100vh-64px)] w-full bg-neutral-100 flex flex-col max-w-[1440px] mx-auto">
+      {/* Stepper */}
+      <div className="shrink-0 border-b bg-white/90 backdrop-blur px-2">
+        <Stepper />
       </div>
 
       {/* Toolbar */}
-      <div className="w-full border-b bg-white">
-        <div className="mx-auto max-w-[1440px] px-4">
-          <TopToolbar />
-        </div>
+      <div className="shrink-0 border-b bg-white/90 backdrop-blur px-2">
+        <TopToolbar />
       </div>
 
-      {/* Drei-Spalten Layout */}
+      {/* Workspace: mappa al centro = 1fr, pannelli stretti */}
       <div
         className="
-          mx-auto
-          max-w-[1440px]
-          px-4 py-4
-          grid
-          gap-4
-          /* tablet: pannelli più stretti */
-          lg:grid-cols-[240px_1fr_280px]
-          /* desktop xl: dimensioni piene */
-          xl:grid-cols-[280px_1fr_320px]
+          flex-1 min-h-0
+          grid gap-2 px-2 py-2
+          grid-cols-[200px_1fr_220px]
+          xl:grid-cols-[220px_1fr_240px]
         "
       >
-        <div className="h-[calc(100vh-64px-96px)] overflow-hidden rounded-2xl border bg-white">
+        <div className="h-full overflow-auto rounded-xl border bg-white/85 backdrop-blur-sm">
           <LeftLayersPanel />
         </div>
 
-        <div className="h-[calc(100vh-64px-96px)] overflow-hidden rounded-2xl border bg-white">
+        <div className="h-full overflow-hidden rounded-xl border bg-white">
           <CanvasStage />
         </div>
 
-        <div className="h-[calc(100vh-64px-96px)] overflow-y-auto rounded-2xl border bg-white">
+        <div className="h-full overflow-auto rounded-xl border bg-white/85 backdrop-blur-sm">
           <RightPropertiesPanel currentStep={step} />
         </div>
       </div>
@@ -57,28 +49,33 @@ export default function PlannerShell() {
 function Stepper() {
   const step = usePlannerV2Store((s) => s.step);
   const setStep = usePlannerV2Store((s) => s.setStep);
-  const steps: { key: any; label: string }[] = [
-    { key: 'building', label: 'Gebäudeplanung' },
-    { key: 'modules', label: 'Modulplanung' },
-    { key: 'strings', label: 'Strings' },
-    { key: 'parts', label: 'Stückliste' },
+
+  const steps: { key: any; short: string; full: string }[] = [
+    { key: 'building', short: 'Gebäude',    full: 'Gebäudeplanung' },
+    { key: 'modules',  short: 'Module',     full: 'Modulplanung' },
+    { key: 'strings',  short: 'Strings',    full: 'Strings' },
+    { key: 'parts',    short: 'Stückliste', full: 'Stückliste' },
   ];
+
   return (
-    <div className="flex h-12 items-center gap-2">
+    <div className="flex h-9 items-center gap-1 overflow-x-auto">
       {steps.map((s, i) => {
         const active = step === s.key;
         return (
           <button
             key={s.key}
             onClick={() => setStep(s.key)}
-            title={s.label}
-            className={`rounded-full px-4 py-2 text-sm transition ${
+            title={s.full}
+            className={[
+              'shrink-0 rounded-full px-2.5 py-1 text-xs transition border',
               active
-                ? 'bg-black text-white'
-                : 'bg-neutral-100 text-neutral-800 hover:bg-neutral-200'
-            }`}
+                ? 'bg-black text-white border-black'
+                : 'bg-white text-neutral-800 hover:bg-neutral-50 border-neutral-200',
+            ].join(' ')}
           >
-            {i + 1}. {s.label}
+            <span className="mr-1 opacity-60">{i + 1}.</span>
+            <span className="sm:hidden">{s.short}</span>
+            <span className="hidden sm:inline">{s.full}</span>
           </button>
         );
       })}

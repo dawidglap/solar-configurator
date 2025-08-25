@@ -8,23 +8,53 @@ export default function LeftLayersPanel() {
   const del = usePlannerV2Store((s) => s.deleteLayer);
 
   return (
-    <div className="h-full w-full p-3">
-      <h3 className="mb-2 text-sm font-semibold">Ebenen</h3>
-      {layers.length === 0 && (
-        <p className="text-sm text-neutral-600">Noch keine Ebenen.</p>
-      )}
-      <div className="space-y-2">
-        {layers.map((l) => (
-          <div
-            key={l.id}
-            className={`flex items-center justify-between rounded-lg border px-2 py-1 text-sm ${
-              selectedId === l.id ? 'bg-blue-50 border-blue-200' : 'bg-white'
-            }`}
-          >
-            <button onClick={() => select(l.id)} className="text-left truncate">{l.name}</button>
-            <button onClick={() => del(l.id)} className="text-red-600 hover:underline">Löschen</button>
-          </div>
-        ))}
+    <div className="flex h-full w-full flex-col">
+      {/* Header compatto e sticky */}
+      <div className="sticky top-0 z-10 border-b bg-white/80 px-2 py-2 backdrop-blur">
+        <h3 className="text-xs font-semibold tracking-tight">Ebenen</h3>
+      </div>
+
+      {/* Lista */}
+      <div className="flex-1 overflow-y-auto p-2">
+        {layers.length === 0 ? (
+          <p className="text-xs text-neutral-600">Noch keine Ebenen.</p>
+        ) : (
+          <ul className="flex flex-col gap-1 pr-1">
+            {layers.map((l) => {
+              const active = selectedId === l.id;
+              return (
+                <li key={l.id}>
+                  <div
+                    className={[
+                      'flex items-center justify-between rounded-md border px-2 py-1 text-xs',
+                      active
+                        ? 'bg-black text-white border-black'
+                        : 'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50',
+                    ].join(' ')}
+                  >
+                    <button
+                      onClick={() => select(l.id)}
+                      className="min-w-0 flex-1 truncate text-left"
+                      title={l.name}
+                      aria-label={`Ebene auswählen: ${l.name}`}
+                    >
+                      {l.name}
+                    </button>
+
+                    <button
+                      onClick={() => del(l.id)}
+                      className={active ? 'opacity-90 hover:opacity-100' : 'text-neutral-400 hover:text-red-600'}
+                      title="Löschen"
+                      aria-label={`Ebene löschen: ${l.name}`}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );
