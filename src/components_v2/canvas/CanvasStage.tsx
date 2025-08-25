@@ -9,8 +9,12 @@ import {
   Circle as KonvaCircle,
   Text as KonvaText,
 } from 'react-konva';
+import { Group as KonvaGroup } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import ScaleIndicator from './ScaleIndicator';
+import RoofHandlesKonva from './RoofHandlesKonva';
+import EdgeLengthBadges from './EdgeLengthBadges';
+
 
 // ---------- helpers ----------
 type Pt = { x: number; y: number };
@@ -70,6 +74,20 @@ export default function CanvasStage() {
   const addRoof = usePlannerV2Store(s => s.addRoof);
   const select = usePlannerV2Store(s => s.select);
   const selectedId = usePlannerV2Store(s => s.selectedId);
+  // modalità forma del tetto selezionato
+const [shapeMode, setShapeMode] = useState<'normal' | 'trapezio'>('normal');
+// blocca il pan mentre trascini un vertice
+const [draggingVertex, setDraggingVertex] = useState(false);
+
+// tetto selezionato comodo
+const selectedRoof = useMemo(
+  () => layers.find(l => l.id === selectedId) ?? null,
+  [layers, selectedId]
+);
+
+// quando cambio selezione, torno a "normale"
+useEffect(() => { setShapeMode('normal'); }, [selectedId]);
+
 
   // --- carica immagine
   const [img, setImg] = useState<HTMLImageElement | null>(null);
@@ -280,8 +298,16 @@ const onStageDblClick = () => {
   }, [tool, drawingPoly]);
 
   // shape styles
-  const stroke = '#0ea5e9';
-  const fill = 'rgba(14,165,233,0.18)';
+  // prima
+// const stroke = '#0ea5e9';
+// const fill = 'rgba(14,165,233,0.18)';
+
+// dopo (più “premium”, stile Reonic-like)
+const stroke = '#7c3aed';                 // violet-600
+const fill = 'rgba(124, 58, 237, 0.12)';  // viola trasparente
+const strokeWidthNormal = 1;
+const strokeWidthSelected = 1.5;
+
 
   const toFlat = (pts: Pt[]) => pts.flatMap(p => [p.x, p.y]);
   const areaLabel = (pts: Pt[]) => {
@@ -292,8 +318,12 @@ const onStageDblClick = () => {
   };
 
   const cursor =
-    tool === 'draw-roof' || tool === 'draw-rect' ? 'crosshair' :
-    canDrag ? 'grab' : 'default';
+  tool === 'draw-roof' || tool === 'draw-rect'
+    ? 'crosshair'
+    : canDrag && !draggingVertex
+      ? 'grab'
+      : 'default';
+
 
   const layerScale = view.scale || (view.fitScale || 1);
 
@@ -307,7 +337,9 @@ const onStageDblClick = () => {
           height={size.h}
           x={view.offsetX || 0}
           y={view.offsetY || 0}
-          draggable={canDrag && tool !== 'draw-roof' && tool !== 'draw-rect'}
+          draggable={canDrag && tool !== 'draw-roof' && tool !== 'draw-rect' && !draggingVertex}
+
+
           onDragMove={onDragMove}
           onWheel={onWheel}
           onMouseMove={onStageMouseMove}
@@ -325,43 +357,61 @@ const onStageDblClick = () => {
             />
 
             {/* tetti esistenti */}
-            {layers.map((r) => {
-              const flat = toFlat(r.points);
-              const sel = r.id === selectedId;
-              const c = polygonCentroid(r.points);
-              const label = areaLabel(r.points);
-              return (
-                // NOTA: usiamo un fragment, niente <group> minuscolo
-                <FragmentLike key={r.id}>
-                  <KonvaLine
-                    points={flat}
-                    closed
-                    stroke={stroke}
-                    strokeWidth={sel ? 2.5 : 1.5}
-                    lineJoin="round"
-                    lineCap="round"
-                    fill={fill}
-                    onClick={() => select(r.id)}
-                  />
-                  {label && (
-                    <KonvaText
-                      x={c.x}
-                      y={c.y}
-                      text={label}
-                      fontSize={12}
-                      fill="#111"
-                      offsetX={18}
-                      offsetY={-6}
-                      listening={false}
-                      // @ts-ignore
-                      shadowColor="white"
-                      shadowBlur={2}
-                      shadowOpacity={0.9}
-                    />
-                  )}
-                </FragmentLike>
-              );
-            })}
+          {layers.map((r) => {
+  const flat = toFlat(r.points);
+  const sel = r.id === selectedId;
+  const c = polygonCentroid(r.points);
+  const label = areaLabel(r.points);
+
+  return (
+    <KonvaGroup key={r.id}>
+      <KonvaLine
+        points={flat}
+        closed
+        stroke={stroke}
+        
+        strokeWidth={sel ? strokeWidthSelected : strokeWidthNormal}
+        lineJoin="round"
+        lineCap="round"
+        fill={fill}
+        onClick={() => select(r.id)}
+      />
+      {label && (
+        <KonvaText
+          x={c.x}
+          y={c.y}
+          text={label}
+          fontSize={12}
+          fill="#111"
+          offsetX={18}
+          offsetY={-6}
+          listening={false}
+          // @ts-ignore
+          shadowColor="white"
+          shadowBlur={2}
+          shadowOpacity={0.9}
+        />
+      )}
+
+      {/* Maniglie: SOLO quando selezionato + modalità Trapezio */}
+   {sel && shapeMode === 'trapezio' && (
+  <RoofHandlesKonva
+    points={r.points}
+    imgW={snap.width ?? (img?.naturalWidth ?? 0)}
+    imgH={snap.height ?? (img?.naturalHeight ?? 0)}
+    toImg={toImgCoords}                    // ⬅️ aggiunto
+    onDragStart={() => setDraggingVertex(true)}
+    onDragEnd={() => setDraggingVertex(false)}
+    onChange={(next) =>
+      usePlannerV2Store.getState().updateRoof(r.id, { points: next })
+    }
+  />
+)}
+
+    </KonvaGroup>
+  );
+})}
+
 
             {/* DISEGNO POLIGONO (rubber band) */}
             {tool === 'draw-roof' && drawingPoly && drawingPoly.length > 0 && (
@@ -451,7 +501,54 @@ const onStageDblClick = () => {
             )}
           </Layer>
         </Stage>
+        
       )}
+      {/* Toggle modalità forma (posizionato sopra il centroide del tetto selezionato) */}
+{selectedRoof && (() => {
+  const s  = view.scale || (view.fitScale || 1);
+  const ox = view.offsetX || 0;
+  const oy = view.offsetY || 0;
+
+  // bbox in coordinate immagine
+  let minX = Infinity, maxX = -Infinity, minY = Infinity;
+  for (const p of selectedRoof.points) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+  }
+  const midXImg = (minX + maxX) / 2;
+
+  // posizione sullo Stage: centrato in orizzontale, sopra al bordo superiore
+  const left = ox + midXImg * s;
+  const top  = Math.max(8, oy + minY * s - 36); // clamp a 8px dal top
+
+  return (
+    <button
+      onClick={() => setShapeMode(prev => (prev === 'normal' ? 'trapezio' : 'normal'))}
+      className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-200 bg-white/90 px-2 py-0.5 text-[11px] shadow hover:bg-white"
+      style={{ left, top }}
+      title="Formmodus umschalten"
+    >
+      {shapeMode === 'normal' ? 'Normal' : 'Trapez'}
+    </button>
+  );
+})()}
+{/* Etichette lunghezze lati (solo tetto selezionato) */}
+{selectedId && snap.mppImage && (() => {
+  const roof = layers.find(l => l.id === selectedId);
+  if (!roof) return null;
+  return (
+    <EdgeLengthBadges
+      points={roof.points}
+      mpp={snap.mppImage}
+      view={view}
+      color={stroke}
+    />
+  );
+})()}
+
+
+
     </div>
   );
 }
