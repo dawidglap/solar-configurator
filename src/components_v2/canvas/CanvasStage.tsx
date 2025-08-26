@@ -305,8 +305,8 @@ const onStageDblClick = () => {
 // dopo (più “premium”, stile Reonic-like)
 const stroke = '#7c3aed';                 // violet-600
 const fill = 'rgba(124, 58, 237, 0.12)';  // viola trasparente
-const strokeWidthNormal = 1;
-const strokeWidthSelected = 1.5;
+const strokeWidthNormal = 0.5;
+const strokeWidthSelected = 0.7;
 
 
   const toFlat = (pts: Pt[]) => pts.flatMap(p => [p.x, p.y]);
@@ -433,7 +433,7 @@ const strokeWidthSelected = 1.5;
                     y={polygonCentroid(drawingPoly).y}
                     text={areaLabel(drawingPoly) ?? ''}
                     fontSize={12}
-                    fill="#111"
+                    fill="#fff"
                     offsetX={18}
                     offsetY={-6}
                     listening={false}
@@ -483,7 +483,7 @@ const strokeWidthSelected = 1.5;
                             y={polygonCentroid(preview).y}
                             text={areaLabel(preview) ?? ''}
                             fontSize={12}
-                            fill="#111"
+                            fill="#fff"
                             offsetX={18}
                             offsetY={-6}
                             listening={false}

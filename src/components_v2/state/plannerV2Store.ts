@@ -4,9 +4,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type PlannerStep = 'building' | 'modules' | 'strings' | 'parts';
-
-/** ➕ aggiunto 'draw-rect' per il rettangolo in 3 click */
-export type Tool = 'select' | 'draw-roof' | 'draw-rect' | 'draw-reserved';
+export type Tool = 'select' | 'draw-roof' | 'draw-reserved' | 'draw-rect';
 
 export type Pt = { x: number; y: number };
 
@@ -16,6 +14,11 @@ export type RoofArea = {
     points: Pt[];
     slopeX?: number;
     slopeY?: number;
+
+    // ⬇️ NUOVO: orientamento/inclinazione “fisici”
+    tiltDeg?: number;        // Neigung (°)
+    azimuthDeg?: number;     // Ausrichtung (°, 0=N, 90=E, 180=S, 270=W)
+    source?: 'manual' | 'sonnendach';
 };
 
 type Snapshot = {
@@ -23,10 +26,32 @@ type Snapshot = {
     width?: number;
     height?: number;
     mppImage?: number;
+
+    // ⬇️ NUOVO: info per georeferenziare lo snapshot
+    center?: { lat: number; lon: number };   // WGS84
+    zoom?: number;                           // WMTS/3857 zoom
+    bbox3857?: { minX: number; minY: number; maxX: number; maxY: number }; // in metri
 };
 
-/** ➕ fitScale?: number per memorizzare lo zoom di “fit to screen” */
-type View = { scale: number; offsetX: number; offsetY: number; fitScale?: number };
+type View = { scale: number; offsetX: number; offsetY: number };
+
+/** ✅ Catalogo pannelli (hard-coded ora, estendibile / brand-specific in futuro) */
+export type PanelSpec = {
+    id: string;
+    brand: string;
+    model: string;
+    wp: number;      // potenza (W)
+    widthM: number;  // lato corto in metri
+    heightM: number; // lato lungo in metri
+};
+
+const PANEL_CATALOG: PanelSpec[] = [
+    // valori tipici “54 celle M10” per tetti residenziali
+    { id: 'GEN54-410', brand: 'Generic', model: 'M10 54c', wp: 410, widthM: 1.134, heightM: 1.722 },
+    { id: 'GEN54-425', brand: 'Generic', model: 'M10 54c', wp: 425, widthM: 1.134, heightM: 1.762 },
+    // formato grande (utility / industriale) – utile per futuri casi
+    { id: 'GEN72-550', brand: 'Generic', model: 'M10 72c', wp: 550, widthM: 1.134, heightM: 2.279 },
+];
 
 type PlannerV2State = {
     step: PlannerStep;
@@ -35,7 +60,6 @@ type PlannerV2State = {
     snapshot: Snapshot;
     setSnapshot: (s: Partial<Snapshot>) => void;
 
-    // qualità dello snapshot (HiDPI)
     snapshotScale: 1 | 2 | 3;
     setSnapshotScale: (n: 1 | 2 | 3) => void;
 
@@ -52,6 +76,12 @@ type PlannerV2State = {
 
     selectedId?: string;
     select: (id?: string) => void;
+
+    /** ✅ Catalogo + scelta corrente */
+    catalogPanels: PanelSpec[];
+    selectedPanelId: string;
+    setSelectedPanel: (id: string) => void;
+    getSelectedPanel: () => PanelSpec | undefined;
 };
 
 export const usePlannerV2Store = create<PlannerV2State>()(
@@ -63,11 +93,10 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             snapshot: {},
             setSnapshot: (s) => set((st) => ({ snapshot: { ...st.snapshot, ...s } })),
 
-            // default 2× per una buona nitidezza
             snapshotScale: 2,
             setSnapshotScale: (n) => set({ snapshotScale: n }),
 
-            view: { scale: 1, offsetX: 0, offsetY: 0, fitScale: 1 },
+            view: { scale: 1, offsetX: 0, offsetY: 0 },
             setView: (v) => set((st) => ({ view: { ...st.view, ...v } })),
 
             tool: 'select',
@@ -82,26 +111,39 @@ export const usePlannerV2Store = create<PlannerV2State>()(
 
             selectedId: undefined,
             select: (id) => set({ selectedId: id }),
+
+            /** ✅ Catalogo pannelli */
+            catalogPanels: PANEL_CATALOG,
+            selectedPanelId: PANEL_CATALOG[0].id,
+            setSelectedPanel: (id) => set({ selectedPanelId: id }),
+            getSelectedPanel: () => {
+                const { catalogPanels, selectedPanelId } = get();
+                return catalogPanels.find((p) => p.id === selectedPanelId);
+            },
         }),
         {
             name: 'planner-v2',
-            version: 3,
+            version: 5, // bump per includere catalogo pannelli
             storage: createJSONStorage(() => localStorage),
-            // NON persistiamo lo snapshot (base64)
             partialize: (s) => ({
                 step: s.step,
-                view: s.view,                // include anche fitScale
+                view: s.view,
                 tool: s.tool,
                 layers: s.layers,
                 selectedId: s.selectedId,
                 snapshotScale: s.snapshotScale,
+                // ✅ Persistiamo la scelta del pannello e il catalogo base
+                catalogPanels: s.catalogPanels,
+                selectedPanelId: s.selectedPanelId,
             }),
             migrate: (persisted: any) => {
                 if (!persisted) return persisted;
                 delete persisted?.snapshot; // safety
-                if (persisted.snapshotScale !== 1 && persisted.snapshotScale !== 2 && persisted.snapshotScale !== 3) {
+                if (![1, 2, 3].includes(persisted.snapshotScale)) {
                     persisted.snapshotScale = 2;
                 }
+                if (!persisted.catalogPanels) persisted.catalogPanels = PANEL_CATALOG;
+                if (!persisted.selectedPanelId) persisted.selectedPanelId = PANEL_CATALOG[0].id;
                 return persisted;
             },
         }
