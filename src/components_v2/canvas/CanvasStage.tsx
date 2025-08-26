@@ -113,6 +113,9 @@ const [shapeMode, setShapeMode] = useState<'normal' | 'trapezio'>('normal');
 // blocca il pan mentre trascini un vertice
 const [draggingVertex, setDraggingVertex] = useState(false);
 
+const SHOW_AREA_LABELS = false;            // <— tenerlo su false
+const SHOW_AREA_WHILE_DRAWING = false; 
+
 // tetto selezionato comodo
 const selectedRoof = useMemo(
   () => layers.find(l => l.id === selectedId) ?? null,
@@ -337,10 +340,11 @@ const onStageDblClick = () => {
 // const fill = 'rgba(14,165,233,0.18)';
 
 // dopo (più “premium”, stile Reonic-like)
-const stroke = '#fff';                 // violet-600
-const fill = 'rgba(246, 240, 255, 0.12)';  // viola trasparente
+const stroke = '#fff';                    // colore base
+const strokeSelected = '#60a5fa';         // azzurrino (tailwind sky-400)
+const fill = 'rgba(246, 240, 255, 0.12)';
 const strokeWidthNormal = 0.5;
-const strokeWidthSelected = 0.7;
+const strokeWidthSelected = 0.85;  
 
 
   const toFlat = (pts: Pt[]) => pts.flatMap(p => [p.x, p.y]);
@@ -396,50 +400,54 @@ const strokeWidthSelected = 0.7;
   const flat = toFlat(r.points);
   const sel = r.id === selectedId;
   const c = polygonCentroid(r.points);
-  const label = areaLabel(r.points);
+  // const label = areaLabel(r.points);
 
 
   return (
     <KonvaGroup key={r.id}>
-      <KonvaLine
-        points={flat}
-        closed
-        stroke={stroke}
-        
-        strokeWidth={sel ? strokeWidthSelected : strokeWidthNormal}
-        lineJoin="round"
-        lineCap="round"
-        
-        fill={fill}
-        onClick={() => select(r.id)}
-      />
-      {label && (
-        <KonvaText
-          x={c.x}
-          y={c.y}
-          text={label}
-          fontSize={12}
-          fill="#111"
-          offsetX={18}
-          offsetY={-6}
-          listening={false}
-          // @ts-ignore
-          shadowColor="white"
-          shadowBlur={2}
-          shadowOpacity={0.9}
-        />
-      )}
-
-  {sel && (
-<RoofAzimuthArrows
-  points={r.points}
-  view={view}
-  tiltDeg={r.tiltDeg}                         // ← necessario per nascondere su tetto piatto
-  azimuthDeg={typeof r.azimuthDeg === 'number' ? r.azimuthDeg : undefined}
+     <KonvaLine
+  points={flat}
+  closed
+  stroke={sel ? strokeSelected : stroke}
+  strokeWidth={sel ? strokeWidthSelected : strokeWidthNormal}
+  lineJoin="round"
+  lineCap="round"
+  fill={fill}
+  onClick={() => select(r.id)}
+  // piccolo glow solo quando selezionato
+  shadowColor={sel ? strokeSelected : 'transparent'}
+  shadowBlur={sel ? 6 : 0}
+  shadowOpacity={sel ? 0.9 : 0}
 />
 
-
+ {SHOW_AREA_LABELS && (
+  <KonvaText
+    x={c.x}
+    y={c.y}
+    text={areaLabel(r.points) ?? ''}
+    fontSize={12}
+    fill="#111"
+    offsetX={18}
+    offsetY={-6}
+    listening={false}
+    shadowColor="white" 
+    shadowBlur={2}
+    shadowOpacity={0.9}
+  />
 )}
+
+
+{/* {sel && (
+  <RoofAzimuthArrows
+    points={r.points}
+    view={view}
+    source={r.source}               // ← passa la sorgente
+    tiltDeg={r.tiltDeg}
+    azimuthDeg={r.azimuthDeg}
+    // flip180 // se le vedi al contrario, decommenta
+  />
+)} */}
+
 
       {/* Maniglie: SOLO quando selezionato + modalità Trapezio */}
    {sel && shapeMode === 'trapezio' && (
@@ -598,12 +606,12 @@ const strokeWidthSelected = 0.7;
   const roof = layers.find(l => l.id === selectedId);
   if (!roof) return null;
   return (
-    <EdgeLengthBadges
-      points={roof.points}
-      mpp={snap.mppImage}
-      view={view}
-      color={stroke}
-    />
+  <EdgeLengthBadges
+  points={roof.points}
+  mpp={snap.mppImage}
+  view={view}
+  color={strokeSelected}
+/>
   );
 })()}
 

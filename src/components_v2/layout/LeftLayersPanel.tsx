@@ -1,11 +1,14 @@
 'use client';
+
 import { usePlannerV2Store } from '../state/plannerV2Store';
+import RoofAreaInfo from '../ui/RoofAreaInfo';
 
 export default function LeftLayersPanel() {
-  const layers = usePlannerV2Store((s) => s.layers);
-  const selectedId = usePlannerV2Store((s) => s.selectedId);
-  const select = usePlannerV2Store((s) => s.select);
-  const del = usePlannerV2Store((s) => s.deleteLayer);
+  const layers      = usePlannerV2Store((s) => s.layers);
+  const selectedId  = usePlannerV2Store((s) => s.selectedId);
+  const select      = usePlannerV2Store((s) => s.select);
+  const del         = usePlannerV2Store((s) => s.deleteLayer);
+  const mpp         = usePlannerV2Store((s) => s.snapshot.mppImage);
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -41,9 +44,12 @@ export default function LeftLayersPanel() {
                       {l.name}
                     </button>
 
+                    {/* Badge area (fuori mappa) */}
+                    <RoofAreaInfo points={l.points} mpp={mpp} />
+
                     <button
                       onClick={() => del(l.id)}
-                      className={active ? 'opacity-90 hover:opacity-100' : 'text-neutral-400 hover:text-red-600'}
+                      className={`ml-2 ${active ? 'opacity-90 hover:opacity-100' : 'text-neutral-400 hover:text-red-600'}`}
                       title="Löschen"
                       aria-label={`Ebene löschen: ${l.name}`}
                     >

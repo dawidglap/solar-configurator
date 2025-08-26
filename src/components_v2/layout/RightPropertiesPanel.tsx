@@ -8,6 +8,8 @@ import { buildTiledSnapshot, TILE_SWISSTOPO_SAT } from '../utils/stitchTilesWMTS
 import { metersPerPixel3857, lonLatTo3857 } from '../utils/geo';
 import { fetchRoofPolysForSnapshot } from '@/components_v2/services/sonnendach';
 import { bboxLonLatFromCenter } from '../utils/geo';
+import DetectedRoofsImport from '../panels/DetectedRoofsImport';
+
 
 // SOSTITUISCI la tua pickRoofsNearCenter con questa
 function pickRoofsForBuilding(
@@ -275,6 +277,8 @@ setDetectedRoofs(building.map((p, i) => ({
         >
           {loading ? 'Lädt…' : 'Statisches Snapshot laden'}
         </button>
+
+<DetectedRoofsImport />
 
         {err && <p className="mt-2 text-[11px] text-red-600">{err}</p>}
         {snapshot.url && (
