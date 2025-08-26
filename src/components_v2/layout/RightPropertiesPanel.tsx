@@ -5,14 +5,84 @@ import type { PlannerStep } from '../state/plannerV2Store';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import AddressSearchOSM from '../geocoding/AddressSearchOSM';
 import { buildTiledSnapshot, TILE_SWISSTOPO_SAT } from '../utils/stitchTilesWMTS';
+import { metersPerPixel3857, lonLatTo3857 } from '../utils/geo';
+import { fetchRoofPolysForSnapshot } from '@/components_v2/services/sonnendach';
+import { bboxLonLatFromCenter } from '../utils/geo';
 
-/** ground-resolution 3857 (m/px) */
-function metersPerPixel3857(latDeg: number, zoom: number) {
-  const EARTH_CIRCUMFERENCE = 40075016.68557849;
-  const latRad = (latDeg * Math.PI) / 180;
-  const resEquator = EARTH_CIRCUMFERENCE / 256 / Math.pow(2, zoom);
-  return resEquator * Math.cos(latRad);
+// SOSTITUISCI la tua pickRoofsNearCenter con questa
+function pickRoofsForBuilding(
+  polys: { id:string; pointsPx:{x:number;y:number}[]; tiltDeg?:number; azimuthDeg?:number }[],
+  snap: { width?: number; height?: number },
+  opts?: { expandGrowPx?: number; minAreaPx2?: number }
+) {
+  const cx = (snap.width ?? 0) / 2;
+  const cy = (snap.height ?? 0) / 2;
+
+  const { expandGrowPx = 48, minAreaPx2 = 700 } = opts ?? {};
+
+  const areaPx2 = (pts:{x:number;y:number}[]) => {
+    let a=0; for (let i=0,j=pts.length-1;i<pts.length;j=i++)
+      a += (pts[j].x+pts[i].x)*(pts[j].y-pts[i].y);
+    return Math.abs(a/2);
+  };
+  const centroid = (pts:{x:number;y:number}[]) => {
+    let sx=0, sy=0; for (const p of pts){ sx+=p.x; sy+=p.y; }
+    const n=Math.max(1,pts.length); return { x:sx/n, y:sy/n };
+  };
+  const bbox = (pts:{x:number;y:number}[]) => {
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for (const p of pts){ if(p.x<minX)minX=p.x; if(p.y<minY)minY=p.y;
+                          if(p.x>maxX)maxX=p.x; if(p.y>maxY)maxY=p.y; }
+    return { minX, minY, maxX, maxY };
+  };
+  const overlap = (a:any,b:any) =>
+    !(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY);
+  const expand = (b:any,m:number) =>
+    ({ minX:b.minX-m, minY:b.minY-m, maxX:b.maxX+m, maxY:b.maxY+m });
+
+  // 0) scarta frammenti minuscoli
+  const items = polys.filter(p => areaPx2(p.pointsPx) >= minAreaPx2);
+  if (!items.length) return [];
+
+  // 1) seed = più vicino al centro immagine
+  let seed = items[0]; let best = Number.POSITIVE_INFINITY;
+  for (const p of items){
+    const c = centroid(p.pointsPx);
+    const d = (c.x-cx)*(c.x-cx) + (c.y-cy)*(c.y-cy);
+    if (d < best){ best=d; seed=p; }
+  }
+
+  // 2) crescita del cluster per contiguità (bbox)
+  const cluster: typeof polys = [seed];
+  let unionBox = bbox(seed.pointsPx);
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    const grow = expand(unionBox, expandGrowPx);
+    for (const p of items) {
+      if (cluster.includes(p)) continue;
+      const b = bbox(p.pointsPx);
+      if (overlap(grow, b)) {
+        cluster.push(p);
+        unionBox = {
+          minX: Math.min(unionBox.minX, b.minX),
+          minY: Math.min(unionBox.minY, b.minY),
+          maxX: Math.max(unionBox.maxX, b.maxX),
+          maxY: Math.max(unionBox.maxY, b.maxY),
+        };
+        changed = true;
+      }
+    }
+  }
+
+  return cluster;
 }
+
+
+
+
+
 
 export default function RightPropertiesPanel({ currentStep }: { currentStep?: PlannerStep }) {
   const step = currentStep ?? 'building';
@@ -45,76 +115,112 @@ function BuildingPanel() {
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const setDetectedRoofs = usePlannerV2Store((s) => s.setDetectedRoofs);
+  const clearDetectedRoofs = usePlannerV2Store((s) => s.clearDetectedRoofs);
 
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = reader.result as string;
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        setSnapshot({ url, width: img.naturalWidth, height: img.naturalHeight });
-      };
-      img.src = url;
+  const f = e.target.files?.[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const url = reader.result as string;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      setSnapshot({ url, width: img.naturalWidth, height: img.naturalHeight });
+      clearDetectedRoofs(); // non sappiamo la georeferenza dell’upload
     };
-    reader.readAsDataURL(f);
+    img.src = url;
   };
+  reader.readAsDataURL(f);
+};
 
-  const loadStaticSnapshot = async (override?: { lat: number; lon: number; zoom?: number }) => {
-    setErr(null);
 
-    const usedLat = override?.lat ?? lat;
-    const usedLon = override?.lon ?? lon;
-    const usedZoom = override?.zoom ?? zoom;
+ const loadStaticSnapshot = async (override?: { lat: number; lon: number; zoom?: number }) => {
+  setErr(null);
 
-    if (usedLat === '' || usedLon === '') {
-      setErr('Bitte Koordinaten (Lat/Lon) angeben.');
-      return;
-    }
+  const usedLat = override?.lat ?? lat;
+  const usedLon = override?.lon ?? lon;
+  const usedZoom = override?.zoom ?? zoom;
+  if (usedLat === '' || usedLon === '') {
+    setErr('Bitte Koordinaten (Lat/Lon) angeben.');
+    return;
+  }
 
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
+    const width = 2800, height = 1800;
 
-      // swisstopo – mosaico WMTS
-      const width = 2800;
-      const height = 1800;
+    const { dataUrl, width: w, height: h } = await buildTiledSnapshot({
+      lat: Number(usedLat),
+      lon: Number(usedLon),
+      zoom: usedZoom,
+      width,
+      height,
+      scale: 1,
+      tileUrl: TILE_SWISSTOPO_SAT,
+      attribution: '© swisstopo',
+    });
 
-      const { dataUrl, width: w, height: h } = await buildTiledSnapshot({
-        lat: Number(usedLat),
-        lon: Number(usedLon),
-        zoom: usedZoom,
-        width,
-        height,
-        scale: 1,
-        tileUrl: TILE_SWISSTOPO_SAT,
-        attribution: '© swisstopo',
-      });
+    // bbox precisa via world-pixel
+    const center = { lat: Number(usedLat), lon: Number(usedLon) };
+    const { minLon, minLat, maxLon, maxLat } = bboxLonLatFromCenter(
+      { lon: center.lon, lat: center.lat }, usedZoom, w, h
+    );
+    const bl = lonLatTo3857(minLon, minLat);
+    const tr = lonLatTo3857(maxLon, maxLat);
 
-      const mpp = metersPerPixel3857(Number(usedLat), usedZoom);
-      setSnapshot({ url: dataUrl, width: w, height: h, mppImage: mpp });
-    } catch (e: any) {
-      setErr(e?.message ?? 'Unbekannter Fehler.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    const snapObj = {
+      url: dataUrl,
+      width: w,
+      height: h,
+      mppImage: metersPerPixel3857(center.lat, usedZoom),
+      center,
+      zoom: usedZoom,
+      bbox3857: { minX: bl.x, minY: bl.y, maxX: tr.x, maxY: tr.y },
+    } as const;
 
-  /** Utility: controlla se un layer ha esattamente 4 punti (rettangolo/quad) */
+    // 1) salva snapshot
+    setSnapshot(snapObj);
+
+    // 2) fetch + filtro → store
+    clearDetectedRoofs();
+const raw = await fetchRoofPolysForSnapshot(snapObj, 'de');
+const building = pickRoofsForBuilding(raw, snapObj, {
+  expandGrowPx: 48,   // ↑ riduci a 32–40 se prende ancora la casa sotto
+  minAreaPx2: 700,    // ↑ alza se vuoi ignorare pezzetti minuscoli
+});
+
+clearDetectedRoofs();
+setDetectedRoofs(building.map((p, i) => ({
+  id: `sd_${p.id}_${i}`,
+  points: p.pointsPx,
+  tiltDeg: p.tiltDeg,
+  azimuthDeg: p.azimuthDeg,
+  source: 'sonnendach' as const,
+})));
+
+
+  } catch (e: any) {
+    setErr(e?.message ?? 'Unbekannter Fehler.');
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+  // helpers forma tetto
   const isQuad = (pts?: { x: number; y: number }[]) => (pts?.length ?? 0) === 4;
 
-  /** One-shot: converte il quad selezionato in trapezio “20%” (stile Reonic demo) */
   const toTrapezoid20 = () => {
     if (!layer || !isQuad(layer.points)) return;
     const [p0, p1, p2, p3] = layer.points;
 
-    // base = p0->p1, top = p3->p2 (ordine coerente con il nostro rectFrom3)
+    // base p0->p1 (coerente con rectFrom3), stringiamo il lato opposto del 20% simmetrico
     const bx = p1.x - p0.x, by = p1.y - p0.y;
     const bl = Math.hypot(bx, by) || 1;
     const ux = bx / bl, uy = by / bl;
 
-    // 20% della base → riduzione simmetrica, metà per lato
     const insetEach = (0.20 * bl) / 2;
     const dx = ux * insetEach, dy = uy * insetEach;
 
@@ -236,10 +342,9 @@ function BuildingPanel() {
             >
               → Trapez (20%)
             </button>
-            {/* In seguito: Dreieck, Slider % ecc. */}
           </div>
 
-          {/* Pendenze (lasciamo com’erano) */}
+          {/* Pendenze (lasciate come prima) */}
           <div className="mt-3 grid grid-cols-2 gap-2">
             <div>
               <label className="block text-[11px] text-neutral-600">ΔX (°)</label>

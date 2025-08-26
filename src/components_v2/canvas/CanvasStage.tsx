@@ -14,6 +14,11 @@ import { usePlannerV2Store } from '../state/plannerV2Store';
 import ScaleIndicator from './ScaleIndicator';
 import RoofHandlesKonva from './RoofHandlesKonva';
 import EdgeLengthBadges from './EdgeLengthBadges';
+// import AzimuthBadge from './AzimuthBadge';
+import RoofAzimuthArrows from './RoofAzimuthArrows';
+import SonnendachOverlayKonva from './SonnendachOverlayKonva';
+
+
 
 
 // ---------- helpers ----------
@@ -60,6 +65,35 @@ function rectFrom3(A: Pt, B: Pt, C: Pt): Pt[] {
 
   return [A, B, C2, D];
 }
+
+// rettangolo + azimut coerente con il bordo A→B (gronda) e il segno dell’altezza (C)
+function rectFrom3WithAz(A: Pt, B: Pt, C: Pt): { poly: Pt[]; azimuthDeg: number } {
+  const vx = B.x - A.x, vy = B.y - A.y;
+  const len = Math.hypot(vx, vy) || 1;
+
+  // normale unitaria alla base A→B
+  const nx = -vy / len, ny = vx / len;
+
+  // proiezione (C - B) sulla normale → altezza signed
+  const hx = C.x - B.x, hy = C.y - B.y;
+  const h = hx * nx + hy * ny;
+
+  // offset verso il lato opposto del rettangolo
+  const off = { x: nx * h, y: ny * h };
+  const D = { x: A.x + off.x, y: A.y + off.y };
+  const C2 = { x: B.x + off.x, y: B.y + off.y };
+
+  // direzione "verso la gronda" (downslope) = opposta alla direzione di costruzione
+  const sign = Math.sign(h) || 1;
+  const dirToEaves = { x: -sign * nx, y: -sign * ny };
+
+  // converti vettore immagine → azimut (0=N, 90=E); nota y cresce verso il basso
+  const az = (Math.atan2(dirToEaves.x, -dirToEaves.y) * 180) / Math.PI;
+  const azimuthDeg = ((az % 360) + 360) % 360;
+
+  return { poly: [A, B, C2, D], azimuthDeg };
+}
+
 
 export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -253,11 +287,11 @@ const onStageClick = (e: any) => {
       return;
     }
     // length === 2 → terzo click = commit
-    const rect = rectFrom3(rectDraft[0], rectDraft[1], p);
-    const id = 'roof_' + Date.now().toString(36);
-    const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
-    addRoof({ id, name, points: rect });
-    select(id);
+    const { poly, azimuthDeg } = rectFrom3WithAz(rectDraft[0], rectDraft[1], p);
+const id = 'roof_' + Date.now().toString(36);
+const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
+addRoof({ id, name, points: poly, azimuthDeg, source: 'manual' });
+select(id);
     setRectDraft(null);
     return;
   }
@@ -303,8 +337,8 @@ const onStageDblClick = () => {
 // const fill = 'rgba(14,165,233,0.18)';
 
 // dopo (più “premium”, stile Reonic-like)
-const stroke = '#7c3aed';                 // violet-600
-const fill = 'rgba(124, 58, 237, 0.12)';  // viola trasparente
+const stroke = '#fff';                 // violet-600
+const fill = 'rgba(246, 240, 255, 0.12)';  // viola trasparente
 const strokeWidthNormal = 0.5;
 const strokeWidthSelected = 0.7;
 
@@ -355,6 +389,7 @@ const strokeWidthSelected = 0.7;
               height={img.naturalHeight}
               listening={false}
             />
+            <SonnendachOverlayKonva />
 
             {/* tetti esistenti */}
           {layers.map((r) => {
@@ -362,6 +397,7 @@ const strokeWidthSelected = 0.7;
   const sel = r.id === selectedId;
   const c = polygonCentroid(r.points);
   const label = areaLabel(r.points);
+
 
   return (
     <KonvaGroup key={r.id}>
@@ -373,6 +409,7 @@ const strokeWidthSelected = 0.7;
         strokeWidth={sel ? strokeWidthSelected : strokeWidthNormal}
         lineJoin="round"
         lineCap="round"
+        
         fill={fill}
         onClick={() => select(r.id)}
       />
@@ -392,6 +429,17 @@ const strokeWidthSelected = 0.7;
           shadowOpacity={0.9}
         />
       )}
+
+  {sel && (
+<RoofAzimuthArrows
+  points={r.points}
+  view={view}
+  tiltDeg={r.tiltDeg}                         // ← necessario per nascondere su tetto piatto
+  azimuthDeg={typeof r.azimuthDeg === 'number' ? r.azimuthDeg : undefined}
+/>
+
+
+)}
 
       {/* Maniglie: SOLO quando selezionato + modalità Trapezio */}
    {sel && shapeMode === 'trapezio' && (
@@ -422,6 +470,7 @@ const strokeWidthSelected = 0.7;
                   strokeWidth={1.5}
                   dash={[6, 6]}
                   lineJoin="round"
+                  
                   lineCap="round"
                 />
                 {drawingPoly.map((p, i) => (
@@ -503,9 +552,20 @@ const strokeWidthSelected = 0.7;
         </Stage>
         
       )}
+
+      {/* Frecce di orientamento (solo tetto selezionato) */}
+
+
+      {/* {selectedId && (
+  <AzimuthBadge
+    points={(usePlannerV2Store.getState().layers.find(l => l.id === selectedId) ?? { points: [] }).points}
+    view={view}
+  />
+)} */}
       {/* Toggle modalità forma (posizionato sopra il centroide del tetto selezionato) */}
 {selectedRoof && (() => {
-  const s  = view.scale || (view.fitScale || 1);
+  const s = view.scale || (view.fitScale || 1);        // scala attuale
+
   const ox = view.offsetX || 0;
   const oy = view.offsetY || 0;
 

@@ -8,6 +8,16 @@ export type Tool = 'select' | 'draw-roof' | 'draw-reserved' | 'draw-rect';
 
 export type Pt = { x: number; y: number };
 
+export type DetectedRoof = {
+    id: string;
+    points: Pt[];                 // in px immagine
+    tiltDeg?: number;
+    azimuthDeg?: number;
+    source: 'sonnendach';
+};
+
+
+
 export type RoofArea = {
     id: string;
     name: string;
@@ -74,6 +84,10 @@ type PlannerV2State = {
     updateRoof: (id: string, patch: Partial<RoofArea>) => void;
     deleteLayer: (id: string) => void;
 
+    detectedRoofs: DetectedRoof[];
+    setDetectedRoofs: (arr: DetectedRoof[]) => void;
+    clearDetectedRoofs: () => void;
+
     selectedId?: string;
     select: (id?: string) => void;
 
@@ -111,6 +125,10 @@ export const usePlannerV2Store = create<PlannerV2State>()(
 
             selectedId: undefined,
             select: (id) => set({ selectedId: id }),
+
+            detectedRoofs: [],
+            setDetectedRoofs: (arr) => set({ detectedRoofs: arr }),
+            clearDetectedRoofs: () => set({ detectedRoofs: [] }),
 
             /** ✅ Catalogo pannelli */
             catalogPanels: PANEL_CATALOG,
