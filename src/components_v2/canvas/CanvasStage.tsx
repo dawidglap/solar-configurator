@@ -17,6 +17,8 @@ import EdgeLengthBadges from './EdgeLengthBadges';
 // import AzimuthBadge from './AzimuthBadge';
 import RoofAzimuthArrows from './RoofAzimuthArrows';
 import SonnendachOverlayKonva from './SonnendachOverlayKonva';
+import OrientationHUD from './OrientationHUD';
+
 
 
 
@@ -560,6 +562,8 @@ const strokeWidthSelected = 0.85;
         </Stage>
         
       )}
+      <OrientationHUD />
+
 
       {/* Frecce di orientamento (solo tetto selezionato) */}
 
