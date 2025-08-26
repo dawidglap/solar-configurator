@@ -18,6 +18,7 @@ import EdgeLengthBadges from './EdgeLengthBadges';
 import RoofAzimuthArrows from './RoofAzimuthArrows';
 import SonnendachOverlayKonva from './SonnendachOverlayKonva';
 import OrientationHUD from './OrientationHUD';
+import ModulesPreview from '../modules/ModulesPreview';
 
 
 
@@ -123,6 +124,14 @@ const selectedRoof = useMemo(
   () => layers.find(l => l.id === selectedId) ?? null,
   [layers, selectedId]
 );
+const step = usePlannerV2Store(s => s.step);
+const selPanel = usePlannerV2Store(s => s.getSelectedPanel());
+const params = {
+  orientation: 'portrait' as const,
+  spacingM: 0.02,
+  marginM: 0.30,
+};
+const panelTextureUrl = '/images/panel.webp'; // 
 
 // quando cambio selezione, torno a "normale"
 useEffect(() => { setShapeMode('normal'); }, [selectedId]);
@@ -395,6 +404,20 @@ const strokeWidthSelected = 0.85;
               height={img.naturalHeight}
               listening={false}
             />
+
+              {/* ← QUI: preview moduli (solo allo step modules e con falda selezionata) */}
+  {step === 'modules' && selectedRoof && selPanel && snap.mppImage && (
+    <ModulesPreview
+      polygon={selectedRoof.points}
+      mppImage={snap.mppImage}
+      azimuthDeg={selectedRoof.azimuthDeg ?? 0}
+      orientation={params.orientation}
+      panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
+      spacingM={params.spacingM}
+      marginM={params.marginM}
+      textureUrl={panelTextureUrl}   // rimuovi questa riga se non hai ancora /public/images/panel.webp
+    />
+  )}
             <SonnendachOverlayKonva />
 
             {/* tetti esistenti */}
@@ -618,6 +641,7 @@ const strokeWidthSelected = 0.85;
 />
   );
 })()}
+
 
 
 

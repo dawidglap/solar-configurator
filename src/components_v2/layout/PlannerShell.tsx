@@ -10,7 +10,7 @@ export default function PlannerShell() {
   const step = usePlannerV2Store((s) => s.step);
 
   return (
-    <div className="h-[calc(100vh-64px)] w-full bg-neutral-100 flex flex-col max-w-[1440px] mx-auto">
+    <div className="h-[calc(100vh-0px)] w-full bg-neutral-100 flex flex-col max-w-[1440px] mx-auto">
       {/* Stepper */}
       <div className="shrink-0 border-b bg-white/90 backdrop-blur px-2">
         <Stepper />
