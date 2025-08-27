@@ -26,6 +26,9 @@ import RightPropertiesPanelOverlay from '../layout/RightPropertiesPanelOverlay';
 import OverlayLeftToggle from '../layout/OverlayLeftToggle';
 import RoofAreaInfo from '../ui/RoofAreaInfo';
 import { X } from 'lucide-react';
+import PanelsKonva from '../modules/PanelsKonva';
+
+
 
 
 
@@ -132,6 +135,12 @@ const mpp        = usePlannerV2Store(s => s.snapshot.mppImage);
 const [shapeMode, setShapeMode] = useState<'normal' | 'trapezio'>('normal');
 // blocca il pan mentre trascini un vertice
 const [draggingVertex, setDraggingVertex] = useState(false);
+// drag pannelli (blocca pan stage)
+const [draggingPanel, setDraggingPanel] = useState(false);
+
+// selezione pannello
+const [selectedPanelInstId, setSelectedPanelInstId] = useState<string | undefined>(undefined);
+
 
 const SHOW_AREA_LABELS = false;            // <— tenerlo su false
 const SHOW_AREA_WHILE_DRAWING = false; 
@@ -141,6 +150,12 @@ const selectedRoof = useMemo(
   () => layers.find(l => l.id === selectedId) ?? null,
   [layers, selectedId]
 );
+
+const hasPanelsOnSelected = useMemo(
+  () => !!selectedId && usePlannerV2Store.getState().panels.some(p => p.roofId === selectedId),
+  [selectedId, layers] // layers cambia quando selezioni/cancelli tetti; basta a ri-renderizzare
+);
+
 const step = usePlannerV2Store(s => s.step);
 const selPanel = usePlannerV2Store(s => s.getSelectedPanel());
 const params = {
@@ -527,7 +542,8 @@ const strokeWidthSelected = 0.85;
           height={size.h}
           x={view.offsetX || 0}
           y={view.offsetY || 0}
-          draggable={canDrag && tool !== 'draw-roof' && tool !== 'draw-rect' && !draggingVertex}
+          draggable={canDrag && tool !== 'draw-roof' && tool !== 'draw-rect' && !draggingVertex && !draggingPanel}
+
 
 
           onDragMove={onDragMove}
@@ -546,8 +562,7 @@ const strokeWidthSelected = 0.85;
               listening={false}
             />
 
-              {/* ← QUI: preview moduli (solo allo step modules e con falda selezionata) */}
-{step === 'modules' && selectedRoof && selPanel && snap.mppImage && (
+{step === 'modules' && selectedRoof && selPanel && snap.mppImage && modules.showGrid && !hasPanelsOnSelected && (
   <ModulesPreview
     polygon={selectedRoof.points}
     mppImage={snap.mppImage}
@@ -556,10 +571,10 @@ const strokeWidthSelected = 0.85;
     panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
     spacingM={modules.spacingM}
     marginM={modules.marginM}
-    showGrid={modules.showGrid}
-    textureUrl="/images/panel.webp"   // opzionale, se hai la texture
+    textureUrl="/images/panel.webp"
   />
 )}
+
             <SonnendachOverlayKonva />
 
             {/* tetti esistenti */}
@@ -621,6 +636,22 @@ const strokeWidthSelected = 0.85;
     </KonvaGroup>
   );
 })}
+{/* Pannelli reali */}
+{layers.map((r) => (
+  <PanelsKonva
+    key={`panels-${r.id}`}
+    roofId={r.id}
+    roofPolygon={r.points}
+    textureUrl={panelTextureUrl}
+    selectedPanelId={selectedPanelInstId}
+    onSelect={setSelectedPanelInstId}
+    onDragStart={() => setDraggingPanel(true)}
+    onDragEnd={() => setDraggingPanel(false)}
+    stageToImg={toImgCoords}
+
+  />
+))}
+
 
 
             {/* DISEGNO POLIGONO (rubber band) */}
