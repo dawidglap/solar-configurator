@@ -23,6 +23,7 @@ import CenterAddressSearchOverlay from '../layout/CenterAddressSearchOverlay';
 import OverlayRightToggle from '../layout/OverlayRightToggle';
 import { AnimatePresence, motion } from 'framer-motion';
 import RightPropertiesPanelOverlay from '../layout/RightPropertiesPanelOverlay';
+import OverlayLeftToggle from '../layout/OverlayLeftToggle';
 
 
 
@@ -116,6 +117,7 @@ export default function CanvasStage() {
   const select = usePlannerV2Store(s => s.select);
   const selectedId = usePlannerV2Store(s => s.selectedId);
   const rightOpen = usePlannerV2Store(s => s.ui.rightPanelOpen);
+  const leftOpen  = usePlannerV2Store(s => s.ui.leftPanelOpen);
 
   // modalità forma del tetto selezionato
 const [shapeMode, setShapeMode] = useState<'normal' | 'trapezio'>('normal');
@@ -409,6 +411,39 @@ const strokeWidthSelected = 0.85;
   )}
 </AnimatePresence>
 
+{/* Toggle flottante del pannello sinistro */}
+<OverlayLeftToggle />
+
+{/* Left panel overlay (vuoto per ora) */}
+<AnimatePresence>
+  {leftOpen && (
+    <motion.div
+      key="left-panel"
+      initial={{ x: -16, opacity: 0 }}
+      animate={{ x: 0,  opacity: 1 }}
+      exit={{ x: -16,   opacity: 0 }}
+      transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+      className="absolute left-3 top-28 bottom-3 z-[300] pointer-events-auto"
+    >
+      <div className="
+        h-full w-[min(90vw,320px)]
+        rounded-2xl border border-neutral-200
+        bg-white/85 backdrop-blur-sm shadow-xl
+        flex flex-col overflow-hidden
+      ">
+        {/* header compatto */}
+        <div className="sticky top-0 z-10 border-b bg-white/80 px-3 py-2 backdrop-blur">
+          <h3 className="text-xs font-semibold tracking-tight">Ebenen</h3>
+        </div>
+
+        {/* body placeholder: qui porteremo i contenuti di LeftLayersPanel */}
+        <div className="flex-1 overflow-y-auto p-3">
+          <p className="text-xs text-neutral-600">Placeholder pannello sinistro — pronto a ricevere la lista strati.</p>
+        </div>
+      </div>
+    </motion.div>
+  )}
+</AnimatePresence>
 
 
       {img && size.w > 0 && size.h > 0 && (
