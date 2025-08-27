@@ -1,106 +1,104 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
+import { Save, Command, Keyboard } from 'lucide-react';
+import ToolDropdown from './ToolDropdown'; // ⬅️ nuovo menu a tendina stile Figma
 
 export default function TopToolbar() {
   const step = usePlannerV2Store((s) => s.step);
-  const tool = usePlannerV2Store((s) => s.tool);
-  const setTool = usePlannerV2Store((s) => s.setTool);
 
+  // Label step micro (solo informativo)
   const stepLabel =
     step === 'building' ? 'Gebäude' :
     step === 'modules'  ? 'Module'   :
-    step === 'strings'  ? 'Strings'  :
-                          'Stückliste';
+    step === 'strings'  ? 'Strings'  : 'Stückliste';
 
-  // scorciatoie: V=select, R=rect, P=polygon
+  const isMac = useMemo(
+    () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform),
+    []
+  );
+
+  // ✅ scorciatoia: Cmd/Ctrl+S = Save (le scorciatoie dei tool sono in ToolDropdown)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      if (e.key === 'v' || e.key === 'V') setTool('select');
-      if (e.key === 'r' || e.key === 'R') setTool('draw-rect');
-      if (e.key === 'p' || e.key === 'P') setTool('draw-roof');
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || (t as any).isContentEditable))
+        return;
+
+      const saveCombo = (isMac && e.metaKey && e.key.toLowerCase() === 's') ||
+                        (!isMac && e.ctrlKey && e.key.toLowerCase() === 's');
+      if (saveCombo) {
+        e.preventDefault();
+        handleSave();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setTool]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMac]);
+
+  const handleSave = () => {
+    // TODO: wire real save/export in PR successivo
+    console.log('[Planner] Save triggered');
+    alert('Speichern (kommt später)'); // placeholder
+  };
 
   return (
-    <div className="flex h-9 items-center justify-between gap-2 py-1 px-4">
-      {/* sinistra: label + tool buttons */}
+    <div className="flex h-10 items-center justify-between gap-2 px-2 py-1 ">
+      {/* SX: stato/step + menu strumenti */}
       <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
-        <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-700">
+        {/* chip step micro */}
+        <span className="shrink-0 rounded-full border border-neutral-200 bg-white/70 backdrop-blur px-2 py-0.5 text-[10px] text-neutral-700">
           Modus: <span className="font-medium">{stepLabel}</span>
         </span>
 
-        <div className="flex shrink-0 items-center gap-1">
-          <ToolButton
-            active={tool === 'select'}
-            onClick={() => setTool('select')}
-            title="Auswahl (V)"
-          >
-            Auswahl
-          </ToolButton>
-
-          <ToolButton
-            active={tool === 'draw-rect'}
-            onClick={() => setTool('draw-rect')}
-            title="Rechteck (R)"
-          >
-            Rechteck
-          </ToolButton>
-
-          <ToolButton
-            active={tool === 'draw-roof'}
-            onClick={() => setTool('draw-roof')}
-            title="Polygon (P)"
-          >
-            Polygon
-          </ToolButton>
-        </div>
+        {/* ⬇️ nuovo dropdown strumenti (Select / Rect / Reserved) con scorciatoie V/R/Z */}
+        <ToolDropdown />
       </div>
 
-      {/* destra: salva */}
-      <div className="flex shrink-0 items-center gap-1">
+      {/* DX: Salva con icona + kbd hint */}
+      <div className="flex items-center gap-1">
         <button
-          className="rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs hover:bg-neutral-50"
-          title="Speichern"
-          onClick={() => alert('Speichern (kommt später)')}
+          type="button"
+          onClick={handleSave}
+          title={isMac ? 'Speichern (⌘S)' : 'Speichern (Ctrl+S)'}
+          className="
+            inline-flex items-center gap-2 rounded-full
+            border border-blue-200 bg-blue-50 text-blue-700
+            px-3 py-1 text-[11px] font-medium
+            hover:bg-blue-100 active:translate-y-[0.5px]
+          "
         >
-          Speichern
+          <Save className="h-4 w-4" />
+          <span className="hidden sm:inline">Speichern</span>
+          <Kbd combo={isMac ? '⌘S' : 'Ctrl+S'} />
         </button>
       </div>
     </div>
   );
 }
 
-function ToolButton({
-  active,
-  onClick,
-  title,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
+/** piccolo chip tastiera come nello screenshot */
+function Kbd({ combo }: { combo: string }) {
+  const isMac =
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-pressed={active}
-      className={[
-        'rounded-full px-2.5 py-1 text-xs transition border',
-        active
-          ? 'bg-black text-white border-black'
-          : 'bg-white text-neutral-800 hover:bg-neutral-50 border-neutral-200',
-      ].join(' ')}
+    <span
+      className="
+        ml-1 inline-flex items-center gap-1 rounded-md
+        border border-neutral-200 bg-white/70
+        px-1.5 py-[2px] text-[10px] text-neutral-600
+      "
+      aria-hidden
     >
-      {children}
-    </button>
+      {isMac ? (
+        <Command className="inline h-3 w-3 align-[-2px]" />
+      ) : (
+        <Keyboard className="inline h-3 w-3 align-[-2px]" />
+      )}
+      <span className="leading-none">{combo}</span>
+    </span>
   );
 }

@@ -20,6 +20,7 @@ import SonnendachOverlayKonva from './SonnendachOverlayKonva';
 import OrientationHUD from './OrientationHUD';
 import ModulesPreview from '../modules/ModulesPreview';
 import OverlayTopToolbar from '../layout/OverlayTopToolbar';
+import OverlayProgressStepper from '../layout/OverlayProgressStepper';
 
 
 
@@ -379,7 +380,8 @@ const strokeWidthSelected = 0.85;
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-50">
-       <OverlayTopToolbar />
+      <OverlayProgressStepper />
+      <OverlayTopToolbar />
       <ScaleIndicator />
 
       {img && size.w > 0 && size.h > 0 && (
@@ -462,19 +464,6 @@ const strokeWidthSelected = 0.85;
     shadowOpacity={0.9}
   />
 )}
-
-
-{/* {sel && (
-  <RoofAzimuthArrows
-    points={r.points}
-    view={view}
-    source={r.source}               // ← passa la sorgente
-    tiltDeg={r.tiltDeg}
-    azimuthDeg={r.azimuthDeg}
-    // flip180 // se le vedi al contrario, decommenta
-  />
-)} */}
-
 
       {/* Maniglie: SOLO quando selezionato + modalità Trapezio */}
    {sel && shapeMode === 'trapezio' && (
