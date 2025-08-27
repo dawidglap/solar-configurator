@@ -14,13 +14,15 @@ import { usePlannerV2Store } from '../state/plannerV2Store';
 import ScaleIndicator from './ScaleIndicator';
 import RoofHandlesKonva from './RoofHandlesKonva';
 import EdgeLengthBadges from './EdgeLengthBadges';
-// import AzimuthBadge from './AzimuthBadge';
-import RoofAzimuthArrows from './RoofAzimuthArrows';
 import SonnendachOverlayKonva from './SonnendachOverlayKonva';
 import OrientationHUD from './OrientationHUD';
 import ModulesPreview from '../modules/ModulesPreview';
 import OverlayTopToolbar from '../layout/OverlayTopToolbar';
 import OverlayProgressStepper from '../layout/OverlayProgressStepper';
+import CenterAddressSearchOverlay from '../layout/CenterAddressSearchOverlay';
+import OverlayRightToggle from '../layout/OverlayRightToggle';
+import { AnimatePresence, motion } from 'framer-motion';
+import RightPropertiesPanelOverlay from '../layout/RightPropertiesPanelOverlay';
 
 
 
@@ -113,6 +115,8 @@ export default function CanvasStage() {
   const addRoof = usePlannerV2Store(s => s.addRoof);
   const select = usePlannerV2Store(s => s.select);
   const selectedId = usePlannerV2Store(s => s.selectedId);
+  const rightOpen = usePlannerV2Store(s => s.ui.rightPanelOpen);
+
   // modalità forma del tetto selezionato
 const [shapeMode, setShapeMode] = useState<'normal' | 'trapezio'>('normal');
 // blocca il pan mentre trascini un vertice
@@ -383,6 +387,29 @@ const strokeWidthSelected = 0.85;
       <OverlayProgressStepper />
       <OverlayTopToolbar />
       <ScaleIndicator />
+{/* Barra centrale: solo prima di iniziare */}
+{!snap.url && <CenterAddressSearchOverlay />}
+
+{/* Toggle flottante del pannello destro */}
+<OverlayRightToggle />
+
+{/* Right panel overlay */}
+<AnimatePresence>
+  {rightOpen && (
+    <motion.div
+      key="right-panel"
+      initial={{ x: 16, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 16, opacity: 0 }}
+      transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+      className="absolute right-3 top-28 bottom-3 z-[300] pointer-events-auto"
+    >
+      <RightPropertiesPanelOverlay />
+    </motion.div>
+  )}
+</AnimatePresence>
+
+
 
       {img && size.w > 0 && size.h > 0 && (
         <Stage

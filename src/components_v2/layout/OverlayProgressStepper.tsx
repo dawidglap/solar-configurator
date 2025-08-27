@@ -36,7 +36,7 @@ export default function OverlayProgressStepper() {
     <div
       className="
         pointer-events-none
-        absolute left-1/2 -translate-x-1/2 z-[120]
+        absolute  z-[120]
         top-2
         w-[calc(100%-16px)] max-w-[920px]
         px-2

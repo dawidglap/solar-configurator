@@ -75,7 +75,7 @@ export default function AddressSearchOSM({
           }
         }}
         placeholder={placeholder}
-        className="w-full rounded-lg border px-3 py-1.5 text-sm"
+        className="w-full border px-3 py-1.5 text-sm text-center rounded-full"
         title="Adresse suchen"
       />
 

@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 
-function areaM2(points: {x:number;y:number}[], mpp?: number) {
+function areaM2(points: { x: number; y: number }[], mpp?: number) {
   if (!mpp || points.length < 3) return undefined;
   let a = 0;
-  for (let i=0, j=points.length-1; i<points.length; j=i++) {
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
     a += (points[j].x + points[i].x) * (points[j].y - points[i].y);
   }
   const px2 = Math.abs(a / 2);
@@ -16,12 +16,12 @@ function areaM2(points: {x:number;y:number}[], mpp?: number) {
 export default function DetectedRoofsImport() {
   const snapshot = usePlannerV2Store(s => s.snapshot);
   const detected = usePlannerV2Store(s => s.detectedRoofs);
-  const addRoof   = usePlannerV2Store(s => s.addRoof);
-  const clearDet  = usePlannerV2Store(s => s.clearDetectedRoofs);
-  const select    = usePlannerV2Store(s => s.select);
-  const layers    = usePlannerV2Store(s => s.layers);
+  const addRoof  = usePlannerV2Store(s => s.addRoof);
+  const clearDet = usePlannerV2Store(s => s.clearDetectedRoofs);
+  const select   = usePlannerV2Store(s => s.select);
+  const layers   = usePlannerV2Store(s => s.layers);
 
-  // selezionate (default: tutte)
+  // Selezione (default: tutti)
   const [selected, setSelected] = useState<Set<string>>(new Set());
   useEffect(() => {
     setSelected(new Set(detected.map(d => d.id)));
@@ -54,7 +54,7 @@ export default function DetectedRoofsImport() {
   const importSelected = () => {
     if (selected.size === 0) return;
 
-    // continuiamo la numerazione con lettere dopo i layer esistenti
+    // Continua la numerazione dopo i layer esistenti
     const already = layers.filter(l => l.name?.startsWith('Dach ')).length;
     const addedIds: string[] = [];
 
@@ -80,63 +80,97 @@ export default function DetectedRoofsImport() {
 
   if (detected.length === 0) return null;
 
+  // Sommarietto compatto
+  const totalSel = selected.size;
+  const totalArea = rows
+    .filter(r => selected.has(r.id) && r.area != null)
+    .reduce((s, r) => s + (r.area as number), 0);
+
   return (
-    <section className="mt-4 rounded-lg border p-2.5">
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-xs font-semibold text-neutral-900">
-          Gefundene Dachflächen <span className="text-neutral-500">({detected.length})</span>
-        </h3>
+    <section className=" rounded-lg text-[12px]">
+      {/* Header + toggle all */}
+      <div className="mb-2">
+        <div className="font-semibold text-neutral-900 leading-tight">
+          Erkannte Dächer <span className="text-neutral-500">({detected.length})</span>
+        </div>
         <button
           type="button"
           onClick={toggleAll}
-          className="rounded-full border px-2 py-0.5 text-[11px] hover:bg-neutral-50"
+          className="mt-1 text-[11px] text-indigo-600 hover:text-indigo-700 cursor-pointer"
         >
           {allChecked ? 'Alle abwählen' : 'Alle auswählen'}
         </button>
+
+        {/* mini summary */}
+        {totalSel > 0 && (
+          <div className="mt-1 text-[11px] text-neutral-600">
+            Ausgewählt: <span className="tabular-nums">{totalSel}</span>
+            {Number.isFinite(totalArea) && (
+              <> &middot; Fläche ~ <span className="tabular-nums">{(totalArea / 1).toFixed(1)}</span> m²</>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
-        {rows.map((r) => (
+      {/* Lista compatta, ottimizzata per ~240px */}
+      <div className="max-h-56 overflow-y-auto pr-1 space-y-1.5">
+        {rows.map(r => (
           <label
             key={r.id}
-            className="flex cursor-pointer items-center justify-between gap-2 rounded-md px-1.5 py-1 hover:bg-neutral-50"
+            className={[
+              'block rounded-md px-2 py-1.5 cursor-pointer',
+              'hover:bg-neutral-50 border border-transparent hover:border-neutral-200',
+            ].join(' ')}
           >
-            <span className="flex items-center gap-2">
+            <div className="flex items-start gap-2">
               <input
                 type="checkbox"
                 checked={selected.has(r.id)}
                 onChange={() => toggleOne(r.id)}
-                className="h-3.5 w-3.5"
+                className="mt-0.5 h-3.5 w-3.5 shrink-0"
               />
-              <span className="text-[12px] text-neutral-800">
-                {r.tiltDeg != null ? `${r.tiltDeg}°` : '–'} / {r.azimuthDeg != null ? `${r.azimuthDeg}°` : '–'}
-                <span className="text-neutral-500"> (Neigung / Ausrichtung)</span>
-              </span>
-            </span>
-            <span className="text-[12px] tabular-nums text-neutral-600">
-              {r.area != null ? `${r.area.toFixed(1)} m²` : ''}
-            </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  {/* badge area a destra, tabular per allineare */}
+                  <div className="truncate text-neutral-800">
+                    {r.tiltDeg != null ? `${r.tiltDeg}°` : '–'} / {r.azimuthDeg != null ? `${r.azimuthDeg}°` : '–'}
+                  </div>
+                  <div className="ml-auto rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] tabular-nums text-neutral-700">
+                    {r.area != null ? `${r.area.toFixed(1)} m²` : '—'}
+                  </div>
+                </div>
+                <div className="text-[11px] text-neutral-500">
+                  Neigung / Ausrichtung
+                </div>
+              </div>
+            </div>
           </label>
         ))}
       </div>
 
-      <div className="mt-2 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => clearDet()}
-          className="rounded-md border px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50"
-          title="Ergebnisliste verwerfen"
-        >
-          Verwerfen
-        </button>
+      {/* CTA in colonna */}
+      <div className="mt-3 space-y-2">
         <button
           type="button"
           onClick={importSelected}
           disabled={selected.size === 0}
-          className="rounded-md border border-neutral-900 bg-neutral-900 px-2.5 py-1 text-xs text-white disabled:cursor-not-allowed disabled:border-neutral-200 disabled:bg-neutral-200"
+          className={[
+            'w-full rounded-md px-3 py-1.5 text-[12px] font-medium',
+            'border border-neutral-900 bg-neutral-900 text-white',
+            'disabled:cursor-not-allowed cursor-pointer disabled:border-neutral-200 disabled:bg-neutral-200',
+          ].join(' ')}
           title="Ausgewählte Flächen als Ebenen hinzufügen"
         >
           In Ebenen importieren
+        </button>
+
+        <button
+          type="button"
+          onClick={() => clearDet()}
+          className="w-full cursor-pointer rounded-md border px-3 py-1.5 text-[12px] text-neutral-700 hover:bg-neutral-50"
+          title="Ergebnisliste verwerfen"
+        >
+          Liste verwerfen
         </button>
       </div>
     </section>

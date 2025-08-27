@@ -61,6 +61,8 @@ export type PanelSpec = {
     heightM: number; // lato lungo in metri
 };
 
+
+
 const PANEL_CATALOG: PanelSpec[] = [
     // valori tipici “54 celle M10” per tetti residenziali
     { id: 'GEN54-410', brand: 'Generic', model: 'M10 54c', wp: 410, widthM: 1.134, heightM: 1.722 },
@@ -204,3 +206,4 @@ if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
     // @ts-expect-error debug helper
     window.plannerStore = usePlannerV2Store;
 }
+
