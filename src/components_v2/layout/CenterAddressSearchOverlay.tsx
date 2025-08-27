@@ -141,8 +141,8 @@ export default function CenterAddressSearchOverlay() {
           </div>
 
           {/* Search pill */}
-          <div className="relative mx-auto rounded-lg bg-white/92 border border-neutral-200 shadow-[0_8px_30px_rgba(0,0,0,0.08)] backdrop-blur supports-[backdrop-filter]:bg-white/86">
-            <div className="flex items-center gap-2 px-4 sm:px-5 pb-2 pt-4">
+          <div className="relative mx-auto rounded-full bg-white/92 border border-neutral-200 shadow-[0_8px_30px_rgba(0,0,0,0.08)] backdrop-blur supports-[backdrop-filter]:bg-white/86">
+            <div className="flex items-center gap-2 px-6 sm:px-8 pb-2 pt-4">
               <FiSearch className="text-neutral-600 text-xl shrink-0" />
               <div className="flex-1">
                 <AddressSearchOSM

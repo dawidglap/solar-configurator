@@ -2,9 +2,25 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Group, Rect, Image as KonvaImage } from 'react-konva';
+import { Group, Rect, Line, Image as KonvaImage } from 'react-konva';
 
 type Pt = { x: number; y: number };
+
+type Props = {
+  polygon: Pt[];                              // px immagine
+  mppImage: number;                           // metri/px
+  azimuthDeg?: number;                        // 0=N(↑), 90=E(→)
+  orientation: 'portrait' | 'landscape';
+  panelSizeM: { w: number; h: number };       // metri (w=lato corto, h=lato lungo)
+  spacingM: number;                            // metri fra moduli
+  marginM: number;                             // metri bordo falda
+  showGrid?: boolean;
+  textureUrl?: string;
+};
+
+/* ───────── helpers geometrici ───────── */
+
+const deg2rad = (d: number) => (d * Math.PI) / 180;
 
 function signedArea(poly: Pt[]) {
   let a = 0;
@@ -29,15 +45,31 @@ function rot(p: Pt, theta: number): Pt {
   return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
 }
 function worldToLocal(p: Pt, O: Pt, theta: number): Pt {
-  // ruota di -theta intorno a O
   return rot(sub(p, O), -theta);
 }
 function localToWorld(p: Pt, O: Pt, theta: number): Pt {
-  // ruota di +theta e riporta intorno a O
   return add(rot(p, theta), O);
 }
 
-/** Offset verso l’interno di un poligono convesso (px). Fallback null se degenerato. */
+function pointInPoly(p: Pt, poly: Pt[]) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    const inter = yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi + 1e-9) + xi;
+    if (inter) inside = !inside;
+  }
+  return inside;
+}
+function rectCornersTL(x: number, y: number, w: number, h: number): Pt[] {
+  return [
+    { x, y },
+    { x: x + w, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h },
+  ];
+}
+/** Offset verso l’interno (convesso). Fallback al poligono originale se degenerato. */
 function insetConvexPolygon(poly: Pt[], inset: number): Pt[] | null {
   const n = poly.length;
   if (n < 3 || inset <= 0) return poly.slice();
@@ -64,36 +96,15 @@ function insetConvexPolygon(poly: Pt[], inset: number): Pt[] | null {
     const j = (i + 1) % n;
     const p = shiftedP[i], r = dir[i];
     const q = shiftedP[j], s = dir[j];
-
     const rxs = cross(r, s);
     if (Math.abs(rxs) < 1e-6) return null;
-
     const t = cross(sub(q, p), s) / rxs;
     out.push(add(p, mul(r, t)));
   }
   return out;
 }
 
-function pointInPoly(p: Pt, poly: Pt[]) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].x, yi = poly[i].y;
-    const xj = poly[j].x, yj = poly[j].y;
-    const inter = yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi;
-    if (inter) inside = !inside;
-  }
-  return inside;
-}
-function rectCornersTL(x: number, y: number, w: number, h: number): Pt[] {
-  return [
-    { x, y },
-    { x: x + w, y },
-    { x: x + w, y: y + h },
-    { x, y: y + h },
-  ];
-}
-
-/** Angolo del bordo più lungo del poligono (radians). */
+/** Angolo dell’edge più lungo (rad) nel mondo. */
 function longestEdgeAngle(poly: Pt[]) {
   let bestLen = -1, bestTheta = 0;
   for (let i = 0; i < poly.length; i++) {
@@ -108,47 +119,46 @@ function longestEdgeAngle(poly: Pt[]) {
   return bestTheta;
 }
 
-export default function ModulesPreview(props: {
-  polygon: Pt[];
-  mppImage: number;
-  panelSizeM: { w: number; h: number };
-  spacingM: number;
-  marginM: number;
-  orientation: 'portrait' | 'landscape';
-  azimuthDeg?: number;   // riservato per future rotazioni “fisiche”
-  textureUrl?: string;
-}) {
-  const {
-    polygon, mppImage, panelSizeM, spacingM, marginM, orientation, textureUrl,
-  } = props;
+/* ───────── componente ───────── */
 
+export default function ModulesPreview({
+  polygon,
+  mppImage,
+  azimuthDeg,
+  orientation,
+  panelSizeM,
+  spacingM,
+  marginM,
+  showGrid = true,
+  textureUrl = '/images/panel.webp',
+}: Props) {
   // metri → pixel
-  const px = (m: number) => m / mppImage;
+  const px = (m: number) => (mppImage ? m / mppImage : 0);
+
+  // dimensioni modulo (in px) secondo orientamento
   const panelW = px(orientation === 'portrait' ? panelSizeM.w : panelSizeM.h);
   const panelH = px(orientation === 'portrait' ? panelSizeM.h : panelSizeM.w);
-  const gap = px(spacingM);
+  const gap    = px(spacingM);
   const marginPx = Math.max(0, px(marginM));
 
-  // 1) definiamo asse della griglia: bordo più lungo del tetto
-  const theta = useMemo(() => longestEdgeAngle(polygon), [polygon]); // rad
+  // frame locale: usa azimuthDeg se disponibile, altrimenti edge più lungo
+  const theta = useMemo(
+    () => (typeof azimuthDeg === 'number' ? deg2rad(azimuthDeg) : longestEdgeAngle(polygon)),
+    [azimuthDeg, polygon]
+  );
   const thetaDeg = (theta * 180) / Math.PI;
-
-  // 2) origine per il sistema locale ruotato
   const O = useMemo(() => centroid(polygon), [polygon]);
 
-  // 3) poligono in coordinate locali (ruotato in modo che l’edge “di riferimento” sia orizzontale)
+  // poligono nel locale ruotato
   const polyLocal = useMemo(
-    () => polygon.map(p => worldToLocal(p, O, theta)),
+    () => polygon.map((p) => worldToLocal(p, O, theta)),
     [polygon, O, theta]
   );
 
-  // 4) margine reale su poligono locale (convesso)
-  const clipLocal = useMemo(() => {
-    const inset = insetConvexPolygon(polyLocal, marginPx);
-    return inset ?? polyLocal;
-  }, [polyLocal, marginPx]);
+  // poligono clippato da margine (convesso)
+  const clipLocal = useMemo(() => insetConvexPolygon(polyLocal, marginPx) ?? polyLocal, [polyLocal, marginPx]);
 
-  // 5) bbox locale
+  // bbox locale
   const bbox = useMemo(() => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of clipLocal) {
@@ -160,7 +170,7 @@ export default function ModulesPreview(props: {
     return { minX, minY, maxX, maxY };
   }, [clipLocal]);
 
-  // 6) genera griglia in locale; accetta solo rettangoli completamente dentro clipLocal
+  // genera rettangoli centrati (mondo) che stanno COMPLETAMENTE nel clipLocal
   const rectsWorld = useMemo(() => {
     const out: { cx: number; cy: number; w: number; h: number }[] = [];
     if (!isFinite(bbox.minX)) return out;
@@ -168,8 +178,7 @@ export default function ModulesPreview(props: {
     for (let y = bbox.minY; y + panelH <= bbox.maxY + 1e-6; y += panelH + gap) {
       for (let x = bbox.minX; x + panelW <= bbox.maxX + 1e-6; x += panelW + gap) {
         const corners = rectCornersTL(x, y, panelW, panelH);
-        if (corners.every(pt => pointInPoly(pt, clipLocal))) {
-          // centro locale → mondo
+        if (corners.every((pt) => pointInPoly(pt, clipLocal))) {
           const cx = x + panelW / 2;
           const cy = y + panelH / 2;
           const Cw = localToWorld({ x: cx, y: cy }, O, theta);
@@ -180,7 +189,29 @@ export default function ModulesPreview(props: {
     return out;
   }, [bbox, panelW, panelH, gap, clipLocal, O, theta]);
 
-  // 7) texture opzionale
+  // griglia (in locale) -> linee nel mondo, solo visual
+  const gridLinesWorld = useMemo(() => {
+    if (!showGrid || !isFinite(bbox.minX)) return [];
+    const lines: { points: number[] }[] = [];
+    const cellW = panelW + gap;
+    const cellH = panelH + gap;
+
+    // verticali
+    for (let x = bbox.minX; x <= bbox.maxX + 0.5; x += cellW) {
+      const a = localToWorld({ x, y: bbox.minY }, O, theta);
+      const b = localToWorld({ x, y: bbox.maxY }, O, theta);
+      lines.push({ points: [a.x, a.y, b.x, b.y] });
+    }
+    // orizzontali
+    for (let y = bbox.minY; y <= bbox.maxY + 0.5; y += cellH) {
+      const a = localToWorld({ x: bbox.minX, y }, O, theta);
+      const b = localToWorld({ x: bbox.maxX, y }, O, theta);
+      lines.push({ points: [a.x, a.y, b.x, b.y] });
+    }
+    return lines;
+  }, [showGrid, bbox, panelW, panelH, gap, O, theta]);
+
+  // texture opzionale
   const [img, setImg] = React.useState<HTMLImageElement | null>(null);
   React.useEffect(() => {
     if (!textureUrl) { setImg(null); return; }
@@ -191,17 +222,24 @@ export default function ModulesPreview(props: {
     return () => setImg(null);
   }, [textureUrl]);
 
-  // Clip nel mondo (poligono originale) – ok anche con rettangoli ruotati
+  // clip con il poligono originale in coordinate mondo
   return (
     <Group
       listening={false}
       clipFunc={(ctx) => {
+        if (!polygon.length) return;
         ctx.beginPath();
         ctx.moveTo(polygon[0].x, polygon[0].y);
         for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
         ctx.closePath();
       }}
     >
+      {/* griglia */}
+      {showGrid && gridLinesWorld.map((g, i) => (
+        <Line key={`g-${i}`} points={g.points} stroke="#000" opacity={0.08} strokeWidth={0.5} listening={false} />
+      ))}
+
+      {/* moduli */}
       {rectsWorld.map((r, i) =>
         img ? (
           <KonvaImage

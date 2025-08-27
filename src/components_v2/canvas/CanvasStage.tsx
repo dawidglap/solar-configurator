@@ -121,6 +121,7 @@ export default function CanvasStage() {
   const selectedId = usePlannerV2Store(s => s.selectedId);
   const rightOpen = usePlannerV2Store(s => s.ui.rightPanelOpen);
   const leftOpen  = usePlannerV2Store(s => s.ui.leftPanelOpen);
+  const modules = usePlannerV2Store(s => s.modules);
   
 
 const del        = usePlannerV2Store(s => s.deleteLayer);
@@ -546,18 +547,19 @@ const strokeWidthSelected = 0.85;
             />
 
               {/* ← QUI: preview moduli (solo allo step modules e con falda selezionata) */}
-  {step === 'modules' && selectedRoof && selPanel && snap.mppImage && (
-    <ModulesPreview
-      polygon={selectedRoof.points}
-      mppImage={snap.mppImage}
-      azimuthDeg={selectedRoof.azimuthDeg ?? 0}
-      orientation={params.orientation}
-      panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
-      spacingM={params.spacingM}
-      marginM={params.marginM}
-      textureUrl={panelTextureUrl}   // rimuovi questa riga se non hai ancora /public/images/panel.webp
-    />
-  )}
+{step === 'modules' && selectedRoof && selPanel && snap.mppImage && (
+  <ModulesPreview
+    polygon={selectedRoof.points}
+    mppImage={snap.mppImage}
+    azimuthDeg={selectedRoof.azimuthDeg ?? 0}
+    orientation={modules.orientation}
+    panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
+    spacingM={modules.spacingM}
+    marginM={modules.marginM}
+    showGrid={modules.showGrid}
+    textureUrl="/images/panel.webp"   // opzionale, se hai la texture
+  />
+)}
             <SonnendachOverlayKonva />
 
             {/* tetti esistenti */}
