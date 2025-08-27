@@ -11,7 +11,7 @@ export default function LeftLayersPanel() {
   const mpp         = usePlannerV2Store((s) => s.snapshot.mppImage);
 
   return (
-    <div className="flex h-full w-full flex-col">
+    <div className="flex h-auto w-full flex-col">
       {/* Header compatto e sticky */}
       <div className="sticky top-0 z-10 border-b bg-white/80 px-2 py-2 backdrop-blur">
         <h3 className="text-xs font-semibold tracking-tight">Ebenen</h3>

@@ -25,6 +25,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import RightPropertiesPanelOverlay from '../layout/RightPropertiesPanelOverlay';
 import OverlayLeftToggle from '../layout/OverlayLeftToggle';
 import RoofAreaInfo from '../ui/RoofAreaInfo';
+import { X } from 'lucide-react';
 
 
 
@@ -172,13 +173,24 @@ useEffect(() => { setShapeMode('normal'); }, [selectedId]);
   }, []);
 
   // --- calcola fit + centra immagine (min zoom = fit)
-  useEffect(() => {
-    if (!img || !size.w || !size.h) return;
-    const fit = Math.min(size.w / img.naturalWidth, size.h / img.naturalHeight);
-    const ox = (size.w - img.naturalWidth * fit) / 2;
-    const oy = (size.h - img.naturalHeight * fit) / 2;
-    setView({ fitScale: fit, scale: fit, offsetX: ox, offsetY: oy });
-  }, [img, size.w, size.h, setView]);
+// --- calcola cover + centra immagine (min zoom = cover)
+useEffect(() => {
+  if (!img || !size.w || !size.h) return;
+
+  // COVER invece di FIT:
+  // prima era: const fit = Math.min(size.w / img.naturalWidth, size.h / img.naturalHeight);
+  const cover = Math.max(size.w / img.naturalWidth, size.h / img.naturalHeight);
+
+  const sw = img.naturalWidth * cover;
+  const sh = img.naturalHeight * cover;
+
+  // centra l’immagine
+  const ox = (size.w - sw) / 2;
+  const oy = (size.h - sh) / 2;
+
+  setView({ fitScale: cover, scale: cover, offsetX: ox, offsetY: oy });
+}, [img, size.w, size.h, setView]);
+
 
   // --- clamp util
   const clampOffset = useCallback((scale: number, ox: number, oy: number) => {
@@ -393,7 +405,10 @@ const strokeWidthSelected = 0.85;
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-50">
+      
+
       <OverlayProgressStepper />
+      
       <OverlayTopToolbar />
       <ScaleIndicator />
 {/* Barra centrale: solo prima di iniziare */}
@@ -433,16 +448,24 @@ const strokeWidthSelected = 0.85;
       className="absolute left-3 top-28 bottom-3 z-[300] pointer-events-auto"
     >
       <div className="
-        h-full w-[min(90vw,320px)]
+        h-auto w-[min(90vw,320px)]
         rounded-2xl border border-neutral-200
         bg-white/85 backdrop-blur-sm shadow-xl
         flex flex-col overflow-hidden
       ">
         {/* header compatto */}
-       <div className="sticky top-0 z-10 border-b bg-white/80 px-3 py-2 backdrop-blur">
+<div className=" top-0 z-10 border-b bg-white/80 px-3 py-2 backdrop-blur relative">
   <h3 className="text-xs font-semibold tracking-tight">
     Ebenen{layers.length ? ` (${layers.length})` : ''}
   </h3>
+  <button
+    onClick={() => usePlannerV2Store.getState().toggleLeftPanelOpen()}
+    className="absolute right-2 top-1.5 rounded-md border border-neutral-200 bg-white/90 px-2 py-1 text-xs hover:bg-white"
+    title="Schließen"
+    aria-label="Schließen"
+  >
+    <X className="h-3.5 w-3.5" />
+  </button>
 </div>
 
 

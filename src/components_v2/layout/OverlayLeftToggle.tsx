@@ -1,27 +1,27 @@
 'use client';
 
-import { usePlannerV2Store } from '../state/plannerV2Store';
 import { PanelLeft } from 'lucide-react';
+import { usePlannerV2Store } from '../state/plannerV2Store';
 
 export default function OverlayLeftToggle() {
-  const toggleLeft = usePlannerV2Store((s) => s.toggleLeftPanelOpen);
+  const open   = usePlannerV2Store((s) => s.ui.leftPanelOpen);
+  const toggle = usePlannerV2Store((s) => s.toggleLeftPanelOpen);
 
   return (
     <button
-      onClick={toggleLeft}
-      className="
-        absolute left-3 top-28 z-[300]
-        rounded-full border border-neutral-200 bg-white/90
-        px-3 py-2 text-sm shadow hover:bg-white
-        transition-colors
-      "
+      type="button"
       title="Ebenen"
-      aria-label="Ebenen"
+      aria-pressed={open}
+      onClick={toggle}
+      className={[
+        'pointer-events-auto absolute top-[8px] left-3 z-[300]',
+        'h-9 px-3 rounded-full border border-neutral-200 bg-white/90 shadow hover:bg-white',
+        'inline-flex items-center gap-2 text-sm',
+        open ? 'ring-2 ring-blue-400/60' : '',
+      ].join(' ')}
     >
-      <span className="inline-flex items-center gap-2">
-        <PanelLeft className="h-4 w-4" />
-        <span className="hidden sm:inline">Ebenen</span>
-      </span>
+      <PanelLeft className="w-4 h-4" />
+      <span className="hidden sm:inline">Ebenen</span>
     </button>
   );
 }

@@ -33,15 +33,16 @@ export default function OverlayProgressStepper() {
   const activeIndex = useMemo(() => STEPS.findIndex(s => s.key === step), [step]);
 
   return (
-    <div
-      className="
-        pointer-events-none
-        absolute  z-[120]
-        top-2
-        w-[calc(100%-16px)] max-w-[920px]
-        px-2
-      "
-    >
+  <div
+  className="
+    pointer-events-none
+    absolute z-[120]
+    top-2
+    left-1/2 -translate-x-1/2
+    w-auto
+    px-2
+  "
+>
       <nav
         aria-label="Wizard progress"
         className="
