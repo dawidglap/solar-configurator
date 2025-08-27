@@ -59,7 +59,7 @@ export type View = {
     scale: number;
     offsetX: number;
     offsetY: number;
-    fitScale: number; // NEW: min zoom (cover)
+    fitScale: number; // min zoom (cover)
 };
 
 /** Catalogo pannelli (hard-coded ora, estendibile / brand-specific in futuro) */
@@ -78,7 +78,7 @@ const PANEL_CATALOG: PanelSpec[] = [
     { id: 'GEN72-550', brand: 'Generic', model: 'M10 72c', wp: 550, widthM: 1.134, heightM: 2.279 },
 ];
 
-// ── NEW: configurazione moduli per lo step “modules”
+// ── Configurazione moduli per lo step “modules”
 export type ModulesConfig = {
     orientation: 'portrait' | 'landscape';
     spacingM: number;      // distanza fra moduli (m)
@@ -87,7 +87,7 @@ export type ModulesConfig = {
     placingSingle: boolean;
 };
 
-// ── NEW: istanze di pannello materializzate
+// ── Istanze di pannello materializzate
 export type PanelInstance = {
     id: string;
     roofId: string;
@@ -97,6 +97,7 @@ export type PanelInstance = {
     hPx: number;         // altezza in px immagine
     angleDeg: number;    // rotazione assoluta (°)
     orientation: 'portrait' | 'landscape';
+    panelId: string;     // riferimento al catalogo
     locked?: boolean;
 };
 
@@ -137,14 +138,16 @@ type PlannerV2State = {
     setSelectedPanel: (id: string) => void;
     getSelectedPanel: () => PanelSpec | undefined;
 
-    /** NEW: configurazione moduli (step modules) */
+    /** Configurazione moduli (step modules) */
     modules: ModulesConfig;
     setModules: (patch: Partial<ModulesConfig>) => void;
 
-    /** NEW: istanze di pannelli */
+    /** Istanze di pannelli */
     panels: PanelInstance[];
     addPanels: (items: PanelInstance[]) => void;
+    addPanelsForRoof: (roofId: string, items: PanelInstance[]) => void;   // ⬅️ nuovo helper
     clearPanelsForRoof: (roofId: string) => void;
+    getPanelsForRoof: (roofId: string) => PanelInstance[];                 // ⬅️ selector comodo
     updatePanel: (id: string, patch: Partial<PanelInstance>) => void;
     deletePanel: (id: string) => void;
 
@@ -153,7 +156,7 @@ type PlannerV2State = {
     setUI: (partial: Partial<UIState>) => void;
     toggleStepperOpen: () => void;
     toggleRightPanelOpen: () => void;
-    toggleLeftPanelOpen: () => void; // ✅ mancava nel tipo
+    toggleLeftPanelOpen: () => void;
     openSearch: () => void;
     closeSearch: () => void;
 };
@@ -199,7 +202,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 return catalogPanels.find((p) => p.id === selectedPanelId);
             },
 
-            /** NEW: Modules config (defaults) */
+            /** Modules config (defaults) */
             modules: {
                 orientation: 'portrait',
                 spacingM: 0.02,
@@ -210,12 +213,27 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             setModules: (patch) =>
                 set((s) => ({ modules: { ...s.modules, ...patch } })),
 
-            /** NEW: Panel instances */
+            /** Panel instances */
             panels: [],
             addPanels: (items) =>
                 set((s) => ({ panels: [...s.panels, ...items] })),
+
+            addPanelsForRoof: (roofId, items) =>
+                set((s) => ({
+                    panels: [
+                        ...s.panels,
+                        ...items.map((p) => ({ ...p, roofId })), // forziamo coerenza
+                    ],
+                })),
+
             clearPanelsForRoof: (roofId) =>
                 set((s) => ({ panels: s.panels.filter((p) => p.roofId !== roofId) })),
+
+            getPanelsForRoof: (roofId) => {
+                const { panels } = get();
+                return panels.filter((p) => p.roofId === roofId);
+            },
+
             updatePanel: (id, patch) =>
                 set((s) => ({ panels: s.panels.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
             deletePanel: (id) =>
@@ -243,7 +261,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         }),
         {
             name: 'planner-v2',
-            version: 7, // bump
+            version: 8, // ⬆️ bump
 
             storage: createJSONStorage(() => localStorage),
 
@@ -256,12 +274,11 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 snapshotScale: s.snapshotScale,
                 catalogPanels: s.catalogPanels,
                 selectedPanelId: s.selectedPanelId,
-                // NEW: persistiamo moduli e pannelli
                 modules: s.modules,
                 panels: s.panels,
             }),
 
-            migrate: (persisted: any, _version?: number) => {
+            migrate: (persisted: any) => {
                 if (!persisted) return persisted;
 
                 // safety: rimuoviamo vecchio snapshot persistito se presente
@@ -293,9 +310,17 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                     };
                 }
 
-                // ensure panels list
+                // ensure panels list + retrofill panelId
                 if (!Array.isArray(persisted.panels)) {
                     persisted.panels = [];
+                } else {
+                    const fallbackPanelId =
+                        (persisted.selectedPanelId as string) ||
+                        PANEL_CATALOG[0].id;
+                    persisted.panels = persisted.panels.map((p: any) => ({
+                        ...p,
+                        panelId: p.panelId ?? fallbackPanelId,
+                    }));
                 }
 
                 return persisted;
