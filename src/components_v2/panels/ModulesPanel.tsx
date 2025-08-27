@@ -1,6 +1,11 @@
 'use client';
 
 import { usePlannerV2Store } from '../state/plannerV2Store';
+      // in cima al file
+import { computeAutoLayoutRects } from '../modules/layout';
+
+
+
 
 const inputBase =
   'w-full h-7 rounded-xl border border-neutral-200 bg-neutral-50/90 px-2 text-[11px] leading-none outline-none ' +
@@ -32,6 +37,10 @@ export default function ModulesPanel() {
 
   const selSpec            = usePlannerV2Store(s => s.getSelectedPanel());
   const mpp                = usePlannerV2Store(s => s.snapshot.mppImage);
+
+  const addPanelsForRoof = usePlannerV2Store(s => s.addPanelsForRoof);
+const layers           = usePlannerV2Store(s => s.layers);
+const snapshot         = usePlannerV2Store(s => s.snapshot);
 
   const panelsOnRoof = panels.filter(p => p.roofId === selectedId);
   const count  = panelsOnRoof.length;
@@ -175,13 +184,49 @@ export default function ModulesPanel() {
           Auto-Layout
         </button>
 
-        <button
-          disabled={disabled}
-          onClick={() => console.info('[convert] roof:', selectedId)}
-          className={[btnBase, btnGhost].join(' ')}
-        >
-          In Module umwandeln
-        </button>
+
+
+{/* // ...sostituisci l'onClick del bottone "In Module umwandeln" con: */}
+<button
+  disabled={disabled}
+  onClick={() => {
+    if (!selectedId || !selSpec || !snapshot.mppImage) return;
+    const roof = layers.find(l => l.id === selectedId);
+    if (!roof) return;
+
+    const rects = computeAutoLayoutRects({
+      polygon: roof.points,
+      mppImage: snapshot.mppImage,
+      azimuthDeg: roof.azimuthDeg ?? undefined,
+      orientation: modules.orientation,
+      panelSizeM: { w: selSpec.widthM, h: selSpec.heightM },
+      spacingM: modules.spacingM,
+      marginM: modules.marginM,
+    });
+
+    const instances = rects.map((r, idx) => ({
+      id: `${selectedId}_p_${Date.now().toString(36)}_${idx}`,
+      roofId: selectedId,
+      cx: r.cx,
+      cy: r.cy,
+      wPx: r.wPx,
+      hPx: r.hPx,
+      angleDeg: r.angleDeg,
+      orientation: modules.orientation,
+      panelId: selSpec.id,
+    }));
+
+    addPanelsForRoof(selectedId, instances);
+  }}
+  className={[
+    'w-full rounded-full px-3 py-2 text-[13px] font-semibold border transition-colors',
+    disabled ? 'bg-white text-neutral-400 border-neutral-200 cursor-not-allowed'
+             : 'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50'
+  ].join(' ')}
+>
+  In Module umwandeln
+</button>
+
 
         <button
           disabled={disabled || panelsOnRoof.length === 0}
