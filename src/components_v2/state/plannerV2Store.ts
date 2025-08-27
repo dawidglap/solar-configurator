@@ -3,7 +3,15 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
+// TIPI (in alto al file)
 export type PlannerStep = 'building' | 'modules' | 'strings' | 'parts';
+
+type UIState = {
+    stepperOpen: boolean;
+    rightPanelOpen: boolean;
+    searchOpen: boolean;
+};
+
 export type Tool = 'select' | 'draw-roof' | 'draw-reserved' | 'draw-rect';
 
 export type Pt = { x: number; y: number };
@@ -15,8 +23,6 @@ export type DetectedRoof = {
     azimuthDeg?: number;
     source: 'sonnendach';
 };
-
-
 
 export type RoofArea = {
     id: string;
@@ -96,6 +102,14 @@ type PlannerV2State = {
     selectedPanelId: string;
     setSelectedPanel: (id: string) => void;
     getSelectedPanel: () => PanelSpec | undefined;
+
+    /** 🆕 Slice UI (nessun effetto visivo per ora) */
+    ui: UIState;
+    setUI: (partial: Partial<UIState>) => void;
+    toggleStepperOpen: () => void;
+    toggleRightPanelOpen: () => void;
+    openSearch: () => void;
+    closeSearch: () => void;
 };
 
 export const usePlannerV2Store = create<PlannerV2State>()(
@@ -138,6 +152,23 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 const { catalogPanels, selectedPanelId } = get();
                 return catalogPanels.find((p) => p.id === selectedPanelId);
             },
+
+            /** 🆕 UI slice: stato e azioni (non persistiamo per ora) */
+            ui: {
+                stepperOpen: true,
+                rightPanelOpen: false,
+                searchOpen: false,
+            },
+            setUI: (partial) =>
+                set((state) => ({ ui: { ...state.ui, ...partial } })),
+            toggleStepperOpen: () =>
+                set((state) => ({ ui: { ...state.ui, stepperOpen: !state.ui.stepperOpen } })),
+            toggleRightPanelOpen: () =>
+                set((state) => ({ ui: { ...state.ui, rightPanelOpen: !state.ui.rightPanelOpen } })),
+            openSearch: () =>
+                set((state) => ({ ui: { ...state.ui, searchOpen: true } })),
+            closeSearch: () =>
+                set((state) => ({ ui: { ...state.ui, searchOpen: false } })),
         }),
         {
             name: 'planner-v2',
@@ -153,6 +184,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 // ✅ Persistiamo la scelta del pannello e il catalogo base
                 catalogPanels: s.catalogPanels,
                 selectedPanelId: s.selectedPanelId,
+                // ⚠️ Non persistiamo 'ui' per evitare effetti visivi imprevisti tra release
             }),
             migrate: (persisted: any) => {
                 if (!persisted) return persisted;
@@ -167,3 +199,9 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         }
     )
 );
+
+// 🆕 Dev helper (facoltativo): test rapido da console
+if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
+    // @ts-expect-error debug helper
+    window.plannerStore = usePlannerV2Store;
+}
