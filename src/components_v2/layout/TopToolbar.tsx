@@ -28,7 +28,7 @@ export default function TopToolbar() {
   }, [setTool]);
 
   return (
-    <div className="flex h-9 items-center justify-between gap-2 py-1">
+    <div className="flex h-9 items-center justify-between gap-2 py-1 px-4">
       {/* sinistra: label + tool buttons */}
       <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
         <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-700">

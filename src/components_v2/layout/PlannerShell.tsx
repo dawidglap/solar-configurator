@@ -1,6 +1,5 @@
 'use client';
 
-import TopToolbar from './TopToolbar';
 import LeftLayersPanel from './LeftLayersPanel';
 import RightPropertiesPanel from './RightPropertiesPanel';
 import CanvasStage from '../canvas/CanvasStage';
@@ -15,13 +14,7 @@ export default function PlannerShell() {
       <div className="shrink-0 border-b bg-white/90 backdrop-blur px-2">
         <Stepper />
       </div>
-
-      {/* Toolbar */}
-      <div className="shrink-0 border-b bg-white/90 backdrop-blur px-2">
-        <TopToolbar />
-      </div>
-
-      {/* Workspace: mappa al centro = 1fr, pannelli stretti */}
+  {/* Workspace: mappa al centro = 1fr, pannelli stretti */}
       <div
         className="
           flex-1 min-h-0

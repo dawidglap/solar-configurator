@@ -19,6 +19,7 @@ import RoofAzimuthArrows from './RoofAzimuthArrows';
 import SonnendachOverlayKonva from './SonnendachOverlayKonva';
 import OrientationHUD from './OrientationHUD';
 import ModulesPreview from '../modules/ModulesPreview';
+import OverlayTopToolbar from '../layout/OverlayTopToolbar';
 
 
 
@@ -378,6 +379,7 @@ const strokeWidthSelected = 0.85;
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-50">
+       <OverlayTopToolbar />
       <ScaleIndicator />
 
       {img && size.w > 0 && size.h > 0 && (
