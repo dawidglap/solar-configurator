@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import DetectedRoofsImport from '../panels/DetectedRoofsImport';
+import ModulesPanel from '../panels/ModulesPanel';
 
 export default function RightPropertiesPanelOverlay() {
   const step = usePlannerV2Store((s) => s.step);
@@ -24,19 +25,16 @@ export default function RightPropertiesPanelOverlay() {
         </button>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto p-3 text-sm">
-        {step === 'building' && <BuildingPanel />}
-        {step === 'modules' && (
-          <p className="text-neutral-600 text-xs">Modultyp, Orientierung, Abstände – kommen gleich.</p>
-        )}
-        {step === 'strings' && (
-          <p className="text-neutral-600 text-xs">Stringplanung (später).</p>
-        )}
-        {step === 'parts' && (
-          <p className="text-neutral-600 text-xs">Stückliste & Preise (später).</p>
-        )}
-      </div>
+  <div className="flex-1 overflow-y-auto p-3 text-sm">
+  {step === 'building' && <BuildingPanel />}
+  {step === 'modules' && <ModulesPanel />}
+  {step === 'strings' && (
+    <p className="text-neutral-600 text-xs">Stringplanung (später).</p>
+  )}
+  {step === 'parts' && (
+    <p className="text-neutral-600 text-xs">Stückliste & Preise (später).</p>
+  )}
+</div>
     </div>
   );
 }
@@ -72,38 +70,11 @@ function BuildingPanel() {
 
   return (
     <div className="space-y-6">
-      {/* A) Tetti rilevati (da Sonnendach, già popolati dalla barra centrale) */}
+      
       <section>
-        {/* <h3 className="mb-2 text-xs font-semibold text-neutral-900">Erkannte Dächer</h3> */}
+        
         <DetectedRoofsImport />
       </section>
-
-      {/* B) Upload fallback */}
-      {/* <section>
-        <h3 className="mb-2 text-xs font-semibold text-neutral-900">Hintergrund (Upload)</h3>
-        <div className="space-y-2">
-          <input
-            type="file"
-            accept="image/*"
-            onChange={onFileChange}
-            className="w-full cursor-pointer rounded-md border px-2 py-1.5 text-[13px]"
-            title="Screenshot/Bild hochladen"
-          />
-          <p className="text-[11px] text-neutral-500">
-            Optional: für Gebiete ohne Sonnendach-Abdeckung.
-          </p>
-        </div>
-      </section> */}
-
-      {/* C) Info snapshot (se presenti) */}
-      {/* {snapshot?.url && (
-        <section>
-          <p className="text-[11px] text-neutral-500">
-            Bildgröße: {snapshot.width} × {snapshot.height}px
-            {snapshot.mppImage ? <> — m/px: {snapshot.mppImage.toFixed(3)}</> : null}
-          </p>
-        </section>
-      )} */}
     </div>
   );
 }
