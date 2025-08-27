@@ -9,6 +9,7 @@ export type PlannerStep = 'building' | 'modules' | 'strings' | 'parts';
 type UIState = {
     stepperOpen: boolean;
     rightPanelOpen: boolean;
+    leftPanelOpen: boolean;
     searchOpen: boolean;
 };
 
@@ -159,6 +160,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             ui: {
                 stepperOpen: true,
                 rightPanelOpen: false,
+                leftPanelOpen: false,
                 searchOpen: false,
             },
             setUI: (partial) =>
@@ -167,6 +169,8 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 set((state) => ({ ui: { ...state.ui, stepperOpen: !state.ui.stepperOpen } })),
             toggleRightPanelOpen: () =>
                 set((state) => ({ ui: { ...state.ui, rightPanelOpen: !state.ui.rightPanelOpen } })),
+            toggleLeftPanelOpen: () =>                     // NEW
+                set((s) => ({ ui: { ...s.ui, leftPanelOpen: !s.ui.leftPanelOpen } })),
             openSearch: () =>
                 set((state) => ({ ui: { ...state.ui, searchOpen: true } })),
             closeSearch: () =>
