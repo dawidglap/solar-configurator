@@ -172,19 +172,18 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         }),
         {
             name: 'planner-v2',
-            version: 5, // bump per includere catalogo pannelli
+
+            version: 6,
             storage: createJSONStorage(() => localStorage),
             partialize: (s) => ({
                 step: s.step,
                 view: s.view,
-                tool: s.tool,
+                tool: s.tool,            // ok mantenerlo persistito
                 layers: s.layers,
                 selectedId: s.selectedId,
                 snapshotScale: s.snapshotScale,
-                // ✅ Persistiamo la scelta del pannello e il catalogo base
                 catalogPanels: s.catalogPanels,
                 selectedPanelId: s.selectedPanelId,
-                // ⚠️ Non persistiamo 'ui' per evitare effetti visivi imprevisti tra release
             }),
             migrate: (persisted: any) => {
                 if (!persisted) return persisted;

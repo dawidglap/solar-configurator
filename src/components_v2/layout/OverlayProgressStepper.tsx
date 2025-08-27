@@ -49,7 +49,7 @@ export default function OverlayProgressStepper() {
           rounded-full border border-neutral-200/80
           bg-white/75 backdrop-blur
           shadow-sm
-          px-2 py-1
+          px-2 py-[2px]
         "
       >
         <ol className="flex items-center gap-2">

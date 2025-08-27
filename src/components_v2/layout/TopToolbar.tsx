@@ -72,7 +72,7 @@ export default function TopToolbar() {
         >
           <Save className="h-4 w-4" />
           <span className="hidden sm:inline">Speichern</span>
-          <Kbd combo={isMac ? '⌘S' : 'Ctrl+S'} />
+          <Kbd combo={isMac ? 'S' : 'S'} />
         </button>
       </div>
     </div>
