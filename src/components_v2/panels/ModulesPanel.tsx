@@ -2,6 +2,22 @@
 
 import { usePlannerV2Store } from '../state/plannerV2Store';
 
+const inputBase =
+  'w-full h-7 rounded-xl border border-neutral-200 bg-neutral-50/90 px-2 text-[11px] leading-none outline-none ' +
+  'focus:ring-1 focus:ring-neutral-400 focus:border-neutral-300 transition';
+
+const btnBase =
+  'w-full h-8 rounded-full text-[11px] font-medium transition border';
+
+const btnPrimary =
+  'bg-neutral-900 text-white border-neutral-900 hover:bg-neutral-800 disabled:bg-neutral-200 disabled:text-neutral-500 disabled:border-neutral-200 disabled:cursor-not-allowed';
+
+const btnGhost =
+  'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50 disabled:text-neutral-400 disabled:cursor-not-allowed';
+
+const chip =
+  'h-7 rounded-full border px-3 text-[11px] font-medium transition';
+
 export default function ModulesPanel() {
   const modules            = usePlannerV2Store(s => s.modules);
   const setModules         = usePlannerV2Store(s => s.setModules);
@@ -26,31 +42,42 @@ export default function ModulesPanel() {
     return a;
   })();
   const kWp = selSpec ? (selSpec.wp / 1000) * count : 0;
-
   const disabled = !selectedId;
 
   return (
-    <div className="space-y-4">
-      {/* Ausrichtung */}
+    <div className="w-full max-w-[240px] space-y-3 p-2">
+      {/* HEAD */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-[11px] font-semibold tracking-wide text-neutral-900">Module</h3>
+        <span className="text-[10px] text-neutral-500">Planner V2</span>
+      </div>
+
+      {/* AUSRICHTUNG */}
       <fieldset className="space-y-1">
-        <label className="text-[11px] font-medium text-neutral-700">Ausrichtung</label>
+        <label className="block text-[10px] font-medium uppercase tracking-wide text-neutral-600">
+          Ausrichtung
+        </label>
         <select
+          aria-label="Ausrichtung"
           value={modules.orientation}
           onChange={e => setModules({ orientation: e.target.value as any })}
-          className="w-full rounded-2xl border border-blue-100 bg-blue-50/80 px-3 py-2 text-[13px] font-semibold shadow-inner outline-none focus:ring-2 focus:ring-blue-400"
+          className={inputBase}
         >
           <option value="portrait">Portrait (vertikal)</option>
           <option value="landscape">Landscape (horizontal)</option>
         </select>
       </fieldset>
 
-      {/* Modul */}
+      {/* MODUL */}
       <fieldset className="space-y-1">
-        <label className="text-[11px] font-medium text-neutral-700">Modul</label>
+        <label className="block text-[10px] font-medium uppercase tracking-wide text-neutral-600">
+          Modul
+        </label>
         <select
+          aria-label="Modul wählen"
           value={selectedPanelId}
           onChange={e => setSelectedPanel(e.target.value)}
-          className="w-full rounded-2xl border border-blue-100 bg-blue-50/80 px-3 py-2 text-[13px] font-semibold shadow-inner outline-none focus:ring-2 focus:ring-blue-400"
+          className={inputBase}
         >
           {catalogPanels.map(p => (
             <option key={p.id} value={p.id}>
@@ -60,46 +87,65 @@ export default function ModulesPanel() {
         </select>
       </fieldset>
 
-      {/* Abstände */}
-      <div className="grid grid-cols-2 gap-2">
-        <fieldset className="space-y-1">
-          <label className="text-[11px] font-medium text-neutral-700">Abstand</label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={modules.spacingM}
-            onChange={e => setModules({ spacingM: Number(e.target.value) })}
-            className="w-full rounded-2xl border border-blue-100 bg-blue-50/80 px-3 py-2 text-[13px] font-semibold shadow-inner outline-none focus:ring-2 focus:ring-blue-400"
-          />
-          <p className="text-[10px] text-neutral-500">m (Standard 0,02)</p>
-        </fieldset>
+      {/* ABSTÄNDE (stack singola colonna, ultra-compatto) */}
+      <fieldset className="space-y-1">
+        <label className="block text-[10px] font-medium uppercase tracking-wide text-neutral-600">
+          Abstände
+        </label>
 
-        <fieldset className="space-y-1">
-          <label className="text-[11px] font-medium text-neutral-700">Randabstand</label>
-          <input
-            type="number"
-            step="0.05"
-            min="0"
-            value={modules.marginM}
-            onChange={e => setModules({ marginM: Number(e.target.value) })}
-            className="w-full rounded-2xl border border-blue-100 bg-blue-50/80 px-3 py-2 text-[13px] font-semibold shadow-inner outline-none focus:ring-2 focus:ring-blue-400"
-          />
-          <p className="text-[10px] text-neutral-500">m (z. B. 0,30)</p>
-        </fieldset>
-      </div>
+        <div className="space-y-2">
+          {/* Abstand */}
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-neutral-600">Abstand</span>
+              <span className="text-[10px] text-neutral-400">m</span>
+            </div>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={modules.spacingM}
+              onChange={e => setModules({ spacingM: Number(e.target.value) })}
+              className={inputBase}
+              placeholder="0,02"
+              aria-label="Abstand (m)"
+            />
+            <p className="mt-1 text-[10px] text-neutral-400">Standard: 0,02</p>
+          </div>
 
-      {/* Toggles */}
-      <div className="flex items-center justify-between gap-2">
+          {/* Randabstand */}
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-neutral-600">Randabstand</span>
+              <span className="text-[10px] text-neutral-400">m</span>
+            </div>
+            <input
+              type="number"
+              step="0.05"
+              min="0"
+              value={modules.marginM}
+              onChange={e => setModules({ marginM: Number(e.target.value) })}
+              className={inputBase}
+              placeholder="0,30"
+              aria-label="Randabstand (m)"
+            />
+            <p className="mt-1 text-[10px] text-neutral-400">Beispiel: 0,30</p>
+          </div>
+        </div>
+      </fieldset>
+
+      {/* SEGMENT TOGGLES */}
+      <div className="flex gap-2">
         <button
           onClick={() => setModules({ showGrid: !modules.showGrid })}
           className={[
-            'flex-1 rounded-full border px-3 py-1.5 text-[13px] font-medium',
+            'flex-1', chip,
             modules.showGrid
               ? 'bg-neutral-900 text-white border-neutral-900'
-              : 'bg-white border-neutral-200 hover:bg-neutral-50'
+              : 'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50'
           ].join(' ')}
           title="Raster ein/aus"
+          aria-pressed={modules.showGrid}
         >
           {modules.showGrid ? 'Raster: AN' : 'Raster: AUS'}
         </button>
@@ -107,27 +153,24 @@ export default function ModulesPanel() {
         <button
           onClick={() => setModules({ placingSingle: !modules.placingSingle })}
           className={[
-            'flex-1 rounded-full border px-3 py-1.5 text-[13px] font-medium',
+            'flex-1', chip,
             modules.placingSingle
               ? 'bg-neutral-900 text-white border-neutral-900'
-              : 'bg-white border-neutral-200 hover:bg-neutral-50'
+              : 'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50'
           ].join(' ')}
           title="Einzelplatzierung"
+          aria-pressed={modules.placingSingle}
         >
           {modules.placingSingle ? 'Einzel: AN' : 'Einzel: AUS'}
         </button>
       </div>
 
-      {/* Aktionen */}
-      <div className="space-y-2 pt-1">
+      {/* AKTIONEN */}
+      <div className="space-y-2">
         <button
           disabled={disabled}
           onClick={() => console.info('[auto-layout] roof:', selectedId)}
-          className={[
-            'w-full rounded-full px-3 py-2 text-[13px] font-semibold shadow transition-colors',
-            disabled ? 'bg-neutral-200 text-neutral-500 cursor-not-allowed'
-                     : 'bg-neutral-900 text-white hover:bg-neutral-800'
-          ].join(' ')}
+          className={[btnBase, btnPrimary].join(' ')}
         >
           Auto-Layout
         </button>
@@ -135,11 +178,7 @@ export default function ModulesPanel() {
         <button
           disabled={disabled}
           onClick={() => console.info('[convert] roof:', selectedId)}
-          className={[
-            'w-full rounded-full px-3 py-2 text-[13px] font-semibold border transition-colors',
-            disabled ? 'bg-white text-neutral-400 border-neutral-200 cursor-not-allowed'
-                     : 'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50'
-          ].join(' ')}
+          className={[btnBase, btnGhost].join(' ')}
         >
           In Module umwandeln
         </button>
@@ -147,32 +186,32 @@ export default function ModulesPanel() {
         <button
           disabled={disabled || panelsOnRoof.length === 0}
           onClick={() => selectedId && clearPanelsForRoof(selectedId)}
-          className={[
-            'w-full rounded-full px-3 py-2 text-[13px] font-medium border transition-colors',
-            disabled || panelsOnRoof.length === 0
-              ? 'bg-white text-neutral-400 border-neutral-200 cursor-not-allowed'
-              : 'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50'
-          ].join(' ')}
+          className={[btnBase, btnGhost].join(' ')}
         >
           Fläche leeren
         </button>
       </div>
 
-      {/* Kennzahlen */}
-      <div className="mt-2 rounded-xl border border-neutral-200 bg-white/70 px-3 py-2 text-[12px]">
-        <div className="flex items-center justify-between">
-          <span className="text-neutral-600">Module</span>
-          <span className="font-semibold">{count}</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-neutral-600">Fläche</span>
-          <span className="font-semibold">{areaM2 ? areaM2.toFixed(1) : '0,0'} m²</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-neutral-600">Leistung</span>
-          <span className="font-semibold">{kWp ? kWp.toFixed(2) : '0,00'} kWp</span>
-        </div>
+      {/* KENNZAHLEN */}
+      <div className="rounded-xl border border-neutral-200 bg-white/70 p-2">
+        <Row label="Module" value={String(count)} />
+        <Row label="Fläche" value={`${areaM2 ? areaM2.toFixed(1) : '0,0'} m²`} />
+        <Row label="Leistung" value={`${kWp ? kWp.toFixed(2) : '0,00'} kWp`} />
       </div>
+
+      {/* FOOT NOTE */}
+      <p className="text-[10px] text-neutral-400 text-center">
+        Änderungen werden sofort übernommen
+      </p>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-[11px] text-neutral-600">{label}</span>
+      <span className="text-[11px] font-semibold tabular-nums">{value}</span>
     </div>
   );
 }

@@ -12,7 +12,7 @@ export default function RightPropertiesPanelOverlay() {
   const setUI = usePlannerV2Store((s) => s.setUI);
 
   return (
-    <div className="w-[240px] max-w-[92vw] h-auto rounded-2xl bg-white/95 border border-neutral-200 shadow-xl overflow-hidden flex flex-col">
+    <div className="w-[240px] max-w-[92vw] h-full min-h-0 rounded-2xl bg-white/95 border border-neutral-200 shadow-xl flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b">
         <h3 className="text-xs font-medium">Eigenschaften</h3>

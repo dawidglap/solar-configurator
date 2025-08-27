@@ -426,7 +426,7 @@ const strokeWidthSelected = 0.85;
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 16, opacity: 0 }}
       transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-      className="absolute right-3 top-28 bottom-3 z-[300] pointer-events-auto"
+      className="absolute right-3 top-28 bottom-3 z-[300] pointer-events-auto flex"
     >
       <RightPropertiesPanelOverlay />
     </motion.div>
