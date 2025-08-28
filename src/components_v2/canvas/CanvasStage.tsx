@@ -27,6 +27,8 @@ import OverlayLeftToggle from '../layout/OverlayLeftToggle';
 import RoofAreaInfo from '../ui/RoofAreaInfo';
 import { X } from 'lucide-react';
 import PanelsKonva from '../modules/PanelsKonva';
+import LeftLayersOverlay from '../layout/LeftLayersOverlay';
+
 
 
 
@@ -452,88 +454,9 @@ const strokeWidthSelected = 0.85;
 {/* Toggle flottante del pannello sinistro */}
 <OverlayLeftToggle />
 
-{/* Left panel overlay (vuoto per ora) */}
-<AnimatePresence>
-  {leftOpen && (
-    <motion.div
-      key="left-panel"
-      initial={{ x: -16, opacity: 0 }}
-      animate={{ x: 0,  opacity: 1 }}
-      exit={{ x: -16,   opacity: 0 }}
-      transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-      className="absolute left-3 top-28 bottom-3 z-[300] pointer-events-auto"
-    >
-      <div className="
-        h-auto w-[min(90vw,320px)]
-        rounded-2xl border border-neutral-200
-        bg-white/85 backdrop-blur-sm shadow-xl
-        flex flex-col overflow-hidden
-      ">
-        {/* header compatto */}
-<div className=" top-0 z-10 border-b bg-white/80 px-3 py-2 backdrop-blur relative">
-  <h3 className="text-xs font-semibold tracking-tight">
-    Ebenen{layers.length ? ` (${layers.length})` : ''}
-  </h3>
-  <button
-    onClick={() => usePlannerV2Store.getState().toggleLeftPanelOpen()}
-    className="absolute right-2 top-1.5 rounded-md border border-neutral-200 bg-white/90 px-2 py-1 text-xs hover:bg-white"
-    title="Schließen"
-    aria-label="Schließen"
-  >
-    <X className="h-3.5 w-3.5" />
-  </button>
-</div>
+{/* Left panel overlay */}
+<LeftLayersOverlay />
 
-
-        {/* body placeholder: qui porteremo i contenuti di LeftLayersPanel */}
-     <div className="flex-1 overflow-y-auto p-3">
-  {layers.length === 0 ? (
-    <p className="text-xs text-neutral-600">Noch keine Ebenen.</p>
-  ) : (
-    <ul className="flex flex-col gap-1 pr-1">
-      {layers.map((l) => {
-        const active = selectedId === l.id;
-        return (
-          <li key={l.id}>
-            <div
-              className={[
-                'flex items-center justify-between rounded-md border px-2 py-1 text-xs',
-                active
-                  ? 'bg-black text-white border-black'
-                  : 'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50',
-              ].join(' ')}
-            >
-              <button
-                onClick={() => select(l.id)}
-                className="min-w-0 flex-1 truncate text-left"
-                title={l.name}
-                aria-label={`Ebene auswählen: ${l.name}`}
-              >
-                {l.name}
-              </button>
-
-              <RoofAreaInfo points={l.points} mpp={mpp} />
-
-              <button
-                onClick={() => del(l.id)}
-                className={`ml-2 ${active ? 'opacity-90 hover:opacity-100' : 'text-neutral-400 hover:text-red-600'}`}
-                title="Löschen"
-                aria-label={`Ebene löschen: ${l.name}`}
-              >
-                ✕
-              </button>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  )}
-</div>
-
-      </div>
-    </motion.div>
-  )}
-</AnimatePresence>
 
 
       {img && size.w > 0 && size.h > 0 && (
