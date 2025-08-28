@@ -1,11 +1,10 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Stage,
-  Layer,
-  Image as KonvaImage,
-} from 'react-konva';
+import { Stage, Layer, Image as KonvaImage } from 'react-konva';
+
+import { Pt, polygonAreaPx2 } from '../canvas/geom';
 import { usePlannerV2Store } from '../state/plannerV2Store';
+
 import ScaleIndicator from './ScaleIndicator';
 import SonnendachOverlayKonva from './SonnendachOverlayKonva';
 import OrientationHUD from './OrientationHUD';
@@ -20,238 +19,113 @@ import OverlayLeftToggle from '../layout/OverlayLeftToggle';
 import LeftLayersOverlay from '../layout/LeftLayersOverlay';
 import PanelsLayer from '../modules/panels/PanelsLayer';
 import RoofShapesLayer from './RoofShapesLayer';
-import DrawingOverlay from './DrawingOverlay';
 import RoofHudOverlay from './RoofHudOverlay';
 import { useContainerSize } from '../canvas/hooks/useContainerSize';
 import { useBaseImage } from '../canvas/hooks/useBaseImage';
 import { useStagePanZoom } from '../canvas/hooks/useStagePanZoom';
-
-
-// ---------- helpers ----------
-type Pt = { x: number; y: number };
-
-function polygonAreaPx2(pts: Pt[]) {
-  let a = 0;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    a += (pts[j].x + pts[i].x) * (pts[j].y - pts[i].y);
-  }
-  return Math.abs(a / 2);
-}
-
-function dist(a: Pt, b: Pt) {
-  const dx = a.x - b.x, dy = a.y - b.y;
-  return Math.hypot(dx, dy);
-}
-
-// rettangolo + azimut coerente con il bordo A→B (gronda) e il segno dell’altezza (C)
-function rectFrom3WithAz(A: Pt, B: Pt, C: Pt): { poly: Pt[]; azimuthDeg: number } {
-  const vx = B.x - A.x, vy = B.y - A.y;
-  const len = Math.hypot(vx, vy) || 1;
-
-  // normale unitaria alla base A→B
-  const nx = -vy / len, ny = vx / len;
-
-  // proiezione (C - B) sulla normale → altezza signed
-  const hx = C.x - B.x, hy = C.y - B.y;
-  const h = hx * nx + hy * ny;
-
-  // offset verso il lato opposto del rettangolo
-  const off = { x: nx * h, y: ny * h };
-  const D = { x: A.x + off.x, y: A.y + off.y };
-  const C2 = { x: B.x + off.x, y: B.y + off.y };
-
-  // direzione "verso la gronda" (downslope) = opposta alla direzione di costruzione
-  const sign = Math.sign(h) || 1;
-  const dirToEaves = { x: -sign * nx, y: -sign * ny };
-
-  // converti vettore immagine → azimut (0=N, 90=E); nota y cresce verso il basso
-  const az = (Math.atan2(dirToEaves.x, -dirToEaves.y) * 180) / Math.PI;
-  const azimuthDeg = ((az % 360) + 360) % 360;
-
-  return { poly: [A, B, C2, D], azimuthDeg };
-}
+import { useDrawingTools } from '../canvas/hooks/useDrawingTools';
+import DrawingOverlays from './DrawingOverlays';
 
 export default function CanvasStage() {
+  // 1) ref contenitore
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // 2) store selectors (PRIMA di usare setView)
+  const snap = usePlannerV2Store((s) => s.snapshot);
+  const view = usePlannerV2Store((s) => s.view);
+  const setView = usePlannerV2Store((s) => s.setView);
+  const tool = usePlannerV2Store((s) => s.tool);
+  const layers = usePlannerV2Store((s) => s.layers);
+  const addRoof = usePlannerV2Store((s) => s.addRoof);
+  const select = usePlannerV2Store((s) => s.select);
+  const selectedId = usePlannerV2Store((s) => s.selectedId);
+  const rightOpen = usePlannerV2Store((s) => s.ui.rightPanelOpen);
+  const modules = usePlannerV2Store((s) => s.modules);
+
+  // 3) size e immagine di base (ORA puoi usare setView)
   const size = useContainerSize(containerRef);
+
+  // callback STABILE per inizializzare view al COVER
+  const handleCoverComputed = useCallback(
+    (cover: number, ox: number, oy: number) => {
+      setView({ fitScale: cover, scale: cover, offsetX: ox, offsetY: oy });
+    },
+    [setView]
+  );
+
   const { img } = useBaseImage({
-  
-  size,
-  onCoverComputed: (cover, ox, oy) => setView({ fitScale: cover, scale: cover, offsetX: ox, offsetY: oy }),
-});
+    url: snap.url ?? '',
+    size,
+    onCoverComputed: handleCoverComputed,
+  });
 
-  const snap = usePlannerV2Store(s => s.snapshot);
-  const view = usePlannerV2Store(s => s.view);
-  const setView = usePlannerV2Store(s => s.setView);
-  const tool = usePlannerV2Store(s => s.tool);
-  const layers = usePlannerV2Store(s => s.layers);
-  const addRoof = usePlannerV2Store(s => s.addRoof);
-  const select = usePlannerV2Store(s => s.select);
-  const selectedId = usePlannerV2Store(s => s.selectedId);
-  const rightOpen = usePlannerV2Store(s => s.ui.rightPanelOpen);
-  const modules = usePlannerV2Store(s => s.modules);
-  
   // modalità forma del tetto selezionato
-const [shapeMode, setShapeMode] = useState<'normal' | 'trapezio'>('normal');
-// blocca il pan mentre trascini un vertice
-const [draggingVertex, setDraggingVertex] = useState(false);
-// drag pannelli (blocca pan stage)
-const [draggingPanel, setDraggingPanel] = useState(false);
+  const [shapeMode, setShapeMode] = useState<'normal' | 'trapezio'>('normal');
+  // blocca il pan mentre trascini un vertice
+  const [draggingVertex, setDraggingVertex] = useState(false);
+  // drag pannelli (blocca pan stage)
+  const [draggingPanel, setDraggingPanel] = useState(false);
 
-// selezione pannello
-const [selectedPanelInstId, setSelectedPanelInstId] = useState<string | undefined>(undefined);
+  // selezione pannello
+  const [selectedPanelInstId, setSelectedPanelInstId] = useState<string | undefined>(undefined);
 
-const SHOW_AREA_LABELS = false;            // <— tenerlo su false
+  const SHOW_AREA_LABELS = false; // tenerlo su false
 
+  // tetto selezionato comodo
+  const selectedRoof = useMemo(
+    () => layers.find((l) => l.id === selectedId) ?? null,
+    [layers, selectedId]
+  );
 
-// tetto selezionato comodo
-const selectedRoof = useMemo(
-  () => layers.find(l => l.id === selectedId) ?? null,
-  [layers, selectedId]
-);
+  const hasPanelsOnSelected = useMemo(
+    () => !!selectedId && usePlannerV2Store.getState().panels.some((p) => p.roofId === selectedId),
+    [selectedId, layers]
+  );
 
-const hasPanelsOnSelected = useMemo(
-  () => !!selectedId && usePlannerV2Store.getState().panels.some(p => p.roofId === selectedId),
-  [selectedId, layers] // layers cambia quando selezioni/cancelli tetti; basta a ri-renderizzare
-);
+  const step = usePlannerV2Store((s) => s.step);
+  const selPanel = usePlannerV2Store((s) => s.getSelectedPanel());
+  const panelTextureUrl = '/images/panel.webp';
 
-const step = usePlannerV2Store(s => s.step);
-const selPanel = usePlannerV2Store(s => s.getSelectedPanel());
-const panelTextureUrl = '/images/panel.webp'; // 
-
-// quando cambio selezione, torno a "normale"
-useEffect(() => { setShapeMode('normal'); }, [selectedId]);
-
-const { canDrag, onWheel, onDragMove } = useStagePanZoom({
-  img,
-  size,
-  view,
-  setView,
-});
-
-  // ---------- DISEGNO: POLIGONO ----------
-  const [drawingPoly, setDrawingPoly] = useState<Pt[] | null>(null);
-  const [mouseImg, setMouseImg] = useState<Pt | null>(null);
-
-  // ---------- DISEGNO: RETTANGOLO 3-CLICK ----------
-  const [rectDraft, setRectDraft] = useState<Pt[] | null>(null); // 0=A, 1=B, (C sarà mouse/3° click)
-
-  // converte coordinate stage -> immagine (px immagine)
-  const toImgCoords = useCallback((stageX: number, stageY: number): Pt => {
-    const s = view.scale || (view.fitScale || 1);
-    return {
-      x: (stageX - (view.offsetX || 0)) / s,
-      y: (stageY - (view.offsetY || 0)) / s,
-    };
-  }, [view.scale, view.fitScale, view.offsetX, view.offsetY]);
-
-  const onStageMouseMove = (e: any) => {
-    const pos = e.target.getStage().getPointerPosition();
-    if (!pos) return;
-    setMouseImg(toImgCoords(pos.x, pos.y));
-  };
-
-  const closeIfNearStart = (pts: Pt[], current: Pt) => {
-    if (pts.length < 3) return false;
-    const thr = 10; // px immagine
-    return dist(pts[0], current) <= thr;
-  };
-
-  const finishPolygon = (pts: Pt[]) => {
-    if (pts.length < 3) { setDrawingPoly(null); return; }
-    const id = 'roof_' + Date.now().toString(36);
-    const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
-    addRoof({ id, name, points: pts });
-    select(id);
-    setDrawingPoly(null);
-  };
-
-// --- CLICK unico handler per tool diversi (no side-effects dentro updater)
-const onStageClick = (e: any) => {
-  const pos = e.target.getStage().getPointerPosition();
-  if (!pos) return;
-  const p = toImgCoords(pos.x, pos.y);
-
-  if (tool === 'draw-roof') {
-    // POLIGONO: aggiorno lo stato in modo puro, e faccio addRoof fuori dagli updater
-    if (!drawingPoly || drawingPoly.length === 0) {
-      setDrawingPoly([p]);
-      return;
-    }
-    if (closeIfNearStart(drawingPoly, p)) {
-      // chiudi e commit
-      const pts = drawingPoly;
-      const id = 'roof_' + Date.now().toString(36);
-      const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
-      addRoof({ id, name, points: pts });
-      select(id);
-      setDrawingPoly(null);
-      return;
-    }
-    setDrawingPoly([...drawingPoly, p]);
-    return;
-  }
-
-  if (tool === 'draw-rect') {
-    // RETTANGOLO 3-click: stesso principio
-    if (!rectDraft || rectDraft.length === 0) {
-      setRectDraft([p]); // A
-      return;
-    }
-    if (rectDraft.length === 1) {
-      setRectDraft([rectDraft[0], p]); // A,B
-      return;
-    }
-    // length === 2 → terzo click = commit
-    const { poly, azimuthDeg } = rectFrom3WithAz(rectDraft[0], rectDraft[1], p);
-const id = 'roof_' + Date.now().toString(36);
-const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
-addRoof({ id, name, points: poly, azimuthDeg, source: 'manual' });
-select(id);
-    setRectDraft(null);
-    return;
-  }
-
-  // tool = select: click vuoto deseleziona
-  if (e.target === e.target.getStage()) select(undefined);
-};
-
-// Doppio click: solo per poligono, senza updater con side-effects
-const onStageDblClick = () => {
-  if (tool !== 'draw-roof') return;
-  if (drawingPoly && drawingPoly.length >= 3) {
-    const pts = drawingPoly;
-    const id = 'roof_' + Date.now().toString(36);
-    const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
-    addRoof({ id, name, points: pts });
-    select(id);
-    setDrawingPoly(null);
-  } else {
-    setDrawingPoly(null);
-  }
-};
-
-  // ESC/ENTER gestione solo per poligono
+  // quando cambio selezione, torno a "normale"
   useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      if (tool === 'draw-roof') {
-        if (ev.key === 'Escape') setDrawingPoly(null);
-        if (ev.key === 'Enter' && drawingPoly && drawingPoly.length >= 3) finishPolygon(drawingPoly);
-      }
-      if (tool === 'draw-rect') {
-        if (ev.key === 'Escape') setRectDraft(null);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [tool, drawingPoly]);
+    setShapeMode('normal');
+  }, [selectedId]);
 
-// dopo (più “premium”, stile Reonic-like)
-const stroke = '#fff';                    // colore base
-const strokeSelected = '#60a5fa';         // azzurrino (tailwind sky-400)
-const fill = 'rgba(246, 240, 255, 0.12)';
-const strokeWidthNormal = 0.5;
-const strokeWidthSelected = 0.85;  
+  const { canDrag, onWheel, onDragMove } = useStagePanZoom({
+    img,
+    size,
+    view,
+    setView,
+  });
+
+  // ---------- coordinate stage -> immagine ----------
+  const toImgCoords = useCallback(
+    (stageX: number, stageY: number): Pt => {
+      const s = view.scale || view.fitScale || 1;
+      return {
+        x: (stageX - (view.offsetX || 0)) / s,
+        y: (stageY - (view.offsetY || 0)) / s,
+      };
+    },
+    [view.scale, view.fitScale, view.offsetX, view.offsetY]
+  );
+
+  // ---------- DISEGNO: gestito dall'hook ----------
+  const { drawingPoly, rectDraft, mouseImg, onStageMouseMove, onStageClick, onStageDblClick } =
+    useDrawingTools({
+      tool,
+      layers,
+      addRoof,
+      select,
+      toImgCoords,
+    });
+
+  // stile tetti
+  const stroke = '#fff';
+  const strokeSelected = '#60a5fa';
+  const fill = 'rgba(246, 240, 255, 0.12)';
+  const strokeWidthNormal = 0.5;
+  const strokeWidthSelected = 0.85;
 
   const areaLabel = (pts: Pt[]) => {
     if (!snap.mppImage) return null;
@@ -261,41 +135,47 @@ const strokeWidthSelected = 0.85;
   };
 
   const cursor =
-  tool === 'draw-roof' || tool === 'draw-rect'
-    ? 'crosshair'
-    : canDrag && !draggingVertex
+    tool === 'draw-roof' || tool === 'draw-rect'
+      ? 'crosshair'
+      : canDrag && !draggingVertex
       ? 'grab'
       : 'default';
-  const layerScale = view.scale || (view.fitScale || 1);
+
+  const layerScale = view.scale || view.fitScale || 1;
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-50">
       <OverlayProgressStepper />
       <OverlayTopToolbar />
       <ScaleIndicator />
-{/* Barra centrale: solo prima di iniziare */}
-{!snap.url && <CenterAddressSearchOverlay />}
-{/* Toggle flottante del pannello destro */}
-<OverlayRightToggle />
-{/* Right panel overlay */}
-<AnimatePresence>
-  {rightOpen && (
-    <motion.div
-      key="right-panel"
-      initial={{ x: 16, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{ x: 16, opacity: 0 }}
-      transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-      className="absolute right-3 top-28 bottom-3 z-[300] pointer-events-auto flex"
-    >
-      <RightPropertiesPanelOverlay />
-    </motion.div>
-  )}
-</AnimatePresence>
-{/* Toggle flottante del pannello sinistro */}
-<OverlayLeftToggle />
-{/* Left panel overlay */}
-<LeftLayersOverlay />
+
+      {/* Barra centrale: solo prima di iniziare */}
+      {!snap.url && <CenterAddressSearchOverlay />}
+
+      {/* Toggle flottante del pannello destro */}
+      <OverlayRightToggle />
+
+      {/* Right panel overlay */}
+      <AnimatePresence>
+        {rightOpen && (
+          <motion.div
+            key="right-panel"
+            initial={{ x: 16, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 16, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+            className="absolute right-3 top-28 bottom-3 z-[300] pointer-events-auto flex"
+          >
+            <RightPropertiesPanelOverlay />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toggle flottante del pannello sinistro */}
+      <OverlayLeftToggle />
+      {/* Left panel overlay */}
+      <LeftLayersOverlay />
+
       {img && size.w > 0 && size.h > 0 && (
         <Stage
           width={size.w}
@@ -312,76 +192,83 @@ const strokeWidthSelected = 0.85;
         >
           <Layer scaleX={layerScale} scaleY={layerScale}>
             {/* sfondo immagine */}
-            <KonvaImage
-              image={img}
-              width={img.naturalWidth}
-              height={img.naturalHeight}
-              listening={false}
-            />
-{step === 'modules' && selectedRoof && selPanel && snap.mppImage && modules.showGrid && !hasPanelsOnSelected && (
-  <ModulesPreview
-    polygon={selectedRoof.points}
-    mppImage={snap.mppImage}
-    azimuthDeg={selectedRoof.azimuthDeg ?? 0}
-    orientation={modules.orientation}
-    panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
-    spacingM={modules.spacingM}
-    marginM={modules.marginM}
-    textureUrl="/images/panel.webp"
-  />
-)}
+            <KonvaImage image={img} width={img.naturalWidth} height={img.naturalHeight} listening={false} />
+
+            {step === 'modules' &&
+              selectedRoof &&
+              selPanel &&
+              snap.mppImage &&
+              modules.showGrid &&
+              !hasPanelsOnSelected && (
+                <ModulesPreview
+                  polygon={selectedRoof.points}
+                  mppImage={snap.mppImage}
+                  azimuthDeg={selectedRoof.azimuthDeg ?? 0}
+                  orientation={modules.orientation}
+                  panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
+                  spacingM={modules.spacingM}
+                  marginM={modules.marginM}
+                  textureUrl="/images/panel.webp"
+                />
+              )}
+
             <SonnendachOverlayKonva />
+
             {/* tetti esistenti */}
-<RoofShapesLayer
-  layers={layers}
-  selectedId={selectedId}
-  onSelect={select}
-  showAreaLabels={SHOW_AREA_LABELS}
-  stroke={stroke}
-  strokeSelected={strokeSelected}
-  fill={fill}
-  strokeWidthNormal={strokeWidthNormal}
-  strokeWidthSelected={strokeWidthSelected}
-  shapeMode={shapeMode}
-  toImg={toImgCoords}
-  imgW={snap.width ?? (img?.naturalWidth ?? 0)}
-  imgH={snap.height ?? (img?.naturalHeight ?? 0)}
-  onHandlesDragStart={() => setDraggingVertex(true)}
-  onHandlesDragEnd={() => setDraggingVertex(false)}
-  areaLabel={areaLabel}
-/>
-{/* Pannelli reali */}
-<PanelsLayer
-  layers={layers}
-  textureUrl={panelTextureUrl}
-  selectedPanelId={selectedPanelInstId}
-  onSelect={setSelectedPanelInstId}
-  stageToImg={toImgCoords}
-  onAnyDragStart={() => setDraggingPanel(true)}
-  onAnyDragEnd={() => setDraggingPanel(false)}
-/>
-<DrawingOverlay
-  tool={tool}
-  drawingPoly={drawingPoly}
-  rectDraft={rectDraft}
-  mouseImg={mouseImg}
-  stroke={stroke}
-  areaLabel={areaLabel}
-/>
+            <RoofShapesLayer
+              layers={layers}
+              selectedId={selectedId}
+              onSelect={select}
+              showAreaLabels={SHOW_AREA_LABELS}
+              stroke={stroke}
+              strokeSelected={strokeSelected}
+              fill={fill}
+              strokeWidthNormal={strokeWidthNormal}
+              strokeWidthSelected={strokeWidthSelected}
+              shapeMode={shapeMode}
+              toImg={toImgCoords}
+              imgW={snap.width ?? img?.naturalWidth ?? 0}
+              imgH={snap.height ?? img?.naturalHeight ?? 0}
+              onHandlesDragStart={() => setDraggingVertex(true)}
+              onHandlesDragEnd={() => setDraggingVertex(false)}
+              areaLabel={areaLabel}
+            />
+
+            {/* Pannelli reali */}
+            <PanelsLayer
+              layers={layers}
+              textureUrl={panelTextureUrl}
+              selectedPanelId={selectedPanelInstId}
+              onSelect={setSelectedPanelInstId}
+              stageToImg={toImgCoords}
+              onAnyDragStart={() => setDraggingPanel(true)}
+              onAnyDragEnd={() => setDraggingPanel(false)}
+            />
+
+            {/* overlay di disegno (preview poligono/rettangolo) */}
+            <DrawingOverlays
+              tool={tool}
+              drawingPoly={drawingPoly}
+              rectDraft={rectDraft}
+              mouseImg={mouseImg}
+              stroke={stroke}
+              areaLabel={areaLabel}
+            />
           </Layer>
-        </Stage>       
+        </Stage>
       )}
+
       <OrientationHUD />
-      {/* Toggle modalità forma (posizionato sopra il centroide del tetto selezionato) */}
-<RoofHudOverlay
-  selectedRoof={selectedRoof}
-  view={view}
-  shapeMode={shapeMode}
-  onToggleShape={() => setShapeMode(prev => (prev === 'normal' ? 'trapezio' : 'normal'))}
-  mpp={snap.mppImage}
-  edgeColor={strokeSelected}
-/>
+
+      {/* HUD del tetto selezionato (toggle trapezio/normal, etichette, ecc.) */}
+      <RoofHudOverlay
+        selectedRoof={selectedRoof}
+        view={view}
+        shapeMode={shapeMode}
+        onToggleShape={() => setShapeMode((prev) => (prev === 'normal' ? 'trapezio' : 'normal'))}
+        mpp={snap.mppImage}
+        edgeColor={strokeSelected}
+      />
     </div>
   );
 }
-
