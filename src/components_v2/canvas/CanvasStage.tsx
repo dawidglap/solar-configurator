@@ -28,6 +28,8 @@ import RoofAreaInfo from '../ui/RoofAreaInfo';
 import { X } from 'lucide-react';
 import PanelsKonva from '../modules/PanelsKonva';
 import LeftLayersOverlay from '../layout/LeftLayersOverlay';
+import PanelsLayer from '../modules/panels/PanelsLayer';
+
 
 
 
@@ -560,20 +562,16 @@ const strokeWidthSelected = 0.85;
   );
 })}
 {/* Pannelli reali */}
-{layers.map((r) => (
-  <PanelsKonva
-    key={`panels-${r.id}`}
-    roofId={r.id}
-    roofPolygon={r.points}
-    textureUrl={panelTextureUrl}
-    selectedPanelId={selectedPanelInstId}
-    onSelect={setSelectedPanelInstId}
-    onDragStart={() => setDraggingPanel(true)}
-    onDragEnd={() => setDraggingPanel(false)}
-    stageToImg={toImgCoords}
+<PanelsLayer
+  layers={layers}
+  textureUrl={panelTextureUrl}
+  selectedPanelId={selectedPanelInstId}
+  onSelect={setSelectedPanelInstId}
+  stageToImg={toImgCoords}
+  onAnyDragStart={() => setDraggingPanel(true)}
+  onAnyDragEnd={() => setDraggingPanel(false)}
+/>
 
-  />
-))}
 
 
 
