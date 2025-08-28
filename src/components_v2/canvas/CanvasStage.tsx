@@ -1,12 +1,10 @@
 'use client';
-
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Stage,
   Layer,
   Image as KonvaImage,
 } from 'react-konva';
-
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import ScaleIndicator from './ScaleIndicator';
 import SonnendachOverlayKonva from './SonnendachOverlayKonva';
@@ -24,11 +22,9 @@ import PanelsLayer from '../modules/panels/PanelsLayer';
 import RoofShapesLayer from './RoofShapesLayer';
 import DrawingOverlay from './DrawingOverlay';
 import RoofHudOverlay from './RoofHudOverlay';
-import { useContainerSize } from './hooks/UseContainerSize';
-import { useBaseImage } from './hooks/UseBaseImage';
-
-
-
+import { useContainerSize } from '../canvas/hooks/useContainerSize';
+import { useBaseImage } from '../canvas/hooks/useBaseImage';
+import { useStagePanZoom } from '../canvas/hooks/useStagePanZoom';
 
 
 // ---------- helpers ----------
@@ -46,7 +42,6 @@ function dist(a: Pt, b: Pt) {
   const dx = a.x - b.x, dy = a.y - b.y;
   return Math.hypot(dx, dy);
 }
-
 
 // rettangolo + azimut coerente con il bordo A→B (gronda) e il segno dell’altezza (C)
 function rectFrom3WithAz(A: Pt, B: Pt, C: Pt): { poly: Pt[]; azimuthDeg: number } {
@@ -75,7 +70,6 @@ function rectFrom3WithAz(A: Pt, B: Pt, C: Pt): { poly: Pt[]; azimuthDeg: number 
 
   return { poly: [A, B, C2, D], azimuthDeg };
 }
-
 
 export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -128,68 +122,12 @@ const panelTextureUrl = '/images/panel.webp'; //
 // quando cambio selezione, torno a "normale"
 useEffect(() => { setShapeMode('normal'); }, [selectedId]);
 
-
-  // --- clamp util
-  const clampOffset = useCallback((scale: number, ox: number, oy: number) => {
-    if (!img) return { x: 0, y: 0 };
-    const sw = img.naturalWidth * scale;
-    const sh = img.naturalHeight * scale;
-
-    if (sw <= size.w) ox = (size.w - sw) / 2;
-    if (sh <= size.h) oy = (size.h - sh) / 2;
-
-    const minX = Math.min(0, size.w - sw);
-    const maxX = 0;
-    const minY = Math.min(0, size.h - sh);
-    const maxY = 0;
-
-    ox = Math.max(minX, Math.min(maxX, ox));
-    oy = Math.max(minY, Math.min(maxY, oy));
-    return { x: ox, y: oy };
-  }, [img, size.w, size.h]);
-
-  const clampScale = useCallback((s: number) => {
-    const min = view.fitScale || 1;
-    const max = (view.fitScale || 1) * 8;
-    return Math.max(min, Math.min(max, s));
-  }, [view.fitScale]);
-
-  // --- zoom wheel (ancorato al cursore, min = fit)
-  const onWheel = (e: any) => {
-    e.evt.preventDefault();
-    if (!img) return;
-
-    const stage = e.target.getStage();
-    const pointer = stage.getPointerPosition();
-    const oldScale = view.scale || (view.fitScale || 1);
-    const raw = e.evt.deltaY > 0 ? oldScale / 1.1 : oldScale * 1.1;
-    const newScale = clampScale(raw);
-
-    const worldX = (pointer.x - (view.offsetX || 0)) / oldScale;
-    const worldY = (pointer.y - (view.offsetY || 0)) / oldScale;
-
-    let newOX = pointer.x - worldX * newScale;
-    let newOY = pointer.y - worldY * newScale;
-
-    const cl = clampOffset(newScale, newOX, newOY);
-    setView({ scale: newScale, offsetX: cl.x, offsetY: cl.y });
-  };
-
-  // --- pan dragging (draggable solo se immagine > contenitore)
-  const canDrag = useMemo(() => {
-    const s = view.scale || (view.fitScale || 1);
-    if (!img) return false;
-    return img.naturalWidth * s > size.w || img.naturalHeight * s > size.h;
-  }, [img, size.w, size.h, view.scale, view.fitScale]);
-
-  const onDragMove = (e: any) => {
-    const ox = e.target.x();
-    const oy = e.target.y();
-    const s = view.scale || (view.fitScale || 1);
-    const cl = clampOffset(s, ox, oy);
-    e.target.position({ x: cl.x, y: cl.y });
-    setView({ offsetX: cl.x, offsetY: cl.y });
-  };
+const { canDrag, onWheel, onDragMove } = useStagePanZoom({
+  img,
+  size,
+  view,
+  setView,
+});
 
   // ---------- DISEGNO: POLIGONO ----------
   const [drawingPoly, setDrawingPoly] = useState<Pt[] | null>(null);
@@ -307,7 +245,6 @@ const onStageDblClick = () => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [tool, drawingPoly]);
-
 
 // dopo (più “premium”, stile Reonic-like)
 const stroke = '#fff';                    // colore base
