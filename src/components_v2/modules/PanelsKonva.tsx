@@ -1,13 +1,13 @@
 'use client';
 
 import React from 'react';
-import { Group, Image as KonvaImage, Rect } from 'react-konva';
+import { Group, Image as KonvaImage, Rect, Line as KonvaLine } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 
 type Pt = { x: number; y: number };
 
-// ---------- SNAP ----------
-const SNAP_PX = 8; // tolleranza magnetismo (px immagine). Aumenta per più “tiro”.
+// ---------- costanti snap (pixel SCHERMO) ----------
+const SNAP_STAGE_PX = 6; // quanto “tira” lo snap sullo schermo (modifica qui)
 
 // ---------- helpers ----------
 function longestEdgeAngle(poly: Pt[]) {
@@ -48,6 +48,10 @@ export default function PanelsKonva(props: {
     () => allPanels.filter(p => p.roofId === roofId),
     [allPanels, roofId]
   );
+
+  // scale attuale (per convertire 10px schermo → px immagine)
+  const stageScale = usePlannerV2Store(s => (s.view.scale || s.view.fitScale || 1));
+  const snapPxImg = React.useMemo(() => SNAP_STAGE_PX / (stageScale || 1), [stageScale]);
 
   // 2) texture
   const [img, setImg] = React.useState<HTMLImageElement | null>(null);
@@ -92,18 +96,34 @@ export default function PanelsKonva(props: {
   const project = (pt: Pt) => ({ u: pt.x * ex.x + pt.y * ex.y, v: pt.x * ey.x + pt.y * ey.y });
   const fromUV  = (u: number, v: number): Pt => ({ x: u * ex.x + v * ey.x, y: u * ex.y + v * ey.y });
 
-  // 6) DRAG MANUALE (stile RoofHandlesKonva)
+  // bounds UV della falda (per disegnare linee guida lungo tutta la larghezza/altezza)
+  const uvBounds = React.useMemo(() => {
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    for (const p of roofPolygon) {
+      const uv = project(p);
+      if (uv.u < minU) minU = uv.u;
+      if (uv.u > maxU) maxU = uv.u;
+      if (uv.v < minV) minV = uv.v;
+      if (uv.v > maxV) maxV = uv.v;
+    }
+    return { minU, maxU, minV, maxV };
+  }, [roofPolygon, theta]); // dipende dall’orientamento falda
+
+  // 6) DRAG MANUALE + SNAP
   const stageRef = React.useRef<import('konva/lib/Stage').Stage | null>(null);
   const draggingIdRef = React.useRef<string | null>(null);
   const startOffsetRef = React.useRef<{ dx: number; dy: number } | null>(null);
   const dragSizeHalfRef = React.useRef<{ hw: number; hh: number } | null>(null);
 
-  // guide per SNAP
+  // guide (altri pannelli)
   const guidesRef = React.useRef<{ uCenters: number[]; uEdges: number[]; vCenters: number[]; vEdges: number[] }>({
     uCenters: [], uEdges: [], vCenters: [], vEdges: []
   });
 
-  // costruisci guide dagli altri pannelli della stessa falda (stessa orientazione ~)
+  // linee guida visive correnti (points [x1,y1,x2,y2])
+  const [hintU, setHintU] = React.useState<number[] | null>(null);
+  const [hintV, setHintV] = React.useState<number[] | null>(null);
+
   const buildGuides = React.useCallback((excludeId?: string) => {
     const uCenters: number[] = [], uEdges: number[] = [];
     const vCenters: number[] = [], vEdges: number[] = [];
@@ -111,7 +131,6 @@ export default function PanelsKonva(props: {
       if (t.roofId !== roofId || t.id === excludeId) continue;
 
       const tAngle = (typeof t.angleDeg === 'number' ? t.angleDeg : defaultAngleDeg) || 0;
-      // differenza angolare rispetto all’asse falda: se >5° salta (non vogliamo snap tra orientazioni diverse)
       if (angleDiffDeg(tAngle, defaultAngleDeg) > 5) continue;
 
       const { u, v } = project({ x: t.cx, y: t.cy });
@@ -123,12 +142,15 @@ export default function PanelsKonva(props: {
     return { uCenters, uEdges, vCenters, vEdges };
   }, [allPanels, roofId, defaultAngleDeg, project]);
 
+  const clearHints = () => { setHintU(null); setHintV(null); };
+
   const endDrag = React.useCallback(() => {
     const st = stageRef.current;
     if (st) st.off('.paneldrag');
     draggingIdRef.current = null;
     startOffsetRef.current = null;
     dragSizeHalfRef.current = null;
+    clearHints();
     onDragEnd?.();
   }, [onDragEnd]);
 
@@ -154,6 +176,7 @@ export default function PanelsKonva(props: {
 
     // precalcola guide
     guidesRef.current = buildGuides(panelId);
+    clearHints();
 
     const ns = '.paneldrag';
     st.off(ns);
@@ -174,38 +197,56 @@ export default function PanelsKonva(props: {
 
       // --- SNAP 1D su u ---
       let bestU = cur.u;
-      let bestDU = SNAP_PX + 1;
+      let bestDU = snapPxImg + 1;
+      let snappedU = false;
 
       // centri u
       for (const g of guidesRef.current.uCenters) {
         const du = Math.abs(cur.u - g);
-        if (du <= SNAP_PX && du < bestDU) { bestDU = du; bestU = g; }
+        if (du <= snapPxImg && du < bestDU) { bestDU = du; bestU = g; snappedU = true; }
       }
-      // bordi u: target = edge ± halfWidth (porta il centro del pannello in modo che il suo bordo coincida)
+      // bordi u (allinea il bordo del pannello con bordo altrui)
       for (const ePos of guidesRef.current.uEdges) {
-        const cand1 = ePos - sz.hw; // far coincidere il bordo destro del pannello con ePos
-        const cand2 = ePos + sz.hw; // far coincidere il bordo sinistro con ePos
+        const cand1 = ePos - sz.hw; // bordo destro del mio con ePos
+        const cand2 = ePos + sz.hw; // bordo sinistro con ePos
         const du1 = Math.abs(cur.u - cand1);
         const du2 = Math.abs(cur.u - cand2);
-        if (du1 <= SNAP_PX && du1 < bestDU) { bestDU = du1; bestU = cand1; }
-        if (du2 <= SNAP_PX && du2 < bestDU) { bestDU = du2; bestU = cand2; }
+        if (du1 <= snapPxImg && du1 < bestDU) { bestDU = du1; bestU = cand1; snappedU = true; }
+        if (du2 <= snapPxImg && du2 < bestDU) { bestDU = du2; bestU = cand2; snappedU = true; }
       }
 
       // --- SNAP 1D su v ---
       let bestV = cur.v;
-      let bestDV = SNAP_PX + 1;
+      let bestDV = snapPxImg + 1;
+      let snappedV = false;
 
       for (const g of guidesRef.current.vCenters) {
         const dv = Math.abs(cur.v - g);
-        if (dv <= SNAP_PX && dv < bestDV) { bestDV = dv; bestV = g; }
+        if (dv <= snapPxImg && dv < bestDV) { bestDV = dv; bestV = g; snappedV = true; }
       }
       for (const ePos of guidesRef.current.vEdges) {
         const cand1 = ePos - sz.hh;
         const cand2 = ePos + sz.hh;
         const dv1 = Math.abs(cur.v - cand1);
         const dv2 = Math.abs(cur.v - cand2);
-        if (dv1 <= SNAP_PX && dv1 < bestDV) { bestDV = dv1; bestV = cand1; }
-        if (dv2 <= SNAP_PX && dv2 < bestDV) { bestDV = dv2; bestV = cand2; }
+        if (dv1 <= snapPxImg && dv1 < bestDV) { bestDV = dv1; bestV = cand1; snappedV = true; }
+        if (dv2 <= snapPxImg && dv2 < bestDV) { bestDV = dv2; bestV = cand2; snappedV = true; }
+      }
+
+      // aggiorna linee guida visive
+      if (snappedU) {
+        const a = fromUV(bestU, uvBounds.minV);
+        const b = fromUV(bestU, uvBounds.maxV);
+        setHintU([a.x, a.y, b.x, b.y]);
+      } else {
+        setHintU(null);
+      }
+      if (snappedV) {
+        const a = fromUV(uvBounds.minU, bestV);
+        const b = fromUV(uvBounds.maxU, bestV);
+        setHintV([a.x, a.y, b.x, b.y]);
+      } else {
+        setHintV(null);
       }
 
       const snapped = fromUV(bestU, bestV);
@@ -214,7 +255,7 @@ export default function PanelsKonva(props: {
 
     st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns, endDrag);
     st.on('mouseleave' + ns, endDrag);
-  }, [allPanels, onSelect, onDragStart, endDrag, stageToImg, updatePanel, buildGuides, project, fromUV]);
+  }, [allPanels, onSelect, onDragStart, endDrag, stageToImg, updatePanel, buildGuides, project, fromUV, uvBounds, snapPxImg]);
 
   return (
     <Group clipFunc={clipFunc} listening>
@@ -258,14 +299,36 @@ export default function PanelsKonva(props: {
                 offsetY={p.hPx / 2}
                 rotation={rotationDeg}
                 stroke="#60a5fa"
-                strokeWidth={1}
-                dash={[6, 4]}
+                strokeWidth={0.5}
+                // dash={[2, 2]}
                 listening={false}
               />
             )}
           </React.Fragment>
         );
       })}
+
+      {/* linee guida snap (sopra ai pannelli) */}
+      {hintU && (
+        <KonvaLine
+          points={hintU}
+          stroke="#D3DAD9"
+          dash={[1, 1]}
+          strokeWidth={0.3}
+          opacity={0.6}
+          listening={false}
+        />
+      )}
+      {hintV && (
+        <KonvaLine
+          points={hintV}
+          stroke="#D3DAD9"
+          dash={[1, 1]}
+          strokeWidth={0.53}
+          opacity={0.6}
+          listening={false}
+        />
+      )}
     </Group>
   );
 }
