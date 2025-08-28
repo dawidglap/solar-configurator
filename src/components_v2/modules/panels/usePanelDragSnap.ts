@@ -9,7 +9,7 @@ import { angleDiffDeg } from './math';
 type UV = { u: number; v: number };
 type UVBounds = { minU: number; maxU: number; minV: number; maxV: number };
 
-export type ProjectFn = (pt: Pt) => UV;         // Img → UV locali falda
+export type ProjectFn = (pt: Pt) => UV;              // Img → UV locali falda
 export type FromUVFn = (u: number, v: number) => Pt; // UV → Img
 
 export type PanelInst = {
@@ -43,7 +43,8 @@ type Args = {
     onDragEnd?: () => void;
 
     // snap
-    snapPxImg: number; // Soglia in PX IMMAGINE (già convertita fuori dall’hook)
+    snapPxImg: number;      // soglia in PX IMMAGINE (già convertita fuori)
+    edgeMarginPx?: number;  // ⬅️ NEW: margine interno ai bordi tetto in px immagine
 };
 
 export function usePanelDragSnap({
@@ -59,6 +60,7 @@ export function usePanelDragSnap({
     onDragStart,
     onDragEnd,
     snapPxImg,
+    edgeMarginPx = 0,
 }: Args) {
     // Refs stato drag
     const stageRef = React.useRef<any>(null);
@@ -66,7 +68,7 @@ export function usePanelDragSnap({
     const startOffsetRef = React.useRef<{ dx: number; dy: number } | null>(null);
     const dragSizeHalfRef = React.useRef<{ hw: number; hh: number } | null>(null);
 
-    // Guide calcolate dagli altri pannelli
+    // Guide calcolate (altri pannelli + bordi tetto)
     const guidesRef = React.useRef<{
         uCenters: number[];
         uEdges: number[];
@@ -90,11 +92,12 @@ export function usePanelDragSnap({
             const vCenters: number[] = [];
             const vEdges: number[] = [];
 
+            // 1) guide dagli ALTRI pannelli (stessa orientazione ~)
             for (const t of allPanels) {
                 if (t.roofId !== roofId || t.id === excludeId) continue;
 
                 const tAngle = (typeof t.angleDeg === 'number' ? t.angleDeg : defaultAngleDeg) || 0;
-                // Niente snap tra pannelli con orientazioni molto diverse
+                // niente snap tra orientazioni molto diverse
                 if (angleDiffDeg(tAngle, defaultAngleDeg) > 5) continue;
 
                 const { u, v } = project({ x: t.cx, y: t.cy });
@@ -103,9 +106,23 @@ export function usePanelDragSnap({
                 vCenters.push(v);
                 vEdges.push(v - t.hPx / 2, v + t.hPx / 2);
             }
+
+            // 2) guide dai BORDI TETTO (interni del margine)
+            const m = Math.max(0, edgeMarginPx || 0);
+
+            // lungo u (parallelo alla gronda)
+            if (uvBounds.maxU - uvBounds.minU > 2 * m) {
+                uEdges.push(uvBounds.minU + m, uvBounds.maxU - m);
+            }
+
+            // lungo v (perpendicolare alla gronda)
+            if (uvBounds.maxV - uvBounds.minV > 2 * m) {
+                vEdges.push(uvBounds.minV + m, uvBounds.maxV - m);
+            }
+
             return { uCenters, uEdges, vCenters, vEdges };
         },
-        [allPanels, roofId, defaultAngleDeg, project]
+        [allPanels, roofId, defaultAngleDeg, project, uvBounds, edgeMarginPx]
     );
 
     const endDrag = React.useCallback(() => {
@@ -139,7 +156,7 @@ export function usePanelDragSnap({
             draggingIdRef.current = panelId;
             dragSizeHalfRef.current = { hw: p.wPx / 2, hh: p.hPx / 2 };
 
-            // precalcola guide (escludendo il corrente)
+            // precalcola guide (altri pannelli + bordi tetto)
             guidesRef.current = buildGuides(panelId);
             clearHints();
 
@@ -174,21 +191,17 @@ export function usePanelDragSnap({
                         snappedU = true;
                     }
                 }
-                // bordi
+                // bordi (altri pannelli + bordi tetto interni)
                 for (const ePos of guidesRef.current.uEdges) {
                     const cand1 = ePos - sz.hw;
                     const cand2 = ePos + sz.hw;
                     const du1 = Math.abs(cur.u - cand1);
                     const du2 = Math.abs(cur.u - cand2);
                     if (du1 <= snapPxImg && du1 < bestDU) {
-                        bestDU = du1;
-                        bestU = cand1;
-                        snappedU = true;
+                        bestDU = du1; bestU = cand1; snappedU = true;
                     }
                     if (du2 <= snapPxImg && du2 < bestDU) {
-                        bestDU = du2;
-                        bestU = cand2;
-                        snappedU = true;
+                        bestDU = du2; bestU = cand2; snappedU = true;
                     }
                 }
 
@@ -211,14 +224,10 @@ export function usePanelDragSnap({
                     const dv1 = Math.abs(cur.v - cand1);
                     const dv2 = Math.abs(cur.v - cand2);
                     if (dv1 <= snapPxImg && dv1 < bestDV) {
-                        bestDV = dv1;
-                        bestV = cand1;
-                        snappedV = true;
+                        bestDV = dv1; bestV = cand1; snappedV = true;
                     }
                     if (dv2 <= snapPxImg && dv2 < bestDV) {
-                        bestDV = dv2;
-                        bestV = cand2;
-                        snappedV = true;
+                        bestDV = dv2; bestV = cand2; snappedV = true;
                     }
                 }
 

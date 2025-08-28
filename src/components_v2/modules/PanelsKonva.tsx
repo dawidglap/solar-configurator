@@ -9,6 +9,7 @@ import { longestEdgeAngle, angleDiffDeg } from './panels/math';
 import { usePanelDragSnap } from './panels/usePanelDragSnap';
 import { PanelItem } from './panels/PanelItem';
 import { Guides } from './panels/Guides';
+import { RoofMarginBand } from './panels/RoofMarginBand';
 
 // ---------- costanti snap (pixel SCHERMO) ----------
 const SNAP_STAGE_PX = 6; // quanto “tira” lo snap sullo schermo (modifica qui)
@@ -42,6 +43,11 @@ export default function PanelsKonva(props: {
   // --- scale corrente (per convertire px schermo → px immagine per lo snap)
   const stageScale = usePlannerV2Store((s) => s.view.scale || s.view.fitScale || 1);
   const snapPxImg = React.useMemo(() => SNAP_STAGE_PX / (stageScale || 1), [stageScale]);
+
+  // --- margine progetto → px immagine (per snap ai bordi tetto interni)
+  const marginM = usePlannerV2Store((s) => s.modules.marginM) ?? 0;
+  const mpp = usePlannerV2Store((s) => s.snapshot.mppImage) ?? 1; // metri per pixel
+  const edgeMarginPx = React.useMemo(() => (mpp ? marginM / mpp : 0), [marginM, mpp]);
 
   // --- texture pannello (opzionale)
   const [img, setImg] = React.useState<HTMLImageElement | null>(null);
@@ -104,7 +110,7 @@ export default function PanelsKonva(props: {
     return { minU, maxU, minV, maxV };
   }, [roofPolygon, theta]);
 
-  // --- hook: drag + snap + hint lines
+  // --- hook: drag + snap + hint lines (+ snap ai margini tetto interni)
   const { startDrag, hintU, hintV } = usePanelDragSnap({
     defaultAngleDeg,
     project,
@@ -117,11 +123,15 @@ export default function PanelsKonva(props: {
     onSelect,
     onDragStart,
     onDragEnd,
-    snapPxImg, // soglia in px immagine
+    snapPxImg,   // soglia in px immagine
+    edgeMarginPx // ⬅️ NOVITÀ: margine interno ai bordi tetto
   });
 
   return (
     <Group clipFunc={clipFunc} listening>
+        {/* Banda margine tetto (dietro ai pannelli) */}
+<RoofMarginBand polygon={roofPolygon} marginPx={edgeMarginPx} />
+
       {panels.map((p) => {
         const sel = p.id === selectedPanelId;
         const hasAngle = typeof p.angleDeg === 'number' && Math.abs(p.angleDeg) > 1e-6;
