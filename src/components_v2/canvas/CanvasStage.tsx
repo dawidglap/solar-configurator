@@ -24,7 +24,9 @@ import PanelsLayer from '../modules/panels/PanelsLayer';
 import RoofShapesLayer from './RoofShapesLayer';
 import DrawingOverlay from './DrawingOverlay';
 import RoofHudOverlay from './RoofHudOverlay';
-import { useContainerSize } from './hooks/useContainerSize';
+import { useContainerSize } from './hooks/UseContainerSize';
+import { useBaseImage } from './hooks/UseBaseImage';
+
 
 
 
@@ -78,6 +80,12 @@ function rectFrom3WithAz(A: Pt, B: Pt, C: Pt): { poly: Pt[]; azimuthDeg: number 
 export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const size = useContainerSize(containerRef);
+  const { img } = useBaseImage({
+  
+  size,
+  onCoverComputed: (cover, ox, oy) => setView({ fitScale: cover, scale: cover, offsetX: ox, offsetY: oy }),
+});
+
   const snap = usePlannerV2Store(s => s.snapshot);
   const view = usePlannerV2Store(s => s.view);
   const setView = usePlannerV2Store(s => s.setView);
@@ -119,39 +127,6 @@ const panelTextureUrl = '/images/panel.webp'; //
 
 // quando cambio selezione, torno a "normale"
 useEffect(() => { setShapeMode('normal'); }, [selectedId]);
-
-  // --- carica immagine
-  const [img, setImg] = useState<HTMLImageElement | null>(null);
-  useEffect(() => {
-    if (!snap.url) { setImg(null); return; }
-    const i = new Image();
-    i.crossOrigin = 'anonymous';
-    i.onload = () => setImg(i);
-    i.src = snap.url;
-    return () => setImg(null);
-  }, [snap.url]);
-
-  // --- osserva dimensioni contenitore
-
-
-  // --- calcola fit + centra immagine (min zoom = fit)
-// --- calcola cover + centra immagine (min zoom = cover)
-useEffect(() => {
-  if (!img || !size.w || !size.h) return;
-
-  // COVER invece di FIT:
-  // prima era: const fit = Math.min(size.w / img.naturalWidth, size.h / img.naturalHeight);
-  const cover = Math.max(size.w / img.naturalWidth, size.h / img.naturalHeight);
-
-  const sw = img.naturalWidth * cover;
-  const sh = img.naturalHeight * cover;
-
-  // centra l’immagine
-  const ox = (size.w - sw) / 2;
-  const oy = (size.h - sh) / 2;
-
-  setView({ fitScale: cover, scale: cover, offsetX: ox, offsetY: oy });
-}, [img, size.w, size.h, setView]);
 
 
   // --- clamp util
