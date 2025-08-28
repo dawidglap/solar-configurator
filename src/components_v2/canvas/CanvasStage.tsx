@@ -5,14 +5,10 @@ import {
   Stage,
   Layer,
   Image as KonvaImage,
-  Line as KonvaLine,
-  Circle as KonvaCircle,
-  Text as KonvaText,
 } from 'react-konva';
-import { Group as KonvaGroup } from 'react-konva';
+
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import ScaleIndicator from './ScaleIndicator';
-import RoofHandlesKonva from './RoofHandlesKonva';
 import EdgeLengthBadges from './EdgeLengthBadges';
 import SonnendachOverlayKonva from './SonnendachOverlayKonva';
 import OrientationHUD from './OrientationHUD';
@@ -24,13 +20,12 @@ import OverlayRightToggle from '../layout/OverlayRightToggle';
 import { AnimatePresence, motion } from 'framer-motion';
 import RightPropertiesPanelOverlay from '../layout/RightPropertiesPanelOverlay';
 import OverlayLeftToggle from '../layout/OverlayLeftToggle';
-import RoofAreaInfo from '../ui/RoofAreaInfo';
-import { X } from 'lucide-react';
-import PanelsKonva from '../modules/PanelsKonva';
 import LeftLayersOverlay from '../layout/LeftLayersOverlay';
 import PanelsLayer from '../modules/panels/PanelsLayer';
 import RoofShapesLayer from './RoofShapesLayer';
 import DrawingOverlay from './DrawingOverlay';
+import RoofHudOverlay from './RoofHudOverlay';
+
 
 
 // ---------- helpers ----------
@@ -43,40 +38,12 @@ function polygonAreaPx2(pts: Pt[]) {
   }
   return Math.abs(a / 2);
 }
-function polygonCentroid(pts: Pt[]) {
-  const n = pts.length;
-  if (n === 0) return { x: 0, y: 0 };
-  let sx = 0, sy = 0;
-  for (const p of pts) { sx += p.x; sy += p.y; }
-  return { x: sx / n, y: sy / n };
-}
+
 function dist(a: Pt, b: Pt) {
   const dx = a.x - b.x, dy = a.y - b.y;
   return Math.hypot(dx, dy);
 }
 
-// --- rettangolo dai 3 click: A, B definiscono la base; C definisce l'altezza perpendicolare ---
-function rectFrom3(A: Pt, B: Pt, C: Pt): Pt[] {
-  const vx = B.x - A.x;
-  const vy = B.y - A.y;
-  const len = Math.hypot(vx, vy);
-  if (len < 1e-6) return [A, B, B, A]; // base troppo corta
-
-  // normale unitaria alla base (perpendicolare)
-  const nx = -vy / len;
-  const ny =  vx / len;
-
-  // proiezione di (C - B) sulla normale => altezza signed
-  const hx = C.x - B.x;
-  const hy = C.y - B.y;
-  const h = hx * nx + hy * ny; // metri in px immagine (qui sono px immagine)
-
-  const off = { x: nx * h, y: ny * h };
-  const D = { x: A.x + off.x, y: A.y + off.y };
-  const C2 = { x: B.x + off.x, y: B.y + off.y };
-
-  return [A, B, C2, D];
-}
 
 // rettangolo + azimut coerente con il bordo A→B (gronda) e il segno dell’altezza (C)
 function rectFrom3WithAz(A: Pt, B: Pt, C: Pt): { poly: Pt[]; azimuthDeg: number } {
@@ -121,14 +88,8 @@ export default function CanvasStage() {
   const select = usePlannerV2Store(s => s.select);
   const selectedId = usePlannerV2Store(s => s.selectedId);
   const rightOpen = usePlannerV2Store(s => s.ui.rightPanelOpen);
-  const leftOpen  = usePlannerV2Store(s => s.ui.leftPanelOpen);
   const modules = usePlannerV2Store(s => s.modules);
   
-
-const del        = usePlannerV2Store(s => s.deleteLayer);
-const mpp        = usePlannerV2Store(s => s.snapshot.mppImage);
-
-
   // modalità forma del tetto selezionato
 const [shapeMode, setShapeMode] = useState<'normal' | 'trapezio'>('normal');
 // blocca il pan mentre trascini un vertice
@@ -139,9 +100,8 @@ const [draggingPanel, setDraggingPanel] = useState(false);
 // selezione pannello
 const [selectedPanelInstId, setSelectedPanelInstId] = useState<string | undefined>(undefined);
 
-
 const SHOW_AREA_LABELS = false;            // <— tenerlo su false
-const SHOW_AREA_WHILE_DRAWING = false; 
+
 
 // tetto selezionato comodo
 const selectedRoof = useMemo(
@@ -540,49 +500,15 @@ const strokeWidthSelected = 0.85;
       <OrientationHUD />
 
       {/* Toggle modalità forma (posizionato sopra il centroide del tetto selezionato) */}
-{selectedRoof && (() => {
-  const s = view.scale || (view.fitScale || 1);        // scala attuale
-
-  const ox = view.offsetX || 0;
-  const oy = view.offsetY || 0;
-
-  // bbox in coordinate immagine
-  let minX = Infinity, maxX = -Infinity, minY = Infinity;
-  for (const p of selectedRoof.points) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-  }
-  const midXImg = (minX + maxX) / 2;
-
-  // posizione sullo Stage: centrato in orizzontale, sopra al bordo superiore
-  const left = ox + midXImg * s;
-  const top  = Math.max(8, oy + minY * s - 36); // clamp a 8px dal top
-
-  return (
-    <button
-      onClick={() => setShapeMode(prev => (prev === 'normal' ? 'trapezio' : 'normal'))}
-      className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-200 bg-white/90 px-2 py-0.5 text-[11px] shadow hover:bg-white"
-      style={{ left, top }}
-      title="Formmodus umschalten"
-    >
-      {shapeMode === 'normal' ? 'Normal' : 'Trapez'}
-    </button>
-  );
-})()}
-{/* Etichette lunghezze lati (solo tetto selezionato) */}
-{selectedId && snap.mppImage && (() => {
-  const roof = layers.find(l => l.id === selectedId);
-  if (!roof) return null;
-  return (
-  <EdgeLengthBadges
-  points={roof.points}
-  mpp={snap.mppImage}
+<RoofHudOverlay
+  selectedRoof={selectedRoof}
   view={view}
-  color={strokeSelected}
+  shapeMode={shapeMode}
+  onToggleShape={() => setShapeMode(prev => (prev === 'normal' ? 'trapezio' : 'normal'))}
+  mpp={snap.mppImage}
+  edgeColor={strokeSelected}
 />
-  );
-})()}
+
 
 
 
@@ -591,7 +517,3 @@ const strokeWidthSelected = 0.85;
   );
 }
 
-// piccolo helper per restituire un “fragment” dentro map senza importare Group
-function FragmentLike({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
-}
