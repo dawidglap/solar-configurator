@@ -48,6 +48,9 @@ export default function PanelsKonva(props: {
   const marginM = usePlannerV2Store((s) => s.modules.marginM) ?? 0;
   const mpp = usePlannerV2Store((s) => s.snapshot.mppImage) ?? 1; // metri per pixel
   const edgeMarginPx = React.useMemo(() => (mpp ? marginM / mpp : 0), [marginM, mpp]);
+  const spacingM = usePlannerV2Store(s => s.modules.spacingM) ?? 0;
+const gapPx = React.useMemo(() => (mpp ? spacingM / mpp : 0), [spacingM, mpp]);
+
 
   // --- texture pannello (opzionale)
   const [img, setImg] = React.useState<HTMLImageElement | null>(null);
@@ -124,7 +127,8 @@ export default function PanelsKonva(props: {
     onDragStart,
     onDragEnd,
     snapPxImg,   // soglia in px immagine
-    edgeMarginPx // ⬅️ NOVITÀ: margine interno ai bordi tetto
+    edgeMarginPx, // ⬅️ NOVITÀ: margine interno ai bordi tetto
+    gapPx
   });
 
   return (

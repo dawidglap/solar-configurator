@@ -44,7 +44,10 @@ type Args = {
 
     // snap
     snapPxImg: number;      // soglia in PX IMMAGINE (già convertita fuori)
-    edgeMarginPx?: number;  // ⬅️ NEW: margine interno ai bordi tetto in px immagine
+    edgeMarginPx?: number;  // margine interno ai bordi tetto in px immagine
+
+    // anti-overlap
+    gapPx?: number;         // distanza minima fra moduli (px immagine) — es. spacingM/mpp
 };
 
 export function usePanelDragSnap({
@@ -61,6 +64,7 @@ export function usePanelDragSnap({
     onDragEnd,
     snapPxImg,
     edgeMarginPx = 0,
+    gapPx = 0,
 }: Args) {
     // Refs stato drag
     const stageRef = React.useRef<any>(null);
@@ -85,6 +89,14 @@ export function usePanelDragSnap({
         setHintV(null);
     }, []);
 
+    const isParallel = React.useCallback(
+        (angleA: number, angleB: number) => {
+            const diff = angleDiffDeg(angleA, angleB);
+            return Math.min(diff, Math.abs(diff - 180)) <= 5;
+        },
+        []
+    );
+
     const buildGuides = React.useCallback(
         (excludeId?: string) => {
             const uCenters: number[] = [];
@@ -92,13 +104,12 @@ export function usePanelDragSnap({
             const vCenters: number[] = [];
             const vEdges: number[] = [];
 
-            // 1) guide dagli ALTRI pannelli (stessa orientazione ~)
+            // 1) guide dagli ALTRI pannelli (paralleli)
             for (const t of allPanels) {
                 if (t.roofId !== roofId || t.id === excludeId) continue;
 
                 const tAngle = (typeof t.angleDeg === 'number' ? t.angleDeg : defaultAngleDeg) || 0;
-                // niente snap tra orientazioni molto diverse
-                if (angleDiffDeg(tAngle, defaultAngleDeg) > 5) continue;
+                if (!isParallel(tAngle, defaultAngleDeg)) continue;
 
                 const { u, v } = project({ x: t.cx, y: t.cy });
                 uCenters.push(u);
@@ -110,19 +121,60 @@ export function usePanelDragSnap({
             // 2) guide dai BORDI TETTO (interni del margine)
             const m = Math.max(0, edgeMarginPx || 0);
 
-            // lungo u (parallelo alla gronda)
             if (uvBounds.maxU - uvBounds.minU > 2 * m) {
                 uEdges.push(uvBounds.minU + m, uvBounds.maxU - m);
             }
-
-            // lungo v (perpendicolare alla gronda)
             if (uvBounds.maxV - uvBounds.minV > 2 * m) {
                 vEdges.push(uvBounds.minV + m, uvBounds.maxV - m);
             }
 
             return { uCenters, uEdges, vCenters, vEdges };
         },
-        [allPanels, roofId, defaultAngleDeg, project, uvBounds, edgeMarginPx]
+        [allPanels, roofId, defaultAngleDeg, project, uvBounds, edgeMarginPx, isParallel]
+    );
+
+    // --- risoluzione overlap (spinge fuori lungo asse con penetrazione minore)
+    const resolveNoOverlap = React.useCallback(
+        (u0: number, v0: number, hw: number, hh: number, excludeId: string) => {
+            let u = u0, v = v0;
+            // Fai al massimo 4 pass per risolvere più vicini
+            for (let pass = 0; pass < 4; pass++) {
+                let changed = false;
+
+                for (const t of allPanels) {
+                    if (t.roofId !== roofId || t.id === excludeId) continue;
+
+                    const tAngle = (typeof t.angleDeg === 'number' ? t.angleDeg : defaultAngleDeg) || 0;
+                    if (!isParallel(tAngle, defaultAngleDeg)) continue;
+
+                    const uv = project({ x: t.cx, y: t.cy });
+                    const thw = t.wPx / 2, thh = t.hPx / 2;
+
+                    const minU = hw + thw + gapPx;
+                    const minV = hh + thh + gapPx;
+
+                    const du = u - uv.u;
+                    const dv = v - uv.v;
+
+                    const penU = minU - Math.abs(du);
+                    const penV = minV - Math.abs(dv);
+
+                    if (penU > 0 && penV > 0) {
+                        // sovrapposti su entrambi gli assi ⇒ spingi fuori
+                        if (penU < penV) {
+                            u = uv.u + (du >= 0 ? minU : -minU);
+                        } else {
+                            v = uv.v + (dv >= 0 ? minV : -minV);
+                        }
+                        changed = true;
+                    }
+                }
+
+                if (!changed) break;
+            }
+            return { u, v };
+        },
+        [allPanels, roofId, defaultAngleDeg, isParallel, project, gapPx]
     );
 
     const endDrag = React.useCallback(() => {
@@ -177,75 +229,58 @@ export function usePanelDragSnap({
                 const cand = { x: q.x + off.dx, y: q.y + off.dy };
                 const cur = project(cand);
 
-                // --- SNAP lungo u ---
+                // --- SNAP 1D su u/v (centri + bordi + margini tetto interni)
                 let bestU = cur.u;
                 let bestDU = snapPxImg + 1;
                 let snappedU = false;
 
-                // centri
                 for (const g of guidesRef.current.uCenters) {
                     const du = Math.abs(cur.u - g);
-                    if (du <= snapPxImg && du < bestDU) {
-                        bestDU = du;
-                        bestU = g;
-                        snappedU = true;
-                    }
+                    if (du <= snapPxImg && du < bestDU) { bestDU = du; bestU = g; snappedU = true; }
                 }
-                // bordi (altri pannelli + bordi tetto interni)
                 for (const ePos of guidesRef.current.uEdges) {
                     const cand1 = ePos - sz.hw;
                     const cand2 = ePos + sz.hw;
                     const du1 = Math.abs(cur.u - cand1);
                     const du2 = Math.abs(cur.u - cand2);
-                    if (du1 <= snapPxImg && du1 < bestDU) {
-                        bestDU = du1; bestU = cand1; snappedU = true;
-                    }
-                    if (du2 <= snapPxImg && du2 < bestDU) {
-                        bestDU = du2; bestU = cand2; snappedU = true;
-                    }
+                    if (du1 <= snapPxImg && du1 < bestDU) { bestDU = du1; bestU = cand1; snappedU = true; }
+                    if (du2 <= snapPxImg && du2 < bestDU) { bestDU = du2; bestU = cand2; snappedU = true; }
                 }
 
-                // --- SNAP lungo v ---
                 let bestV = cur.v;
                 let bestDV = snapPxImg + 1;
                 let snappedV = false;
 
                 for (const g of guidesRef.current.vCenters) {
                     const dv = Math.abs(cur.v - g);
-                    if (dv <= snapPxImg && dv < bestDV) {
-                        bestDV = dv;
-                        bestV = g;
-                        snappedV = true;
-                    }
+                    if (dv <= snapPxImg && dv < bestDV) { bestDV = dv; bestV = g; snappedV = true; }
                 }
                 for (const ePos of guidesRef.current.vEdges) {
                     const cand1 = ePos - sz.hh;
                     const cand2 = ePos + sz.hh;
                     const dv1 = Math.abs(cur.v - cand1);
                     const dv2 = Math.abs(cur.v - cand2);
-                    if (dv1 <= snapPxImg && dv1 < bestDV) {
-                        bestDV = dv1; bestV = cand1; snappedV = true;
-                    }
-                    if (dv2 <= snapPxImg && dv2 < bestDV) {
-                        bestDV = dv2; bestV = cand2; snappedV = true;
-                    }
+                    if (dv1 <= snapPxImg && dv1 < bestDV) { bestDV = dv1; bestV = cand1; snappedV = true; }
+                    if (dv2 <= snapPxImg && dv2 < bestDV) { bestDV = dv2; bestV = cand2; snappedV = true; }
                 }
 
-                // aggiorna hint lines
+                // --- NO-OVERLAP: spingi fuori se interseca altri moduli paralleli
+                const separated = resolveNoOverlap(bestU, bestV, sz.hw, sz.hh, id);
+                bestU = separated.u;
+                bestV = separated.v;
+
+                // hint lines
                 if (snappedU) {
                     const a = fromUV(bestU, uvBounds.minV);
                     const b = fromUV(bestU, uvBounds.maxV);
                     setHintU([a.x, a.y, b.x, b.y]);
-                } else {
-                    setHintU(null);
-                }
+                } else setHintU(null);
+
                 if (snappedV) {
                     const a = fromUV(uvBounds.minU, bestV);
                     const b = fromUV(uvBounds.maxU, bestV);
                     setHintV([a.x, a.y, b.x, b.y]);
-                } else {
-                    setHintV(null);
-                }
+                } else setHintV(null);
 
                 const snapped = fromUV(bestU, bestV);
                 updatePanel(id, { cx: snapped.x, cy: snapped.y });
@@ -267,15 +302,14 @@ export function usePanelDragSnap({
             uvBounds,
             snapPxImg,
             clearHints,
+            resolveNoOverlap,
         ]
     );
 
     // cleanup a smontaggio
     React.useEffect(() => {
         return () => {
-            try {
-                stageRef.current?.off('.paneldrag');
-            } catch { }
+            try { stageRef.current?.off('.paneldrag'); } catch { }
         };
     }, []);
 
