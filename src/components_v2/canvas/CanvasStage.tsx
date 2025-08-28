@@ -30,15 +30,7 @@ import PanelsKonva from '../modules/PanelsKonva';
 import LeftLayersOverlay from '../layout/LeftLayersOverlay';
 import PanelsLayer from '../modules/panels/PanelsLayer';
 import RoofShapesLayer from './RoofShapesLayer';
-
-
-
-
-
-
-
-
-
+import DrawingOverlay from './DrawingOverlay';
 
 
 // ---------- helpers ----------
@@ -534,113 +526,19 @@ const strokeWidthSelected = 0.85;
   onAnyDragStart={() => setDraggingPanel(true)}
   onAnyDragEnd={() => setDraggingPanel(false)}
 />
-
-
-
-
-            {/* DISEGNO POLIGONO (rubber band) */}
-            {tool === 'draw-roof' && drawingPoly && drawingPoly.length > 0 && (
-              <>
-                <KonvaLine
-                  points={toFlat([...drawingPoly, mouseImg ?? drawingPoly[drawingPoly.length - 1]])}
-                  stroke={stroke}
-                  strokeWidth={1.5}
-                  dash={[6, 6]}
-                  lineJoin="round"
-                  
-                  lineCap="round"
-                />
-                {drawingPoly.map((p, i) => (
-                  <KonvaCircle key={i} x={p.x} y={p.y} radius={3.2} fill="#fff" stroke={stroke} strokeWidth={1.2} />
-                ))}
-                {drawingPoly.length >= 3 && (
-                  <KonvaText
-                    x={polygonCentroid(drawingPoly).x}
-                    y={polygonCentroid(drawingPoly).y}
-                    text={areaLabel(drawingPoly) ?? ''}
-                    fontSize={12}
-                    fill="#fff"
-                    offsetX={18}
-                    offsetY={-6}
-                    listening={false}
-                    // @ts-ignore
-                    shadowColor="white"
-                    shadowBlur={2}
-                    shadowOpacity={0.9}
-                  />
-                )}
-              </>
-            )}
-
-            {/* DISEGNO RETTANGOLO 3-CLICK (preview) */}
-            {tool === 'draw-rect' && rectDraft && rectDraft.length > 0 && (
-              <>
-                {/* A solo */}
-                {rectDraft.length === 1 && (
-                  <KonvaCircle x={rectDraft[0].x} y={rectDraft[0].y} radius={3.2} fill="#fff" stroke={stroke} strokeWidth={1.2} />
-                )}
-                {/* A-B linea base */}
-                {rectDraft.length === 2 && (
-                  <>
-                    <KonvaLine
-                      points={toFlat(rectDraft)}
-                      stroke={stroke}
-                      strokeWidth={1.5}
-                      dash={[6, 6]}
-                      lineJoin="round"
-                      lineCap="round"
-                    />
-                    {mouseImg && (() => {
-                      const preview = rectFrom3(rectDraft[0], rectDraft[1], mouseImg);
-                      const flat = toFlat(preview);
-                      return (
-                        <>
-                          <KonvaLine
-                            points={flat}
-                            closed
-                            stroke={stroke}
-                            strokeWidth={1.5}
-                            lineJoin="round"
-                            lineCap="round"
-                            dash={[6, 6]}
-                          />
-                          <KonvaText
-                            x={polygonCentroid(preview).x}
-                            y={polygonCentroid(preview).y}
-                            text={areaLabel(preview) ?? ''}
-                            fontSize={12}
-                            fill="#fff"
-                            offsetX={18}
-                            offsetY={-6}
-                            listening={false}
-                            // @ts-ignore
-                            shadowColor="white"
-                            shadowBlur={2}
-                            shadowOpacity={0.9}
-                          />
-                        </>
-                      );
-                    })()}
-                  </>
-                )}
-              </>
-            )}
+<DrawingOverlay
+  tool={tool}
+  drawingPoly={drawingPoly}
+  rectDraft={rectDraft}
+  mouseImg={mouseImg}
+  stroke={stroke}
+  areaLabel={areaLabel}
+/>
           </Layer>
-        </Stage>
-        
+        </Stage>       
       )}
       <OrientationHUD />
 
-
-      {/* Frecce di orientamento (solo tetto selezionato) */}
-
-
-      {/* {selectedId && (
-  <AzimuthBadge
-    points={(usePlannerV2Store.getState().layers.find(l => l.id === selectedId) ?? { points: [] }).points}
-    view={view}
-  />
-)} */}
       {/* Toggle modalità forma (posizionato sopra il centroide del tetto selezionato) */}
 {selectedRoof && (() => {
   const s = view.scale || (view.fitScale || 1);        // scala attuale
