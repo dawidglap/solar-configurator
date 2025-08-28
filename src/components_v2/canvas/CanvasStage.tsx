@@ -29,6 +29,8 @@ import { X } from 'lucide-react';
 import PanelsKonva from '../modules/PanelsKonva';
 import LeftLayersOverlay from '../layout/LeftLayersOverlay';
 import PanelsLayer from '../modules/panels/PanelsLayer';
+import RoofShapesLayer from './RoofShapesLayer';
+
 
 
 
@@ -503,64 +505,25 @@ const strokeWidthSelected = 0.85;
             <SonnendachOverlayKonva />
 
             {/* tetti esistenti */}
-          {layers.map((r) => {
-  const flat = toFlat(r.points);
-  const sel = r.id === selectedId;
-  const c = polygonCentroid(r.points);
-  // const label = areaLabel(r.points);
-
-
-  return (
-    <KonvaGroup key={r.id}>
-     <KonvaLine
-  points={flat}
-  closed
-  stroke={sel ? strokeSelected : stroke}
-  strokeWidth={sel ? strokeWidthSelected : strokeWidthNormal}
-  lineJoin="round"
-  lineCap="round"
+<RoofShapesLayer
+  layers={layers}
+  selectedId={selectedId}
+  onSelect={select}
+  showAreaLabels={SHOW_AREA_LABELS}
+  stroke={stroke}
+  strokeSelected={strokeSelected}
   fill={fill}
-  onClick={() => select(r.id)}
-  // piccolo glow solo quando selezionato
-  shadowColor={sel ? strokeSelected : 'transparent'}
-  shadowBlur={sel ? 6 : 0}
-  shadowOpacity={sel ? 0.9 : 0}
+  strokeWidthNormal={strokeWidthNormal}
+  strokeWidthSelected={strokeWidthSelected}
+  shapeMode={shapeMode}
+  toImg={toImgCoords}
+  imgW={snap.width ?? (img?.naturalWidth ?? 0)}
+  imgH={snap.height ?? (img?.naturalHeight ?? 0)}
+  onHandlesDragStart={() => setDraggingVertex(true)}
+  onHandlesDragEnd={() => setDraggingVertex(false)}
+  areaLabel={areaLabel}
 />
 
- {SHOW_AREA_LABELS && (
-  <KonvaText
-    x={c.x}
-    y={c.y}
-    text={areaLabel(r.points) ?? ''}
-    fontSize={12}
-    fill="#111"
-    offsetX={18}
-    offsetY={-6}
-    listening={false}
-    shadowColor="white" 
-    shadowBlur={2}
-    shadowOpacity={0.9}
-  />
-)}
-
-      {/* Maniglie: SOLO quando selezionato + modalità Trapezio */}
-   {sel && shapeMode === 'trapezio' && (
-  <RoofHandlesKonva
-    points={r.points}
-    imgW={snap.width ?? (img?.naturalWidth ?? 0)}
-    imgH={snap.height ?? (img?.naturalHeight ?? 0)}
-    toImg={toImgCoords}                    // ⬅️ aggiunto
-    onDragStart={() => setDraggingVertex(true)}
-    onDragEnd={() => setDraggingVertex(false)}
-    onChange={(next) =>
-      usePlannerV2Store.getState().updateRoof(r.id, { points: next })
-    }
-  />
-)}
-
-    </KonvaGroup>
-  );
-})}
 {/* Pannelli reali */}
 <PanelsLayer
   layers={layers}
