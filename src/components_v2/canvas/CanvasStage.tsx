@@ -25,6 +25,8 @@ import { useBaseImage } from '../canvas/hooks/useBaseImage';
 import { useStagePanZoom } from '../canvas/hooks/useStagePanZoom';
 import { useDrawingTools } from '../canvas/hooks/useDrawingTools';
 import DrawingOverlays from './DrawingOverlays';
+import PanelHotkeys from '../modules/panels/PanelHotkeys';
+
 
 export default function CanvasStage() {
   // 1) ref contenitore
@@ -41,6 +43,8 @@ export default function CanvasStage() {
   const selectedId = usePlannerV2Store((s) => s.selectedId);
   const rightOpen = usePlannerV2Store((s) => s.ui.rightPanelOpen);
   const modules = usePlannerV2Store((s) => s.modules);
+  const duplicatePanel = usePlannerV2Store((s) => s.duplicatePanel);
+
 
   // 3) size e immagine di base (ORA puoi usare setView)
   const size = useContainerSize(containerRef);
@@ -68,6 +72,8 @@ export default function CanvasStage() {
 
   // selezione pannello
   const [selectedPanelInstId, setSelectedPanelInstId] = useState<string | undefined>(undefined);
+  const deletePanel = usePlannerV2Store((s) => s.deletePanel);
+
 
   const SHOW_AREA_LABELS = false; // tenerlo su false
 
@@ -257,6 +263,18 @@ export default function CanvasStage() {
           </Layer>
         </Stage>
       )}
+<PanelHotkeys
+  selectedPanelId={selectedPanelInstId}
+  onDelete={(id) => {
+    deletePanel(id);
+    setSelectedPanelInstId(undefined);
+  }}
+  onDuplicate={(id) => {
+    const nid = duplicatePanel(id);
+    if (nid) setSelectedPanelInstId(nid);
+  }}
+/>
+
 
       <OrientationHUD />
 

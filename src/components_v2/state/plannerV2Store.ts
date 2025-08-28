@@ -15,6 +15,9 @@ type UIState = {
     searchOpen: boolean;
 };
 
+
+
+
 export type Tool = 'select' | 'draw-roof' | 'draw-reserved' | 'draw-rect';
 
 export type Pt = { x: number; y: number };
@@ -150,6 +153,8 @@ type PlannerV2State = {
     getPanelsForRoof: (roofId: string) => PanelInstance[];                 // ⬅️ selector comodo
     updatePanel: (id: string, patch: Partial<PanelInstance>) => void;
     deletePanel: (id: string) => void;
+    duplicatePanel: (id: string, offsetPx?: number) => string | undefined;
+
 
     /** UI slice */
     ui: UIState;
@@ -159,6 +164,8 @@ type PlannerV2State = {
     toggleLeftPanelOpen: () => void;
     openSearch: () => void;
     closeSearch: () => void;
+
+
 };
 
 export const usePlannerV2Store = create<PlannerV2State>()(
@@ -238,6 +245,30 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 set((s) => ({ panels: s.panels.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
             deletePanel: (id) =>
                 set((s) => ({ panels: s.panels.filter((p) => p.id !== id) })),
+
+            duplicatePanel: (id, offsetPx = 18) => {
+                const { panels } = get();
+                const src = panels.find((p) => p.id === id);
+                if (!src) return undefined;
+
+                const rad = ((src.angleDeg ?? 0) * Math.PI) / 180;
+                const dx = Math.cos(rad) * offsetPx;
+                const dy = Math.sin(rad) * offsetPx;
+
+                const newId = `${src.id}_copy_${Math.random().toString(36).slice(2, 7)}`;
+
+                const clone = {
+                    ...src,
+                    id: newId,
+                    cx: src.cx + dx,
+                    cy: src.cy + dy,
+                    locked: false,
+                };
+
+                set((s) => ({ panels: [...s.panels, clone] }));
+                return newId;
+            },
+
 
             /** UI slice */
             ui: {
