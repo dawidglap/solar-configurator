@@ -9,7 +9,6 @@ import {
 
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import ScaleIndicator from './ScaleIndicator';
-import EdgeLengthBadges from './EdgeLengthBadges';
 import SonnendachOverlayKonva from './SonnendachOverlayKonva';
 import OrientationHUD from './OrientationHUD';
 import ModulesPreview from '../modules/ModulesPreview';
@@ -25,6 +24,8 @@ import PanelsLayer from '../modules/panels/PanelsLayer';
 import RoofShapesLayer from './RoofShapesLayer';
 import DrawingOverlay from './DrawingOverlay';
 import RoofHudOverlay from './RoofHudOverlay';
+import { useContainerSize } from './hooks/useContainerSize';
+
 
 
 
@@ -76,12 +77,10 @@ function rectFrom3WithAz(A: Pt, B: Pt, C: Pt): { poly: Pt[]; azimuthDeg: number 
 
 export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
-
+  const size = useContainerSize(containerRef);
   const snap = usePlannerV2Store(s => s.snapshot);
   const view = usePlannerV2Store(s => s.view);
   const setView = usePlannerV2Store(s => s.setView);
-
   const tool = usePlannerV2Store(s => s.tool);
   const layers = usePlannerV2Store(s => s.layers);
   const addRoof = usePlannerV2Store(s => s.addRoof);
@@ -116,16 +115,10 @@ const hasPanelsOnSelected = useMemo(
 
 const step = usePlannerV2Store(s => s.step);
 const selPanel = usePlannerV2Store(s => s.getSelectedPanel());
-const params = {
-  orientation: 'portrait' as const,
-  spacingM: 0.02,
-  marginM: 0.30,
-};
 const panelTextureUrl = '/images/panel.webp'; // 
 
 // quando cambio selezione, torno a "normale"
 useEffect(() => { setShapeMode('normal'); }, [selectedId]);
-
 
   // --- carica immagine
   const [img, setImg] = useState<HTMLImageElement | null>(null);
@@ -139,12 +132,7 @@ useEffect(() => { setShapeMode('normal'); }, [selectedId]);
   }, [snap.url]);
 
   // --- osserva dimensioni contenitore
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const ro = new ResizeObserver(([e]) => setSize({ w: e.contentRect.width, h: e.contentRect.height }));
-    ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, []);
+
 
   // --- calcola fit + centra immagine (min zoom = fit)
 // --- calcola cover + centra immagine (min zoom = cover)
@@ -330,7 +318,6 @@ const onStageDblClick = () => {
   }
 };
 
-
   // ESC/ENTER gestione solo per poligono
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -346,10 +333,6 @@ const onStageDblClick = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [tool, drawingPoly]);
 
-  // shape styles
-  // prima
-// const stroke = '#0ea5e9';
-// const fill = 'rgba(14,165,233,0.18)';
 
 // dopo (più “premium”, stile Reonic-like)
 const stroke = '#fff';                    // colore base
@@ -358,8 +341,6 @@ const fill = 'rgba(246, 240, 255, 0.12)';
 const strokeWidthNormal = 0.5;
 const strokeWidthSelected = 0.85;  
 
-
-  const toFlat = (pts: Pt[]) => pts.flatMap(p => [p.x, p.y]);
   const areaLabel = (pts: Pt[]) => {
     if (!snap.mppImage) return null;
     const areaPx2 = polygonAreaPx2(pts);
@@ -373,24 +354,17 @@ const strokeWidthSelected = 0.85;
     : canDrag && !draggingVertex
       ? 'grab'
       : 'default';
-
-
   const layerScale = view.scale || (view.fitScale || 1);
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-50">
-      
-
       <OverlayProgressStepper />
-      
       <OverlayTopToolbar />
       <ScaleIndicator />
 {/* Barra centrale: solo prima di iniziare */}
 {!snap.url && <CenterAddressSearchOverlay />}
-
 {/* Toggle flottante del pannello destro */}
 <OverlayRightToggle />
-
 {/* Right panel overlay */}
 <AnimatePresence>
   {rightOpen && (
@@ -406,15 +380,10 @@ const strokeWidthSelected = 0.85;
     </motion.div>
   )}
 </AnimatePresence>
-
 {/* Toggle flottante del pannello sinistro */}
 <OverlayLeftToggle />
-
 {/* Left panel overlay */}
 <LeftLayersOverlay />
-
-
-
       {img && size.w > 0 && size.h > 0 && (
         <Stage
           width={size.w}
@@ -422,9 +391,6 @@ const strokeWidthSelected = 0.85;
           x={view.offsetX || 0}
           y={view.offsetY || 0}
           draggable={canDrag && tool !== 'draw-roof' && tool !== 'draw-rect' && !draggingVertex && !draggingPanel}
-
-
-
           onDragMove={onDragMove}
           onWheel={onWheel}
           onMouseMove={onStageMouseMove}
@@ -440,7 +406,6 @@ const strokeWidthSelected = 0.85;
               height={img.naturalHeight}
               listening={false}
             />
-
 {step === 'modules' && selectedRoof && selPanel && snap.mppImage && modules.showGrid && !hasPanelsOnSelected && (
   <ModulesPreview
     polygon={selectedRoof.points}
@@ -453,9 +418,7 @@ const strokeWidthSelected = 0.85;
     textureUrl="/images/panel.webp"
   />
 )}
-
             <SonnendachOverlayKonva />
-
             {/* tetti esistenti */}
 <RoofShapesLayer
   layers={layers}
@@ -475,7 +438,6 @@ const strokeWidthSelected = 0.85;
   onHandlesDragEnd={() => setDraggingVertex(false)}
   areaLabel={areaLabel}
 />
-
 {/* Pannelli reali */}
 <PanelsLayer
   layers={layers}
@@ -498,7 +460,6 @@ const strokeWidthSelected = 0.85;
         </Stage>       
       )}
       <OrientationHUD />
-
       {/* Toggle modalità forma (posizionato sopra il centroide del tetto selezionato) */}
 <RoofHudOverlay
   selectedRoof={selectedRoof}
@@ -508,11 +469,6 @@ const strokeWidthSelected = 0.85;
   mpp={snap.mppImage}
   edgeColor={strokeSelected}
 />
-
-
-
-
-
     </div>
   );
 }
