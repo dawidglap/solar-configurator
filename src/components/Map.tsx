@@ -339,14 +339,18 @@ export default function Map() {
         return;
       }
 
+// ...dentro handleSelectLocation, nel forEach dei risultati
 const polygons: RoofPolygon[] = [];
 results.forEach((res: any) => {
   const rings = res.geometry?.rings;
-  const eignung = res.attributes?.dach_eignung;
 
   if (rings && Array.isArray(rings)) {
     rings.forEach((ring: number[][], ringIdx: number) => {
       const converted = ring.map(([lng2, lat2]) => [lat2, lng2] as [number, number]);
+
+      // 🔽 Normalizza a numero (evita string/undefined)
+      const rawEignung = res.attributes?.dach_eignung;
+      const eignung = Number.isFinite(Number(rawEignung)) ? Number(rawEignung) : 0;
 
       const baseAttrs = (res.attributes ?? {}) as Partial<RoofAttributes>;
       const id =
@@ -354,12 +358,15 @@ results.forEach((res: any) => {
           ? String((baseAttrs as any).id)
           : `roof-${res?.layerId ?? "layer"}-${res?.featureId ?? "feat"}-${polygons.length}-${ringIdx}`;
 
-      const attrs: RoofPolygon["attributes"] = { ...baseAttrs, id };
+      const attrs = { ...baseAttrs, id } as RoofPolygon["attributes"];
 
       polygons.push({ coords: converted, eignung, attributes: attrs });
     });
   }
 });
+
+setRoofPolygons(polygons);
+
 
 
       setRoofPolygons(polygons);

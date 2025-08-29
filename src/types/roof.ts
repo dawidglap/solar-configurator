@@ -2,14 +2,14 @@
 export type LatLng = [number, number];
 
 export interface RoofAttributes {
-    dach_eignung?: number | string;
+    id: string;                         // obbligatorio: lo usi nella selezione
+    dach_eignung?: number | string;     // grezzo dall’API (può essere string/num)
     ausrichtung?: number | string;
-    id: string;                       // ← obbligatorio: serve al renderer/selezione
-    [key: string]: any;               // extra campi dall'API
+    [key: string]: any;
 }
 
 export interface RoofPolygon {
-    coords: LatLng[];                 // ← non number[][] ma tuple [lat,lng]
-    eignung?: number | string;        // a volte l'API manda stringhe
+    coords: LatLng[];                   // [lat,lng][]
+    eignung: number;                    // 🔒 sempre number dopo la normalizzazione
     attributes: RoofAttributes;
 }
