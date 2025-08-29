@@ -1,3 +1,4 @@
+// src/components_v2/canvas/RoofEditorLayer.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -50,7 +51,9 @@ export default function RoofEditorLayer() {
           }}
           onDragMove={(e) => {
             const node = e.target;
-            const parent = node.getParent();              // il KonvaGroup scalato/traslato
+            const parent = node.getParent();
+            if (!parent) return; // ← guardia: parent può essere null
+
             const abs = node.getAbsolutePosition();
 
             // Converti ABS(Stage) -> LOCAL(Group) usando l'inversa del transform del parent
@@ -75,6 +78,8 @@ export default function RoofEditorLayer() {
             // commit definitivo nello store in coordinate immagine clampate
             const node = e.target;
             const parent = node.getParent();
+            if (!parent) return; // ← guardia: parent può essere null
+
             const abs = node.getAbsolutePosition();
 
             const inv = parent.getAbsoluteTransform().copy();
