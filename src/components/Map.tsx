@@ -339,17 +339,28 @@ export default function Map() {
         return;
       }
 
-      const polygons: RoofPolygon[] = [];
-      results.forEach((res: any) => {
-        const rings = res.geometry?.rings;
-        const eignung = res.attributes?.dach_eignung;
-        if (rings && Array.isArray(rings)) {
-          rings.forEach((ring: number[][]) => {
-            const converted = ring.map(([lng2, lat2]) => [lat2, lng2]);
-            polygons.push({ coords: converted, eignung, attributes: res.attributes });
-          });
-        }
-      });
+const polygons: RoofPolygon[] = [];
+results.forEach((res: any) => {
+  const rings = res.geometry?.rings;
+  const eignung = res.attributes?.dach_eignung;
+
+  if (rings && Array.isArray(rings)) {
+    rings.forEach((ring: number[][], ringIdx: number) => {
+      const converted = ring.map(([lng2, lat2]) => [lat2, lng2] as [number, number]);
+
+      const baseAttrs = (res.attributes ?? {}) as Partial<RoofAttributes>;
+      const id =
+        (baseAttrs as any).id
+          ? String((baseAttrs as any).id)
+          : `roof-${res?.layerId ?? "layer"}-${res?.featureId ?? "feat"}-${polygons.length}-${ringIdx}`;
+
+      const attrs: RoofPolygon["attributes"] = { ...baseAttrs, id };
+
+      polygons.push({ coords: converted, eignung, attributes: attrs });
+    });
+  }
+});
+
 
       setRoofPolygons(polygons);
     } catch (error: any) {
