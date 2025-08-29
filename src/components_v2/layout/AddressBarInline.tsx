@@ -1,3 +1,4 @@
+// src/components_v2/layout/AddressBarInline.tsx
 'use client';
 
 import AddressSearchOSM from '../geocoding/AddressSearchOSM';
@@ -23,25 +24,35 @@ export default function AddressBarInline() {
         lat, lon, zoom: ZOOM_DEFAULT, width: 2800, height: 1800, scale: 1,
         tileUrl: TILE_SWISSTOPO_SAT, attribution: '© swisstopo',
       });
+
       const { minLon, minLat, maxLon, maxLat } = bboxLonLatFromCenter({ lon, lat }, ZOOM_DEFAULT, w, h);
-      const bl = lonLatTo3857(minLon, minLat); const tr = lonLatTo3857(maxLon, maxLat);
+      const bl = lonLatTo3857(minLon, minLat);
+      const tr = lonLatTo3857(maxLon, maxLat);
+
       const snapObj = {
-        url: dataUrl, width: w, height: h,
+        url: dataUrl,
+        width: w,
+        height: h,
         mppImage: metersPerPixel3857(lat, ZOOM_DEFAULT),
-        center: { lat, lon }, zoom: ZOOM_DEFAULT,
+        center: { lat, lon },
+        zoom: ZOOM_DEFAULT,
         bbox3857: { minX: bl.x, minY: bl.y, maxX: tr.x, maxY: tr.y },
       } as const;
+
       setSnapshot(snapObj);
 
       clearDetectedRoofs();
       const raw = await fetchRoofPolysForSnapshot(snapObj, 'de');
 
-      // quick cluster (stesso di sopra)
-      const pick = (await import('../layout/RightPropertiesPanelOverlay')).then(m => (m as any).pickRoofsForBuilding);
-      const pickFn = (await pick) || ((arr:any)=>arr);
+      // ✅ Dynamic import corretto (niente .then dopo await)
+      const mod = await import('../layout/RightPropertiesPanelOverlay');
+      const pickFn =
+        (mod as any).pickRoofsForBuilding ||
+        ((arr: any) => arr);
+
       const building = pickFn(raw, snapObj, { expandGrowPx: 48, minAreaPx2: 700 });
 
-      setDetectedRoofs(building.map((p:any, i:number) => ({
+      setDetectedRoofs(building.map((p: any, i: number) => ({
         id: `sd_${p.id}_${i}`,
         points: p.pointsPx,
         tiltDeg: p.tiltDeg,
