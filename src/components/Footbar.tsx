@@ -37,14 +37,27 @@ const kwpDaModuli = (modsStats?.count ?? 0) * kwpPerModulo;
 
 
   // Trova la classe più comune tra i tetti selezionati
-  const classCounter = data.reduce((acc: Record<number, number>, item) => {
-    const cls = item.klasse;
-    if (cls) acc[cls] = (acc[cls] || 0) + 1;
-    return acc;
-  }, {});
-  const mostCommonClass = Number(
-    Object.entries(classCounter).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0
-  );
+// Trova la classe più comune tra i tetti selezionati
+const classCounter = data.reduce((acc: Record<number, number>, item) => {
+  const raw = item.klasse as unknown; // potrebbe essere string/number/undefined
+  const cls =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string'
+      ? parseInt(raw, 10)
+      : NaN;
+
+  if (!Number.isNaN(cls)) {
+    acc[cls] = (acc[cls] ?? 0) + 1;
+  }
+  return acc;
+}, {} as Record<number, number>); // ← importante: cast dell'oggetto iniziale
+
+const mostCommonClass =
+  Number(
+    Object.entries(classCounter).sort((a, b) => b[1] - a[1])[0]?.[0]
+  ) || 0;
+
 
   const classi: Record<number, { label: string; color: string }> = {
     1: { label: "Hervorragend", color: "text-red-500" },
