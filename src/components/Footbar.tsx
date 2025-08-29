@@ -22,8 +22,8 @@ export default function Footbar({
 }) {
   if (!data || data.length === 0) return null;
 
-  const totalFlaeche = data.reduce((sum, item) => sum + (item.flaeche ?? 0), 0);
-  const totalStromertrag = data.reduce((sum, item) => sum + (item.stromertrag ?? 0), 0);
+  const totalFlaeche = data.reduce<number>((sum, item) => sum + Number(item.flaeche ?? 0), 0);
+const totalStromertrag = data.reduce<number>((sum, item) => sum + Number(item.stromertrag ?? 0), 0);
 
   const spezifischerErtrag =
     totalStromertrag && totalFlaeche ? Math.round(totalStromertrag / (totalFlaeche * 0.2)) : 0;
