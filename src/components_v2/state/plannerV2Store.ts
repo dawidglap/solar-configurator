@@ -4,16 +4,15 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 // ───────────────────────────────────────────────────────────
-// TIPI & COSTANTI (ora esterni)
+// TIPI & COSTANTI
 // ───────────────────────────────────────────────────────────
 import type {
     PlannerStep, Tool,
-    DetectedRoof, RoofArea, Snapshot, View,
-    PanelSpec, ModulesConfig, PanelInstance
+    DetectedRoof, Snapshot, View,
+    PanelSpec, ModulesConfig
 } from '@/types/planner';
 import { PANEL_CATALOG } from '../../constants/panels';
 
-// (opzionale) re-export per backward compatibility
 export type {
     PlannerStep, UIState, Tool, Pt,
     DetectedRoof, RoofArea, Snapshot, View,
@@ -29,47 +28,40 @@ import { createUiSlice } from './slices/uiSlice';
 import type { PanelsSlice } from './slices/panelsSlice';
 import { createPanelsSlice } from './slices/panelsSlice';
 
+import type { LayersSlice } from './slices/layersSlice';
+import { createLayersSlice } from './slices/layersSlice';
+
 // ───────────────────────────────────────────────────────────
 // STATO
 // ───────────────────────────────────────────────────────────
 type PlannerV2State = {
+    // step & snapshot
     step: PlannerStep;
     setStep: (s: PlannerStep) => void;
-
     snapshot: Snapshot;
     setSnapshot: (s: Partial<Snapshot>) => void;
 
+    // view & tools
     snapshotScale: 1 | 2 | 3;
     setSnapshotScale: (n: 1 | 2 | 3) => void;
-
     view: View;
     setView: (v: Partial<View>) => void;
-
     tool: Tool;
     setTool: (t: Tool) => void;
 
-    layers: RoofArea[];
-    addRoof: (r: RoofArea) => void;
-    updateRoof: (id: string, patch: Partial<RoofArea>) => void;
-    deleteLayer: (id: string) => void;
-
-    detectedRoofs: DetectedRoof[];
-    setDetectedRoofs: (arr: DetectedRoof[]) => void;
-    clearDetectedRoofs: () => void;
-
-    selectedId?: string;
-    select: (id?: string) => void;
-
-    /** Catalogo + scelta corrente */
+    // pannelli (catalogo + config)
     catalogPanels: PanelSpec[];
     selectedPanelId: string;
     setSelectedPanel: (id: string) => void;
     getSelectedPanel: () => PanelSpec | undefined;
-
-    /** Configurazione moduli (step modules) */
     modules: ModulesConfig;
     setModules: (patch: Partial<ModulesConfig>) => void;
-} & UISlice & PanelsSlice;
+
+    // Sonnendach rilevati
+    detectedRoofs: DetectedRoof[];
+    setDetectedRoofs: (arr: DetectedRoof[]) => void;
+    clearDetectedRoofs: () => void;
+} & UISlice & LayersSlice & PanelsSlice;
 
 export const usePlannerV2Store = create<PlannerV2State>()(
     persist(
@@ -94,23 +86,6 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             tool: 'select',
             setTool: (t) => set({ tool: t }),
 
-            // ── Roof layers
-            layers: [],
-            addRoof: (r) => set((st) => ({ layers: [...st.layers, r], selectedId: r.id })),
-            updateRoof: (id, patch) =>
-                set((st) => ({ layers: st.layers.map((l) => (l.id === id ? { ...l, ...patch } : l)) })),
-            deleteLayer: (id) =>
-                set((st) => ({ layers: st.layers.filter((l) => l.id !== id), selectedId: undefined })),
-
-            // ── Selezione
-            selectedId: undefined,
-            select: (id) => set({ selectedId: id }),
-
-            // ── Detected roofs
-            detectedRoofs: [],
-            setDetectedRoofs: (arr) => set({ detectedRoofs: arr }),
-            clearDetectedRoofs: () => set({ detectedRoofs: [] }),
-
             // ── Catalogo pannelli
             catalogPanels: PANEL_CATALOG,
             selectedPanelId: PANEL_CATALOG[0].id,
@@ -131,15 +106,23 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             setModules: (patch) =>
                 set((s) => ({ modules: { ...s.modules, ...patch } })),
 
-            // ── UI slice (estratta)
+            // ── Sonnendach rilevati
+            detectedRoofs: [],
+            setDetectedRoofs: (arr) => set({ detectedRoofs: arr }),
+            clearDetectedRoofs: () => set({ detectedRoofs: [] }),
+
+            // ── UI slice
             ...createUiSlice(set, get),
 
-            // ── Panels slice (estratta)
+            // ── Layers slice
+            ...createLayersSlice(set, get),
+
+            // ── Panels slice
             ...createPanelsSlice(set, get),
         }),
         {
             name: 'planner-v2',
-            version: 8, // bump se cambi schema persistito
+            version: 8,
 
             storage: createJSONStorage(() => localStorage),
 
@@ -147,14 +130,14 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 step: s.step,
                 view: s.view,
                 tool: s.tool,
-                layers: s.layers,
-                selectedId: s.selectedId,
+                layers: s.layers,          // <- LayersSlice
+                selectedId: s.selectedId,  // <- LayersSlice
                 snapshotScale: s.snapshotScale,
                 catalogPanels: s.catalogPanels,
                 selectedPanelId: s.selectedPanelId,
                 modules: s.modules,
-                panels: s.panels, // <- arriva da PanelsSlice, continua ad essere persistito
-                // NOTA: s.ui non viene persistito (come prima)
+                panels: s.panels,          // <- PanelsSlice
+                // s.ui non persistito
             }),
 
             migrate: (persisted: any) => {
@@ -208,7 +191,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
     )
 );
 
-// Dev helper (facoltativo): test rapido da console
+// Dev helper
 if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
     // @ts-expect-error debug helper
     window.plannerStore = usePlannerV2Store;
