@@ -9,10 +9,19 @@ type Tool = 'select' | 'draw-roof' | 'draw-rect' | string;
 
 type Layer = { id: string; name: string; points: Pt[] };
 
-export function useDrawingTools(args: {
+// Tipo minimo che l’hook richiede per aggiungere un tetto
+type RoofAreaLike = {
+    id: string;
+    name: string;
+    points: Pt[];
+    azimuthDeg?: number;
+    source?: string;
+};
+
+export function useDrawingTools<T extends RoofAreaLike>(args: {
     tool: Tool;
     layers: Layer[];
-    addRoof: (r: { id: string; name: string; points: Pt[]; azimuthDeg?: number; source?: string }) => void;
+    addRoof: (r: T) => void;
     select: (id?: string) => void;
     toImgCoords: (stageX: number, stageY: number) => Pt;
 }) {
@@ -39,12 +48,12 @@ export function useDrawingTools(args: {
         if (pts.length < 3) { setDrawingPoly(null); return; }
         const id = 'roof_' + Date.now().toString(36);
         const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
-        addRoof({ id, name, points: pts });
+        addRoof({ id, name, points: pts } as T);
         select(id);
         setDrawingPoly(null);
     }, [layers, addRoof, select]);
 
-    // CLICK handler unico (come prima)
+    // CLICK handler unico
     const onStageClick = React.useCallback((e: any) => {
         const pos = e.target.getStage().getPointerPosition();
         if (!pos) return;
@@ -59,7 +68,7 @@ export function useDrawingTools(args: {
                 const pts = drawingPoly;
                 const id = 'roof_' + Date.now().toString(36);
                 const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
-                addRoof({ id, name, points: pts });
+                addRoof({ id, name, points: pts } as T);
                 select(id);
                 setDrawingPoly(null);
                 return;
@@ -81,7 +90,7 @@ export function useDrawingTools(args: {
             const { poly, azimuthDeg } = rectFrom3WithAz(rectDraft[0], rectDraft[1], p);
             const id = 'roof_' + Date.now().toString(36);
             const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
-            addRoof({ id, name, points: poly, azimuthDeg, source: 'manual' });
+            addRoof({ id, name, points: poly, azimuthDeg, source: 'manual' } as T);
             select(id);
             setRectDraft(null);
             return;
@@ -98,7 +107,7 @@ export function useDrawingTools(args: {
             const pts = drawingPoly;
             const id = 'roof_' + Date.now().toString(36);
             const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
-            addRoof({ id, name, points: pts });
+            addRoof({ id, name, points: pts } as T);
             select(id);
             setDrawingPoly(null);
         } else {
