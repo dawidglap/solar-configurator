@@ -1,3 +1,4 @@
+// src/components_v2/canvas/RoofHandlesKonva.tsx
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -23,7 +24,7 @@ export default function RoofHandlesKonva({
   onDragEnd?: () => void;
 }) {
   const [active, setActive] = useState<number | null>(null);
-  const activeRef = useRef<number | null>(null);              // <-- usare ref, non state
+  const activeRef = useRef<number | null>(null);              // usare ref, non state
   const stageRef = useRef<import('konva/lib/Stage').Stage | null>(null);
   const ptsRef = useRef(points);
   ptsRef.current = points;
@@ -41,10 +42,11 @@ export default function RoofHandlesKonva({
   const startDrag = useCallback((i: number, e: any) => {
     e.cancelBubble = true;                                      // non propagare al poligono
     setActive(i);
-    activeRef.current = i;                                      // <-- salva l’indice attivo
+    activeRef.current = i;                                      // salva l’indice attivo
     onDragStart?.();
 
     const st = e.target.getStage();
+    if (!st) return; // guardia: stage potrebbe non esserci
     stageRef.current = st;
 
     const ns = '.roofdrag';
@@ -67,8 +69,11 @@ export default function RoofHandlesKonva({
     st.on('mouseleave' + ns, endDrag);
   }, [imgW, imgH, onChange, onDragStart, endDrag, toImg]);
 
+  // ✅ Cleanup corretto: ritorna una funzione che NON ritorna nulla
   useEffect(() => {
-    return () => stageRef.current?.off('.roofdrag');
+    return () => {
+      stageRef.current?.off('.roofdrag');
+    };
   }, []);
 
   return (
