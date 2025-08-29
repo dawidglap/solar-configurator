@@ -65,7 +65,7 @@ type PlannerV2State = {
 
 export const usePlannerV2Store = create<PlannerV2State>()(
     persist(
-        (set, get) => ({
+        (set, get, api) => ({
             // ── Step
             step: 'building',
             setStep: (s) => set({ step: s }),
@@ -112,13 +112,13 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             clearDetectedRoofs: () => set({ detectedRoofs: [] }),
 
             // ── UI slice
-            ...createUiSlice(set, get),
+            ...createUiSlice(set, get, api),
 
             // ── Layers slice
-            ...createLayersSlice(set, get),
+            ...createLayersSlice(set, get, api),
 
             // ── Panels slice
-            ...createPanelsSlice(set, get),
+            ...createPanelsSlice(set, get, api),
         }),
         {
             name: 'planner-v2',
