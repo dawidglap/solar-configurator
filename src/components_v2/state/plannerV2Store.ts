@@ -4,105 +4,30 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 // ───────────────────────────────────────────────────────────
-// TIPI
+// TIPI & COSTANTI (ora esterni)
 // ───────────────────────────────────────────────────────────
-export type PlannerStep = 'building' | 'modules' | 'strings' | 'parts';
+import type {
+    PlannerStep, Tool,
+    DetectedRoof, RoofArea, Snapshot, View,
+    PanelSpec, ModulesConfig, PanelInstance
+} from '@/types/planner';
+import { PANEL_CATALOG } from '../../constants/panels';
 
-type UIState = {
-    stepperOpen: boolean;
-    rightPanelOpen: boolean;
-    leftPanelOpen: boolean;
-    searchOpen: boolean;
-};
+// (opzionale) re-export per backward compatibility
+export type {
+    PlannerStep, UIState, Tool, Pt,
+    DetectedRoof, RoofArea, Snapshot, View,
+    PanelSpec, ModulesConfig, PanelInstance
+} from '@/types/planner';
 
+// ───────────────────────────────────────────────────────────
+// SLICES
+// ───────────────────────────────────────────────────────────
+import type { UISlice } from './slices/uiSlice';
+import { createUiSlice } from './slices/uiSlice';
 
-
-
-export type Tool = 'select' | 'draw-roof' | 'draw-reserved' | 'draw-rect';
-
-export type Pt = { x: number; y: number };
-
-export type DetectedRoof = {
-    id: string;
-    points: Pt[];                 // in px immagine
-    tiltDeg?: number;
-    azimuthDeg?: number;
-    source: 'sonnendach';
-};
-
-export type RoofArea = {
-    id: string;
-    name: string;
-    points: Pt[];
-    slopeX?: number;
-    slopeY?: number;
-
-    // orientamento/inclinazione “fisici”
-    tiltDeg?: number;        // Neigung (°)
-    azimuthDeg?: number;     // Ausrichtung (°, 0=N, 90=E, 180=S, 270=W)
-    source?: 'manual' | 'sonnendach';
-
-    // pronto per “zone vietate” (buchi) — opzionale
-    exclusions?: Pt[][];
-};
-
-type Snapshot = {
-    url?: string;
-    width?: number;
-    height?: number;
-    mppImage?: number;
-
-    // info per georeferenziare lo snapshot
-    center?: { lat: number; lon: number };   // WGS84
-    zoom?: number;                           // WMTS/3857 zoom
-    bbox3857?: { minX: number; minY: number; maxX: number; maxY: number }; // in metri
-};
-
-export type View = {
-    scale: number;
-    offsetX: number;
-    offsetY: number;
-    fitScale: number; // min zoom (cover)
-};
-
-/** Catalogo pannelli (hard-coded ora, estendibile / brand-specific in futuro) */
-export type PanelSpec = {
-    id: string;
-    brand: string;
-    model: string;
-    wp: number;      // potenza (W)
-    widthM: number;  // lato corto in metri
-    heightM: number; // lato lungo in metri
-};
-
-const PANEL_CATALOG: PanelSpec[] = [
-    { id: 'GEN54-410', brand: 'Generic', model: 'M10 54c', wp: 410, widthM: 1.134, heightM: 1.722 },
-    { id: 'GEN54-425', brand: 'Generic', model: 'M10 54c', wp: 425, widthM: 1.134, heightM: 1.762 },
-    { id: 'GEN72-550', brand: 'Generic', model: 'M10 72c', wp: 550, widthM: 1.134, heightM: 2.279 },
-];
-
-// ── Configurazione moduli per lo step “modules”
-export type ModulesConfig = {
-    orientation: 'portrait' | 'landscape';
-    spacingM: number;      // distanza fra moduli (m)
-    marginM: number;       // bordo falda (m)
-    showGrid: boolean;
-    placingSingle: boolean;
-};
-
-// ── Istanze di pannello materializzate
-export type PanelInstance = {
-    id: string;
-    roofId: string;
-    cx: number;          // centro in px immagine
-    cy: number;          // centro in px immagine
-    wPx: number;         // larghezza in px immagine
-    hPx: number;         // altezza in px immagine
-    angleDeg: number;    // rotazione assoluta (°)
-    orientation: 'portrait' | 'landscape';
-    panelId: string;     // riferimento al catalogo
-    locked?: boolean;
-};
+import type { PanelsSlice } from './slices/panelsSlice';
+import { createPanelsSlice } from './slices/panelsSlice';
 
 // ───────────────────────────────────────────────────────────
 // STATO
@@ -144,48 +69,32 @@ type PlannerV2State = {
     /** Configurazione moduli (step modules) */
     modules: ModulesConfig;
     setModules: (patch: Partial<ModulesConfig>) => void;
-
-    /** Istanze di pannelli */
-    panels: PanelInstance[];
-    addPanels: (items: PanelInstance[]) => void;
-    addPanelsForRoof: (roofId: string, items: PanelInstance[]) => void;   // ⬅️ nuovo helper
-    clearPanelsForRoof: (roofId: string) => void;
-    getPanelsForRoof: (roofId: string) => PanelInstance[];                 // ⬅️ selector comodo
-    updatePanel: (id: string, patch: Partial<PanelInstance>) => void;
-    deletePanel: (id: string) => void;
-    duplicatePanel: (id: string, offsetPx?: number) => string | undefined;
-
-
-    /** UI slice */
-    ui: UIState;
-    setUI: (partial: Partial<UIState>) => void;
-    toggleStepperOpen: () => void;
-    toggleRightPanelOpen: () => void;
-    toggleLeftPanelOpen: () => void;
-    openSearch: () => void;
-    closeSearch: () => void;
-
-
-};
+} & UISlice & PanelsSlice;
 
 export const usePlannerV2Store = create<PlannerV2State>()(
     persist(
         (set, get) => ({
+            // ── Step
             step: 'building',
             setStep: (s) => set({ step: s }),
 
+            // ── Snapshot (non persistito)
             snapshot: {},
             setSnapshot: (s) => set((st) => ({ snapshot: { ...st.snapshot, ...s } })),
 
+            // ── Snapshot scale
             snapshotScale: 2,
             setSnapshotScale: (n) => set({ snapshotScale: n }),
 
+            // ── View
             view: { scale: 1, offsetX: 0, offsetY: 0, fitScale: 1 },
             setView: (v) => set((st) => ({ view: { ...st.view, ...v } })),
 
+            // ── Tool
             tool: 'select',
             setTool: (t) => set({ tool: t }),
 
+            // ── Roof layers
             layers: [],
             addRoof: (r) => set((st) => ({ layers: [...st.layers, r], selectedId: r.id })),
             updateRoof: (id, patch) =>
@@ -193,14 +102,16 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             deleteLayer: (id) =>
                 set((st) => ({ layers: st.layers.filter((l) => l.id !== id), selectedId: undefined })),
 
+            // ── Selezione
             selectedId: undefined,
             select: (id) => set({ selectedId: id }),
 
+            // ── Detected roofs
             detectedRoofs: [],
             setDetectedRoofs: (arr) => set({ detectedRoofs: arr }),
             clearDetectedRoofs: () => set({ detectedRoofs: [] }),
 
-            /** Catalogo pannelli */
+            // ── Catalogo pannelli
             catalogPanels: PANEL_CATALOG,
             selectedPanelId: PANEL_CATALOG[0].id,
             setSelectedPanel: (id) => set({ selectedPanelId: id }),
@@ -209,7 +120,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 return catalogPanels.find((p) => p.id === selectedPanelId);
             },
 
-            /** Modules config (defaults) */
+            // ── Modules config (defaults)
             modules: {
                 orientation: 'portrait',
                 spacingM: 0.02,
@@ -220,79 +131,15 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             setModules: (patch) =>
                 set((s) => ({ modules: { ...s.modules, ...patch } })),
 
-            /** Panel instances */
-            panels: [],
-            addPanels: (items) =>
-                set((s) => ({ panels: [...s.panels, ...items] })),
+            // ── UI slice (estratta)
+            ...createUiSlice(set, get),
 
-            addPanelsForRoof: (roofId, items) =>
-                set((s) => ({
-                    panels: [
-                        ...s.panels,
-                        ...items.map((p) => ({ ...p, roofId })), // forziamo coerenza
-                    ],
-                })),
-
-            clearPanelsForRoof: (roofId) =>
-                set((s) => ({ panels: s.panels.filter((p) => p.roofId !== roofId) })),
-
-            getPanelsForRoof: (roofId) => {
-                const { panels } = get();
-                return panels.filter((p) => p.roofId === roofId);
-            },
-
-            updatePanel: (id, patch) =>
-                set((s) => ({ panels: s.panels.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
-            deletePanel: (id) =>
-                set((s) => ({ panels: s.panels.filter((p) => p.id !== id) })),
-
-            duplicatePanel: (id, offsetPx = 18) => {
-                const { panels } = get();
-                const src = panels.find((p) => p.id === id);
-                if (!src) return undefined;
-
-                const rad = ((src.angleDeg ?? 0) * Math.PI) / 180;
-                const dx = Math.cos(rad) * offsetPx;
-                const dy = Math.sin(rad) * offsetPx;
-
-                const newId = `${src.id}_copy_${Math.random().toString(36).slice(2, 7)}`;
-
-                const clone = {
-                    ...src,
-                    id: newId,
-                    cx: src.cx + dx,
-                    cy: src.cy + dy,
-                    locked: false,
-                };
-
-                set((s) => ({ panels: [...s.panels, clone] }));
-                return newId;
-            },
-
-
-            /** UI slice */
-            ui: {
-                stepperOpen: true,
-                rightPanelOpen: false,
-                leftPanelOpen: false,
-                searchOpen: false,
-            },
-            setUI: (partial) =>
-                set((state) => ({ ui: { ...state.ui, ...partial } })),
-            toggleStepperOpen: () =>
-                set((state) => ({ ui: { ...state.ui, stepperOpen: !state.ui.stepperOpen } })),
-            toggleRightPanelOpen: () =>
-                set((state) => ({ ui: { ...state.ui, rightPanelOpen: !state.ui.rightPanelOpen } })),
-            toggleLeftPanelOpen: () =>
-                set((s) => ({ ui: { ...s.ui, leftPanelOpen: !s.ui.leftPanelOpen } })),
-            openSearch: () =>
-                set((state) => ({ ui: { ...state.ui, searchOpen: true } })),
-            closeSearch: () =>
-                set((state) => ({ ui: { ...state.ui, searchOpen: false } })),
+            // ── Panels slice (estratta)
+            ...createPanelsSlice(set, get),
         }),
         {
             name: 'planner-v2',
-            version: 8, // ⬆️ bump
+            version: 8, // bump se cambi schema persistito
 
             storage: createJSONStorage(() => localStorage),
 
@@ -306,7 +153,8 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 catalogPanels: s.catalogPanels,
                 selectedPanelId: s.selectedPanelId,
                 modules: s.modules,
-                panels: s.panels,
+                panels: s.panels, // <- arriva da PanelsSlice, continua ad essere persistito
+                // NOTA: s.ui non viene persistito (come prima)
             }),
 
             migrate: (persisted: any) => {
