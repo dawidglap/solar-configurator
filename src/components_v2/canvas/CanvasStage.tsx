@@ -218,6 +218,7 @@ export default function CanvasStage() {
               modules.showGrid &&
               !hasPanelsOnSelected && (
                 <ModulesPreview
+                 roofId={selectedRoof.id}
                   polygon={selectedRoof.points}
                   mppImage={snap.mppImage}
                   azimuthDeg={selectedRoof.azimuthDeg ?? 0}

@@ -3,6 +3,7 @@ import React, { useMemo, useEffect } from 'react';
 import { Group, Line } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import type { Pt } from '@/types/planner';
+import { isInReservedZone } from './utils';
 
 function toFlatSafe(pts: Pt[]): number[] | null {
   if (!Array.isArray(pts) || pts.length < 3) return null;
@@ -24,6 +25,16 @@ export default function ZonesLayer({ roofId }: { roofId: string }) {
     () => zones.filter((z) => z.roofId === roofId),
     [zones, roofId]
   );
+
+    if (zonesForRoof.length > 0) {
+    const testPt = zonesForRoof[0].points[0]; // prendo il primo punto della prima zona
+    console.log(
+      'DEBUG isInReservedZone:',
+      testPt,
+      '→',
+      isInReservedZone(testPt, roofId)
+    );
+  }
 
   // 🔴 gestione Backspace per cancellare zona selezionata
   useEffect(() => {

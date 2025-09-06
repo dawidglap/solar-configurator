@@ -3,6 +3,7 @@
 import { usePlannerV2Store } from '../state/plannerV2Store';
       // in cima al file
 import { computeAutoLayoutRects } from '../modules/layout';
+import { isInReservedZone } from '../zones/utils';
 
 
 
@@ -189,35 +190,39 @@ const snapshot         = usePlannerV2Store(s => s.snapshot);
 {/* // ...sostituisci l'onClick del bottone "In Module umwandeln" con: */}
 <button
   disabled={disabled}
-  onClick={() => {
-    if (!selectedId || !selSpec || !snapshot.mppImage) return;
-    const roof = layers.find(l => l.id === selectedId);
-    if (!roof) return;
+onClick={() => {
+  if (!selectedId || !selSpec || !snapshot.mppImage) return;
+  const roof = layers.find(l => l.id === selectedId);
+  if (!roof) return;
 
-    const rects = computeAutoLayoutRects({
-      polygon: roof.points,
-      mppImage: snapshot.mppImage,
-      azimuthDeg: roof.azimuthDeg ?? undefined,
-      orientation: modules.orientation,
-      panelSizeM: { w: selSpec.widthM, h: selSpec.heightM },
-      spacingM: modules.spacingM,
-      marginM: modules.marginM,
-    });
+  const rects = computeAutoLayoutRects({
+    polygon: roof.points,
+    mppImage: snapshot.mppImage,
+    azimuthDeg: roof.azimuthDeg ?? undefined,
+    orientation: modules.orientation,
+    panelSizeM: { w: selSpec.widthM, h: selSpec.heightM },
+    spacingM: modules.spacingM,
+    marginM: modules.marginM,
+  });
 
-    const instances = rects.map((r, idx) => ({
-      id: `${selectedId}_p_${Date.now().toString(36)}_${idx}`,
-      roofId: selectedId,
-      cx: r.cx,
-      cy: r.cy,
-      wPx: r.wPx,
-      hPx: r.hPx,
-      angleDeg: r.angleDeg,
-      orientation: modules.orientation,
-      panelId: selSpec.id,
-    }));
+  // ⛔️ filtro: scarta i moduli il cui CENTRO cade in una zona "riservata"
+  const safe = rects.filter(r => !isInReservedZone({ x: r.cx, y: r.cy }, selectedId));
 
-    addPanelsForRoof(selectedId, instances);
-  }}
+  const instances = safe.map((r, idx) => ({
+    id: `${selectedId}_p_${Date.now().toString(36)}_${idx}`,
+    roofId: selectedId,
+    cx: r.cx,
+    cy: r.cy,
+    wPx: r.wPx,
+    hPx: r.hPx,
+    angleDeg: r.angleDeg,              // preserva l’angolo originale
+    orientation: modules.orientation,
+    panelId: selSpec.id,
+  }));
+
+  addPanelsForRoof(selectedId, instances);
+}}
+
   className={[
     'w-full rounded-full px-3 py-2 text-[13px] font-semibold border transition-colors',
     disabled ? 'bg-white text-neutral-400 border-neutral-200 cursor-not-allowed'

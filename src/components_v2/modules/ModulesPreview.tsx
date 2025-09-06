@@ -3,10 +3,14 @@
 
 import React, { useMemo } from 'react';
 import { Group, Rect, Line, Image as KonvaImage } from 'react-konva';
+import { isInReservedZone } from '../zones/utils';
+
+
 
 type Pt = { x: number; y: number };
 
 type Props = {
+  roofId: string; 
   polygon: Pt[];                              // px immagine
   mppImage: number;                           // metri/px
   azimuthDeg?: number;                        // 0=N(↑), 90=E(→)
@@ -122,6 +126,7 @@ function longestEdgeAngle(poly: Pt[]) {
 /* ───────── componente ───────── */
 
 export default function ModulesPreview({
+  roofId,
   polygon,
   mppImage,
   azimuthDeg,
@@ -182,12 +187,13 @@ export default function ModulesPreview({
           const cx = x + panelW / 2;
           const cy = y + panelH / 2;
           const Cw = localToWorld({ x: cx, y: cy }, O, theta);
+          if (isInReservedZone({ x: Cw.x, y: Cw.y }, roofId)) continue;
           out.push({ cx: Cw.x, cy: Cw.y, w: panelW, h: panelH });
         }
       }
     }
     return out;
-  }, [bbox, panelW, panelH, gap, clipLocal, O, theta]);
+  }, [bbox, panelW, panelH, gap, clipLocal, O, theta, roofId]);
 
   // griglia (in locale) -> linee nel mondo, solo visual
   const gridLinesWorld = useMemo(() => {
