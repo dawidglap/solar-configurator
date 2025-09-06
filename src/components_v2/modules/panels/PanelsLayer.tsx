@@ -3,6 +3,8 @@
 import React from 'react';
 import PanelsKonva from '../PanelsKonva';
 
+
+
 type Pt = { x: number; y: number };
 type LayerRoof = { id: string; points: Pt[] };
 

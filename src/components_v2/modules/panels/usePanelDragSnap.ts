@@ -48,6 +48,9 @@ type Args = {
 
     // anti-overlap
     gapPx?: number;         // distanza minima fra moduli (px immagine) — es. spacingM/mpp
+
+    // ⛔️ guardia zone: true = posizione consentita, false = vietata
+    reservedGuard?: (cx: number, cy: number) => boolean;
 };
 
 export function usePanelDragSnap({
@@ -65,6 +68,7 @@ export function usePanelDragSnap({
     snapPxImg,
     edgeMarginPx = 0,
     gapPx = 0,
+    reservedGuard, // ⬅️ nuovo
 }: Args) {
     // Refs stato drag
     const stageRef = React.useRef<any>(null);
@@ -282,7 +286,14 @@ export function usePanelDragSnap({
                     setHintV([a.x, a.y, b.x, b.y]);
                 } else setHintV(null);
 
+                // posizione finale proposta
                 const snapped = fromUV(bestU, bestV);
+
+                // ⛔️ blocco zone riservate: se la guardia fallisce, non aggiorniamo (si “incolla” al bordo)
+                if (reservedGuard && !reservedGuard(snapped.x, snapped.y)) {
+                    return;
+                }
+
                 updatePanel(id, { cx: snapped.x, cy: snapped.y });
             });
 
@@ -303,6 +314,7 @@ export function usePanelDragSnap({
             snapPxImg,
             clearHints,
             resolveNoOverlap,
+            reservedGuard, // ⬅️ dipendenza
         ]
     );
 

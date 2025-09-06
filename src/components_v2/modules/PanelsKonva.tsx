@@ -10,6 +10,7 @@ import { usePanelDragSnap } from './panels/usePanelDragSnap';
 import { PanelItem } from './panels/PanelItem';
 import { Guides } from './panels/Guides';
 import { RoofMarginBand } from './panels/RoofMarginBand';
+import { isInReservedZone } from '../zones/utils';  
 
 // ---------- costanti snap (pixel SCHERMO) ----------
 const SNAP_STAGE_PX = 6; // quanto “tira” lo snap sullo schermo (modifica qui)
@@ -128,7 +129,8 @@ const gapPx = React.useMemo(() => (mpp ? spacingM / mpp : 0), [spacingM, mpp]);
     onDragEnd,
     snapPxImg,   // soglia in px immagine
     edgeMarginPx, // ⬅️ NOVITÀ: margine interno ai bordi tetto
-    gapPx
+    gapPx,
+    reservedGuard: (cx: number, cy: number) => !isInReservedZone({ x: cx, y: cy }, roofId),
   });
 
   return (

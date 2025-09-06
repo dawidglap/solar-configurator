@@ -252,7 +252,9 @@ export default function CanvasStage() {
               areaLabel={areaLabel}
             />
             {/* Zone vietate (solo sulla falda selezionata per non affollare) */}
-{selectedId && <ZonesLayer roofId={selectedId} />}
+{layers.map((l) => (
+  <ZonesLayer key={l.id} roofId={l.id} interactive={l.id === selectedId} />
+))}
 {/* Anteprima zona riservata durante il disegno (rettangolo) */}
 {tool === 'draw-reserved' && rectDraft && rectDraft.length >= 1 && mouseImg && (
   (() => {
