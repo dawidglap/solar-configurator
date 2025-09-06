@@ -26,6 +26,11 @@ import { useStagePanZoom } from '../canvas/hooks/useStagePanZoom';
 import { useDrawingTools } from '../canvas/hooks/useDrawingTools';
 import DrawingOverlays from './DrawingOverlays';
 import PanelHotkeys from '../modules/panels/PanelHotkeys';
+import { nanoid } from 'nanoid';
+import ZonesLayer from '../zones/ZonesLayer';
+import { rectFrom3WithAz } from '../canvas/geom';
+import { Line } from 'react-konva';
+
 
 
 export default function CanvasStage() {
@@ -44,6 +49,7 @@ export default function CanvasStage() {
   const rightOpen = usePlannerV2Store((s) => s.ui.rightPanelOpen);
   const modules = usePlannerV2Store((s) => s.modules);
   const duplicatePanel = usePlannerV2Store((s) => s.duplicatePanel);
+  const addZone = usePlannerV2Store((s) => s.addZone);
 
 
   // 3) size e immagine di base (ORA puoi usare setView)
@@ -124,6 +130,11 @@ export default function CanvasStage() {
       addRoof,
       select,
       toImgCoords,
+      onZoneCommit: (poly4: Pt[]) => {
+      
+       if (!selectedId) return; // serve una falda selezionata
+       addZone({ id: nanoid(), roofId: selectedId, type: 'riservata', points: poly4 });
+     },
     });
 
   // stile tetti
@@ -239,6 +250,30 @@ export default function CanvasStage() {
               onHandlesDragEnd={() => setDraggingVertex(false)}
               areaLabel={areaLabel}
             />
+            {/* Zone vietate (solo sulla falda selezionata per non affollare) */}
+{selectedId && <ZonesLayer roofId={selectedId} />}
+{/* Anteprima zona riservata durante il disegno (rettangolo) */}
+{tool === 'draw-reserved' && rectDraft && rectDraft.length >= 1 && mouseImg && (
+  (() => {
+    const A = rectDraft[0];
+    const B = rectDraft[1] ?? mouseImg;   // se manca B, usa mouse come B
+    const C = mouseImg;                    // terzo punto mobile
+    // rettangolo d'anteprima
+    const { poly } = rectFrom3WithAz(A, B, C);
+    const flat = poly.flatMap(p => [p.x, p.y]);
+    return (
+      <Line
+        points={flat}
+        closed
+        stroke="#ff5f56"
+        strokeWidth={1.5}
+        dash={[10, 6]}
+        fill="rgba(255,95,86,0.10)"
+        listening={false}
+      />
+    );
+  })()
+)}
 
             {/* Pannelli reali */}
             <PanelsLayer

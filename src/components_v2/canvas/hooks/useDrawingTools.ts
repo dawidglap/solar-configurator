@@ -5,7 +5,8 @@ import * as React from 'react';
 import type { Pt } from '../../canvas/geom';
 import { rectFrom3WithAz, dist } from '../../canvas/geom';
 
-type Tool = 'select' | 'draw-roof' | 'draw-rect' | string;
+// ➕ includiamo 'draw-reserved' nel tipo Tool
+type Tool = 'select' | 'draw-roof' | 'draw-rect' | 'draw-reserved' | string;
 
 type Layer = { id: string; name: string; points: Pt[] };
 
@@ -18,19 +19,29 @@ type RoofAreaLike = {
     source?: string;
 };
 
+// helper: parallelogramma dai 3 punti (A,B,C) → [A,B,C2,D]
+function rect3ToPoly4(A: Pt, B: Pt, C: Pt): Pt[] {
+    return [A, B, { x: C.x + (B.x - A.x), y: C.y + (B.y - A.y) }, C];
+}
+
 export function useDrawingTools<T extends RoofAreaLike>(args: {
     tool: Tool;
     layers: Layer[];
     addRoof: (r: T) => void;
     select: (id?: string) => void;
     toImgCoords: (stageX: number, stageY: number) => Pt;
+
+    // ➕ opzionale: chiamata quando si conclude una ZONA (draw-reserved)
+    onZoneCommit?: (poly4: Pt[]) => void;
 }) {
-    const { tool, layers, addRoof, select, toImgCoords } = args;
+    const { tool, layers, addRoof, select, toImgCoords, onZoneCommit } = args;
 
     // stato locale di disegno
     const [drawingPoly, setDrawingPoly] = React.useState<Pt[] | null>(null);
-    const [rectDraft, setRectDraft] = React.useState<Pt[] | null>(null); // [A,B], poi C al commit
+    const [rectDraft, setRectDraft] = React.useState<Pt[] | null>(null); // [A,B] poi C al commit
     const [mouseImg, setMouseImg] = React.useState<Pt | null>(null);
+    const lastReservedCommitTs = React.useRef(0);
+    const RESERVED_COOLDOWN_MS = 150;
 
     const onStageMouseMove = React.useCallback((e: any) => {
         const pos = e.target.getStage().getPointerPosition();
@@ -59,6 +70,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         if (!pos) return;
         const p = toImgCoords(pos.x, pos.y);
 
+        // ── Poligono tetto libero
         if (tool === 'draw-roof') {
             if (!drawingPoly || drawingPoly.length === 0) {
                 setDrawingPoly([p]);
@@ -77,6 +89,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
             return;
         }
 
+        // ── Rettangolo tetto da 3 click
         if (tool === 'draw-rect') {
             if (!rectDraft || rectDraft.length === 0) {
                 setRectDraft([p]); // A
@@ -96,11 +109,34 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
             return;
         }
 
-        // select: click vuoto deseleziona
-        if (e.target === e.target.getStage()) select(undefined);
-    }, [tool, toImgCoords, drawingPoly, rectDraft, layers, addRoof, select, closeIfNearStart]);
+        // ── ZONA VIETATA da 3 click (parallelogramma)
+        if (tool === 'draw-reserved') {
+            if (Date.now() - lastReservedCommitTs.current < RESERVED_COOLDOWN_MS) {
+                return;
+            }
+            if (!rectDraft || rectDraft.length === 0) {
+                setRectDraft([p]); // A
+                return;
+            }
+            if (rectDraft.length === 1) {
+                setRectDraft([rectDraft[0], p]); // A,B
+                return;
+            }
+            // col terzo click → commit zona
 
-    // DOPPIO click → solo poligono
+            const { poly } = rectFrom3WithAz(rectDraft[0], rectDraft[1], p);
+            onZoneCommit?.(poly);
+            setRectDraft(null);
+
+            lastReservedCommitTs.current = Date.now();
+            return;
+        }
+
+        // ── select: click vuoto deseleziona
+        if (e.target === e.target.getStage()) select(undefined);
+    }, [tool, toImgCoords, drawingPoly, rectDraft, layers, addRoof, select, closeIfNearStart, onZoneCommit]);
+
+    // DOPPIO click → solo poligono tetto
     const onStageDblClick = React.useCallback(() => {
         if (tool !== 'draw-roof') return;
         if (drawingPoly && drawingPoly.length >= 3) {
@@ -122,7 +158,8 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
                 if (ev.key === 'Escape') setDrawingPoly(null);
                 if (ev.key === 'Enter' && drawingPoly && drawingPoly.length >= 3) finishPolygon(drawingPoly);
             }
-            if (tool === 'draw-rect') {
+            // ➕ ESC chiude anche i draft di rect e reserved
+            if (tool === 'draw-rect' || tool === 'draw-reserved') {
                 if (ev.key === 'Escape') setRectDraft(null);
             }
         };

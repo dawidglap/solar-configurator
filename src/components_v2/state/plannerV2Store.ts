@@ -31,6 +31,12 @@ import { createPanelsSlice } from './slices/panelsSlice';
 import type { LayersSlice } from './slices/layersSlice';
 import { createLayersSlice } from './slices/layersSlice';
 
+import type { ZonesSlice } from './slices/zonesSlice';
+import { createZonesSlice } from './slices/zonesSlice';
+
+
+
+
 // ───────────────────────────────────────────────────────────
 // STATO
 // ───────────────────────────────────────────────────────────
@@ -61,7 +67,7 @@ type PlannerV2State = {
     detectedRoofs: DetectedRoof[];
     setDetectedRoofs: (arr: DetectedRoof[]) => void;
     clearDetectedRoofs: () => void;
-} & UISlice & LayersSlice & PanelsSlice;
+} & UISlice & LayersSlice & PanelsSlice & ZonesSlice;
 
 export const usePlannerV2Store = create<PlannerV2State>()(
     persist(
@@ -119,6 +125,9 @@ export const usePlannerV2Store = create<PlannerV2State>()(
 
             // ── Panels slice
             ...createPanelsSlice(set, get, api),
+            // ── Zones slice
+            ...createZonesSlice(set, get, api),
+
         }),
         {
             name: 'planner-v2',
