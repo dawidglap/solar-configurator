@@ -50,7 +50,10 @@ export default function CanvasStage() {
   const modules = usePlannerV2Store((s) => s.modules);
   const duplicatePanel = usePlannerV2Store((s) => s.duplicatePanel);
   const addZone = usePlannerV2Store((s) => s.addZone);
-  
+  // const gridAngleDeg = usePlannerV2Store(s => s.modules.gridAngleDeg || 0);
+
+const gridMods = usePlannerV2Store(s => s.modules);
+
 
 
   // 3) size e immagine di base (ORA puoi usare setView)
@@ -218,17 +221,24 @@ export default function CanvasStage() {
               snap.mppImage &&
               modules.showGrid &&
               !hasPanelsOnSelected && (
-                <ModulesPreview
-                 roofId={selectedRoof.id}
-                  polygon={selectedRoof.points}
-                  mppImage={snap.mppImage}
-                  azimuthDeg={selectedRoof.azimuthDeg ?? 0}
-                  orientation={modules.orientation}
-                  panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
-                  spacingM={modules.spacingM}
-                  marginM={modules.marginM}
-                  textureUrl="/images/panel.webp"
-                />
+<ModulesPreview
+  roofId={selectedRoof.id}
+  polygon={selectedRoof.points}
+  mppImage={snap.mppImage}
+  azimuthDeg={(selectedRoof.azimuthDeg ?? 0) + (gridMods.gridAngleDeg || 0)}
+  orientation={modules.orientation}
+  panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
+  spacingM={modules.spacingM}
+  marginM={modules.marginM}
+  textureUrl="/images/panel.webp"
+
+  // 👇 nuovi: allineamento/phase
+  phaseX={gridMods.gridPhaseX || 0}
+  phaseY={gridMods.gridPhaseY || 0}
+  anchorX={(gridMods.gridAnchorX as any) || 'start'}
+  anchorY={(gridMods.gridAnchorY as any) || 'start'}
+/>
+
               )}
 
             <SonnendachOverlayKonva />

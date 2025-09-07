@@ -3,29 +3,47 @@
 
 import React, { useMemo } from 'react';
 import { Group, Rect, Line, Image as KonvaImage } from 'react-konva';
+import { computeAutoLayoutRects } from './layout';      // ← stessa cartella
 import { isInReservedZone } from '../zones/utils';
 
-
-
 type Pt = { x: number; y: number };
+type Anchor = 'start' | 'center' | 'end';
 
 type Props = {
-  roofId: string; 
-  polygon: Pt[];                              // px immagine
-  mppImage: number;                           // metri/px
-  azimuthDeg?: number;                        // 0=N(↑), 90=E(→)
+  roofId: string;
+  polygon: Pt[];                           // px immagine
+  mppImage: number;                        // metri/px
+  azimuthDeg?: number;                     // 0=N(↑), 90=E(→)
   orientation: 'portrait' | 'landscape';
-  panelSizeM: { w: number; h: number };       // metri (w=lato corto, h=lato lungo)
-  spacingM: number;                            // metri fra moduli
-  marginM: number;                             // metri bordo falda
+  panelSizeM: { w: number; h: number };    // metri (w=lato corto, h=lato lungo)
+  spacingM: number;                        // metri fra moduli
+  marginM: number;                         // metri bordo falda
   showGrid?: boolean;
   textureUrl?: string;
+
+  // controlli di allineamento/origine griglia
+  phaseX?: number;
+  phaseY?: number;
+  anchorX?: Anchor;
+  anchorY?: Anchor;
 };
 
-/* ───────── helpers geometrici ───────── */
-
+/* ───────── helpers geometrici SOLO per la GRIGLIA VISIVA ───────── */
 const deg2rad = (d: number) => (d * Math.PI) / 180;
-
+function centroid(poly: Pt[]) {
+  let x = 0, y = 0;
+  for (const p of poly) { x += p.x; y += p.y; }
+  const n = Math.max(1, poly.length);
+  return { x: x / n, y: y / n };
+}
+function sub(a: Pt, b: Pt): Pt { return { x: a.x - b.x, y: a.y - b.y }; }
+function add(a: Pt, b: Pt): Pt { return { x: a.x + b.x, y: a.y + b.y }; }
+function rot(p: Pt, theta: number): Pt {
+  const c = Math.cos(theta), s = Math.sin(theta);
+  return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
+}
+function worldToLocal(p: Pt, O: Pt, theta: number): Pt { return rot(sub(p, O), -theta); }
+function localToWorld(p: Pt, O: Pt, theta: number): Pt { return add(rot(p, theta), O); }
 function signedArea(poly: Pt[]) {
   let a = 0;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -33,47 +51,8 @@ function signedArea(poly: Pt[]) {
   }
   return a / 2;
 }
-function centroid(poly: Pt[]) {
-  let x = 0, y = 0;
-  for (const p of poly) { x += p.x; y += p.y; }
-  const n = Math.max(1, poly.length);
-  return { x: x / n, y: y / n };
-}
 function cross(a: Pt, b: Pt) { return a.x * b.y - a.y * b.x; }
-function sub(a: Pt, b: Pt): Pt { return { x: a.x - b.x, y: a.y - b.y }; }
-function add(a: Pt, b: Pt): Pt { return { x: a.x + b.x, y: a.y + b.y }; }
-function mul(a: Pt, k: number): Pt { return { x: a.x * k, y: a.y * k }; }
-
-function rot(p: Pt, theta: number): Pt {
-  const c = Math.cos(theta), s = Math.sin(theta);
-  return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
-}
-function worldToLocal(p: Pt, O: Pt, theta: number): Pt {
-  return rot(sub(p, O), -theta);
-}
-function localToWorld(p: Pt, O: Pt, theta: number): Pt {
-  return add(rot(p, theta), O);
-}
-
-function pointInPoly(p: Pt, poly: Pt[]) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].x, yi = poly[i].y;
-    const xj = poly[j].x, yj = poly[j].y;
-    const inter = yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi + 1e-9) + xi;
-    if (inter) inside = !inside;
-  }
-  return inside;
-}
-function rectCornersTL(x: number, y: number, w: number, h: number): Pt[] {
-  return [
-    { x, y },
-    { x: x + w, y },
-    { x: x + w, y: y + h },
-    { x, y: y + h },
-  ];
-}
-/** Offset verso l’interno (convesso). Fallback al poligono originale se degenerato. */
+/** Offset interno per poligoni **convessi**. Se degenerato → null. */
 function insetConvexPolygon(poly: Pt[], inset: number): Pt[] | null {
   const n = poly.length;
   if (n < 3 || inset <= 0) return poly.slice();
@@ -102,28 +81,18 @@ function insetConvexPolygon(poly: Pt[], inset: number): Pt[] | null {
     const q = shiftedP[j], s = dir[j];
     const rxs = cross(r, s);
     if (Math.abs(rxs) < 1e-6) return null;
-    const t = cross(sub(q, p), s) / rxs;
-    out.push(add(p, mul(r, t)));
+    const t = cross({ x: q.x - p.x, y: q.y - p.y }, s) / rxs;
+    out.push({ x: p.x + r.x * t, y: p.y + r.y * t });
   }
   return out;
 }
-
-/** Angolo dell’edge più lungo (rad) nel mondo. */
-function longestEdgeAngle(poly: Pt[]) {
-  let bestLen = -1, bestTheta = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i], b = poly[(i + 1) % poly.length];
-    const vx = b.x - a.x, vy = b.y - a.y;
-    const len = Math.hypot(vx, vy);
-    if (len > bestLen) {
-      bestLen = len;
-      bestTheta = Math.atan2(vy, vx);
-    }
-  }
-  return bestTheta;
-}
-
-/* ───────── componente ───────── */
+const normPhase = (p: number) => {
+  if (!isFinite(p)) return 0;
+  let r = p % 1;
+  if (r < 0) r += 1;
+  return r;
+};
+/* ──────────────────────────────────────────────────────────────── */
 
 export default function ModulesPreview({
   roofId,
@@ -136,35 +105,57 @@ export default function ModulesPreview({
   marginM,
   showGrid = true,
   textureUrl = '/images/panel.webp',
+  phaseX = 0,
+  phaseY = 0,
+  anchorX = 'start',
+  anchorY = 'start',
 }: Props) {
-  // metri → pixel
-  const px = (m: number) => (mppImage ? m / mppImage : 0);
+  // 1) Calcolo ufficiale dei rettangoli (stessa funzione usata al commit)
+  const rectsAll = useMemo(() => {
+    if (!polygon?.length || !mppImage) return [];
+    return computeAutoLayoutRects({
+      polygon,
+      mppImage,
+      azimuthDeg,
+      orientation,
+      panelSizeM,
+      spacingM,
+      marginM,
+      phaseX,
+      phaseY,
+      anchorX,
+      anchorY,
+    });
+  }, [
+    polygon, mppImage, azimuthDeg, orientation, panelSizeM,
+    spacingM, marginM, phaseX, phaseY, anchorX, anchorY,
+  ]);
 
-  // dimensioni modulo (in px) secondo orientamento
-  const panelW = px(orientation === 'portrait' ? panelSizeM.w : panelSizeM.h);
-  const panelH = px(orientation === 'portrait' ? panelSizeM.h : panelSizeM.w);
-  const gap    = px(spacingM);
-  const marginPx = Math.max(0, px(marginM));
-
-  // frame locale: usa azimuthDeg se disponibile, altrimenti edge più lungo
-  const theta = useMemo(
-    () => (typeof azimuthDeg === 'number' ? deg2rad(azimuthDeg) : longestEdgeAngle(polygon)),
-    [azimuthDeg, polygon]
+  // 2) Filtro zone riservate (coerente col commit)
+  const rects = useMemo(
+    () => rectsAll.filter(r => !isInReservedZone({ x: r.cx, y: r.cy }, roofId)),
+    [rectsAll, roofId]
   );
-  const thetaDeg = (theta * 180) / Math.PI;
-  const O = useMemo(() => centroid(polygon), [polygon]);
 
-  // poligono nel locale ruotato
-  const polyLocal = useMemo(
-    () => polygon.map((p) => worldToLocal(p, O, theta)),
-    [polygon, O, theta]
-  );
+  // 3) Griglia visiva (linee) — calcolata con la stessa logica di anchor/phase
+  const gridLinesWorld = useMemo(() => {
+    if (!showGrid || !polygon?.length || !mppImage) return [];
 
-  // poligono clippato da margine (convesso)
-  const clipLocal = useMemo(() => insetConvexPolygon(polyLocal, marginPx) ?? polyLocal, [polyLocal, marginPx]);
+    // frame locale
+    const theta = typeof azimuthDeg === 'number' ? deg2rad(azimuthDeg) : 0;
+    const O = centroid(polygon);
 
-  // bbox locale
-  const bbox = useMemo(() => {
+    const px = (m: number) => m / mppImage;
+    const panelW = px(orientation === 'portrait' ? panelSizeM.w : panelSizeM.h);
+    const panelH = px(orientation === 'portrait' ? panelSizeM.h : panelSizeM.w);
+    const gap    = px(spacingM);
+    const marginPx = Math.max(0, px(marginM));
+
+    // poligono locale + margine
+    const polyLocal = polygon.map(p => worldToLocal(p, O, theta));
+    const clipLocal = insetConvexPolygon(polyLocal, marginPx) ?? polyLocal;
+
+    // bbox locale
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of clipLocal) {
       if (p.x < minX) minX = p.x;
@@ -172,52 +163,65 @@ export default function ModulesPreview({
       if (p.x > maxX) maxX = p.x;
       if (p.y > maxY) maxY = p.y;
     }
-    return { minX, minY, maxX, maxY };
-  }, [clipLocal]);
+    if (!isFinite(minX)) return [];
 
-  // genera rettangoli centrati (mondo) che stanno COMPLETAMENTE nel clipLocal
-  const rectsWorld = useMemo(() => {
-    const out: { cx: number; cy: number; w: number; h: number }[] = [];
-    if (!isFinite(bbox.minX)) return out;
-
-    for (let y = bbox.minY; y + panelH <= bbox.maxY + 1e-6; y += panelH + gap) {
-      for (let x = bbox.minX; x + panelW <= bbox.maxX + 1e-6; x += panelW + gap) {
-        const corners = rectCornersTL(x, y, panelW, panelH);
-        if (corners.every((pt) => pointInPoly(pt, clipLocal))) {
-          const cx = x + panelW / 2;
-          const cy = y + panelH / 2;
-          const Cw = localToWorld({ x: cx, y: cy }, O, theta);
-          if (isInReservedZone({ x: Cw.x, y: Cw.y }, roofId)) continue;
-          out.push({ cx: Cw.x, cy: Cw.y, w: panelW, h: panelH });
-        }
-      }
-    }
-    return out;
-  }, [bbox, panelW, panelH, gap, clipLocal, O, theta, roofId]);
-
-  // griglia (in locale) -> linee nel mondo, solo visual
-  const gridLinesWorld = useMemo(() => {
-    if (!showGrid || !isFinite(bbox.minX)) return [];
-    const lines: { points: number[] }[] = [];
     const cellW = panelW + gap;
     const cellH = panelH + gap;
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
 
-    // verticali
-    for (let x = bbox.minX; x <= bbox.maxX + 0.5; x += cellW) {
-      const a = localToWorld({ x, y: bbox.minY }, O, theta);
-      const b = localToWorld({ x, y: bbox.maxY }, O, theta);
+    // stima col/row per anchor
+    const maxCols = Math.max(0, Math.floor((spanX - panelW + 1e-6) / cellW) + 1);
+    const maxRows = Math.max(0, Math.floor((spanY - panelH + 1e-6) / cellH) + 1);
+
+    const usedW = maxCols > 0 ? (maxCols * panelW + (maxCols - 1) * gap) : 0;
+    const usedH = maxRows > 0 ? (maxRows * panelH + (maxRows - 1) * gap) : 0;
+    const remX  = Math.max(0, spanX - usedW);
+    const remY  = Math.max(0, spanY - usedH);
+
+    const anchorOffsetX =
+      anchorX === 'end' ? remX : anchorX === 'center' ? remX / 2 : 0;
+    const anchorOffsetY =
+      anchorY === 'end' ? remY : anchorY === 'center' ? remY / 2 : 0;
+
+    const phx = normPhase(phaseX);
+    const phy = normPhase(phaseY);
+    const startX = minX + anchorOffsetX + phx * cellW;
+    const startY = minY + anchorOffsetY + phy * cellH;
+
+    const lines: { points: number[] }[] = [];
+
+    // verticali: estendi sia verso dx che verso sx per coprire tutta la bbox
+    for (let x = startX; x <= maxX + 0.5; x += cellW) {
+      const a = localToWorld({ x, y: minY }, O, theta);
+      const b = localToWorld({ x, y: maxY }, O, theta);
       lines.push({ points: [a.x, a.y, b.x, b.y] });
     }
+    for (let x = startX - cellW; x >= minX - 0.5; x -= cellW) {
+      const a = localToWorld({ x, y: minY }, O, theta);
+      const b = localToWorld({ x, y: maxY }, O, theta);
+      lines.push({ points: [a.x, a.y, b.x, b.y] });
+    }
+
     // orizzontali
-    for (let y = bbox.minY; y <= bbox.maxY + 0.5; y += cellH) {
-      const a = localToWorld({ x: bbox.minX, y }, O, theta);
-      const b = localToWorld({ x: bbox.maxX, y }, O, theta);
+    for (let y = startY; y <= maxY + 0.5; y += cellH) {
+      const a = localToWorld({ x: minX, y }, O, theta);
+      const b = localToWorld({ x: maxX, y }, O, theta);
       lines.push({ points: [a.x, a.y, b.x, b.y] });
     }
-    return lines;
-  }, [showGrid, bbox, panelW, panelH, gap, O, theta]);
+    for (let y = startY - cellH; y >= minY - 0.5; y -= cellH) {
+      const a = localToWorld({ x: minX, y }, O, theta);
+      const b = localToWorld({ x: maxX, y }, O, theta);
+      lines.push({ points: [a.x, a.y, b.x, b.y] });
+    }
 
-  // texture opzionale
+    return lines;
+  }, [
+    showGrid, polygon, mppImage, azimuthDeg, orientation,
+    panelSizeM, spacingM, marginM, phaseX, phaseY, anchorX, anchorY
+  ]);
+
+  // 4) texture opzionale
   const [img, setImg] = React.useState<HTMLImageElement | null>(null);
   React.useEffect(() => {
     if (!textureUrl) { setImg(null); return; }
@@ -228,7 +232,7 @@ export default function ModulesPreview({
     return () => setImg(null);
   }, [textureUrl]);
 
-  // clip con il poligono originale in coordinate mondo
+  // 5) render con clip al poligono
   return (
     <Group
       listening={false}
@@ -240,37 +244,44 @@ export default function ModulesPreview({
         ctx.closePath();
       }}
     >
-      {/* griglia */}
+      {/* griglia visiva */}
       {showGrid && gridLinesWorld.map((g, i) => (
-        <Line key={`g-${i}`} points={g.points} stroke="#000" opacity={0.08} strokeWidth={0.5} listening={false} />
+        <Line
+          key={`g-${i}`}
+          points={g.points}
+          stroke="#0769e9"
+          opacity={0.3}
+          strokeWidth={0.35}
+          listening={false}
+        />
       ))}
 
-      {/* moduli */}
-      {rectsWorld.map((r, i) =>
+      {/* moduli (preview = commit) */}
+      {rects.map((r, i) =>
         img ? (
           <KonvaImage
             key={i}
             image={img}
             x={r.cx}
             y={r.cy}
-            width={r.w}
-            height={r.h}
-            offsetX={r.w / 2}
-            offsetY={r.h / 2}
-            rotation={thetaDeg}
+            width={r.wPx}
+            height={r.hPx}
+            offsetX={r.wPx / 2}
+            offsetY={r.hPx / 2}
+            rotation={r.angleDeg}        // ← usa l’angolo della funzione ufficiale
             listening={false}
-            opacity={1}
+            opacity={0.85}
           />
         ) : (
           <Rect
             key={i}
             x={r.cx}
             y={r.cy}
-            width={r.w}
-            height={r.h}
-            offsetX={r.w / 2}
-            offsetY={r.h / 2}
-            rotation={thetaDeg}
+            width={r.wPx}
+            height={r.hPx}
+            offsetX={r.wPx / 2}
+            offsetY={r.hPx / 2}
+            rotation={r.angleDeg}        // ← idem
             fill="#2b4b7c"
             opacity={0.85}
             listening={false}

@@ -105,10 +105,16 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             modules: {
                 orientation: 'portrait',
                 spacingM: 0.02,
-                marginM: 0.30,
+                marginM: 0.20,
                 showGrid: true,
                 placingSingle: false,
+                gridAngleDeg: 0,
+                gridPhaseX: 0,             // 👈 nuovo
+                gridPhaseY: 0,             // 👈 nuovo
+                gridAnchorX: 'start',      // 👈 nuovo: 'start' | 'center' | 'end'
+                gridAnchorY: 'start',      // 👈 nuovo
             },
+
             setModules: (patch) =>
                 set((s) => ({ modules: { ...s.modules, ...patch } })),
 
@@ -189,10 +195,13 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                     persisted.modules = {
                         orientation: 'portrait',
                         spacingM: 0.02,
-                        marginM: 0.30,
+                        marginM: 0.20,
                         showGrid: true,
                         placingSingle: false,
                     };
+                }
+                if (typeof persisted.modules.gridAngleDeg !== 'number') {
+                    persisted.modules.gridAngleDeg = 0;
                 }
 
                 // ensure panels list + retrofill panelId
@@ -207,6 +216,12 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                         panelId: p.panelId ?? fallbackPanelId,
                     }));
                 }
+
+                if (typeof persisted.modules.gridPhaseX !== 'number') persisted.modules.gridPhaseX = 0;
+                if (typeof persisted.modules.gridPhaseY !== 'number') persisted.modules.gridPhaseY = 0;
+                if (!['start', 'center', 'end'].includes(persisted.modules.gridAnchorX)) persisted.modules.gridAnchorX = 'start';
+                if (!['start', 'center', 'end'].includes(persisted.modules.gridAnchorY)) persisted.modules.gridAnchorY = 'start';
+
 
                 return persisted;
             },

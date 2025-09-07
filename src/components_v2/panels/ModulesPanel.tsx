@@ -4,6 +4,8 @@ import { usePlannerV2Store } from '../state/plannerV2Store';
       // in cima al file
 import { computeAutoLayoutRects } from '../modules/layout';
 import { isInReservedZone } from '../zones/utils';
+import GridRotationControl from '../modules/GridRotationControl';
+import GridAlignmentControl from '../modules/GridAlignmentControl';
 
 
 
@@ -42,6 +44,8 @@ export default function ModulesPanel() {
   const addPanelsForRoof = usePlannerV2Store(s => s.addPanelsForRoof);
 const layers           = usePlannerV2Store(s => s.layers);
 const snapshot         = usePlannerV2Store(s => s.snapshot);
+const gridAngleDeg = usePlannerV2Store(s => s.modules.gridAngleDeg || 0);
+const m = usePlannerV2Store.getState().modules;
 
   const panelsOnRoof = panels.filter(p => p.roofId === selectedId);
   const count  = panelsOnRoof.length;
@@ -77,6 +81,8 @@ const snapshot         = usePlannerV2Store(s => s.snapshot);
           <option value="landscape">Landscape (horizontal)</option>
         </select>
       </fieldset>
+
+      <GridRotationControl />
 
       {/* MODUL */}
       <fieldset className="space-y-1">
@@ -144,6 +150,8 @@ const snapshot         = usePlannerV2Store(s => s.snapshot);
         </div>
       </fieldset>
 
+      <GridAlignmentControl />
+
       {/* SEGMENT TOGGLES */}
       <div className="flex gap-2">
         <button
@@ -195,15 +203,19 @@ onClick={() => {
   const roof = layers.find(l => l.id === selectedId);
   if (!roof) return;
 
-  const rects = computeAutoLayoutRects({
-    polygon: roof.points,
-    mppImage: snapshot.mppImage,
-    azimuthDeg: roof.azimuthDeg ?? undefined,
-    orientation: modules.orientation,
-    panelSizeM: { w: selSpec.widthM, h: selSpec.heightM },
-    spacingM: modules.spacingM,
-    marginM: modules.marginM,
-  });
+const rects = computeAutoLayoutRects({
+  polygon: roof.points,
+  mppImage: snapshot.mppImage,
+  azimuthDeg: (roof.azimuthDeg ?? 0) + (m.gridAngleDeg || 0),
+  orientation: modules.orientation,
+  panelSizeM: { w: selSpec.widthM, h: selSpec.heightM },
+  spacingM: modules.spacingM,
+  marginM: modules.marginM,
+  phaseX: m.gridPhaseX || 0,
+  phaseY: m.gridPhaseY || 0,
+  anchorX: (m.gridAnchorX as any) || 'start',
+  anchorY: (m.gridAnchorY as any) || 'start',
+});
 
   // ⛔️ filtro: scarta i moduli il cui CENTRO cade in una zona "riservata"
   const safe = rects.filter(r => !isInReservedZone({ x: r.cx, y: r.cy }, selectedId));

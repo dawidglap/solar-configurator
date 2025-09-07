@@ -67,6 +67,7 @@ export type PanelSpec = {
 
 // ── Configurazione moduli per lo step “modules”
 export type ModulesConfig = {
+    gridAngleDeg: number;
     orientation: 'portrait' | 'landscape';
     spacingM: number;      // distanza fra moduli (m)
     marginM: number;       // bordo falda (m)
