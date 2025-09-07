@@ -6,7 +6,7 @@ export type Zone = {
     id: string;
     roofId: string;
     type: 'riservata' | 'walkway';
-    points: Pt[]; // 4 pt parallelogramma
+    points: Pt[]; // poligono (tipicamente 4 pt)
 };
 
 export type ZonesSlice = {
@@ -14,8 +14,11 @@ export type ZonesSlice = {
     selectedZoneId?: string;
 
     addZone: (z: Zone) => void;
+    updateZone: (id: string, patch: Partial<Zone>) => void; // ⬅️ aggiunto
     removeZone: (id: string) => void;
+
     setSelectedZone: (id?: string) => void;
+
     getZonesForRoof: (roofId: string) => Zone[];
     clearZonesForRoof: (roofId: string) => void;
 };
@@ -28,6 +31,12 @@ export const createZonesSlice: StateCreator<ZonesSlice, [], [], ZonesSlice> = (s
         set((s) => ({
             zones: [...s.zones, z],
             selectedZoneId: z.id,
+        })),
+
+    // ⬇️ nuovo
+    updateZone: (id, patch) =>
+        set((s) => ({
+            zones: s.zones.map((z) => (z.id === id ? { ...z, ...patch } : z)),
         })),
 
     removeZone: (id) =>

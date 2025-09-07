@@ -3,51 +3,57 @@ import React, { useMemo, useEffect } from 'react';
 import { Group, Line } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import type { Pt } from '@/types/planner';
+import ZoneHandlesKonva from './ZoneHandlesKonva';
 
 function toFlatSafe(pts: Pt[]): number[] | null {
   if (!Array.isArray(pts) || pts.length < 3) return null;
-  const flat: number[] = [];
+  const out: number[] = [];
   for (const p of pts) {
     if (!Number.isFinite(p?.x) || !Number.isFinite(p?.y)) return null;
-    flat.push(p.x, p.y);
+    out.push(p.x, p.y);
   }
-  return flat;
+  return out;
 }
 
 export default function ZonesLayer({
   roofId,
-  interactive = false, // ⬅️ NUOVO: se true, la zona è cliccabile
+  interactive = false,
+  shapeMode = 'normal',
+  toImg,
+  imgW,
+  imgH,
 }: {
   roofId: string;
   interactive?: boolean;
+  shapeMode?: 'normal' | 'trapezio';
+  toImg: (sx: number, sy: number) => Pt;
+  imgW: number;
+  imgH: number;
 }) {
   const zones = usePlannerV2Store((s) => s.zones);
   const selectedZoneId = usePlannerV2Store((s) => s.selectedZoneId);
   const setSelectedZone = usePlannerV2Store((s) => s.setSelectedZone);
+  const updateZone = usePlannerV2Store((s) => s.updateZone);
   const removeZone = usePlannerV2Store((s) => s.removeZone);
 
-  const zonesForRoof = useMemo(
-    () => zones.filter((z) => z.roofId === roofId),
-    [zones, roofId]
-  );
+  const zonesForRoof = useMemo(() => zones.filter(z => z.roofId === roofId), [zones, roofId]);
 
-  // Backspace elimina la zona selezionata (se esiste)
+  // Backspace su zona selezionata
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.key === 'Backspace' || e.key === 'Delete') && selectedZoneId) {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Backspace' && selectedZoneId) {
         removeZone(selectedZoneId);
         setSelectedZone(undefined);
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [selectedZoneId, removeZone, setSelectedZone]);
 
   if (!zonesForRoof.length) return null;
 
   return (
-    // Il gruppo visuale NON ascolta eventi; la hit-area è condizionale
-    <Group listening={false}>
+    <Group listening>
       {zonesForRoof.map((z) => {
         const flat = toFlatSafe(z.points);
         if (!flat) return null;
@@ -58,8 +64,8 @@ export default function ZonesLayer({
         const fill = isSel ? 'rgba(255,95,86,0.28)' : 'rgba(255,95,86,0.18)';
 
         return (
-          <Group key={z.id} listening={false}>
-            {/* Visual */}
+          <Group key={z.id}>
+            {/* visuale */}
             <Line
               points={flat}
               closed
@@ -71,23 +77,28 @@ export default function ZonesLayer({
               listening={false}
             />
 
-            {/* Hit-area solo se interattivo (sulla falda selezionata) */}
-            {interactive && (
-              <Line
-                points={flat}
-                closed
-                stroke="transparent"
-                strokeWidth={14}
-                hitStrokeWidth={14}
-                listening
-                onClick={(e) => {
-                  e.cancelBubble = true; // non far propagare ai pannelli/sfondo
-                  setSelectedZone(z.id);
-                }}
-                onTap={(e) => {
-                  e.cancelBubble = true;
-                  setSelectedZone(z.id);
-                }}
+            {/* hit-area per selezione (blocca bubbling) */}
+            <Line
+              points={flat}
+              closed
+              stroke="transparent"
+              strokeWidth={14}
+              hitStrokeWidth={14}
+              listening
+              onClick={(e) => { e.cancelBubble = true; setSelectedZone(z.id); }}
+              onTap={(e) => { e.cancelBubble = true; setSelectedZone(z.id); }}
+            />
+
+            {/* maniglie SOLO quando: zona selezionata + interattiva + modalità trapezio */}
+            {interactive && isSel && shapeMode === 'trapezio' && (
+              <ZoneHandlesKonva
+                points={z.points}
+                imgW={imgW}
+                imgH={imgH}
+                toImg={toImg}
+                onDragStart={() => {}}
+                onDragEnd={() => {}}
+                onChange={(next) => updateZone(z.id, { points: next })}
               />
             )}
           </Group>

@@ -50,6 +50,7 @@ export default function CanvasStage() {
   const modules = usePlannerV2Store((s) => s.modules);
   const duplicatePanel = usePlannerV2Store((s) => s.duplicatePanel);
   const addZone = usePlannerV2Store((s) => s.addZone);
+  
 
 
   // 3) size e immagine di base (ORA puoi usare setView)
@@ -253,7 +254,15 @@ export default function CanvasStage() {
             />
             {/* Zone vietate (solo sulla falda selezionata per non affollare) */}
 {layers.map((l) => (
-  <ZonesLayer key={l.id} roofId={l.id} interactive={l.id === selectedId} />
+    <ZonesLayer
+    key={l.id}
+    roofId={l.id}
+    interactive={l.id === selectedId}
+    shapeMode={shapeMode}                          // ← stesso toggle dei tetti
+    toImg={toImgCoords}                            // ← conversione stage→immagine
+    imgW={snap.width ?? img?.naturalWidth ?? 0}    // ← dimensioni immagine
+    imgH={snap.height ?? img?.naturalHeight ?? 0}
+  />
 ))}
 {/* Anteprima zona riservata durante il disegno (rettangolo) */}
 {tool === 'draw-reserved' && rectDraft && rectDraft.length >= 1 && mouseImg && (

@@ -146,10 +146,24 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 selectedPanelId: s.selectedPanelId,
                 modules: s.modules,
                 panels: s.panels,          // <- PanelsSlice
+                // 👇👇👇 aggiungi questi due
+                zones: s.zones,            // <- ZonesSlice
+                selectedZoneId: s.selectedZoneId, // <- ZonesSlice
                 // s.ui non persistito
             }),
 
+
             migrate: (persisted: any) => {
+
+                // ensure zones slice
+                if (!Array.isArray(persisted.zones)) {
+                    persisted.zones = [];
+                }
+                if (persisted.selectedZoneId) {
+                    const exists = persisted.zones.some((z: any) => z.id === persisted.selectedZoneId);
+                    if (!exists) persisted.selectedZoneId = undefined;
+                }
+
                 if (!persisted) return persisted;
 
                 // safety: rimuoviamo vecchio snapshot persistito se presente

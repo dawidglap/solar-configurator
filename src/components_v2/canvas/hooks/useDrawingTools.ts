@@ -19,10 +19,7 @@ type RoofAreaLike = {
     source?: string;
 };
 
-// helper: parallelogramma dai 3 punti (A,B,C) → [A,B,C2,D]
-function rect3ToPoly4(A: Pt, B: Pt, C: Pt): Pt[] {
-    return [A, B, { x: C.x + (B.x - A.x), y: C.y + (B.y - A.y) }, C];
-}
+
 
 export function useDrawingTools<T extends RoofAreaLike>(args: {
     tool: Tool;
