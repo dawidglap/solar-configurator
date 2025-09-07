@@ -113,6 +113,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 gridPhaseY: 0,             // 👈 nuovo
                 gridAnchorX: 'start',      // 👈 nuovo: 'start' | 'center' | 'end'
                 gridAnchorY: 'start',      // 👈 nuovo
+                coverageRatio: 1,
             },
 
             setModules: (patch) =>
@@ -137,7 +138,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         }),
         {
             name: 'planner-v2',
-            version: 8,
+            version: 9,
 
             storage: createJSONStorage(() => localStorage),
 
@@ -221,6 +222,10 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 if (typeof persisted.modules.gridPhaseY !== 'number') persisted.modules.gridPhaseY = 0;
                 if (!['start', 'center', 'end'].includes(persisted.modules.gridAnchorX)) persisted.modules.gridAnchorX = 'start';
                 if (!['start', 'center', 'end'].includes(persisted.modules.gridAnchorY)) persisted.modules.gridAnchorY = 'start';
+
+                if (typeof persisted.modules.coverageRatio !== 'number') {
+                    persisted.modules.coverageRatio = 1;
+                }
 
 
                 return persisted;

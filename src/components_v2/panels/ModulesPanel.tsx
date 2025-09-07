@@ -6,6 +6,7 @@ import { computeAutoLayoutRects } from '../modules/layout';
 import { isInReservedZone } from '../zones/utils';
 import GridRotationControl from '../modules/GridRotationControl';
 import GridAlignmentControl from '../modules/GridAlignmentControl';
+import GridCoverageControl from '../modules/GridCoverageControl';
 
 
 
@@ -82,7 +83,7 @@ const m = usePlannerV2Store.getState().modules;
         </select>
       </fieldset>
 
-      <GridRotationControl />
+      
 
       {/* MODUL */}
       <fieldset className="space-y-1">
@@ -151,6 +152,7 @@ const m = usePlannerV2Store.getState().modules;
       </fieldset>
 
       <GridAlignmentControl />
+      <GridRotationControl />
 
       {/* SEGMENT TOGGLES */}
       <div className="flex gap-2">
@@ -194,7 +196,7 @@ const m = usePlannerV2Store.getState().modules;
         </button>
 
 
-
+<GridCoverageControl />
 {/* // ...sostituisci l'onClick del bottone "In Module umwandeln" con: */}
 <button
   disabled={disabled}
@@ -215,6 +217,7 @@ const rects = computeAutoLayoutRects({
   phaseY: m.gridPhaseY || 0,
   anchorX: (m.gridAnchorX as any) || 'start',
   anchorY: (m.gridAnchorY as any) || 'start',
+    coverageRatio: m.coverageRatio ?? 1,  
 });
 
   // ⛔️ filtro: scarta i moduli il cui CENTRO cade in una zona "riservata"
@@ -244,7 +247,7 @@ const rects = computeAutoLayoutRects({
   In Module umwandeln
 </button>
 
-
+<GridCoverageControl />
         <button
           disabled={disabled || panelsOnRoof.length === 0}
           onClick={() => selectedId && clearPanelsForRoof(selectedId)}

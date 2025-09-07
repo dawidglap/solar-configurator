@@ -73,6 +73,15 @@ export type ModulesConfig = {
     marginM: number;       // bordo falda (m)
     showGrid: boolean;
     placingSingle: boolean;
+
+
+    gridPhaseX?: number;
+    gridPhaseY?: number;
+    gridAnchorX?: 'start' | 'center' | 'end';
+    gridAnchorY?: 'start' | 'center' | 'end';
+
+    /** 0.5 = metà tetto, 0.75 = 3/4, 1 = tutto */
+    coverageRatio?: number;
 };
 
 // ── Istanze di pannello materializzate

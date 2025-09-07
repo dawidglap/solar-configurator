@@ -26,6 +26,9 @@ type Props = {
   phaseY?: number;
   anchorX?: Anchor;
   anchorY?: Anchor;
+
+  // copertura lungo Y (righe): 0.5, 0.75, 1 …
+  coverageRatio?: number;
 };
 
 /* ───────── helpers geometrici SOLO per la GRIGLIA VISIVA ───────── */
@@ -109,6 +112,7 @@ export default function ModulesPreview({
   phaseY = 0,
   anchorX = 'start',
   anchorY = 'start',
+  coverageRatio = 1,
 }: Props) {
   // 1) Calcolo ufficiale dei rettangoli (stessa funzione usata al commit)
   const rectsAll = useMemo(() => {
@@ -125,10 +129,11 @@ export default function ModulesPreview({
       phaseY,
       anchorX,
       anchorY,
+      coverageRatio, // ← aggiunto: la preview rispetta 1/2, 3/4, 1/1
     });
   }, [
     polygon, mppImage, azimuthDeg, orientation, panelSizeM,
-    spacingM, marginM, phaseX, phaseY, anchorX, anchorY,
+    spacingM, marginM, phaseX, phaseY, anchorX, anchorY, coverageRatio,
   ]);
 
   // 2) Filtro zone riservate (coerente col commit)

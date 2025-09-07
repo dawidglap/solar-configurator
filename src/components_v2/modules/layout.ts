@@ -144,10 +144,13 @@ export function computeAutoLayoutRects(args: {
     /** Ancoraggio griglia rispetto alla bbox del clip: default 'start' (bordo min). */
     anchorX?: Anchor; // 'start' | 'center' | 'end'
     anchorY?: Anchor; // 'start' | 'center' | 'end'
+    /** FRAZIONE di copertura lungo Y (righe): 0<..<=1  es. 0.5=mezzo tetto */
+    coverageRatio?: number;                 // 👈👈 NUOVO (default 1)
 }): AutoRect[] {
     const {
         polygon, mppImage, azimuthDeg, orientation, panelSizeM, spacingM, marginM,
         phaseX = 0, phaseY = 0, anchorX = 'start', anchorY = 'start',
+        coverageRatio = 1,
     } = args;
 
     if (!polygon.length || !mppImage) return [];
@@ -202,8 +205,17 @@ export function computeAutoLayoutRects(args: {
     const startX = minX + anchorOffsetX + phx * cellW;
     const startY = minY + anchorOffsetY + phy * cellH;
 
+    // 👇 numero massimo di righe da posare in funzione della copertura richiesta
+    const rowsAllowed = Math.max(
+        1,
+        Math.min(maxRows, Math.round(maxRows * Math.max(0.01, Math.min(1, coverageRatio))))
+    );
+
     const out: AutoRect[] = [];
+    let rowIndex = 0;
+
     for (let y = startY; y + hPx <= maxY + 1e-6; y += cellH) {
+        if (rowIndex >= rowsAllowed) break;   // 👈 rispetta coverageRatio (½, ¾, 1)
         for (let x = startX; x + wPx <= maxX + 1e-6; x += cellW) {
             const corners: Pt[] = [
                 { x, y },
@@ -211,14 +223,15 @@ export function computeAutoLayoutRects(args: {
                 { x: x + wPx, y: y + hPx },
                 { x, y: y + hPx },
             ];
-
-            // ⬇⬇⬇ inclusivo con EPS (bordo ammesso)
             if (corners.every(c => pointInPolyInclusive(c, clipLocal))) {
                 const cx = x + wPx / 2, cy = y + hPx / 2;
                 const Cw = localToWorld({ x: cx, y: cy }, O, theta);
                 out.push({ cx: Cw.x, cy: Cw.y, wPx, hPx, angleDeg });
             }
         }
+        rowIndex++;
     }
     return out;
+
+
 }

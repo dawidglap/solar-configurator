@@ -237,6 +237,7 @@ const gridMods = usePlannerV2Store(s => s.modules);
   phaseY={gridMods.gridPhaseY || 0}
   anchorX={(gridMods.gridAnchorX as any) || 'start'}
   anchorY={(gridMods.gridAnchorY as any) || 'start'}
+  coverageRatio={gridMods.coverageRatio ?? 1}  
 />
 
               )}
