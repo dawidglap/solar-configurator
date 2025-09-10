@@ -1,12 +1,14 @@
 'use client';
 
 import { Group as KonvaGroup, Line as KonvaLine, Text as KonvaText } from 'react-konva';
+import { usePlannerV2Store } from '../state/plannerV2Store';              // ⬅️ NEW
+import { rotatePolygon } from '@/components_v2/roofs/alignment';          // ⬅️ NEW
 
 type Pt = { x: number; y: number };
 export type RoofArea = {
   id: string;
   name: string;
-  points: Pt[];
+  points: Pt[];  // in px immagine
 };
 
 function toFlat(pts: Pt[]) {
@@ -24,12 +26,8 @@ function polygonAreaPx2(pts: Pt[]) {
 function polygonCentroid(pts: Pt[]) {
   const n = pts.length;
   if (n === 0) return { x: 0, y: 0 };
-  let sx = 0,
-    sy = 0;
-  for (const p of pts) {
-    sx += p.x;
-    sy += p.y;
-  }
+  let sx = 0, sy = 0;
+  for (const p of pts) { sx += p.x; sy += p.y; }
   return { x: sx / n, y: sy / n };
 }
 
@@ -55,13 +53,21 @@ export default function RoofsLayer({
   stroke?: string;
   fill?: string;
 }) {
+  // ⬇️ NEW: leggi rotazione & pivot dallo store; pivot default = centro immagine
+  const { rotDeg, pivotPx } = usePlannerV2Store(s => s.roofAlign ?? { rotDeg: 0, pivotPx: undefined });
+  const { width: imgW = 0, height: imgH = 0 } = usePlannerV2Store(s => s.snapshot);
+  const pivot = pivotPx ?? { x: imgW / 2, y: imgH / 2 };
+
   return (
     <>
       {roofs.map((r) => {
-        const flat = toFlat(r.points);
+        // ⬇️ NEW: ruota i punti della falda attorno al pivot
+        const rotatedPts = rotDeg ? rotatePolygon(r.points, pivot, rotDeg) : r.points;
+
+        const flat = toFlat(rotatedPts);
         const sel = r.id === selectedId;
-        const c = polygonCentroid(r.points);
-        const label = areaLabel(r.points, mppImage);
+        const c = polygonCentroid(rotatedPts);
+        const label = areaLabel(rotatedPts, mppImage); // (rotazione non cambia l’area)
 
         return (
           <KonvaGroup key={r.id}>

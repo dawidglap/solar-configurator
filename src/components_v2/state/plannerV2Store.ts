@@ -35,6 +35,11 @@ import type { ZonesSlice } from './slices/zonesSlice';
 import { createZonesSlice } from './slices/zonesSlice';
 
 
+// 👇 rotazione falde: stato di allineamento
+type RoofAlign = {
+    rotDeg: number;                  // gradi (−30..+30 consigliato)
+    pivotPx?: { x: number; y: number }; // pivot opzionale in px immagine
+};
 
 
 // ───────────────────────────────────────────────────────────
@@ -67,6 +72,11 @@ type PlannerV2State = {
     detectedRoofs: DetectedRoof[];
     setDetectedRoofs: (arr: DetectedRoof[]) => void;
     clearDetectedRoofs: () => void;
+
+    roofAlign: RoofAlign;
+    setRoofRotDeg: (deg: number) => void;
+    setRoofPivotPx: (p?: { x: number; y: number }) => void;
+    resetRoofAlign: () => void;
 } & UISlice & LayersSlice & PanelsSlice & ZonesSlice;
 
 export const usePlannerV2Store = create<PlannerV2State>()(
@@ -124,6 +134,25 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             setDetectedRoofs: (arr) => set({ detectedRoofs: arr }),
             clearDetectedRoofs: () => set({ detectedRoofs: [] }),
 
+            // ── Roof alignment (rotazione falde)
+            roofAlign: { rotDeg: 0, pivotPx: undefined },
+
+            setRoofRotDeg: (deg) =>
+                set((s) => ({
+                    roofAlign: {
+                        ...s.roofAlign,
+                        // clamp leggero per evitare rotazioni estreme
+                        rotDeg: Math.max(-30, Math.min(30, deg)),
+                    },
+                })),
+
+            setRoofPivotPx: (p) =>
+                set((s) => ({ roofAlign: { ...s.roofAlign, pivotPx: p } })),
+
+            resetRoofAlign: () =>
+                set(() => ({ roofAlign: { rotDeg: 0, pivotPx: undefined } })),
+
+
             // ── UI slice
             ...createUiSlice(set, get, api),
 
@@ -138,7 +167,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         }),
         {
             name: 'planner-v2',
-            version: 9,
+            version: 10,
 
             storage: createJSONStorage(() => localStorage),
 
@@ -157,6 +186,8 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 zones: s.zones,            // <- ZonesSlice
                 selectedZoneId: s.selectedZoneId, // <- ZonesSlice
                 // s.ui non persistito
+                roofAlign: s.roofAlign,
+
             }),
 
 
@@ -226,6 +257,18 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 if (typeof persisted.modules.coverageRatio !== 'number') {
                     persisted.modules.coverageRatio = 1;
                 }
+
+                // ensure roofAlign
+                if (!persisted.roofAlign) {
+                    persisted.roofAlign = { rotDeg: 0, pivotPx: undefined };
+                } else {
+                    if (typeof persisted.roofAlign.rotDeg !== 'number') persisted.roofAlign.rotDeg = 0;
+                    const p = persisted.roofAlign.pivotPx;
+                    if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') {
+                        persisted.roofAlign.pivotPx = undefined;
+                    }
+                }
+
 
 
                 return persisted;

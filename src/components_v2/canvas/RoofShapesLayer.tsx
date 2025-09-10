@@ -1,21 +1,54 @@
 'use client';
 
-import React from 'react';
-import { Group as KonvaGroup, Line as KonvaLine, Text as KonvaText } from 'react-konva';
+import React, { useMemo, useRef } from 'react';
+import {
+  Group as KonvaGroup,
+  Line as KonvaLine,
+  Text as KonvaText,
+  Path as KonvaPath,
+  Circle as KonvaCircle,
+} from 'react-konva';
 import RoofHandlesKonva from './RoofHandlesKonva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
+import { rotateAround } from '@/components_v2/roofs/alignment';
+import { TbRotateClockwise2 } from 'react-icons/tb';
+// in cima al file
+import { IoMoveSharp } from 'react-icons/io5';
+
 
 type Pt = { x: number; y: number };
 type LayerRoof = { id: string; points: Pt[] };
 
-function toFlat(pts: Pt[]) {
-  return pts.flatMap((p) => [p.x, p.y]);
-}
+function toFlat(pts: Pt[]) { return pts.flatMap(p => [p.x, p.y]); }
 function centroid(pts: Pt[]) {
-  let sx = 0, sy = 0;
-  for (const p of pts) { sx += p.x; sy += p.y; }
-  const n = pts.length || 1;
-  return { x: sx / n, y: sy / n };
+  let sx = 0, sy = 0; for (const p of pts) { sx += p.x; sy += p.y; }
+  const n = pts.length || 1; return { x: sx / n, y: sy / n };
+}
+function rotatePolygon(pts: Pt[], pivot: Pt, deg: number) {
+  if (!deg) return pts;
+  return pts.map(p => rotateAround(p, pivot, deg));
+}
+
+// Estrai i path dell’icona rotazione
+function iconToPaths(IconComp: any): {
+  paths: string[];
+  vbW: number; vbH: number;
+  strokeW: number; linecap: 'round'|'butt'|'square'; linejoin: 'round'|'miter'|'bevel';
+} {
+  const el = IconComp({});
+  const vb: string = el.props.viewBox ?? '0 0 24 24';
+  const [, , vbW, vbH] = vb.split(' ').map((n: string) => Number(n));
+  const children = React.Children.toArray(el.props.children) as any[];
+  const paths = children.filter((c: any) => c?.props?.d).map((c: any) => c.props.d as string);
+
+  return {
+    paths,
+    vbW: vbW || 24,
+    vbH: vbH || 24,
+    strokeW: Number(el.props.strokeWidth ?? 2),
+    linecap: (el.props.strokeLinecap ?? 'round') as any,
+    linejoin: (el.props.strokeLinejoin ?? 'round') as any,
+  };
 }
 
 export default function RoofShapesLayer({
@@ -29,7 +62,7 @@ export default function RoofShapesLayer({
   strokeWidthNormal,
   strokeWidthSelected,
   shapeMode,
-  toImg,
+  toImg, // (stageX, stageY) -> px immagine
   imgW,
   imgH,
   onHandlesDragStart,
@@ -53,15 +86,56 @@ export default function RoofShapesLayer({
   onHandlesDragEnd: () => void;
   areaLabel: (pts: Pt[]) => string | null;
 }) {
-  const updateRoof = usePlannerV2Store((s) => s.updateRoof);
+  const updateRoof = usePlannerV2Store(s => s.updateRoof);
+
+  // stato UI rotazione/pivot
+  const { rotDeg, pivotPx } = usePlannerV2Store(s => s.roofAlign ?? { rotDeg: 0, pivotPx: undefined });
+  const setRoofRotDeg = usePlannerV2Store(s => s.setRoofRotDeg);
+
+  // refs per drag rotazione
+  const dragStartAngleRef = useRef(0);
+  const dragStartDegRef   = useRef(0);
+  const startPtsRef       = useRef<Pt[] | null>(null);
+  const startPivotRef     = useRef<Pt | null>(null);
+
+  // refs per drag MOVE (traslazione)
+  const moveStartPtrImgRef = useRef<Pt | null>(null);
+  const moveStartPtsRef    = useRef<Pt[] | null>(null);
+
+  // icona rotazione in path
+  const ROT_ICON = useMemo(() => iconToPaths(TbRotateClockwise2), []);
+  const MOVE_ICON = useMemo(() => iconToPaths(IoMoveSharp), []);
+
+  const HANDLE_R  = 0;   // raggio offset icona rotazione (0 = al pivot)
+  const HANDLE_SZ = 10;  // size icona rotazione
+  const MOVE_SZ   = 10;  // size handle move
+  const MOVE_DY   = 16;  // offset in px immagine sotto al pivot per non sovrapporre
 
   return (
     <>
-      {layers.map((r) => {
-        const flat = toFlat(r.points);
+      {layers.map(r => {
         const sel = r.id === selectedId;
-        const c = centroid(r.points);
-        const label = showAreaLabels ? areaLabel(r.points) : null;
+
+        // pivot: se non definito, centroide
+        const selPivot = sel ? (pivotPx ?? centroid(r.points)) : undefined;
+
+        // pts correnti (baked)
+        const pts = r.points;
+        const flat = toFlat(pts);
+        const c = centroid(pts);
+        const label = showAreaLabels ? areaLabel(pts) : null;
+
+        const rotHandlePos = (sel && selPivot)
+          ? {
+              x: selPivot.x + HANDLE_R * Math.cos((rotDeg * Math.PI) / 180),
+              y: selPivot.y + HANDLE_R * Math.sin((rotDeg * Math.PI) / 180),
+            }
+          : null;
+
+        // posizione handle MOVE (px immagine) — leggermente sotto il pivot
+        const moveHandlePos = (sel && selPivot)
+          ? { x: selPivot.x, y: selPivot.y + MOVE_DY }
+          : null;
 
         return (
           <KonvaGroup key={r.id}>
@@ -77,6 +151,7 @@ export default function RoofShapesLayer({
               shadowColor={sel ? strokeSelected : 'transparent'}
               shadowBlur={sel ? 6 : 0}
               shadowOpacity={sel ? 0.9 : 0}
+              hitStrokeWidth={12}
             />
 
             {showAreaLabels && label && (
@@ -89,13 +164,155 @@ export default function RoofShapesLayer({
                 offsetX={18}
                 offsetY={-6}
                 listening={false}
+                // @ts-ignore
                 shadowColor="white"
                 shadowBlur={2}
                 shadowOpacity={0.9}
               />
             )}
 
-            {/* Maniglie: SOLO quando selezionato + modalità Trapezio */}
+            {/* ROTAZIONE (px immagine) */}
+            {sel && selPivot && shapeMode !== 'trapezio' && rotHandlePos && (
+              <KonvaGroup
+                x={rotHandlePos.x}
+                y={rotHandlePos.y}
+                listening
+                onMouseEnter={(e) => { e.target.getStage()?.container()?.style.setProperty('cursor','grab'); }}
+                onMouseLeave={(e) => { e.target.getStage()?.container()?.style.removeProperty('cursor'); }}
+                onMouseDown={(e) => {
+                  e.cancelBubble = true;
+                  const st = e.target.getStage();
+                  if (!st) return;
+                  const ns = '.roof-rotate';
+                  st.off(ns);
+
+                  // snapshot iniziale (px immagine)
+                  startPtsRef.current   = r.points.map(p => ({ ...p }));
+                  startPivotRef.current = selPivot;
+
+                  const pos = st.getPointerPosition();
+                  if (!pos) return;
+                  const pImg = toImg(pos.x, pos.y); // STAGE→IMG (px immagine)
+                  dragStartAngleRef.current = Math.atan2(pImg.y - selPivot.y, pImg.x - selPivot.x);
+                  dragStartDegRef.current   = rotDeg || 0;
+
+                  st.on('mousemove' + ns + ' touchmove' + ns, (ev: any) => {
+                    const cur = st.getPointerPosition();
+                    if (!cur || !startPtsRef.current || !startPivotRef.current) return;
+                    const qImg = toImg(cur.x, cur.y); // STAGE→IMG (px immagine)
+                    const a = Math.atan2(qImg.y - startPivotRef.current.y, qImg.x - startPivotRef.current.x);
+                    let deltaDeg = (a - dragStartAngleRef.current) * (180 / Math.PI);
+
+                    const nextDeg = ev?.evt?.shiftKey
+                      ? Math.round((dragStartDegRef.current + deltaDeg) / 15) * 15
+                      : (dragStartDegRef.current + deltaDeg);
+
+                    setRoofRotDeg(nextDeg);
+                    const rotated = rotatePolygon(startPtsRef.current, startPivotRef.current, nextDeg);
+                    updateRoof(r.id, { points: rotated });
+                  });
+
+                  const end = () => { st.off(ns); setRoofRotDeg(0); };
+                  st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
+                }}
+              >
+                {/* disco sfondo */}
+                <KonvaCircle
+                  radius={HANDLE_SZ / 2}
+                  fill="#ffffff"
+                  opacity={0.75}
+                  stroke="#cbd5e1"
+                  strokeWidth={0.25}
+                  shadowColor="rgba(0,0,0,0.25)"
+                  shadowBlur={4}
+                  shadowOpacity={0.9}
+                />
+                {/* icona path */}
+                {(() => {
+                  const scale = HANDLE_SZ / ROT_ICON.vbW;
+                  const strokePx = 1;
+                  const strokeWidth = strokePx / scale; // spessore costante visivo
+                  return ROT_ICON.paths.map((d, i) => (
+                    <KonvaPath
+                      key={i}
+                      data={d}
+                      scaleX={scale}
+                      scaleY={scale}
+                      offsetX={ROT_ICON.vbW / 2}
+                      offsetY={ROT_ICON.vB ? (ROT_ICON as any).vB/2 : ROT_ICON.vbH / 2}
+                      stroke="#334155"
+                      strokeWidth={strokeWidth}
+                      lineCap={ROT_ICON.linecap}
+                      lineJoin={ROT_ICON.linejoin}
+                      listening={false}
+                    />
+                  ));
+                })()}
+              </KonvaGroup>
+            )}
+
+            {/* MOVE (traslazione in PX IMMAGINE): sempre quando selezionato */}
+            {sel && moveHandlePos && (
+              <KonvaGroup
+                x={moveHandlePos.x}
+                y={moveHandlePos.y}
+                listening
+                onMouseEnter={(e) => { e.target.getStage()?.container()?.style.setProperty('cursor','move'); }}
+                onMouseLeave={(e) => { e.target.getStage()?.container()?.style.removeProperty('cursor'); }}
+                onMouseDown={(e) => {
+                  e.cancelBubble = true;
+                  const st = e.target.getStage();
+                  if (!st) return;
+                  const ns = '.roof-move';
+                  st.off(ns);
+
+                  // blocca pan durante il drag
+                  onHandlesDragStart();
+
+                  // snapshot iniziale (px immagine)
+                  moveStartPtsRef.current = r.points.map(p => ({ ...p }));
+                  const pos = st.getPointerPosition();
+                  if (!pos) return;
+                  moveStartPtrImgRef.current = toImg(pos.x, pos.y); // STAGE→IMG
+
+                  st.on('mousemove' + ns + ' touchmove' + ns, () => {
+                    const cur = st.getPointerPosition();
+                    if (!cur || !moveStartPtsRef.current || !moveStartPtrImgRef.current) return;
+                    const curImg = toImg(cur.x, cur.y); // STAGE→IMG (px immagine)
+                    const dx = curImg.x - moveStartPtrImgRef.current.x;
+                    const dy = curImg.y - moveStartPtrImgRef.current.y;
+
+                    const moved = moveStartPtsRef.current.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                    updateRoof(r.id, { points: moved });
+                  });
+
+                  const end = () => {
+                    st.off(ns);
+                    moveStartPtrImgRef.current = null;
+                    moveStartPtsRef.current = null;
+                    onHandlesDragEnd(); // sblocca pan
+                  };
+                  st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
+                }}
+              >
+                {/* cerchietto */}
+                <KonvaCircle
+                  radius={MOVE_SZ / 2}
+                  fill="#ffffff"
+                  opacity={0.9}
+                  stroke="#94a3b8"
+                  strokeWidth={0.5}
+                  shadowColor="rgba(0,0,0,0.20)"
+                  shadowBlur={3}
+                  shadowOpacity={0.8}
+                />
+                {/* croce */}
+                <KonvaLine points={[-4, 0, 4, 0]} stroke="#334155" strokeWidth={1} listening={false} />
+                <KonvaLine points={[0, -4, 0, 4]} stroke="#334155" strokeWidth={1} listening={false} />
+              </KonvaGroup>
+            )}
+
+            {/* Maniglie TRAPEZIO */}
             {sel && shapeMode === 'trapezio' && (
               <RoofHandlesKonva
                 points={r.points}
