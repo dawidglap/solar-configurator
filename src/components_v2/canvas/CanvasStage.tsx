@@ -49,6 +49,8 @@ export default function CanvasStage() {
   const selPanel = usePlannerV2Store((s) => s.getSelectedPanel());
 
   const gridMods = usePlannerV2Store((s) => s.modules);
+  const stageRef = useRef<any>(null);
+
 
   // size + base image
   const size = useContainerSize(containerRef);
@@ -151,6 +153,21 @@ export default function CanvasStage() {
       ? 'grab'
       : 'default';
 
+      useEffect(() => {
+  const el = stageRef.current?.getStage?.()?.container?.();
+  if (!el) return;
+
+  // crosshair quando disegno (building) o fill-area (modules), grab durante pan, altrimenti default
+  if (drawingEnabled || (step === 'modules' && tool === 'fill-area')) {
+    el.style.cursor = 'crosshair';
+  } else if (canDrag && !draggingVertex) {
+    el.style.cursor = 'grab';
+  } else {
+    el.style.cursor = 'default';
+  }
+}, [drawingEnabled, step, tool, canDrag, draggingVertex]);
+
+
   const layerScale = view.scale || view.fitScale || 1;
 
   return (
@@ -183,6 +200,7 @@ export default function CanvasStage() {
 
       {img && size.w > 0 && size.h > 0 && (
         <Stage
+        ref={stageRef}
           width={size.w}
           height={size.h}
           x={view.offsetX || 0}
