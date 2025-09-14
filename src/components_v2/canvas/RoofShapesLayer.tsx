@@ -264,7 +264,8 @@ const lastNextDegRef    = useRef<number>(0);
                       scaleX={scale}
                       scaleY={scale}
                       offsetX={ROT_ICON.vbW / 2}
-                      offsetY={ROT_ICON.vB ? (ROT_ICON as any).vB/2 : ROT_ICON.vbH / 2}
+                      offsetY={ROT_ICON.vbH / 2}
+
                       stroke="#334155"
                       strokeWidth={strokeWidth}
                       lineCap={ROT_ICON.linecap}
