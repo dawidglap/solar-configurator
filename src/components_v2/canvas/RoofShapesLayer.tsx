@@ -17,7 +17,7 @@ import { IoMoveSharp } from 'react-icons/io5';
 
 
 type Pt = { x: number; y: number };
-type LayerRoof = { id: string; points: Pt[] };
+type LayerRoof = { id: string; points: Pt[]; azimuthDeg?: number };
 
 function toFlat(pts: Pt[]) { return pts.flatMap(p => [p.x, p.y]); }
 function centroid(pts: Pt[]) {
@@ -98,6 +98,9 @@ export default function RoofShapesLayer({
   const startPtsRef       = useRef<Pt[] | null>(null);
   const startPivotRef     = useRef<Pt | null>(null);
 
+  const startAzimuthRef   = useRef<number>(0);
+const lastNextDegRef    = useRef<number>(0);
+
   // refs per drag MOVE (traslazione)
   const moveStartPtrImgRef = useRef<Pt | null>(null);
   const moveStartPtsRef    = useRef<Pt[] | null>(null);
@@ -176,45 +179,68 @@ export default function RoofShapesLayer({
               <KonvaGroup
                 x={rotHandlePos.x}
                 y={rotHandlePos.y}
+                offsetY={ROT_ICON.vbH / 2}
+
                 listening
                 onMouseEnter={(e) => { e.target.getStage()?.container()?.style.setProperty('cursor','grab'); }}
                 onMouseLeave={(e) => { e.target.getStage()?.container()?.style.removeProperty('cursor'); }}
-                onMouseDown={(e) => {
-                  e.cancelBubble = true;
-                  const st = e.target.getStage();
-                  if (!st) return;
-                  const ns = '.roof-rotate';
-                  st.off(ns);
+             onMouseDown={(e) => {
+  e.cancelBubble = true;
+  const st = e.target.getStage();
+  if (!st) return;
+  const ns = '.roof-rotate';
+  st.off(ns);
 
-                  // snapshot iniziale (px immagine)
-                  startPtsRef.current   = r.points.map(p => ({ ...p }));
-                  startPivotRef.current = selPivot;
+  // snapshot iniziale (px immagine)
+  startPtsRef.current   = r.points.map(p => ({ ...p }));
+  startPivotRef.current = selPivot;
 
-                  const pos = st.getPointerPosition();
-                  if (!pos) return;
-                  const pImg = toImg(pos.x, pos.y); // STAGE→IMG (px immagine)
-                  dragStartAngleRef.current = Math.atan2(pImg.y - selPivot.y, pImg.x - selPivot.x);
-                  dragStartDegRef.current   = rotDeg || 0;
+  // ⬇️ NEW: azimuth di partenza della falda
+  startAzimuthRef.current = r.azimuthDeg ?? 0;
 
-                  st.on('mousemove' + ns + ' touchmove' + ns, (ev: any) => {
-                    const cur = st.getPointerPosition();
-                    if (!cur || !startPtsRef.current || !startPivotRef.current) return;
-                    const qImg = toImg(cur.x, cur.y); // STAGE→IMG (px immagine)
-                    const a = Math.atan2(qImg.y - startPivotRef.current.y, qImg.x - startPivotRef.current.x);
-                    let deltaDeg = (a - dragStartAngleRef.current) * (180 / Math.PI);
+  const pos = st.getPointerPosition();
+  if (!pos) return;
+  const pImg = toImg(pos.x, pos.y); // STAGE→IMG (px immagine)
+  dragStartAngleRef.current = Math.atan2(pImg.y - selPivot.y, pImg.x - selPivot.x);
+  dragStartDegRef.current   = rotDeg || 0;
 
-                    const nextDeg = ev?.evt?.shiftKey
-                      ? Math.round((dragStartDegRef.current + deltaDeg) / 15) * 15
-                      : (dragStartDegRef.current + deltaDeg);
+  st.on('mousemove' + ns + ' touchmove' + ns, (ev: any) => {
+    const cur = st.getPointerPosition();
+    if (!cur || !startPtsRef.current || !startPivotRef.current) return;
+    const qImg = toImg(cur.x, cur.y); // STAGE→IMG (px immagine)
+    const a = Math.atan2(qImg.y - startPivotRef.current.y, qImg.x - startPivotRef.current.x);
+    let deltaDeg = (a - dragStartAngleRef.current) * (180 / Math.PI);
 
-                    setRoofRotDeg(nextDeg);
-                    const rotated = rotatePolygon(startPtsRef.current, startPivotRef.current, nextDeg);
-                    updateRoof(r.id, { points: rotated });
-                  });
+    const nextDeg = ev?.evt?.shiftKey
+      ? Math.round((dragStartDegRef.current + deltaDeg) / 15) * 15
+      : (dragStartDegRef.current + deltaDeg);
 
-                  const end = () => { st.off(ns); setRoofRotDeg(0); };
-                  st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
-                }}
+    // ⬇️ NEW: tieni traccia dell'ultimo valore
+    lastNextDegRef.current = nextDeg;
+
+    setRoofRotDeg(nextDeg);
+
+    const rotated = rotatePolygon(startPtsRef.current, startPivotRef.current, nextDeg);
+    updateRoof(r.id, { points: rotated });
+  });
+
+  const end = () => {
+    st.off(ns);
+
+    // ⬇️ NEW: a fine drag, accumula il delta sull'azimuth della falda
+    const delta = lastNextDegRef.current - (dragStartDegRef.current || 0);
+    const rawAz = startAzimuthRef.current + delta;
+    // normalizza 0..360 (facoltativo)
+    const newAz = ((rawAz % 360) + 360) % 360;
+
+    updateRoof(r.id, { azimuthDeg: newAz });
+
+    // reset UI rotdeg
+    setRoofRotDeg(0);
+  };
+  st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
+}}
+
               >
                 {/* disco sfondo */}
                 <KonvaCircle

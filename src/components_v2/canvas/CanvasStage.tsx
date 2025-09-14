@@ -318,6 +318,57 @@ export default function CanvasStage() {
                 );
               })()}
 
+              {/* ⬇️ Anteprima moduli DENTRO il rettangolo fill-area */}
+{step === 'modules' &&
+  tool === 'fill-area' &&
+  fillDraft &&
+  selectedRoof &&
+  selPanel &&
+  snap.mppImage && (() => {
+    const { a, b } = fillDraft;
+    const angleDeg =
+      (selectedRoof.azimuthDeg ?? 0) +
+      (gridMods.gridAngleDeg || 0) +
+      (usePlannerV2Store.getState().roofAlign?.rotDeg || 0);
+    const t = (angleDeg * Math.PI) / 180;
+
+    const ux = { x: Math.cos(t),  y: Math.sin(t)  };
+    const uy = { x: -Math.sin(t), y: Math.cos(t) };
+
+    const vx = b.x - a.x;
+    const vy = b.y - a.y;
+    const w = vx * ux.x + vy * ux.y;
+    const h = vx * uy.x + vy * uy.y;
+
+    const p1 = { x: a.x,                 y: a.y };
+    const p2 = { x: a.x + w * ux.x,      y: a.y + w * ux.y };
+    const p3 = { x: p2.x + h * uy.x,     y: p2.y + h * uy.y };
+    const p4 = { x: a.x + h * uy.x,      y: a.y + h * uy.y };
+    const rectPoly = [p1, p2, p3, p4];
+
+    return (
+      <ModulesPreview
+        // usiamo la falda selezionata per leggere eventuali zone/margini,
+        // ma il "target" da riempire è il poligono del rettangolo:
+        roofId={selectedRoof.id}
+        polygon={rectPoly}
+        mppImage={snap.mppImage}
+        azimuthDeg={angleDeg}
+        orientation={modules.orientation}
+        panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
+        spacingM={modules.spacingM}
+        marginM={modules.marginM}
+        textureUrl="/images/panel.webp"
+        phaseX={gridMods.gridPhaseX || 0}
+        phaseY={gridMods.gridPhaseY || 0}
+        anchorX={(gridMods.gridAnchorX as any) || 'start'}
+        anchorY={(gridMods.gridAnchorY as any) || 'start'}
+        coverageRatio={1} // qui riempiamo tutto il rettangolo
+      />
+    );
+  })()}
+
+
             {/* ⬇️ Rubber-band fill-area RUOTATO: SOLO in modules + fill-area */}
             {step === 'modules' && tool === 'fill-area' && fillDraft && selectedRoof && (() => {
               const { a, b } = fillDraft;
