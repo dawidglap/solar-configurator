@@ -30,9 +30,9 @@ import { nanoid } from 'nanoid';
 import ZonesLayer from '../zones/ZonesLayer';
 import FillAreaController from '../modules/fill/FillAreaController';
 
-
 export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<any>(null);
 
   // store
   const snap = usePlannerV2Store((s) => s.snapshot);
@@ -49,10 +49,7 @@ export default function CanvasStage() {
   const addZone = usePlannerV2Store((s) => s.addZone);
   const step = usePlannerV2Store((s) => s.step);
   const selPanel = usePlannerV2Store((s) => s.getSelectedPanel());
-
   const gridMods = usePlannerV2Store((s) => s.modules);
-  const stageRef = useRef<any>(null);
-
 
   // size + base image
   const size = useContainerSize(containerRef);
@@ -75,6 +72,9 @@ export default function CanvasStage() {
   const [selectedPanelInstId, setSelectedPanelInstId] = useState<string | undefined>(undefined);
   const deletePanel = usePlannerV2Store((s) => s.deletePanel);
   const SHOW_AREA_LABELS = false;
+
+  // draft del riempi-area
+  const [fillDraft, setFillDraft] = useState<{ a: Pt; b: Pt } | null>(null);
 
   const selectedRoof = useMemo(
     () => layers.find((l) => l.id === selectedId) ?? null,
@@ -108,12 +108,12 @@ export default function CanvasStage() {
     [view.scale, view.fitScale, view.offsetX, view.offsetY]
   );
 
-  // 🔒 abilita i tool di DISEGNO solo in building
+  // abilita i tool di disegno solo in building
   const drawingEnabled =
     step === 'building' &&
     (tool === 'draw-roof' || tool === 'draw-rect' || tool === 'draw-reserved');
 
-  // hook disegno: attivalo solo se drawingEnabled, altrimenti no-op
+  // hook disegno tetto/zone (solo building)
   const {
     drawingPoly,
     rectDraft,
@@ -147,7 +147,7 @@ export default function CanvasStage() {
     return `${Math.round(m2)} m²`;
   };
 
-  // 🎯 cursore: crosshair quando disegno (building) o quando fill-area (modules)
+  // cursore
   const cursor =
     (drawingEnabled || (step === 'modules' && tool === 'fill-area'))
       ? 'crosshair'
@@ -155,20 +155,17 @@ export default function CanvasStage() {
       ? 'grab'
       : 'default';
 
-      useEffect(() => {
-  const el = stageRef.current?.getStage?.()?.container?.();
-  if (!el) return;
-
-  // crosshair quando disegno (building) o fill-area (modules), grab durante pan, altrimenti default
-  if (drawingEnabled || (step === 'modules' && tool === 'fill-area')) {
-    el.style.cursor = 'crosshair';
-  } else if (canDrag && !draggingVertex) {
-    el.style.cursor = 'grab';
-  } else {
-    el.style.cursor = 'default';
-  }
-}, [drawingEnabled, step, tool, canDrag, draggingVertex]);
-
+  useEffect(() => {
+    const el = stageRef.current?.getStage?.()?.container?.();
+    if (!el) return;
+    if (drawingEnabled || (step === 'modules' && tool === 'fill-area')) {
+      el.style.cursor = 'crosshair';
+    } else if (canDrag && !draggingVertex) {
+      el.style.cursor = 'grab';
+    } else {
+      el.style.cursor = 'default';
+    }
+  }, [drawingEnabled, step, tool, canDrag, draggingVertex]);
 
   const layerScale = view.scale || view.fitScale || 1;
 
@@ -202,7 +199,7 @@ export default function CanvasStage() {
 
       {img && size.w > 0 && size.h > 0 && (
         <Stage
-        ref={stageRef}
+          ref={stageRef}
           width={size.w}
           height={size.h}
           x={view.offsetX || 0}
@@ -216,7 +213,7 @@ export default function CanvasStage() {
           }
           onDragMove={onDragMove}
           onWheel={onWheel}
-          // ⬇️ handler di disegno SOLO in building
+          // handler di disegno SOLO in building
           onMouseMove={drawingEnabled ? onStageMouseMove : undefined}
           onClick={drawingEnabled ? onStageClick : undefined}
           onDblClick={drawingEnabled ? onStageDblClick : undefined}
@@ -231,7 +228,7 @@ export default function CanvasStage() {
               listening={false}
             />
 
-            {/* ⬇️ Anteprima moduli SOLO in modules (condizioni come prima) */}
+            {/* Anteprima moduli SOLO in modules */}
             {step === 'modules' &&
               selectedRoof &&
               selPanel &&
@@ -278,7 +275,7 @@ export default function CanvasStage() {
               areaLabel={areaLabel}
             />
 
-            {/* Zones (render sempre ok; interazione la governerai nel layer stesso) */}
+            {/* Zones */}
             {layers.map((l) => (
               <ZonesLayer
                 key={l.id}
@@ -315,6 +312,45 @@ export default function CanvasStage() {
                 );
               })()}
 
+            {/* ⬇️ Rubber-band fill-area RUOTATO: SOLO in modules + fill-area */}
+            {step === 'modules' && tool === 'fill-area' && fillDraft && selectedRoof && (() => {
+              const { a, b } = fillDraft;
+
+              // angolo totale = azimuth falda + eventuale rotazione griglia
+              const angleDeg = (selectedRoof.azimuthDeg ?? 0) + (gridMods.gridAngleDeg || 0);
+              const t = (angleDeg * Math.PI) / 180;
+
+              // assi ruotati
+              const ux = { x: Math.cos(t),  y: Math.sin(t)  };
+              const uy = { x: -Math.sin(t), y: Math.cos(t) };
+
+              // proietta il vettore AB sugli assi ruotati → width/height (possono essere negativi)
+              const vx = b.x - a.x;
+              const vy = b.y - a.y;
+              const w = vx * ux.x + vy * ux.y; // componente lungo ux
+              const h = vx * uy.x + vy * uy.y; // componente lungo uy
+
+              // ricostruisci i 4 vertici ruotati
+              const p1 = { x: a.x,                 y: a.y };
+              const p2 = { x: a.x + w * ux.x,      y: a.y + w * ux.y };
+              const p3 = { x: p2.x + h * uy.x,     y: p2.y + h * uy.y };
+              const p4 = { x: a.x + h * uy.x,      y: a.y + h * uy.y };
+
+              const points = [p1.x,p1.y, p2.x,p2.y, p3.x,p3.y, p4.x,p4.y];
+
+              return (
+                <Line
+                  points={points}
+                  closed
+                  stroke="#111827"
+                  strokeWidth={1}
+                  dash={[8, 6]}
+                  fill="rgba(17,24,39,0.06)"
+                  listening={false}
+                />
+              );
+            })()}
+
             {/* Pannelli reali */}
             <PanelsLayer
               layers={layers}
@@ -326,7 +362,7 @@ export default function CanvasStage() {
               onAnyDragEnd={() => setDraggingPanel(false)}
             />
 
-            {/* Overlay di disegno (preview poligono/rettangolo): SOLO in building */}
+            {/* Overlay di disegno: SOLO in building */}
             {step === 'building' && (
               <DrawingOverlays
                 tool={tool}
@@ -341,10 +377,14 @@ export default function CanvasStage() {
         </Stage>
       )}
 
+      {/* Controller che emette il draft del rettangolo */}
       {step === 'modules' && tool === 'fill-area' && (
-  <FillAreaController stageRef={stageRef} toImgCoords={toImgCoords} />
-)}
-
+        <FillAreaController
+          stageRef={stageRef}
+          toImgCoords={toImgCoords}
+          onDraftChange={setFillDraft}
+        />
+      )}
 
       <PanelHotkeys
         selectedPanelId={selectedPanelInstId}

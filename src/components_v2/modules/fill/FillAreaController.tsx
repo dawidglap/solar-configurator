@@ -1,64 +1,54 @@
 // src/components_v2/modules/fill/FillAreaController.tsx
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePlannerV2Store } from '@/components_v2/state/plannerV2Store';
 import type { Pt } from '@/types/planner';
 
 type Props = {
   stageRef: React.RefObject<any>;
   toImgCoords: (sx: number, sy: number) => Pt; // stage -> image px
+  onDraftChange?: (draft: { a: Pt; b: Pt } | null) => void; // ⬅️ NEW
 };
 
-export default function FillAreaController({ stageRef, toImgCoords }: Props) {
+export default function FillAreaController({ stageRef, toImgCoords, onDraftChange }: Props) {
   const step = usePlannerV2Store(s => s.step);
   const tool = usePlannerV2Store(s => s.tool);
 
-  // stato effimero SOLO locale
   const [anchorPx, setAnchorPx] = useState<Pt | null>(null);
-  const [dragPx, setDragPx] = useState<Pt | null>(null);
 
-  // attiva solo in modules + fill-area
   const active = step === 'modules' && tool === 'fill-area';
 
-  // handler interni
-  const onMouseDown = (e: MouseEvent) => {
+  const getMouseImg = (e: MouseEvent): Pt | null => {
     const container = stageRef.current?.getStage?.()?.container?.();
-    if (!container) return;
-
-    // posizione mouse in coordinate del container
+    if (!container) return null;
     const rect = container.getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
+    return toImgCoords(sx, sy);
+  };
 
-    const p = toImgCoords(sx, sy);
+  const onMouseDown = (e: MouseEvent) => {
+    const p = getMouseImg(e);
+    if (!p) return;
+
     if (!anchorPx) {
       setAnchorPx(p);
-      setDragPx(p);
-      console.log('[FillArea] anchorPx =', p);
+      onDraftChange?.({ a: p, b: p });
     } else {
-      // secondo click: chiudiamo il ciclo (per ora reset)
-      console.log('[FillArea] confirm rectangle from', anchorPx, 'to', p);
+      // conferma (per ora: reset)
+      onDraftChange?.(null);
       setAnchorPx(null);
-      setDragPx(null);
     }
   };
 
   const onMouseMove = (e: MouseEvent) => {
     if (!anchorPx) return;
-    const container = stageRef.current?.getStage?.()?.container?.();
-    if (!container) return;
-
-    const rect = container.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
-
-    const p = toImgCoords(sx, sy);
-    setDragPx(p);
-    console.log('[FillArea] dragPx =', p);
+    const p = getMouseImg(e);
+    if (!p) return;
+    onDraftChange?.({ a: anchorPx, b: p });
   };
 
-  // mount/unmount degli eventi SOLO quando active
   useEffect(() => {
     const container = stageRef.current?.getStage?.()?.container?.();
     if (!active || !container) return;
@@ -73,13 +63,12 @@ export default function FillAreaController({ stageRef, toImgCoords }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, stageRef, anchorPx, toImgCoords]);
 
-  // reset quando esci dalla modalità
   useEffect(() => {
     if (!active) {
+      onDraftChange?.(null);
       setAnchorPx(null);
-      setDragPx(null);
     }
-  }, [active]);
+  }, [active, onDraftChange]);
 
-  return null; // nessun render per ora
+  return null;
 }
