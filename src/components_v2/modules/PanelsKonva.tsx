@@ -296,6 +296,16 @@ export default function PanelsKonva(props: {
     }
   }, [selectedSet, startDragGroup, startDragSingle]);
 
+  // ─── Helpers: normalizza hints per <Guides /> ───────────────
+  function toArrayOrNull(x: number | number[] | null | undefined): number[] | null {
+    if (x == null) return null;
+    return Array.isArray(x) ? x : [x];
+  }
+  const normHintU =
+    groupHintU !== undefined ? toArrayOrNull(groupHintU) : toArrayOrNull(hintU);
+  const normHintV =
+    groupHintV !== undefined ? toArrayOrNull(groupHintV) : toArrayOrNull(hintV);
+
   return (
     <Group clipFunc={clipFunc} listening>
       <RoofMarginBand polygon={roofPolygon} marginPx={edgeMarginPx} />
@@ -324,7 +334,7 @@ export default function PanelsKonva(props: {
       })}
 
       {/* guide: gruppo se presenti, altrimenti singolo */}
-      <Guides hintU={groupHintU ?? hintU} hintV={groupHintV ?? hintV} />
+      <Guides hintU={normHintU} hintV={normHintV} />
     </Group>
   );
 }
