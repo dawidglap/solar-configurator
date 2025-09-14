@@ -50,6 +50,8 @@ export default function CanvasStage() {
   const step = usePlannerV2Store((s) => s.step);
   const selPanel = usePlannerV2Store((s) => s.getSelectedPanel());
   const gridMods = usePlannerV2Store((s) => s.modules);
+  const roofAlign = usePlannerV2Store(s => s.roofAlign);
+
 
   // size + base image
   const size = useContainerSize(containerRef);
@@ -239,7 +241,11 @@ export default function CanvasStage() {
                   roofId={selectedRoof.id}
                   polygon={selectedRoof.points}
                   mppImage={snap.mppImage}
-                  azimuthDeg={(selectedRoof.azimuthDeg ?? 0) + (gridMods.gridAngleDeg || 0)}
+                  azimuthDeg={
+  (selectedRoof.azimuthDeg ?? 0)
+  + (gridMods.gridAngleDeg || 0)
+  + (roofAlign.rotDeg || 0) 
+}
                   orientation={modules.orientation}
                   panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
                   spacingM={modules.spacingM}
@@ -317,7 +323,10 @@ export default function CanvasStage() {
               const { a, b } = fillDraft;
 
               // angolo totale = azimuth falda + eventuale rotazione griglia
-              const angleDeg = (selectedRoof.azimuthDeg ?? 0) + (gridMods.gridAngleDeg || 0);
+              const angleDeg =
+  (selectedRoof.azimuthDeg ?? 0)
+  + (gridMods.gridAngleDeg || 0)
+  + (roofAlign.rotDeg || 0);
               const t = (angleDeg * Math.PI) / 180;
 
               // assi ruotati
