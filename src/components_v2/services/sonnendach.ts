@@ -322,7 +322,8 @@ export async function fetchRoofPolysForSnapshot(
     const groups = clusterRoofPolys(afterCompact, snap.mppImage, F.CLUSTER_DIST_M, F.MERGE_ANGLE_DEG);
 
     // 6) MERGE (convex hull o tieni la più grande)
-    const merged = groups.map(g => mergeGroup(g, F.MERGE_STRATEGY));
+    const merged = groups.map(g => mergeGroup(g, F.MERGE_STRATEGY as 'hull' | 'largest'));
+
 
     if (DEBUG_COUNTS) {
         console.log('sonnendach count:', {
