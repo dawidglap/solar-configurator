@@ -28,6 +28,8 @@ import DrawingOverlays from './DrawingOverlays';
 import PanelHotkeys from '../modules/panels/PanelHotkeys';
 import { nanoid } from 'nanoid';
 import ZonesLayer from '../zones/ZonesLayer';
+import FillAreaController from '../modules/fill/FillAreaController';
+
 
 export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -338,6 +340,11 @@ export default function CanvasStage() {
           </Layer>
         </Stage>
       )}
+
+      {step === 'modules' && tool === 'fill-area' && (
+  <FillAreaController stageRef={stageRef} toImgCoords={toImgCoords} />
+)}
+
 
       <PanelHotkeys
         selectedPanelId={selectedPanelInstId}
