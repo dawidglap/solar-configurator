@@ -8,7 +8,13 @@ export type UIState = {
     searchOpen: boolean;
 };
 
-export type Tool = 'select' | 'draw-roof' | 'draw-reserved' | 'draw-rect';
+export type Tool =
+    | 'select'
+    | 'draw-roof'
+    | 'draw-reserved'
+    | 'draw-rect'
+    | 'fill-area'; // ⬅️ NEW
+
 
 export type Pt = { x: number; y: number };
 

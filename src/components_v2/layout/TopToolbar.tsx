@@ -3,7 +3,8 @@
 import { useEffect, useMemo } from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import { Save, Command, Keyboard } from 'lucide-react';
-import ToolDropdown from './ToolDropdown'; // ⬅️ nuovo menu a tendina stile Figma
+import ToolDropdown from './ToolDropdown'; 
+import ModulesTopbarFillAreaButton from '../modules/ModulesTopbarFillAreaButton'; // ⬅️ IMPORT
 
 export default function TopToolbar() {
   const step = usePlannerV2Store((s) => s.step);
@@ -19,7 +20,7 @@ export default function TopToolbar() {
     []
   );
 
-  // ✅ scorciatoia: Cmd/Ctrl+S = Save (le scorciatoie dei tool sono in ToolDropdown)
+  // ✅ scorciatoia: Cmd/Ctrl+S = Save
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -35,11 +36,9 @@ export default function TopToolbar() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMac]);
 
   const handleSave = () => {
-    // TODO: wire real save/export in PR successivo
     console.log('[Planner] Save triggered');
     alert('Speichern (kommt später)'); // placeholder
   };
@@ -53,8 +52,11 @@ export default function TopToolbar() {
           Modus: <span className="font-medium">{stepLabel}</span>
         </span>
 
-        {/* ⬇️ nuovo dropdown strumenti (Select / Rect / Reserved) con scorciatoie V/R/Z */}
+        {/* menu a tendina strumenti */}
         <ToolDropdown />
+
+        {/* nuovo bottone riempi area (solo in modalità modules) */}
+        {step === 'modules' && <ModulesTopbarFillAreaButton />}
       </div>
 
       {/* DX: Salva con icona + kbd hint */}
@@ -79,7 +81,7 @@ export default function TopToolbar() {
   );
 }
 
-/** piccolo chip tastiera come nello screenshot */
+/** piccolo chip tastiera */
 function Kbd({ combo }: { combo: string }) {
   const isMac =
     typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
