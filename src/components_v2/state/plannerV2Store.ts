@@ -4,6 +4,8 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 // ⬇️ NEW
 import { isToolAllowed, defaultToolFor } from './capabilities';
+import { ALLOWED_TOOLS, DEFAULT_TOOL } from '../../constants/stepTools';
+
 
 
 // ───────────────────────────────────────────────────────────
@@ -87,10 +89,11 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         (set, get, api) => ({
             // ── Step
             step: 'building',
+
             setStep: (s) =>
                 set((st) => {
-                    // All'ingresso del nuovo step, se il tool corrente non è valido, imposta il default
-                    const nextTool = isToolAllowed(s, st.tool) ? st.tool : defaultToolFor(s);
+                    const allowed = ALLOWED_TOOLS[s];
+                    const nextTool = allowed.includes(st.tool) ? st.tool : DEFAULT_TOOL[s];
                     return { step: s, tool: nextTool };
                 }),
 
