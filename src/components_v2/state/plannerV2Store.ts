@@ -2,6 +2,9 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+// ⬇️ NEW
+import { isToolAllowed, defaultToolFor } from './capabilities';
+
 
 // ───────────────────────────────────────────────────────────
 // TIPI & COSTANTI
@@ -84,7 +87,12 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         (set, get, api) => ({
             // ── Step
             step: 'building',
-            setStep: (s) => set({ step: s }),
+            setStep: (s) =>
+                set((st) => {
+                    // All'ingresso del nuovo step, se il tool corrente non è valido, imposta il default
+                    const nextTool = isToolAllowed(s, st.tool) ? st.tool : defaultToolFor(s);
+                    return { step: s, tool: nextTool };
+                }),
 
             // ── Snapshot (non persistito)
             snapshot: {},
@@ -100,7 +108,16 @@ export const usePlannerV2Store = create<PlannerV2State>()(
 
             // ── Tool
             tool: 'select',
-            setTool: (t) => set({ tool: t }),
+            setTool: (t) =>
+                set((st) => {
+                    // Se il tool non è permesso nello step attuale, non attivarlo:
+                    if (!isToolAllowed(st.step, t)) {
+                        // fallback: mantieni l'attuale se valido, altrimenti metti il default
+                        const safe = isToolAllowed(st.step, st.tool) ? st.tool : defaultToolFor(st.step);
+                        return { tool: safe };
+                    }
+                    return { tool: t };
+                }),
 
             // ── Catalogo pannelli
             catalogPanels: PANEL_CATALOG,
