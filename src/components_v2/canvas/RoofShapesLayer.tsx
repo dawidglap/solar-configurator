@@ -179,8 +179,7 @@ const lastNextDegRef    = useRef<number>(0);
               <KonvaGroup
                 x={rotHandlePos.x}
                 y={rotHandlePos.y}
-                offsetY={ROT_ICON.vbH / 2}
-
+                
                 listening
                 onMouseEnter={(e) => { e.target.getStage()?.container()?.style.setProperty('cursor','grab'); }}
                 onMouseLeave={(e) => { e.target.getStage()?.container()?.style.removeProperty('cursor'); }}
