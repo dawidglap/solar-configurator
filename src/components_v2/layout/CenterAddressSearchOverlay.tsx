@@ -11,13 +11,24 @@ import { metersPerPixel3857, lonLatTo3857, bboxLonLatFromCenter } from '../utils
 import { fetchRoofPolysForSnapshot } from '@/components_v2/services/sonnendach';
 
 /** Cluster “building” partendo dal centro immagine (stessa logica di prima) */
-function pickRoofsForBuilding(
+/** Cluster "building" stile v1: 
+ *  1) filtra per raggio dal centro immagine
+ *  2) seed = poligono più vicino (o più grande tra i vicini)
+ *  3) include SOLO poligoni che (a) stanno nel raggio E (b) overlap con seed bbox espanso di poco
+ */
+function pickRoofsForBuildingV1Style(
   polys: { id:string; pointsPx:{x:number;y:number}[]; tiltDeg?:number; azimuthDeg?:number }[],
   snap: { width?: number; height?: number },
-  opts?: { expandGrowPx?: number; minAreaPx2?: number }
+  opts?: { radiusPx?: number; expandGrowPx?: number; minAreaPx2?: number }
 ) {
-  const cx = (snap.width ?? 0) / 2, cy = (snap.height ?? 0) / 2;
-  const { expandGrowPx = 48, minAreaPx2 = 700 } = opts ?? {};
+  const W = snap.width ?? 0, H = snap.height ?? 0;
+  const cx = W / 2, cy = H / 2;
+
+  const {
+    radiusPx     = Math.max(80, Math.min(W, H) * 0.10), // ~10% del lato min, min 80 px
+    expandGrowPx = 12,                                   // piccolo → evita “catene” di edifici
+    minAreaPx2   = 700,
+  } = opts ?? {};
 
   const areaPx2 = (pts:{x:number;y:number}[]) => {
     let a=0; for (let i=0,j=pts.length-1;i<pts.length;j=i++) a += (pts[j].x+pts[i].x)*(pts[j].y-pts[i].y);
@@ -32,30 +43,45 @@ function pickRoofsForBuilding(
     for (const p of pts){ if(p.x<minX)minX=p.x; if(p.y<minY)minY=p.y; if(p.x>maxX)maxX=p.x; if(p.y>maxY)maxY=p.y; }
     return { minX, minY, maxX, maxY };
   };
-  const overlap = (a:any,b:any) => !(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY);
   const expand = (b:any,m:number) => ({ minX:b.minX-m, minY:b.minY-m, maxX:b.maxX+m, maxY:b.maxY+m });
+  const overlap = (a:any,b:any) => !(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY);
 
-  const items = polys.filter(p => areaPx2(p.pointsPx) >= minAreaPx2);
-  if (!items.length) return [];
-  let seed = items[0], best = Number.POSITIVE_INFINITY;
-  for (const p of items){ const c = centroid(p.pointsPx); const d = (c.x-cx)*(c.x-cx) + (c.y-cy)*(c.y-cy); if (d < best){ best=d; seed=p; } }
-  const cluster: typeof polys = [seed];
-  let ub = bbox(seed.pointsPx), changed = true;
-  while (changed) {
-    changed = false;
-    const grow = expand(ub, expandGrowPx);
-    for (const p of items) {
-      if (cluster.includes(p)) continue;
-      const b = bbox(p.pointsPx);
-      if (overlap(grow, b)) {
-        cluster.push(p);
-        ub = { minX: Math.min(ub.minX, b.minX), minY: Math.min(ub.minY, b.minY), maxX: Math.max(ub.maxX, b.maxX), maxY: Math.max(ub.maxY, b.maxY) };
-        changed = true;
-      }
+  // 1) GATE: distanza dal centro
+  const inRadius: typeof polys = [];
+  for (const p of polys) {
+    const A = areaPx2(p.pointsPx);
+    if (A < minAreaPx2) continue;
+    const c = centroid(p.pointsPx);
+    const d2 = (c.x - cx) * (c.x - cx) + (c.y - cy) * (c.y - cy);
+    if (d2 <= radiusPx * radiusPx) inRadius.push(p);
+  }
+  if (!inRadius.length) return [];
+
+  // 2) seed: più vicino al centro (tie-break: area più grande)
+  let seed = inRadius[0];
+  let best = { d2: Number.POSITIVE_INFINITY, area: -1 };
+  for (const p of inRadius) {
+    const c = centroid(p.pointsPx);
+    const d2 = (c.x - cx) * (c.x - cx) + (c.y - cy) * (c.y - cy);
+    const A  = areaPx2(p.pointsPx);
+    if (d2 < best.d2 - 1e-6 || (Math.abs(d2 - best.d2) < 1e-6 && A > best.area)) {
+      best = { d2, area: A };
+      seed = p;
     }
   }
-  return cluster;
+
+  // 3) cluster: SOLO in raggio E con overlap col seed bbox espanso
+  const seedBox = expand(bbox(seed.pointsPx), expandGrowPx);
+  const cluster: typeof polys = [];
+  for (const p of inRadius) {
+    const b = bbox(p.pointsPx);
+    if (overlap(seedBox, b)) cluster.push(p);
+  }
+
+  // fallback: se qualcosa è andato storto, torna almeno il seed
+  return cluster.length ? cluster : [seed];
 }
+
 
 export default function CenterAddressSearchOverlay() {
   const setSnapshot      = usePlannerV2Store(s => s.setSnapshot);
@@ -91,7 +117,11 @@ export default function CenterAddressSearchOverlay() {
 
       clearDetected();
       const raw = await fetchRoofPolysForSnapshot(snapObj, 'de');
-      const building = pickRoofsForBuilding(raw, snapObj, { expandGrowPx: 48, minAreaPx2: 700 });
+      const building = pickRoofsForBuildingV1Style(raw, snapObj, {
+  radiusPx: Math.max(80, Math.min(w, h) * 0.10), // dinamico per lo zoom/size
+  expandGrowPx: 12,
+  minAreaPx2: 700,
+});
 
       setDetectedRoofs(building.map((p, i) => ({
         id: `sd_${p.id}_${i}`,
