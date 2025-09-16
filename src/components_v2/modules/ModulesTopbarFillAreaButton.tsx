@@ -25,7 +25,7 @@ export default function ModulesTopbarFillAreaButton() {
       title="Disegna rettangolo per riempire area"
       aria-pressed={active}
     >
-      Riempi area
+      Dachfläche füllen
     </button>
   );
 }
