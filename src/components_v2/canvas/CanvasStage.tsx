@@ -30,6 +30,26 @@ import { nanoid } from 'nanoid';
 import ZonesLayer from '../zones/ZonesLayer';
 import FillAreaController from '../modules/fill/FillAreaController';
 
+// ——— ANGLES HELPERS ———
+function radToDeg(r: number) { return (r * 180) / Math.PI; }
+function normDeg(d: number) { const x = d % 360; return x < 0 ? x + 360 : x; }
+function angleDiffDeg(a: number, b: number) {
+  let d = Math.abs(normDeg(a) - normDeg(b));
+  return d > 180 ? 360 - d : d;
+}
+function longestEdgeAngleDeg(pts: Pt[] | null | undefined) {
+  if (!pts || pts.length < 2) return 0;
+  let best = 0, maxLen2 = -1;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 > maxLen2) { maxLen2 = len2; best = Math.atan2(dy, dx); }
+  }
+  return radToDeg(best);
+}
+
+
 export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
@@ -82,6 +102,18 @@ export default function CanvasStage() {
     () => layers.find((l) => l.id === selectedId) ?? null,
     [layers, selectedId]
   );
+
+  // angolo base griglia in COORDINATE CANVAS (come PanelsKonva)
+const baseGridDeg = useMemo(() => {
+  if (!selectedRoof) return 0;
+  const eavesCanvasDeg = - (selectedRoof.azimuthDeg ?? 0) + 90; // azimut → canvas
+  const polyDeg = longestEdgeAngleDeg(selectedRoof.points);
+  return angleDiffDeg(eavesCanvasDeg, polyDeg) > 5 ? polyDeg : eavesCanvasDeg;
+}, [selectedRoof?.azimuthDeg, selectedRoof?.points]);
+
+// applica offset utente
+const gridDeg = (baseGridDeg + (gridMods.gridAngleDeg || 0));
+
 
   const hasPanelsOnSelected = useMemo(
     () =>
@@ -241,11 +273,8 @@ export default function CanvasStage() {
                   roofId={selectedRoof.id}
                   polygon={selectedRoof.points}
                   mppImage={snap.mppImage}
-                  azimuthDeg={
-  (selectedRoof.azimuthDeg ?? 0)
-  + (gridMods.gridAngleDeg || 0)
-  + (roofAlign.rotDeg || 0) 
-}
+azimuthDeg={gridDeg}
+
                   orientation={modules.orientation}
                   panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
                   spacingM={modules.spacingM}
@@ -326,10 +355,8 @@ export default function CanvasStage() {
   selPanel &&
   snap.mppImage && (() => {
     const { a, b } = fillDraft;
-    const angleDeg =
-      (selectedRoof.azimuthDeg ?? 0) +
-      (gridMods.gridAngleDeg || 0) +
-      (usePlannerV2Store.getState().roofAlign?.rotDeg || 0);
+  const angleDeg = gridDeg;
+
     const t = (angleDeg * Math.PI) / 180;
 
     const ux = { x: Math.cos(t),  y: Math.sin(t)  };
@@ -374,10 +401,8 @@ export default function CanvasStage() {
               const { a, b } = fillDraft;
 
               // angolo totale = azimuth falda + eventuale rotazione griglia
-              const angleDeg =
-  (selectedRoof.azimuthDeg ?? 0)
-  + (gridMods.gridAngleDeg || 0)
-  + (roofAlign.rotDeg || 0);
+const angleDeg = gridDeg;
+
               const t = (angleDeg * Math.PI) / 180;
 
               // assi ruotati
