@@ -29,6 +29,7 @@ import PanelHotkeys from '../modules/panels/PanelHotkeys';
 import { nanoid } from 'nanoid';
 import ZonesLayer from '../zones/ZonesLayer';
 import FillAreaController from '../modules/fill/FillAreaController';
+import ToolHotkeys from '../layout/ToolHotkeys';
 
 // ——— ANGLES HELPERS ———
 function radToDeg(r: number) { return (r * 180) / Math.PI; }
@@ -478,6 +479,7 @@ const angleDeg = gridDeg;
           onDraftChange={setFillDraft}
         />
       )}
+      <ToolHotkeys />
 
       <PanelHotkeys
         selectedPanelId={selectedPanelInstId}

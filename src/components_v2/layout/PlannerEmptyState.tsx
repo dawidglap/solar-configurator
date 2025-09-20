@@ -12,7 +12,7 @@ export default function PlannerEmptyState() {
           alt=""
           fill
           priority
-          className="object-cover"
+          className="object-cover object-bottom-right"
         />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white to-transparent" />
       </div>
