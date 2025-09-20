@@ -1,3 +1,4 @@
+// src/components_v2/layout/PlannerEmptyState.tsx
 'use client';
 
 import Image from 'next/image';
@@ -19,7 +20,12 @@ export default function PlannerEmptyState() {
 
       {/* CTA con glow/pulse */}
       <div className="pointer-events-none absolute inset-0 flex items-start justify-center mt-24 sm:mt-28">
-        <div className="relative">
+        <div
+          className="relative"
+          // Sposta la pill di metà della larghezza del pannello proprietà a sinistra.
+          // Fallback: 280px → shift 140px.
+          style={{ transform: 'translateX(calc(var(--propW, 280px) / 2))' }}
+        >
           {/* glow morbido dietro al pill */}
           <div className="absolute -inset-1 rounded-full bg-indigo-400/30 blur-md animate-pulse" />
           {/* pill */}
@@ -28,7 +34,6 @@ export default function PlannerEmptyState() {
             <span className="font-medium">
               Um zu starten, gib links oben deine Adresse ein
             </span>
-            
           </div>
         </div>
       </div>

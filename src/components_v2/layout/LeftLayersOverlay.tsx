@@ -1,35 +1,64 @@
+// src/components_v2/layout/LeftLayersOverlay.tsx
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import RoofAreaInfo from '../ui/RoofAreaInfo';
+import DetectedRoofsImport from '../panels/DetectedRoofsImport';
 
 type Pt = { x: number; y: number };
 
+/**
+ * NOTE: nonostante il nome del componente, ora questo overlay “Ebenen”
+ * è posizionato a DESTRA (lo spazio dove prima c’era “Eigenschaften”).
+ * Si apre automaticamente entrando in Gebäudeplanung e si chiude entrando in Modulplanung.
+ */
 export default function LeftLayersOverlay() {
+  const step       = usePlannerV2Store(s => s.step);
   const leftOpen   = usePlannerV2Store(s => s.ui.leftPanelOpen);
   const toggleLeft = usePlannerV2Store(s => s.toggleLeftPanelOpen);
+  const setUI      = usePlannerV2Store(s => s.setUI);
+
   const layers     = usePlannerV2Store(s => s.layers);
   const selectedId = usePlannerV2Store(s => s.selectedId);
   const select     = usePlannerV2Store(s => s.select);
   const del        = usePlannerV2Store(s => s.deleteLayer);
   const mpp        = usePlannerV2Store(s => s.snapshot.mppImage);
+  const detected   = usePlannerV2Store(s => s.detectedRoofs);
+
+  // Auto-open/close SOLO al cambio step (non forza in loop)
+  const prevStepRef = useRef(step);
+  useEffect(() => {
+    const prev = prevStepRef.current;
+    if (prev !== step) {
+      if (step === 'building') setUI({ leftPanelOpen: true });
+      if (step === 'modules')  setUI({ leftPanelOpen: false });
+      prevStepRef.current = step;
+    }
+  }, [step, setUI]);
 
   return (
     <AnimatePresence>
       {leftOpen && (
         <motion.div
-          key="left-panel"
-          initial={{ x: -16, opacity: 0 }}
+          key="right-layers-panel"
+          initial={{ x: 12, opacity: 0 }}
           animate={{ x: 0,  opacity: 1 }}
-          exit={{ x: -16,   opacity: 0 }}
+          exit={{ x: 12,   opacity: 0 }}
           transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-          className="absolute left-3 top-28 bottom-3 z-[300] pointer-events-auto"
+          className="fixed z-[300] pointer-events-auto"
+          style={{
+            // ⬇️ Dock a DESTRA, allineato alla topbar
+            right: '12px',
+            top:   'calc(var(--tb, 48px) + 8px)',
+            bottom:'12px',
+            width: 'min(90vw, 320px)',
+          }}
         >
           <div className="
-            h-auto w-[min(90vw,320px)]
+            h-full w-full
             rounded-2xl border border-neutral-200
             bg-white/85 backdrop-blur-sm shadow-xl
             flex flex-col overflow-hidden
@@ -50,7 +79,16 @@ export default function LeftLayersOverlay() {
             </div>
 
             {/* body */}
-            <div className="flex-1 overflow-y-auto p-3">
+            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+              {/* Erkannte Dächer (se presenti) */}
+              {detected?.length > 0 && (
+                <section className="rounded-lg border border-neutral-200 bg-white px-2.5 py-2">
+                  <h4 className="mb-1 text-[11px] font-semibold text-neutral-900">Erkannte Dächer</h4>
+                  <DetectedRoofsImport />
+                </section>
+              )}
+
+              {/* Lista livelli */}
               {layers.length === 0 ? (
                 <p className="text-xs text-neutral-600">Noch keine Ebenen.</p>
               ) : (

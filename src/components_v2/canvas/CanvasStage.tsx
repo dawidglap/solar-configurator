@@ -220,28 +220,19 @@ const gridDeg = baseGridDegRounded + (gridMods.gridAngleDeg || 0);
 
       {/* {!snap.url && <CenterAddressSearchOverlay />} */}
 
-      <OverlayRightToggle />
+      {/* <OverlayRightToggle /> */}
 
-<AnimatePresence>
-  {rightOpen && (
-    <motion.div
-      key="left-panel"
-      initial={{ x: -12, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{ x: -12, opacity: 0 }}
-      transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-      className="absolute z-[300] pointer-events-auto flex"
-      style={{
-        top: 'calc(var(--tb, 48px) + 8px)',
-        bottom: '12px',
-        // ⬇️ ora si allinea automaticamente in base allo stato della sidebar
-        left: '-2px',
-      }}
-    >
-      <RightPropertiesPanelOverlay />
-    </motion.div>
-  )}
-</AnimatePresence>
+<div
+  className="fixed z-[310] pointer-events-auto"
+  style={{
+    left: 'calc(var(--sb, 64px) -2px)',   // subito a destra della sidebar
+    top:  'calc(var(--tb, 48px) + 41px)',   // sotto la topbar
+    bottom: '0px',
+    width: 'var(--propW, 280px)',
+  }}
+>
+  <RightPropertiesPanelOverlay />
+</div>
 
 
       <OverlayLeftToggle />
