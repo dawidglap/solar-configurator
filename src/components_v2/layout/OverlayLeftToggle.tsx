@@ -12,7 +12,7 @@ export default function OverlayLeftToggle() {
   // Primario nello step Gebäude (layers first)
   const isPrimary = step === 'building';
 
-  const base = 'pointer-events-auto absolute top-[8px] left-3 z-[300] h-9 px-3 rounded-full border shadow inline-flex items-center gap-2 text-sm transition-colors';
+  const base = 'pointer-events-auto absolute top-[8px] left-3 z-[300] h-9 px-3 rounded-full border shadow inline-flex items-center gap-2 text-sm transition-colors mt-20';
   const filled  = 'bg-neutral-900 text-white border-neutral-900 hover:bg-neutral-800';
   const outline = 'bg-white/90 text-neutral-800 border-neutral-200 hover:bg-white';
   const ring    = open ? 'ring-2 ring-blue-400/60' : '';

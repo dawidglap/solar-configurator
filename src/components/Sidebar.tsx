@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -16,64 +16,94 @@ import {
   FiChevronRight,
 } from "react-icons/fi";
 
+const W_COLLAPSED = 64;   // px (w-16)
+const W_EXPANDED  = 224;  // px (w-56)
+
 export default function Sidebar() {
-  const [showProducts, setShowProducts] = useState(false); //eslint-disable-line @typescript-eslint/no-unused-vars
   const pathname = usePathname();
-
-  // ⬇️ Collassa automaticamente su /planner-v2
   const isPlannerV2 = pathname?.startsWith("/planner-v2") ?? false;
-  const [collapsed, setCollapsed] = useState<boolean>(isPlannerV2);
 
-  // Se cambio rotta, riallinea lo stato
+  const [collapsed, setCollapsed] = useState<boolean>(isPlannerV2);
+  useEffect(() => { setCollapsed(isPlannerV2); }, [isPlannerV2]);
+
   useEffect(() => {
-    setCollapsed(isPlannerV2);
-  }, [isPlannerV2]);
+    const w = collapsed ? W_COLLAPSED : W_EXPANDED;
+    document?.body?.style.setProperty("--sb", `${w}px`);
+    return () => { document?.body?.style.removeProperty("--sb"); };
+  }, [collapsed]);
+
+  const items = useMemo(
+    () => [
+      { href: "/",          icon: <FiHome />,      label: "Home" },
+      { href: "/kunden",    icon: <FiUsers />,     label: "Kunden" },
+      { href: "/auftraege", icon: <FiClipboard />, label: "Aufträge" },
+      { href: "/umsatz",    icon: <FiBarChart2 />, label: "Umsatz" },
+      { href: "/aufgaben",  icon: <FiBell />,      label: "Aufgaben" },
+      { href: "/planung",   icon: <FiSettings />,  label: "Planung" },
+      { href: "/produkte",  icon: <FiBox />,       label: "Produkte" },
+    ],
+    []
+  );
 
   return (
     <>
-      {/* Toggle handle - visibile solo su /planner-v2 */}
       {isPlannerV2 && (
         <button
           aria-label={collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"}
           title={collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"}
           onClick={() => setCollapsed((s) => !s)}
-          className="fixed left-2 top-1/2 z-[60] -translate-y-1/2 flex h-9 w-9 items-center justify-center
-                     rounded-full border border-white/40 bg-white/90 shadow hover:bg-white transition"
+          className="fixed left-[calc(var(--sb,64px)_-_18px)] top-2/3 z-[60] -translate-y-1/2
+                     flex h-9 w-9 items-center justify-center rounded-full border border-black/10
+                     bg-neutral-700 shadow hover:bg-black transition"
         >
-          {collapsed ? <FiChevronRight className="text-black" /> : <FiChevronLeft className="text-black" />}
+          {collapsed ? <FiChevronRight className="text-white" /> : <FiChevronLeft className="text-white" />}
         </button>
       )}
 
       <aside
-        className={`fixed left-0 top-0 z-50 flex h-full w-52 flex-col justify-between
-                    border-r border-white/20 bg-white text-black shadow-xl backdrop-blur-xs
-                    transition-transform duration-300
-                    ${collapsed ? "-translate-x-48" : "translate-x-0"}`}
+        className={[
+          "fixed left-0 top-0 z-50 flex h-dvh flex-col justify-between border-r border-black/5",
+          "bg-white text-black shadow-xl backdrop-blur-xs transition-[width] duration-300",
+          collapsed ? "w-16" : "w-56",
+        ].join(" ")}
       >
         {/* Navigation */}
-        <nav className="px-6 pt-6">
+        <nav className="px-3 pt-5">
           {/* Logo */}
-          <div className="ms-2 mb-10 select-none text-3xl font-black tracking-tight">
-            S O L A
+          <div className="mb-8 select-none font-black tracking-tight flex items-center justify-center ">
+            {collapsed ? (
+              <span className="text-xl leading-none">S</span>
+            ) : (
+              <span className="ms-2 text-3xl leading-none">SOLA</span>
+            )}
           </div>
 
-          {/* Menu items */}
-          <div className="flex flex-col gap-3 text-sm font-light">
-            <SidebarLink href="/" icon={<FiHome />} label="Home" pathname={pathname!} />
-            <SidebarLink href="/kunden" icon={<FiUsers />} label="Kunden" pathname={pathname!} />
-            <SidebarLink href="/auftraege" icon={<FiClipboard />} label="Aufträge" pathname={pathname!} />
-            <SidebarLink href="/umsatz" icon={<FiBarChart2 />} label="Umsatz" pathname={pathname!} />
-            <SidebarLink href="/aufgaben" icon={<FiBell />} label="Aufgaben" pathname={pathname!} />
-            <SidebarLink href="/planung" icon={<FiSettings />} label="Planung" pathname={pathname!} />
-            <SidebarLink href="/produkte" icon={<FiBox />} label="Produkte" pathname={pathname!} />
-          </div>
+          {/* Menu */}
+          <ul className="flex flex-col gap-2">
+            {items.map((it) => (
+              <li key={it.href}>
+                <SidebarLink
+                  href={it.href}
+                  icon={it.icon}
+                  label={it.label}
+                  pathname={pathname ?? "/"}
+                  collapsed={collapsed}
+                />
+              </li>
+            ))}
+          </ul>
         </nav>
 
         {/* Profilo in basso */}
-        <div className="px-6 pb-6">
-          <div className="flex cursor-not-allowed items-center gap-3 text-md text-black opacity-80 select-none">
+        <div className="px-3 pb-4">
+          <div
+            className={[
+              "flex items-center rounded-full px-3 py-2 text-sm text-black/80 select-none",
+              collapsed ? "justify-center gap-0" : "gap-3",
+            ].join(" ")}
+          >
             <FiUser className="text-xl" />
-            <span>Mein Profil</span>
+            {!collapsed && <span>Mein Profil</span>}
           </div>
         </div>
       </aside>
@@ -81,35 +111,39 @@ export default function Sidebar() {
   );
 }
 
-// ✅ Link attivo con effetto glass
 function SidebarLink({
   href,
   icon,
   label,
   pathname,
+  collapsed,
 }: {
   href: string;
   icon: React.ReactNode;
   label: string;
   pathname: string;
+  collapsed: boolean;
 }) {
   const isActive = pathname === href;
 
   return (
     <Link
       href={href}
-      className={`relative flex items-center gap-3 rounded-full px-4 py-2 transition-all duration-300
-    ${isActive ? "font-semibold text-black" : "text-black hover:text-blue-500"}`}
+      className={[
+        "group relative flex items-center rounded-full px-3 py-2 text-sm transition-colors",
+        isActive ? "font-semibold text-black" : "text-black hover:text-blue-600",
+        collapsed ? "justify-center gap-0" : "gap-3",
+      ].join(" ")}
     >
       {isActive && (
         <span
-          className="absolute inset-0 z-[-1] rounded-full border border-white/30
-                 bg-blue-200 shadow-[inset_1px_1px_1px_rgba(255,255,255,0.4),inset_-1px_-1px_1px_rgba(0,0,0,0.1)]
-                 backdrop-blur-[6px] transition-all duration-300"
+          className="absolute inset-0 -z-10 rounded-full border border-black/10
+                     bg-blue-200/70 shadow-[inset_1px_1px_1px_rgba(255,255,255,0.5)]
+                     backdrop-blur-sm"
         />
       )}
       <span className="text-xl">{icon}</span>
-      <span>{label}</span>
+      {!collapsed && <span className="whitespace-nowrap">{label}</span>}
     </Link>
   );
 }

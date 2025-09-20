@@ -2,136 +2,108 @@
 
 import { useMemo } from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
-import {
-  Home,
-  Grid,
-  GitBranch,
-  ListChecks,
-  Check,
-} from 'lucide-react';
+import { User, Home, Grid, GitBranch, ListChecks, BadgeCheck, Check, Search } from 'lucide-react';
+import TopbarAddressSearch from './TopbarAddressSearch';
 
-type Key = 'building' | 'modules' | 'strings' | 'parts';
+type StoreKey = 'building' | 'modules' | 'strings' | 'parts';
+type Step =
+  | { key: 'profile';  label: string; short: string; Icon: any; clickable: false }
+  | { key: 'building'; label: string; short: string; Icon: any; clickable: true  }
+  | { key: 'modules';  label: string; short: string; Icon: any; clickable: true  }
+  | { key: 'strings';  label: string; short: string; Icon: any; clickable: false }
+  | { key: 'parts';    label: string; short: string; Icon: any; clickable: false }
+  | { key: 'offer';    label: string; short: string; Icon: any; clickable: false };
 
-type StepCfg = {
-  key: Key;
-  label: string;   // label completa (tooltip, desktop)
-  short: string;   // label breve (mobile)
-  Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-};
-
-const STEPS: StepCfg[] = [
-  { key: 'building', label: 'Gebäudeplanung', short: 'Gebäude',   Icon: Home },
-  { key: 'modules',  label: 'Modulplanung',   short: 'Module',    Icon: Grid },
-  { key: 'strings',  label: 'Strings',        short: 'Strings',   Icon: GitBranch },
-  { key: 'parts',    label: 'Stückliste',     short: 'Stückliste',Icon: ListChecks },
+const STEPS: Step[] = [
+  { key: 'profile',  label: 'Profil',          short: 'Profil',     Icon: User,       clickable: false },
+  { key: 'building', label: 'Gebäudeplanung',  short: 'Gebäude',    Icon: Home,       clickable: true  },
+  { key: 'modules',  label: 'Modulplanung',    short: 'Module',     Icon: Grid,       clickable: true  },
+  { key: 'strings',  label: 'String',          short: 'String',     Icon: GitBranch,  clickable: false },
+  { key: 'parts',    label: 'Stückliste',      short: 'Stückliste', Icon: ListChecks, clickable: false },
+  { key: 'offer',    label: 'Angebot',         short: 'Angebot',    Icon: BadgeCheck, clickable: false },
 ];
 
 export default function OverlayProgressStepper() {
-  const step = usePlannerV2Store((s) => s.step);
+  const step = usePlannerV2Store((s) => s.step);          // 'building' | 'modules' | 'strings' | 'parts'
   const setStep = usePlannerV2Store((s) => s.setStep);
 
-  const activeIndex = useMemo(() => STEPS.findIndex(s => s.key === step), [step]);
+  // indice attivo in base allo step dello store (anche se lo step non è cliccabile)
+  const activeIndex = useMemo(
+    () => Math.max(0, STEPS.findIndex((s) => (s.key as any) === step)),
+    [step]
+  );
 
   return (
-  <div
-  className="
-    pointer-events-none
-    absolute z-[120]
-    top-2
-    left-1/2 -translate-x-1/2
-    w-auto
-    px-2
-  "
->
-      <nav
-        aria-label="Wizard progress"
-        className="
-          pointer-events-auto
-          rounded-full border border-neutral-200/80
-          bg-white/75 backdrop-blur
-          shadow-sm
-          px-2 py-[2px]
-        "
-      >
-        <ol className="flex items-center gap-2">
-          {STEPS.map((s, i) => {
-            const isActive = i === activeIndex;
-            const isCompleted = i < activeIndex;
-            const isFuture = i > activeIndex;
+    <div
+   className="planner-topbar fixed left-0 right-0 top-0 z-40 border-b border-neutral-200 bg-white shadow-sm"
+  style={{ paddingLeft: 'var(--sb, 64px)' }}
+    >
+      <div className="flex h-12 w-full items-center gap-3 px-3">
+        {/* LEFT: placeholder barra ricerca indirizzo */}
+   <div className="hidden md:flex">
+  <TopbarAddressSearch />
+</div>
 
-            const baseDot =
-              'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px]';
-            const dotCls = isActive
-              ? 'bg-black text-white border-black'
-              : isCompleted
-              ? 'bg-green-600 text-white border-green-700'
-              : 'bg-white text-neutral-700 border-neutral-300';
+        <div className="flex-1" />
 
-            const Icon = s.Icon;
+        {/* RIGHT: stepper minimal, allineato a destra */}
+        <nav aria-label="Wizard progress" className="mr-1">
+          <ol className="flex items-center gap-2">
+            {STEPS.map((s, i) => {
+              const isActive = i === activeIndex;
+              const isCompleted = i < activeIndex; // mostra check sui precedenti (anche se non cliccabili)
+              const Icon = s.Icon;
 
-            return (
-              <li key={s.key} className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStep(s.key)}
-                  title={s.label}
-                  aria-current={isActive ? 'step' : undefined}
-                  className={`
-                    group flex items-center gap-2 rounded-full px-1.5 py-1
-                    transition
-                    ${isActive ? 'bg-neutral-900/5' : 'hover:bg-neutral-900/5'}
-                  `}
-                >
-                  {/* Dot / Check */}
-                  <span className={`${baseDot} ${dotCls}`}>
+              const btnBase = 'group flex items-center gap-1.5 rounded-full px-2 py-1 transition';
+              const btnCls = isActive ? 'bg-neutral-900/5' : 'hover:bg-neutral-900/5';
+              const dot = 'flex h-5 w-5 items-center justify-center rounded-full border text-[9px] leading-none tabular-nums';
+              const dotCls = isActive
+                ? 'bg-black text-white border-black'
+                : isCompleted
+                ? 'bg-emerald-600 text-white border-emerald-700'
+                : 'bg-white text-neutral-700 border-neutral-300';
+
+              const content = (
+                <>
+                  <span className={`${dot} ${dotCls}`}>
                     {isCompleted ? <Check className="h-3 w-3" /> : i + 1}
                   </span>
-
-                  {/* Icon + label (micro) */}
-                  <span className="flex items-center gap-1.5">
-                    <Icon
-                      className={`
-                        h-3.5 w-3.5
-                        ${isActive ? 'opacity-90' : isFuture ? 'opacity-50' : 'opacity-80'}
-                      `}
-                      aria-hidden
-                    />
-                    <span
-                      className={`
-                        hidden sm:inline text-[11px]
-                        ${isActive ? 'text-neutral-900' : 'text-neutral-700'}
-                      `}
-                    >
-                      {s.label}
-                    </span>
-                    <span
-                      className={`
-                        sm:hidden text-[10px]
-                        ${isActive ? 'text-neutral-900' : 'text-neutral-700'}
-                      `}
-                    >
-                      {s.short}
-                    </span>
+                  <Icon className={`h-3.5 w-3.5 ${isActive ? 'opacity-90' : 'opacity-60'}`} />
+                  <span className={`hidden sm:inline text-[10px] ${isActive ? 'text-neutral-900' : 'text-neutral-700'}`}>
+                    {s.short}
                   </span>
-                </button>
+                </>
+              );
 
-                {/* Connector */}
-                {i < STEPS.length - 1 && (
-                  <span
-                    aria-hidden
-                    className={`
-                      h-[2px] w-6 rounded-full
-                      ${i < activeIndex ? 'bg-green-600'
-                        : i === activeIndex ? 'bg-neutral-400'
-                        : 'bg-neutral-200'}
-                    `}
-                  />
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      </nav>
+              return (
+                <li key={s.key} className="flex items-center gap-2">
+                  {s.clickable ? (
+                    <button
+                      type="button"
+                      onClick={() => setStep(s.key as StoreKey)}
+                      title={s.label}
+                      aria-current={isActive ? 'step' : undefined}
+                      className={`${btnBase} ${btnCls}`}
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <div className={`${btnBase} opacity-70 cursor-default select-none`}>{content}</div>
+                  )}
+                  {i < STEPS.length - 1 && (
+                    <span
+                      aria-hidden
+                      className={`h-px w-5 rounded-full ${
+                        i < activeIndex ? 'bg-emerald-600' : 'bg-neutral-200'
+                      }`}
+                    />
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      </div>
     </div>
   );
 }

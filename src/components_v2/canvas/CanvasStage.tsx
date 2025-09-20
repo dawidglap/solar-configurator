@@ -111,8 +111,13 @@ const baseGridDeg = useMemo(() => {
   return angleDiffDeg(eavesCanvasDeg, polyDeg) > 5 ? polyDeg : eavesCanvasDeg;
 }, [selectedRoof?.azimuthDeg, selectedRoof?.points]);
 
+// arrotonda per coerenza con i pannelli reali
+const baseGridDegRounded = Math.round(baseGridDeg * 100) / 100;
+const gridDeg = baseGridDegRounded + (gridMods.gridAngleDeg || 0);
+
+
 // applica offset utente
-const gridDeg = (baseGridDeg + (gridMods.gridAngleDeg || 0));
+// const gridDeg = (baseGridDeg + (gridMods.gridAngleDeg || 0));
 
 
   const hasPanelsOnSelected = useMemo(
@@ -204,12 +209,15 @@ const gridDeg = (baseGridDeg + (gridMods.gridAngleDeg || 0));
   const layerScale = view.scale || view.fitScale || 1;
 
   return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-50">
+    <div
+  ref={containerRef}
+  className={`relative h-full w-full overflow-hidden ${snap?.url ? 'bg-neutral-50' : 'bg-transparent'}`}
+>
       <OverlayProgressStepper />
       <OverlayTopToolbar />
       <ScaleIndicator />
 
-      {!snap.url && <CenterAddressSearchOverlay />}
+      {/* {!snap.url && <CenterAddressSearchOverlay />} */}
 
       <OverlayRightToggle />
 
