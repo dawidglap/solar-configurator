@@ -51,14 +51,14 @@ export default function LeftLayersOverlay() {
           className="fixed z-[300] pointer-events-auto"
           style={{
             // ⬇️ Dock a DESTRA, allineato alla topbar
-            right: '12px',
-            top:   'calc(var(--tb, 48px) + 8px)',
+            right: '8px',
+            top:   'calc(var(--tb, 48px) + 48px)',
             bottom:'12px',
             width: 'min(90vw, 320px)',
           }}
         >
           <div className="
-            h-full w-full
+            w-full
             rounded-2xl border border-neutral-200
             bg-white/85 backdrop-blur-sm shadow-xl
             flex flex-col overflow-hidden
@@ -70,11 +70,11 @@ export default function LeftLayersOverlay() {
               </h3>
               <button
                 onClick={toggleLeft}
-                className="absolute right-2 top-1.5 rounded-md border border-neutral-200 bg-white/90 px-2 py-1 text-xs hover:bg-white"
+                className="absolute right-2 top-1.5 rounded-full border border-neutral-200 bg-red-400 px-1 py-1 text-xs hover:bg-red-500"
                 title="Schließen"
                 aria-label="Schließen"
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-3.5 w-3.5 text-neutral-700 " />
               </button>
             </div>
 

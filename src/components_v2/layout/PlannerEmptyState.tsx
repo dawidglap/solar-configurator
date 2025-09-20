@@ -19,7 +19,7 @@ export default function PlannerEmptyState() {
       </div>
 
       {/* CTA con glow/pulse */}
-      <div className="pointer-events-none absolute inset-0 flex items-start justify-center mt-24 sm:mt-28">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center mt-24 sm:mt-28">
         <div
           className="relative"
           // Sposta la pill di metà della larghezza del pannello proprietà a sinistra.
@@ -29,9 +29,9 @@ export default function PlannerEmptyState() {
           {/* glow morbido dietro al pill */}
           <div className="absolute -inset-1 rounded-full bg-indigo-400/30 blur-md animate-pulse" />
           {/* pill */}
-          <div className="relative z-10 flex items-center gap-2 rounded-full bg-white/95 px-5 py-2 text-sm text-neutral-900 shadow-xl ring-1 ring-indigo-500/60">
-            <span className="text-indigo-600 text-base leading-none">↖</span>
-            <span className="font-medium">
+          <div className="relative z-10 flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm text-neutral-900 shadow-xl ring-2 ring-slate-800/60">
+            <span className="text-neutral-200 text-base leading-none">↖</span>
+            <span className="font-medium text-neutral-200 ">
               Um zu starten, gib links oben deine Adresse ein
             </span>
           </div>
