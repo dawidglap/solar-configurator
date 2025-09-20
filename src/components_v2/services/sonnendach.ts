@@ -26,14 +26,14 @@ export type SonnRoofPoly = {
 // Aumenta per avere MENO falde; diminuisci per PIÙ dettagli.
 // ─────────────────────────────────────────────────────────────
 export const ROOF_FILTERS = {
-    MIN_AREA_M2: 2.5,
-    SIMPLIFY_EPS_M: 0.35,
-    MIN_COMPACTNESS: 0.10,
-    CLUSTER_DIST_M: 1.8,    // 1.0–1.2 m funziona bene
-    MERGE_ANGLE_DEG: 22,
-    MERGE_STRATEGY: 'hull',
-
+    MIN_AREA_M2: 0.5,        // accetta anche falde molto piccole (prima 2.5)
+    SIMPLIFY_EPS_M: 0.15,    // meno semplificazione, mantiene più dettagli
+    MIN_COMPACTNESS: 0.02,   // permette poligoni irregolari (prima 0.10)
+    CLUSTER_DIST_M: 2.5,     // raggruppa falde vicine (prima 1.8)
+    MERGE_ANGLE_DEG: 35,     // unisce anche falde con angoli più diversi (prima 22)
+    MERGE_STRATEGY: 'largest' // evita che “hull” fonda tutto in un unico blob
 };
+
 
 // Abilita per log diagnostici dei conteggi
 const DEBUG_COUNTS = false;
