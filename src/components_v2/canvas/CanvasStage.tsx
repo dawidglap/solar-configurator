@@ -222,20 +222,27 @@ const gridDeg = baseGridDegRounded + (gridMods.gridAngleDeg || 0);
 
       <OverlayRightToggle />
 
-      <AnimatePresence>
-        {rightOpen && (
-          <motion.div
-            key="right-panel"
-            initial={{ x: 16, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 16, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-            className="absolute right-3 top-28 bottom-3 z-[300] pointer-events-auto flex"
-          >
-            <RightPropertiesPanelOverlay />
-          </motion.div>
-        )}
-      </AnimatePresence>
+<AnimatePresence>
+  {rightOpen && (
+    <motion.div
+      key="left-panel"
+      initial={{ x: -12, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: -12, opacity: 0 }}
+      transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+      className="absolute z-[300] pointer-events-auto flex"
+      style={{
+        top: 'calc(var(--tb, 48px) + 8px)',
+        bottom: '12px',
+        // ⬇️ ora si allinea automaticamente in base allo stato della sidebar
+        left: '-2px',
+      }}
+    >
+      <RightPropertiesPanelOverlay />
+    </motion.div>
+  )}
+</AnimatePresence>
+
 
       <OverlayLeftToggle />
       <LeftLayersOverlay />

@@ -26,11 +26,21 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState<boolean>(isPlannerV2);
   useEffect(() => { setCollapsed(isPlannerV2); }, [isPlannerV2]);
 
-  useEffect(() => {
-    const w = collapsed ? W_COLLAPSED : W_EXPANDED;
-    document?.body?.style.setProperty("--sb", `${w}px`);
-    return () => { document?.body?.style.removeProperty("--sb"); };
-  }, [collapsed]);
+useEffect(() => {
+  const w = collapsed ? W_COLLAPSED : W_EXPANDED;
+  document.body?.style.setProperty('--sb', `${w}px`);
+
+  // Gap del pannello rispetto al bordo SINISTRO del contenitore (già shiftato da --sb)
+  // Collassata: sovrapponi un po' (negativo). Espansa: un piccolo margine positivo.
+  document.body?.style.setProperty('--panel-gap', collapsed ? '-68px' : '8px');
+
+  return () => {
+    document.body?.style.removeProperty('--sb');
+    document.body?.style.removeProperty('--panel-gap');
+  };
+}, [collapsed]);
+
+
 
   const items = useMemo(
     () => [
@@ -52,7 +62,7 @@ export default function Sidebar() {
           aria-label={collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"}
           title={collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"}
           onClick={() => setCollapsed((s) => !s)}
-          className="fixed left-[calc(var(--sb,64px)_-_18px)] top-2/3 z-[60] -translate-y-1/2
+          className="fixed left-[calc(var(--sb,64px)_-_18px)] top-2/3 z-[999360] -translate-y-1/2
                      flex h-9 w-9 items-center justify-center rounded-full border border-black/10
                      bg-neutral-700 shadow hover:bg-black transition"
         >

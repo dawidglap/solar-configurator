@@ -1,43 +1,45 @@
+// src/components_v2/layout/OverlayRightToggle.tsx
 'use client';
 
-import { SlidersHorizontal } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 
+/**
+ * NOTE: nonostante il nome, questo toggle apre il pannello "Eigenschaften"
+ * dock a SINISTRA. È allineato a sidebar (--sb) e topbar (--tb).
+ * Mostra un pill con testo per renderlo più chiaro.
+ */
 export default function OverlayRightToggle() {
-  const open    = usePlannerV2Store(s => s.ui.rightPanelOpen);
-  const toggle  = usePlannerV2Store(s => s.toggleRightPanelOpen);
-  const step    = usePlannerV2Store(s => s.step);
-  const detCnt  = usePlannerV2Store(s => (s.detectedRoofs?.length ?? 0));
+  const rightOpen = usePlannerV2Store((s) => s.ui.rightPanelOpen);
+  const setUI     = usePlannerV2Store((s) => s.setUI);
 
-  // Primario nello step Module (properties first)
-  const isPrimary = step === 'modules';
-
-  const base = 'pointer-events-auto absolute top-[8px] right-3 z-[300] h-9 px-3 rounded-full border shadow inline-flex items-center gap-2 text-sm transition-colors  mt-20';
-  const filled  = 'bg-neutral-900 text-white border-neutral-900 hover:bg-neutral-800';
-  const outline = 'bg-white/90 text-neutral-800 border-neutral-200 hover:bg-white';
-  const ring    = open ? 'ring-2 ring-blue-400/60' : '';
+  if (rightOpen) return null;
 
   return (
-    
-
-    
     <button
-      type="button"
-      title="Eigenschaften"
-      aria-pressed={open}
-      aria-controls="right-panel"
-      onClick={toggle}
-      className={[base, (open || isPrimary) ? filled : outline, ring].join(' ')}
+      onClick={() => setUI({ rightPanelOpen: true })}
+      title="Eigenschaften anzeigen"
+      aria-label="Eigenschaften anzeigen"
+      // fixed: niente clipping; z alto per stare sopra la mappa/immagine
+      className="
+        fixed z-[520]
+        inline-flex items-center gap-2
+        h-9 rounded-full
+        border border-neutral-200 bg-black
+        px-3 text-xs font-medium text-neutral-200
+        shadow hover:bg-neutral-500 active:translate-y-[0.5px]
+        focus:outline-none focus:ring-2 focus:ring-black/10
+      "
+      style={{
+        // appena a destra della sidebar (sia chiusa che aperta)
+        left: 'calc(var(--sb, 64px) -18px)',
+        // sotto la topbar/stepper
+        top: 'calc(var(--tb, 48px) + 48px)',
+      }}
     >
-      <SlidersHorizontal className="w-4 h-4" />
-      <span className="hidden sm:inline">Eigenschaften</span>
-
-      {detCnt > 0 && (
-        <span className="ml-1 rounded-full text-[11px] px-2 py-0.5 bg-white/20 border border-white/25">
-          {detCnt}
-        </span>
-      )}
+      {/* freccia come in Canva style */}
+      <ChevronRight className="h-4 w-4 opacity-70" />
+      <span>Eigenschaften</span>
     </button>
-    
   );
 }

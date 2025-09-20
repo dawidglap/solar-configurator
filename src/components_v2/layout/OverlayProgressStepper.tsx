@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
-import { User, Home, Grid, GitBranch, ListChecks, BadgeCheck, Check, Search } from 'lucide-react';
+import { User, Home, Grid, GitBranch, ListChecks, BadgeCheck, Check } from 'lucide-react';
 import TopbarAddressSearch from './TopbarAddressSearch';
 
 type StoreKey = 'building' | 'modules' | 'strings' | 'parts';
@@ -24,34 +24,54 @@ const STEPS: Step[] = [
 ];
 
 export default function OverlayProgressStepper() {
-  const step = usePlannerV2Store((s) => s.step);          // 'building' | 'modules' | 'strings' | 'parts'
+  const step = usePlannerV2Store((s) => s.step);
   const setStep = usePlannerV2Store((s) => s.setStep);
-
-  // indice attivo in base allo step dello store (anche se lo step non è cliccabile)
   const activeIndex = useMemo(
     () => Math.max(0, STEPS.findIndex((s) => (s.key as any) === step)),
     [step]
   );
 
+  // ⬇️ Scrive dinamicamente --tb con l’altezza reale della topbar
+  const barRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+
+    const apply = () => {
+      const h = el.offsetHeight || 48; // fallback
+      document.body.style.setProperty('--tb', `${h}px`);
+    };
+    apply();
+
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+
+    return () => {
+      ro.disconnect();
+      document.body.style.removeProperty('--tb');
+    };
+  }, []);
+
   return (
     <div
-   className="planner-topbar fixed left-0 right-0 top-0 z-40 border-b border-neutral-200 bg-white shadow-sm"
-  style={{ paddingLeft: 'var(--sb, 64px)' }}
+      ref={barRef}
+      className="planner-topbar fixed left-0 right-0 top-0 z-40 border-b border-neutral-200 bg-white shadow-sm"
+      style={{ paddingLeft: 'var(--sb, 64px)' }}
     >
       <div className="flex h-12 w-full items-center gap-3 px-3">
-        {/* LEFT: placeholder barra ricerca indirizzo */}
-   <div className="hidden md:flex">
-  <TopbarAddressSearch />
-</div>
+        {/* LEFT: barra ricerca indirizzo */}
+        <div className="hidden md:flex">
+          <TopbarAddressSearch />
+        </div>
 
         <div className="flex-1" />
 
-        {/* RIGHT: stepper minimal, allineato a destra */}
+        {/* RIGHT: stepper minimal */}
         <nav aria-label="Wizard progress" className="mr-1">
           <ol className="flex items-center gap-2">
             {STEPS.map((s, i) => {
               const isActive = i === activeIndex;
-              const isCompleted = i < activeIndex; // mostra check sui precedenti (anche se non cliccabili)
+              const isCompleted = i < activeIndex;
               const Icon = s.Icon;
 
               const btnBase = 'group flex items-center gap-1.5 rounded-full px-2 py-1 transition';
@@ -93,9 +113,7 @@ export default function OverlayProgressStepper() {
                   {i < STEPS.length - 1 && (
                     <span
                       aria-hidden
-                      className={`h-px w-5 rounded-full ${
-                        i < activeIndex ? 'bg-emerald-600' : 'bg-neutral-200'
-                      }`}
+                      className={`h-px w-5 rounded-full ${i < activeIndex ? 'bg-emerald-600' : 'bg-neutral-200'}`}
                     />
                   )}
                 </li>
