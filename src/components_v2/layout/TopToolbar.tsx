@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import {
@@ -34,6 +34,7 @@ function Keycap({ children }: { children: React.ReactNode }) {
 /* ───────────────────── Tooltip in Portal ───────────────────── */
 
 type TooltipPos = { x: number; y: number };
+
 function PortalTooltip({
   visible,
   pos,
@@ -55,7 +56,7 @@ function PortalTooltip({
         position: 'fixed',
         left: pos.x,
         top: pos.y,
-        transform: 'translate(-50%, 0)', // centrato, sotto al trigger
+        transform: 'translate(-50%, 0)', // centrato sotto al trigger
         zIndex: 100000,
         pointerEvents: 'none',
       }}
@@ -75,22 +76,23 @@ function PortalTooltip({
   );
 }
 
-/** Hook per misurare il bottone e calcolare la posizione del tooltip (BOTTOM) */
-function useBottomTooltip(triggerRef: React.RefObject<HTMLElement>) {
+/** Accetta sia RefObject che MutableRefObject con T coerente (HTMLButtonElement ecc.) */
+type AnyRef<T extends HTMLElement> =
+  React.RefObject<T> | React.MutableRefObject<T | null>;
+
+/** Calcola posizione BOTTOM del tooltip rispetto al bottone (portal → no clipping) */
+function useBottomTooltip<T extends HTMLElement>(triggerRef: AnyRef<T>) {
   const [visible, setVisible] = useState(false);
   const [pos, setPos] = useState<TooltipPos | null>(null);
 
   const compute = () => {
-    const el = triggerRef.current;
+    const el = triggerRef.current as T | null;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setPos({ x: r.left + r.width / 2, y: r.bottom + 8 }); // 8px gap
+    setPos({ x: r.left + r.width / 2, y: r.bottom + 8 }); // gap 8px
   };
 
-  const show = () => {
-    compute();
-    setVisible(true);
-  };
+  const show = () => { compute(); setVisible(true); };
   const hide = () => setVisible(false);
 
   useEffect(() => {
