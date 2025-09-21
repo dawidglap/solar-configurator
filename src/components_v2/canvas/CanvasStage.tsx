@@ -134,6 +134,14 @@ const gridDeg = baseGridDegRounded + (gridMods.gridAngleDeg || 0);
     setShapeMode('normal');
   }, [selectedId]);
 
+  // subito sotto gli altri useEffect
+useEffect(() => {
+  if (tool === 'draw-reserved') {
+    setSelectedPanelInstId(undefined);
+  }
+}, [tool]);
+
+
   // pan/zoom
   const { canDrag, onWheel, onDragMove } = useStagePanZoom({ img, size, view, setView });
 
@@ -248,13 +256,15 @@ const {
           height={size.h}
           x={view.offsetX || 0}
           y={view.offsetY || 0}
-          draggable={
-            canDrag &&
-            tool !== 'draw-roof' &&
-            tool !== 'draw-rect' &&
-            !draggingVertex &&
-            !draggingPanel
-          }
+      draggable={
+  canDrag &&
+  tool !== 'draw-roof' &&
+  tool !== 'draw-rect' &&
+  tool !== 'draw-reserved' &&   // ⬅️ aggiungi questo
+  !draggingVertex &&
+  !draggingPanel
+}
+
           onDragMove={onDragMove}
           onWheel={onWheel}
           // handler di disegno SOLO in building
@@ -483,6 +493,7 @@ const angleDeg = gridDeg;
 
       <PanelHotkeys
         selectedPanelId={selectedPanelInstId}
+        disabled={tool !== 'select'} 
         onDelete={(id) => {
           deletePanel(id);
           setSelectedPanelInstId(undefined);

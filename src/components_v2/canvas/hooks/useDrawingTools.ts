@@ -124,10 +124,10 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         }
 
         // ── ZONA VIETATA da 3 click (parallelogramma)
+        // ── ZONA VIETATA da 3 click (parallelogramma)
         if (tool === 'draw-reserved') {
-            if (Date.now() - lastReservedCommitTs.current < RESERVED_COOLDOWN_MS) {
-                return;
-            }
+            if (Date.now() - lastReservedCommitTs.current < RESERVED_COOLDOWN_MS) return;
+
             if (!rectDraft || rectDraft.length === 0) {
                 setRectDraft([p]); // A
                 return;
@@ -136,14 +136,21 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
                 setRectDraft([rectDraft[0], p]); // A,B
                 return;
             }
+
             // terzo click → commit zona
             const { poly } = rectFrom3WithAz(rectDraft[0], rectDraft[1], p);
             onZoneCommit?.(poly);
             setRectDraft(null);
-            setTool('select'); // ⬅️ torna alla selezione
+
+            // ⬇️ NEW: svuota selezione attiva (tetto/altro)
+            select(undefined);
+
+            // torna alla selezione
+            setTool('select');
             lastReservedCommitTs.current = Date.now();
             return;
         }
+
 
         // ── select: click vuoto deseleziona
         if (e.target === e.target.getStage()) select(undefined);

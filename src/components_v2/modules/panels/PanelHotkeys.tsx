@@ -5,10 +5,12 @@ import { useEffect, useMemo } from 'react';
 import { usePlannerV2Store } from '../../state/plannerV2Store';
 
 type Props = {
+  disabled: any;
   /** Modalità controllata (singolo pannello): se presente, usa queste props */
   selectedPanelId?: string;
   onDelete?: (id: string) => void;
   onDuplicate?: (id: string) => void;
+  
 };
 
 /** Clipboard interna (ids dei pannelli copiati) */
@@ -55,6 +57,8 @@ export default function PanelHotkeys(props: Props) {
       if (step && step !== 'modules') return;
       if (tool && tool !== 'select') return;
       if (isTextTarget(e.target)) return;
+      if (props.disabled) return;
+
 
       // ===== Modalità CONTROLLATA (singolo pannello via props) =====
       if (useControlled) {

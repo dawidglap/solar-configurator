@@ -170,7 +170,7 @@ const m = usePlannerV2Store.getState().modules;
           {modules.showGrid ? 'Raster: AN' : 'Raster: AUS'}
         </button>
 
-        <button
+        {/* <button
           onClick={() => setModules({ placingSingle: !modules.placingSingle })}
           className={[
             'flex-1', chip,
@@ -182,7 +182,7 @@ const m = usePlannerV2Store.getState().modules;
           aria-pressed={modules.placingSingle}
         >
           {modules.placingSingle ? 'Einzel: AN' : 'Einzel: AUS'}
-        </button>
+        </button> */}
       </div>
 
       {/* AKTIONEN */}
@@ -196,7 +196,7 @@ const m = usePlannerV2Store.getState().modules;
         </button>
 
 
-<GridCoverageControl />
+{/* <GridCoverageControl /> */}
 {/* // ...sostituisci l'onClick del bottone "In Module umwandeln" con: */}
 <button
   disabled={disabled}
@@ -247,7 +247,7 @@ const rects = computeAutoLayoutRects({
   In Module umwandeln
 </button>
 
-<GridCoverageControl />
+{/* <GridCoverageControl /> */}
         <button
           disabled={disabled || panelsOnRoof.length === 0}
           onClick={() => selectedId && clearPanelsForRoof(selectedId)}
