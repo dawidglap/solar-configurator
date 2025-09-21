@@ -13,7 +13,7 @@ import { usePlannerV2Store } from '../state/plannerV2Store';
 import { rotateAround } from '@/components_v2/roofs/alignment';
 import { TbRotateClockwise2 } from 'react-icons/tb';
 // in cima al file
-import { IoMoveSharp } from 'react-icons/io5';
+
 
 
 type Pt = { x: number; y: number };
@@ -107,12 +107,11 @@ const lastNextDegRef    = useRef<number>(0);
 
   // icona rotazione in path
   const ROT_ICON = useMemo(() => iconToPaths(TbRotateClockwise2), []);
-  const MOVE_ICON = useMemo(() => iconToPaths(IoMoveSharp), []);
+  
 
   const HANDLE_R  = 0;   // raggio offset icona rotazione (0 = al pivot)
   const HANDLE_SZ = 10;  // size icona rotazione
-  const MOVE_SZ   = 10;  // size handle move
-  const MOVE_DY   = 16;  // offset in px immagine sotto al pivot per non sovrapporre
+
 
   return (
     <>
@@ -135,27 +134,82 @@ const lastNextDegRef    = useRef<number>(0);
             }
           : null;
 
-        // posizione handle MOVE (px immagine) — leggermente sotto il pivot
-        const moveHandlePos = (sel && selPivot)
-          ? { x: selPivot.x, y: selPivot.y + MOVE_DY }
-          : null;
+    
 
         return (
           <KonvaGroup key={r.id}>
-            <KonvaLine
-              points={flat}
-              closed
-              stroke={sel ? strokeSelected : stroke}
-              strokeWidth={sel ? strokeWidthSelected : strokeWidthNormal}
-              lineJoin="round"
-              lineCap="round"
-              fill={fill}
-              onClick={() => onSelect(r.id)}
-              shadowColor={sel ? strokeSelected : 'transparent'}
-              shadowBlur={sel ? 6 : 0}
-              shadowOpacity={sel ? 0.9 : 0}
-              hitStrokeWidth={12}
-            />
+          <KonvaLine
+  points={flat}
+  closed
+  stroke={sel ? strokeSelected : stroke}
+  strokeWidth={sel ? strokeWidthSelected : strokeWidthNormal}
+  lineJoin="round"
+  lineCap="round"
+  fill={fill}
+  onClick={() => onSelect(r.id)}
+  shadowColor={sel ? strokeSelected : 'transparent'}
+  shadowBlur={sel ? 6 : 0}
+  shadowOpacity={sel ? 0.9 : 0}
+  hitStrokeWidth={12}
+
+  // 👇 NUOVO: cursore "move" quando è selezionata
+  onMouseEnter={(e) => {
+    if (!sel) return;
+    e.target.getStage()?.container()?.style.setProperty('cursor', 'move');
+  }}
+  onMouseLeave={(e) => {
+    if (!sel) return;
+    e.target.getStage()?.container()?.style.removeProperty('cursor');
+  }}
+
+  // 👇 NUOVO: drag dell'intera falda cliccando sulla shape
+  onMouseDown={(e) => {
+    if (!sel) return;          // drag solo se la falda è già selezionata
+    e.cancelBubble = true;
+
+    const st = e.target.getStage();
+    if (!st) return;
+    const ns = '.roof-move-poly';
+    st.off(ns);
+
+    // blocca pan durante il drag
+    onHandlesDragStart();
+
+    // snapshot iniziale (px immagine)
+    moveStartPtsRef.current = r.points.map(p => ({ ...p }));
+    const pos = st.getPointerPosition();
+    if (!pos) return;
+    moveStartPtrImgRef.current = toImg(pos.x, pos.y); // STAGE→IMG
+
+    st.on('mousemove' + ns + ' touchmove' + ns, (ev: any) => {
+      const cur = st.getPointerPosition();
+      if (!cur || !moveStartPtsRef.current || !moveStartPtrImgRef.current) return;
+      const curImg = toImg(cur.x, cur.y); // STAGE→IMG
+
+      let dx = curImg.x - moveStartPtrImgRef.current.x;
+      let dy = curImg.y - moveStartPtrImgRef.current.y;
+
+      // Shift = vincolo asse dominante
+      const shift = ev?.evt?.shiftKey;
+      if (shift) {
+        if (Math.abs(dx) > Math.abs(dy)) dy = 0;
+        else dx = 0;
+      }
+
+      const moved = moveStartPtsRef.current.map(p => ({ x: p.x + dx, y: p.y + dy }));
+      updateRoof(r.id, { points: moved });
+    });
+
+    const end = () => {
+      st.off(ns);
+      moveStartPtrImgRef.current = null;
+      moveStartPtsRef.current = null;
+      onHandlesDragEnd(); // sblocca pan
+    };
+    st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
+  }}
+/>
+
 
             {showAreaLabels && label && (
               <KonvaText
@@ -277,66 +331,7 @@ const lastNextDegRef    = useRef<number>(0);
               </KonvaGroup>
             )}
 
-            {/* MOVE (traslazione in PX IMMAGINE): sempre quando selezionato */}
-            {sel && moveHandlePos && (
-              <KonvaGroup
-                x={moveHandlePos.x}
-                y={moveHandlePos.y}
-                listening
-                onMouseEnter={(e) => { e.target.getStage()?.container()?.style.setProperty('cursor','move'); }}
-                onMouseLeave={(e) => { e.target.getStage()?.container()?.style.removeProperty('cursor'); }}
-                onMouseDown={(e) => {
-                  e.cancelBubble = true;
-                  const st = e.target.getStage();
-                  if (!st) return;
-                  const ns = '.roof-move';
-                  st.off(ns);
-
-                  // blocca pan durante il drag
-                  onHandlesDragStart();
-
-                  // snapshot iniziale (px immagine)
-                  moveStartPtsRef.current = r.points.map(p => ({ ...p }));
-                  const pos = st.getPointerPosition();
-                  if (!pos) return;
-                  moveStartPtrImgRef.current = toImg(pos.x, pos.y); // STAGE→IMG
-
-                  st.on('mousemove' + ns + ' touchmove' + ns, () => {
-                    const cur = st.getPointerPosition();
-                    if (!cur || !moveStartPtsRef.current || !moveStartPtrImgRef.current) return;
-                    const curImg = toImg(cur.x, cur.y); // STAGE→IMG (px immagine)
-                    const dx = curImg.x - moveStartPtrImgRef.current.x;
-                    const dy = curImg.y - moveStartPtrImgRef.current.y;
-
-                    const moved = moveStartPtsRef.current.map(p => ({ x: p.x + dx, y: p.y + dy }));
-                    updateRoof(r.id, { points: moved });
-                  });
-
-                  const end = () => {
-                    st.off(ns);
-                    moveStartPtrImgRef.current = null;
-                    moveStartPtsRef.current = null;
-                    onHandlesDragEnd(); // sblocca pan
-                  };
-                  st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
-                }}
-              >
-                {/* cerchietto */}
-                <KonvaCircle
-                  radius={MOVE_SZ / 2}
-                  fill="#ffffff"
-                  opacity={0.9}
-                  stroke="#94a3b8"
-                  strokeWidth={0.5}
-                  shadowColor="rgba(0,0,0,0.20)"
-                  shadowBlur={3}
-                  shadowOpacity={0.8}
-                />
-                {/* croce */}
-                <KonvaLine points={[-4, 0, 4, 0]} stroke="#334155" strokeWidth={1} listening={false} />
-                <KonvaLine points={[0, -4, 0, 4]} stroke="#334155" strokeWidth={1} listening={false} />
-              </KonvaGroup>
-            )}
+         
 
             {/* Maniglie TRAPEZIO */}
             {sel && shapeMode === 'trapezio' && (
