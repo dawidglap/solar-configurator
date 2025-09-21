@@ -2,9 +2,7 @@
 
 import React from 'react';
 import { Line as KonvaLine, Circle as KonvaCircle, Text as KonvaText } from 'react-konva';
-
-// tipi minimi (compatibili col tuo Canvas)
-export type Pt = { x: number; y: number };
+import { snapParallelPerp, isNear, Pt } from './utils/snap';
 
 function rectFrom3(A: Pt, B: Pt, C: Pt): Pt[] {
   const vx = B.x - A.x;
@@ -45,109 +43,177 @@ export default function DrawingOverlays({
   stroke: string;
   areaLabel: (pts: Pt[]) => string | null;
 }) {
-  return (
-    <>
-      {/* POLIGONO (rubber band) */}
-      {tool === 'draw-roof' && drawingPoly && drawingPoly.length > 0 && (
-        <>
+  // palette UI
+  const PREVIEW = '#7c3aed'; // viola (segmento in movimento)
+  const ACCEPT  = '#16a34a'; // verde (segmenti fissati)
+  const GUIDE   = '#a78bfa'; // guida snap
+  const HANDLE_BG = '#ffffff';
+
+  const SNAP_TOL_DEG = 12;
+  const CLOSE_RADIUS = 12;
+
+  // —— DRAW-ROOF (con snap in preview e guida)
+  const renderDrawRoof = () => {
+    if (!drawingPoly || drawingPoly.length === 0) return null;
+
+    const pts = drawingPoly;
+    const last = pts[pts.length - 1];
+    const prev = pts.length >= 2 ? pts[pts.length - 2] : null;
+    const refDir = prev ? { x: last.x - prev.x, y: last.y - prev.y } : undefined;
+
+    let target = mouseImg ?? last;
+    let snapGuide: { a: Pt; b: Pt } | undefined;
+
+    // magnete per chiudere sul primo punto
+    if (mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS)) {
+      target = pts[0];
+    } else if (mouseImg) {
+      // snap parallelo/perpendicolare sul segmento precedente
+      const { pt, guide } = snapParallelPerp(last, mouseImg, refDir, SNAP_TOL_DEG);
+      target = pt;
+      if (guide) snapGuide = guide;
+    }
+
+    return (
+      <>
+        {/* guida snap (tratteggiata) */}
+        {snapGuide && (
           <KonvaLine
-            points={toFlat([...drawingPoly, mouseImg ?? drawingPoly[drawingPoly.length - 1]])}
-            stroke={stroke}
-            strokeWidth={1.5}
+            points={[snapGuide.a.x, snapGuide.a.y, snapGuide.b.x, snapGuide.b.y]}
+            stroke={GUIDE}
+            strokeWidth={1}
+            dash={[6, 6]}
+            listening={false}
+          />
+        )}
+
+        {/* segmenti già confermati (verde) */}
+        {pts.length >= 2 && (
+          <KonvaLine
+            points={toFlat(pts)}
+            stroke={ACCEPT}
+            strokeWidth={2}
+            lineJoin="round"
+            lineCap="round"
+            listening={false}
+          />
+        )}
+
+        {/* segmento in anteprima (viola) */}
+        {mouseImg && (
+          <KonvaLine
+            points={[last.x, last.y, target.x, target.y]}
+            stroke={PREVIEW}
+            strokeWidth={2}
             dash={[6, 6]}
             lineJoin="round"
             lineCap="round"
+            listening={false}
           />
-          {drawingPoly.map((p, i) => (
-            <KonvaCircle
-              key={i}
-              x={p.x}
-              y={p.y}
-              radius={3.2}
-              fill="#fff"
-              stroke={stroke}
-              strokeWidth={1.2}
-            />
-          ))}
-          {drawingPoly.length >= 3 && (
-            <KonvaText
-              x={polygonCentroid(drawingPoly).x}
-              y={polygonCentroid(drawingPoly).y}
-              text={areaLabel(drawingPoly) ?? ''}
-              fontSize={12}
-              fill="#fff"
-              offsetX={18}
-              offsetY={-6}
-              listening={false}
-              // @ts-ignore
-              shadowColor="white"
-              shadowBlur={2}
-              shadowOpacity={0.9}
-            />
-          )}
-        </>
-      )}
+        )}
 
-      {/* RETTANGOLO 3-CLICK (preview) */}
-      {tool === 'draw-rect' && rectDraft && rectDraft.length > 0 && (
-        <>
-          {/* A */}
-          {rectDraft.length === 1 && (
-            <KonvaCircle
-              x={rectDraft[0].x}
-              y={rectDraft[0].y}
-              radius={3.2}
-              fill="#fff"
+        {/* handle dei vertici fissati */}
+        {pts.map((p, i) => (
+          <KonvaCircle
+            key={i}
+            x={p.x}
+            y={p.y}
+            radius={3.2}
+            fill={HANDLE_BG}
+            stroke={ACCEPT}
+            strokeWidth={1.4}
+            listening={false}
+          />
+        ))}
+
+        {/* area live (se già >=3 punti fissati) */}
+        {pts.length >= 3 && (
+          <KonvaText
+            x={polygonCentroid(pts).x}
+            y={polygonCentroid(pts).y}
+            text={areaLabel(pts) ?? ''}
+            fontSize={12}
+            fill="#fff"
+            offsetX={18}
+            offsetY={-6}
+            listening={false}
+            // @ts-ignore
+            shadowColor="white"
+            shadowBlur={2}
+            shadowOpacity={0.9}
+          />
+        )}
+      </>
+    );
+  };
+
+  // —— DRAW-RECT (preview classico)
+  const renderDrawRect = () => {
+    if (!rectDraft || rectDraft.length === 0) return null;
+
+    return (
+      <>
+        {rectDraft.length === 1 && (
+          <KonvaCircle
+            x={rectDraft[0].x}
+            y={rectDraft[0].y}
+            radius={3.2}
+            fill="#fff"
+            stroke={stroke}
+            strokeWidth={1.2}
+          />
+        )}
+
+        {rectDraft.length === 2 && (
+          <>
+            <KonvaLine
+              points={toFlat(rectDraft)}
               stroke={stroke}
-              strokeWidth={1.2}
+              strokeWidth={1.5}
+              dash={[6, 6]}
+              lineJoin="round"
+              lineCap="round"
             />
-          )}
-          {/* A-B */}
-          {rectDraft.length === 2 && (
-            <>
-              <KonvaLine
-                points={toFlat(rectDraft)}
-                stroke={stroke}
-                strokeWidth={1.5}
-                dash={[6, 6]}
-                lineJoin="round"
-                lineCap="round"
-              />
-              {mouseImg && (() => {
-                const preview = rectFrom3(rectDraft[0], rectDraft[1], mouseImg);
-                const flat = toFlat(preview);
-                return (
-                  <>
-                    <KonvaLine
-                      points={flat}
-                      closed
-                      stroke={stroke}
-                      strokeWidth={1.5}
-                      lineJoin="round"
-                      lineCap="round"
-                      dash={[6, 6]}
-                    />
-                    <KonvaText
-                      x={polygonCentroid(preview).x}
-                      y={polygonCentroid(preview).y}
-                      text={areaLabel(preview) ?? ''}
-                      fontSize={12}
-                      fill="#fff"
-                      offsetX={18}
-                      offsetY={-6}
-                      listening={false}
-                      // @ts-ignore
-                      shadowColor="white"
-                      shadowBlur={2}
-                      shadowOpacity={0.9}
-                    />
-                  </>
-                );
-              })()}
-            </>
-          )}
-        </>
-      )}
+            {mouseImg && (() => {
+              const preview = rectFrom3(rectDraft[0], rectDraft[1], mouseImg);
+              return (
+                <>
+                  <KonvaLine
+                    points={toFlat(preview)}
+                    closed
+                    stroke={stroke}
+                    strokeWidth={1.5}
+                    lineJoin="round"
+                    lineCap="round"
+                    dash={[6, 6]}
+                  />
+                  <KonvaText
+                    x={polygonCentroid(preview).x}
+                    y={polygonCentroid(preview).y}
+                    text={areaLabel(preview) ?? ''}
+                    fontSize={12}
+                    fill="#fff"
+                    offsetX={18}
+                    offsetY={-6}
+                    listening={false}
+                    // @ts-ignore
+                    shadowColor="white"
+                    shadowBlur={2}
+                    shadowOpacity={0.9}
+                  />
+                </>
+              );
+            })()}
+          </>
+        )}
+      </>
+    );
+  };
+
+  return (
+    <>
+      {tool === 'draw-roof' && renderDrawRoof()}
+      {tool === 'draw-rect' && renderDrawRect()}
     </>
   );
 }

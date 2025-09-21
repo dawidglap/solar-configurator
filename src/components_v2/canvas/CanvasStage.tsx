@@ -154,23 +154,24 @@ const gridDeg = baseGridDegRounded + (gridMods.gridAngleDeg || 0);
     (tool === 'draw-roof' || tool === 'draw-rect' || tool === 'draw-reserved');
 
   // hook disegno tetto/zone (solo building)
-  const {
-    drawingPoly,
-    rectDraft,
-    mouseImg,
-    onStageMouseMove,
-    onStageClick,
-    onStageDblClick,
-  } = useDrawingTools({
-    tool: drawingEnabled ? tool : 'select',
-    layers,
-    addRoof,
-    select,
-    toImgCoords,
+ const {
+  drawingPoly,
+  rectDraft,
+  mouseImg,
+  onStageMouseMove,
+  onStageClick,
+  onStageDblClick,
+} = useDrawingTools({
+  tool: drawingEnabled ? tool : 'select',
+  layers,
+  addRoof,
+  select,
+  toImgCoords,
     onZoneCommit: (poly4: Pt[]) => {
       if (!selectedId) return;
       addZone({ id: nanoid(), roofId: selectedId, type: 'riservata', points: poly4 });
     },
+    snap: { tolDeg: 12, closeRadius: 12 }, 
   });
 
   // stile tetti
