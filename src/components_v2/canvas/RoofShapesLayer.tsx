@@ -7,11 +7,13 @@ import {
   Text as KonvaText,
   Path as KonvaPath,
   Circle as KonvaCircle,
+    Rect as KonvaRect,   
 } from 'react-konva';
 import RoofHandlesKonva from './RoofHandlesKonva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import { rotateAround } from '@/components_v2/roofs/alignment';
 import { TbRotateClockwise2 } from 'react-icons/tb';
+import Konva from 'konva';
 // in cima al file
 
 
@@ -28,6 +30,37 @@ function rotatePolygon(pts: Pt[], pivot: Pt, deg: number) {
   if (!deg) return pts;
   return pts.map(p => rotateAround(p, pivot, deg));
 }
+
+function edgeMeta(pts: Pt[]) {
+  const arr: {
+    i: number; j: number;
+    mx: number; my: number;
+    nx: number; ny: number;   // normale unitaria del lato (una delle due)
+    angleDeg: number;         // orientamento del lato (per ruotare l'handle)
+    cursor: 'ns-resize' | 'ew-resize';
+  }[] = [];
+
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const a = pts[i], b = pts[j];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+
+    // normale (perpendicolare) unitaria: (-dy, dx)/len
+    const nx = -dy / len;
+    const ny =  dx / len;
+
+    const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    const cursor = Math.abs(dx) >= Math.abs(dy) ? 'ns-resize' : 'ew-resize';
+
+    arr.push({ i, j, mx, my, nx, ny, angleDeg, cursor });
+  }
+  return arr;
+}
+
 
 // Estrai i path dell’icona rotazione
 function iconToPaths(IconComp: any): {
@@ -198,6 +231,8 @@ const lastNextDegRef    = useRef<number>(0);
 
       const moved = moveStartPtsRef.current.map(p => ({ x: p.x + dx, y: p.y + dy }));
       updateRoof(r.id, { points: moved });
+
+      
     });
 
     const end = () => {
@@ -209,6 +244,92 @@ const lastNextDegRef    = useRef<number>(0);
     st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
   }}
 />
+
+{/* ─── HANDLE PARALLELO LATO: shapeMode=normal ───────────────────────────── */}
+{sel && shapeMode === 'normal' && edgeMeta(pts).map((e, k) => (
+  <KonvaGroup
+    key={`edge-h-${k}`}
+    x={e.mx}
+    y={e.my}
+    onMouseEnter={(ev) => {
+      ev.target.getStage()?.container()?.style.setProperty('cursor', e.cursor);
+    }}
+    onMouseLeave={(ev) => {
+      ev.target.getStage()?.container()?.style.removeProperty('cursor');
+    }}
+  >
+    {/* RUOTA la maniglia per allinearla al lato */}
+    <KonvaGroup rotation={e.angleDeg}>
+      {/* Maniglia stile Canva (fa anche da hit-area) */}
+   <KonvaRect
+  x={-12} y={-2} width={24} height={6} cornerRadius={6.5}
+  fill="#ffffff"                  // bianco di base
+  stroke="#fff"
+  strokeWidth={0.5}
+  shadowColor="rgba(0,0,0,0.25)"
+  shadowBlur={3}
+  shadowOpacity={0.9}
+  onMouseEnter={(ev) => {        // HOVER → verde
+    const rect = ev.target as Konva.Rect;
+    rect.fill('#2269c5');        // green-500
+    rect.stroke('#164aa3');      // green-600
+    rect.getLayer()?.batchDraw();
+  }}
+  onMouseLeave={(ev) => {        // esci da hover → torna bianco
+    const rect = ev.target as Konva.Rect;
+    rect.fill('#ffffff');
+    rect.stroke('#fff');
+    rect.getLayer()?.batchDraw();
+  }}
+  onMouseDown={(ev) => {
+    ev.cancelBubble = true;
+    const st = ev.target.getStage(); if (!st) return;
+    const ns = `.roof-edge-${k}`;
+    st.off(ns);
+
+    onHandlesDragStart();
+
+    // snapshot iniziale
+    moveStartPtsRef.current = r.points.map(p => ({ ...p }));
+    const pos = st.getPointerPosition(); if (!pos) return;
+    moveStartPtrImgRef.current = toImg(pos.x, pos.y); // STAGE→IMG
+
+    st.on('mousemove' + ns + ' touchmove' + ns, () => {
+      const cur = st.getPointerPosition();
+      if (!cur || !moveStartPtsRef.current || !moveStartPtrImgRef.current) return;
+      const curImg = toImg(cur.x, cur.y);
+
+      const dx = curImg.x - moveStartPtrImgRef.current.x;
+      const dy = curImg.y - moveStartPtrImgRef.current.y;
+
+      const t = dx * e.nx + dy * e.ny;                 // proiezione sulla normale
+      const off = { x: e.nx * t, y: e.ny * t };
+
+      const next = moveStartPtsRef.current.map((p, idx) =>
+        (idx === e.i || idx === e.j) ? { x: p.x + off.x, y: p.y + off.y } : p
+      );
+
+      updateRoof(r.id, { points: next });
+    });
+
+    const end = () => {
+      st.off(ns);
+      moveStartPtrImgRef.current = null;
+      moveStartPtsRef.current = null;
+      onHandlesDragEnd();
+    };
+    st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
+  }}
+/>
+
+      {/* segnetto centrale puramente estetico */}
+      {/* <KonvaLine points={[-10, 0, 10, 0]} stroke="#334155" strokeWidth={1} listening={false} /> */}
+    </KonvaGroup>
+  </KonvaGroup>
+))}
+
+
+
 
 
             {showAreaLabels && label && (
