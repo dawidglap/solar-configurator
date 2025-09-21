@@ -6,12 +6,12 @@ import type { Pt } from '../../canvas/geom';
 import { rectFrom3WithAz } from '../../canvas/geom';
 import { snapParallelPerp, isNear } from '../utils/snap';
 
-// ➕ includiamo 'draw-reserved' nel tipo Tool
+// Tool supportati
 type Tool = 'select' | 'draw-roof' | 'draw-rect' | 'draw-reserved' | string;
 
 type Layer = { id: string; name: string; points: Pt[] };
 
-// Tipo minimo che l’hook richiede per aggiungere un tetto
+// Tipo minimo per aggiungere un tetto
 type RoofAreaLike = {
     id: string;
     name: string;
@@ -21,8 +21,8 @@ type RoofAreaLike = {
 };
 
 type SnapOptions = {
-    tolDeg?: number;       // tolleranza in gradi per snap // default 12
-    closeRadius?: number;  // raggio px per chiusura magnete // default 12
+    tolDeg?: number;      // tolleranza in gradi per snap (default 12)
+    closeRadius?: number; // raggio px per chiusura magnete (default 12)
 };
 
 export function useDrawingTools<T extends RoofAreaLike>(args: {
@@ -32,12 +32,16 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     select: (id?: string) => void;
     toImgCoords: (stageX: number, stageY: number) => Pt;
     onZoneCommit?: (poly4: Pt[]) => void;
-    // ⬇️ NEW opzionale
     snap?: SnapOptions;
+    // ⬇️ NEW: per tornare allo strumento di selezione al commit
+    setTool: (t: Tool) => void;
 }) {
-    const { tool, layers, addRoof, select, toImgCoords, onZoneCommit, snap } = args;
+    const {
+        tool, layers, addRoof, select, toImgCoords,
+        onZoneCommit, snap, setTool
+    } = args;
 
-    // default snap options
+    // opzioni snap
     const SNAP_TOL_DEG = snap?.tolDeg ?? 12;
     const CLOSE_RADIUS = snap?.closeRadius ?? 12;
 
@@ -56,6 +60,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         setMouseImg(toImgCoords(pos.x, pos.y));
     }, [toImgCoords]);
 
+    // chiusura + salvataggio tetto libero
     const finishPolygon = React.useCallback((pts: Pt[]) => {
         if (pts.length < 3) { setDrawingPoly(null); return; }
         const id = 'roof_' + Date.now().toString(36);
@@ -63,7 +68,8 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         addRoof({ id, name, points: pts } as T);
         select(id);
         setDrawingPoly(null);
-    }, [layers, addRoof, select]);
+        setTool('select'); // ⬅️ torna allo strumento di selezione
+    }, [layers, addRoof, select, setTool]);
 
     // CLICK handler unico
     const onStageClick = React.useCallback((e: any) => {
@@ -86,7 +92,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
 
             // chiusura magnetica sul primo punto
             if (pts.length >= 3 && isNear(p, pts[0], CLOSE_RADIUS)) {
-                // chiudi e salva
                 finishPolygon(pts);
                 return;
             }
@@ -114,6 +119,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
             addRoof({ id, name, points: poly, azimuthDeg, source: 'manual' } as T);
             select(id);
             setRectDraft(null);
+            setTool('select'); // ⬅️ torna alla selezione
             return;
         }
 
@@ -134,6 +140,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
             const { poly } = rectFrom3WithAz(rectDraft[0], rectDraft[1], p);
             onZoneCommit?.(poly);
             setRectDraft(null);
+            setTool('select'); // ⬅️ torna alla selezione
             lastReservedCommitTs.current = Date.now();
             return;
         }
@@ -151,10 +158,11 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         onZoneCommit,
         finishPolygon,
         CLOSE_RADIUS,
-        SNAP_TOL_DEG
+        SNAP_TOL_DEG,
+        setTool,
     ]);
 
-    // DOPPIO click → solo poligono tetto (chiudi se possibile)
+    // DOPPIO click → chiusura poligono tetto
     const onStageDblClick = React.useCallback(() => {
         if (tool !== 'draw-roof') return;
         if (drawingPoly && drawingPoly.length >= 3) {

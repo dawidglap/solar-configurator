@@ -72,6 +72,7 @@ export default function CanvasStage() {
   const selPanel = usePlannerV2Store((s) => s.getSelectedPanel());
   const gridMods = usePlannerV2Store((s) => s.modules);
   const roofAlign = usePlannerV2Store(s => s.roofAlign);
+  const setTool = usePlannerV2Store((s) => s.setTool);
 
 
   // size + base image
@@ -154,7 +155,7 @@ const gridDeg = baseGridDegRounded + (gridMods.gridAngleDeg || 0);
     (tool === 'draw-roof' || tool === 'draw-rect' || tool === 'draw-reserved');
 
   // hook disegno tetto/zone (solo building)
- const {
+const {
   drawingPoly,
   rectDraft,
   mouseImg,
@@ -172,6 +173,7 @@ const gridDeg = baseGridDegRounded + (gridMods.gridAngleDeg || 0);
       addZone({ id: nanoid(), roofId: selectedId, type: 'riservata', points: poly4 });
     },
     snap: { tolDeg: 12, closeRadius: 12 }, 
+    setTool,
   });
 
   // stile tetti
