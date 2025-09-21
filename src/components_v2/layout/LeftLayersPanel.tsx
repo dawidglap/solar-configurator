@@ -24,7 +24,7 @@ export default function LeftLayersPanel() {
       <div className="flex-1 overflow-y-auto p-2 space-y-3">
         {detected?.length > 0 && (
           <section className="rounded-lg border border-neutral-200 bg-white px-2.5 py-2">
-            <h4 className="mb-1 text-[11px] font-semibold text-neutral-900">Erkannte Dächer</h4>
+            {/* <h4 className="mb-1 text-[11px] font-semibold text-neutral-900">Erkannte Dächer</h4> */}
             <DetectedRoofsImport />
           </section>
         )}

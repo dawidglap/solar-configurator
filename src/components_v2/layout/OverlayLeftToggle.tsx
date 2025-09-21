@@ -1,6 +1,7 @@
 // src/components_v2/layout/OverlayLeftToggle.tsx
 'use client';
 
+import type { CSSProperties } from 'react';
 import { PanelLeft } from 'lucide-react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 
@@ -10,10 +11,9 @@ export default function OverlayLeftToggle() {
   const step   = usePlannerV2Store(s => s.step);
   const count  = usePlannerV2Store(s => s.layers.length);
 
-  // 👉 Se il pannello Ebenen è aperto, nascondi il toggle
+  // Se il pannello Ebenen è aperto, nascondi il toggle
   if (open) return null;
 
-  // Primario nello step Gebäude (layers first)
   const isPrimary = step === 'building';
 
   const baseBtn =
@@ -22,9 +22,9 @@ export default function OverlayLeftToggle() {
   const filled  = 'bg-neutral-900 text-white border-neutral-900 hover:bg-neutral-800';
   const outline = 'bg-white/90 text-neutral-800 border-neutral-200 hover:bg-white';
 
-  const style: React.CSSProperties = {
+  const style: CSSProperties = {
     top: 'calc(var(--tb, 48px) + 48px)',
-    right: '8px', // quando è chiuso sta sempre vicino al bordo destro
+    right: '8px', // vicino al bordo destro quando il pannello è chiuso
   };
 
   return (
