@@ -276,23 +276,22 @@ const gridDeg = baseGridDegRounded + (gridMods.gridAngleDeg || 0);
               snap.mppImage &&
               modules.showGrid &&
               !hasPanelsOnSelected && (
-                <ModulesPreview
-                  roofId={selectedRoof.id}
-                  polygon={selectedRoof.points}
-                  mppImage={snap.mppImage}
-azimuthDeg={gridDeg}
-
-                  orientation={modules.orientation}
-                  panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
-                  spacingM={modules.spacingM}
-                  marginM={modules.marginM}
-                  textureUrl="/images/panel.webp"
-                  phaseX={gridMods.gridPhaseX || 0}
-                  phaseY={gridMods.gridPhaseY || 0}
-                  anchorX={(gridMods.gridAnchorX as any) || 'start'}
-                  anchorY={(gridMods.gridAnchorY as any) || 'start'}
-                  coverageRatio={gridMods.coverageRatio ?? 1}
-                />
+   <ModulesPreview
+  roofId={selectedRoof.id}
+  polygon={selectedRoof.points}
+  mppImage={snap.mppImage}
+  azimuthDeg={(selectedRoof.azimuthDeg ?? 0) + (gridMods.gridAngleDeg || 0)}
+  orientation={modules.orientation}
+  panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
+  spacingM={modules.spacingM}
+  marginM={modules.marginM}
+  textureUrl="/images/panel.webp"
+  phaseX={gridMods.gridPhaseX || 0}
+  phaseY={gridMods.gridPhaseY || 0}
+  anchorX={(gridMods.gridAnchorX as any) || 'start'}
+  anchorY={(gridMods.gridAnchorY as any) || 'start'}
+  coverageRatio={gridMods.coverageRatio ?? 1}   // 👈 importante
+/>
               )}
 
             <SonnendachOverlayKonva />
