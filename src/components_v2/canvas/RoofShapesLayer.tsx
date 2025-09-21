@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import {
   Group as KonvaGroup,
   Line as KonvaLine,
@@ -132,31 +132,73 @@ export default function RoofShapesLayer({
   onHandlesDragEnd: () => void;
   areaLabel: (pts: Pt[]) => string | null;
 }) {
-  const updateRoof = usePlannerV2Store(s => s.updateRoof);
+// store actions
+const updateRoof  = usePlannerV2Store(s => s.updateRoof);
+const removeRoof  = usePlannerV2Store(s => s.removeRoof);
 
-  // stato UI rotazione/pivot
-  const { rotDeg, pivotPx } = usePlannerV2Store(s => s.roofAlign ?? { rotDeg: 0, pivotPx: undefined });
-  const setRoofRotDeg = usePlannerV2Store(s => s.setRoofRotDeg);
+// stato UI rotazione/pivot
+const { rotDeg, pivotPx } = usePlannerV2Store(s => s.roofAlign ?? { rotDeg: 0, pivotPx: undefined });
+const setRoofRotDeg = usePlannerV2Store(s => s.setRoofRotDeg);
 
-  // refs per drag rotazione
-  const dragStartAngleRef = useRef(0);
-  const dragStartDegRef   = useRef(0);
-  const startPtsRef       = useRef<Pt[] | null>(null);
-  const startPivotRef     = useRef<Pt | null>(null);
-
-  const startAzimuthRef   = useRef<number>(0);
+// refs per rotazione
+const dragStartAngleRef = useRef(0);
+const dragStartDegRef   = useRef(0);
+const startPtsRef       = useRef<Pt[] | null>(null);
+const startPivotRef     = useRef<Pt | null>(null);
+const startAzimuthRef   = useRef<number>(0);
 const lastNextDegRef    = useRef<number>(0);
 
-  // refs per drag MOVE (traslazione)
-  const moveStartPtrImgRef = useRef<Pt | null>(null);
-  const moveStartPtsRef    = useRef<Pt[] | null>(null);
+// refs per move
+const moveStartPtrImgRef = useRef<Pt | null>(null);
+const moveStartPtsRef    = useRef<Pt[] | null>(null);
 
-  // icona rotazione in path
-  const ROT_ICON = useMemo(() => iconToPaths(FaRotate), []);
-  
+// === Multi-selezione (DEVE stare sopra agli useEffect che la usano)
+const [groupSel, setGroupSel] = useState<string[]>([]);
 
-const ROT_KNOB_OFFSET = 46; // distanza del knob dal bordo superiore del bbox
-const HANDLE_SZ = 16;       // diametro del knob
+// Snapshot punti per drag di gruppo (UNA sola dichiarazione)
+const groupStartPtsRef = useRef<Record<string, Pt[]>>({});
+
+// --- Keyboard: ESC per deselezionare, DELETE per eliminare selezionati
+useEffect(() => {
+  const isEditing = (el: any) => {
+    if (!el) return false;
+    const tag = el.tagName?.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || el.isContentEditable;
+  };
+
+  const onKey = (e: KeyboardEvent) => {
+    if (isEditing(e.target)) return;
+
+    if (e.key === 'Escape') {
+      setGroupSel([]);
+      onSelect(undefined);
+    }
+
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      const ids = groupSel.length ? groupSel : (selectedId ? [selectedId] : []);
+      if (!ids.length) return;
+      e.preventDefault();
+      ids.forEach(id => removeRoof(id));
+      setGroupSel([]);
+      onSelect(undefined);
+    }
+  };
+
+  window.addEventListener('keydown', onKey);
+  return () => window.removeEventListener('keydown', onKey);
+}, [groupSel, selectedId, removeRoof, onSelect]);
+
+// --- Pulisci groupSel se i layers cambiano (es. dopo delete)
+useEffect(() => {
+  const existing = new Set(layers.map(l => l.id));
+  setGroupSel(prev => prev.filter(id => existing.has(id)));
+}, [layers]);
+
+// icona e knob
+const ROT_ICON = useMemo(() => iconToPaths(FaRotate), []);
+const ROT_KNOB_OFFSET = 46;
+const HANDLE_SZ = 16;
+
 
 
 
@@ -176,6 +218,15 @@ const HANDLE_SZ = 16;       // diametro del knob
         const c = centroid(pts);
         const label = showAreaLabels ? areaLabel(pts) : null;
 
+        const isSel = sel || groupSel.includes(r.id);
+        const multi  = groupSel.length > 0; 
+        const inGroupOnly = !sel && groupSel.includes(r.id);
+const strokeColor = sel ? strokeSelected : inGroupOnly ? '#7c3aed' : stroke;     // viola per secondarie
+const strokeW     = sel ? strokeWidthSelected : inGroupOnly ? strokeWidthSelected : strokeWidthNormal;
+const shadowOp    = (sel || inGroupOnly) ? 0.6 : 0;
+
+
+
 
 
 
@@ -183,13 +234,10 @@ const HANDLE_SZ = 16;       // diametro del knob
 const bb = bbox(pts);
 
 // pivot di rotazione = centro del bbox (stile Canva). Se hai un pivot custom, lo rispettiamo.
-const rotPivot = sel ? (pivotPx ?? { x: bb.cx, y: bb.cy }) : undefined;
-
-// knob fuori dal tetto: centrato orizzontalmente, sopra al bordo top del bbox
-const rotHandlePos = (sel && rotPivot)
-  ? { x: bb.cx, y: bb.minY - ROT_KNOB_OFFSET }
-  : null;
-
+ const rotPivot = isSel ? (pivotPx ?? { x: bb.cx, y: bb.cy }) : undefined;
+const rotHandlePos = (isSel && rotPivot)
+   ? { x: bb.cx, y: bb.minY - ROT_KNOB_OFFSET }
+   : null;
 
 
 
@@ -200,79 +248,119 @@ const rotHandlePos = (sel && rotPivot)
           <KonvaLine
   points={flat}
   closed
-  stroke={sel ? strokeSelected : stroke}
-  strokeWidth={sel ? strokeWidthSelected : strokeWidthNormal}
+ 
+
   lineJoin="round"
   lineCap="round"
   fill={fill}
-  onClick={() => onSelect(r.id)}
-  shadowColor={sel ? strokeSelected : 'transparent'}
-  shadowBlur={sel ? 6 : 0}
-  shadowOpacity={sel ? 0.9 : 0}
+onClick={(e) => {
+  const withShift = !!(e.evt && e.evt.shiftKey);
+
+  if (withShift) {
+    // Avvio/gestione multi-selezione SENZA cambiare la primaria
+    setGroupSel((prev) => {
+      let base = prev;
+
+      // Se non c'è ancora multi, semina l'array con la primaria corrente
+      if (prev.length === 0) {
+        if (selectedId && selectedId !== r.id) base = [selectedId];
+        else base = [];
+      }
+
+      // Toggle dell'ID cliccato
+      if (base.includes(r.id)) return base.filter((x) => x !== r.id);
+      return [...base, r.id];
+    });
+
+    return; // non toccare selectedId
+  }
+
+  // click normale: selezione singola
+  setGroupSel([]);
+  onSelect(r.id);
+}}
+
+stroke={strokeColor}
+strokeWidth={strokeW}
+shadowOpacity={shadowOp}
+
+shadowColor={isSel ? strokeSelected : 'transparent'}
+shadowBlur={isSel ? 8 : 0}
+
+
   hitStrokeWidth={12}
 
   // 👇 NUOVO: cursore "move" quando è selezionata
   onMouseEnter={(e) => {
-    if (!sel) return;
+    if (!isSel) return;
     e.target.getStage()?.container()?.style.setProperty('cursor', 'move');
   }}
   onMouseLeave={(e) => {
-    if (!sel) return;
+    if (!isSel) return;
     e.target.getStage()?.container()?.style.removeProperty('cursor');
   }}
 
   // 👇 NUOVO: drag dell'intera falda cliccando sulla shape
-  onMouseDown={(e) => {
-    if (!sel) return;          // drag solo se la falda è già selezionata
-    e.cancelBubble = true;
+onMouseDown={(e) => {
+  if (!isSel) return;         // drag solo se questa falda è selezionata (singola o in gruppo)
+  e.cancelBubble = true;
 
-    const st = e.target.getStage();
-    if (!st) return;
-    const ns = '.roof-move-poly';
+  const st = e.target.getStage(); if (!st) return;
+  const ns = '.roof-move-poly';
+  st.off(ns);
+
+  onHandlesDragStart();
+
+  // Set di ID da spostare: questa + eventuali altre selezionate
+  const idsToMove = Array.from(new Set([r.id, ...groupSel]));
+
+  // snapshot iniziale dei punti PER OGNI tetto selezionato
+  groupStartPtsRef.current = {};
+  for (const id of idsToMove) {
+    const roof = layers.find((l) => l.id === id);
+    if (roof) groupStartPtsRef.current[id] = roof.points.map((p) => ({ ...p }));
+  }
+
+  const pos = st.getPointerPosition(); if (!pos) return;
+  moveStartPtrImgRef.current = toImg(pos.x, pos.y); // STAGE→IMG
+
+  st.on('mousemove' + ns + ' touchmove' + ns, (evAny: any) => {
+    const cur = st.getPointerPosition();
+    if (!cur || !moveStartPtrImgRef.current) return;
+    const curImg = toImg(cur.x, cur.y);
+
+    let dx = curImg.x - moveStartPtrImgRef.current.x;
+    let dy = curImg.y - moveStartPtrImgRef.current.y;
+
+    // Shift = vincolo sull'asse dominante
+    const shift = evAny?.evt?.shiftKey;
+    if (shift) {
+      if (Math.abs(dx) > Math.abs(dy)) dy = 0;
+      else dx = 0;
+    }
+
+    // aggiorna TUTTI i tetti selezionati
+    for (const id of idsToMove) {
+      const startPts = groupStartPtsRef.current[id];
+      if (!startPts) continue;
+      const moved = startPts.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+      updateRoof(id, { points: moved });
+    }
+  });
+
+  const end = () => {
     st.off(ns);
+    moveStartPtrImgRef.current = null;
+    groupStartPtsRef.current = {};
+    onHandlesDragEnd();
+  };
+  st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
+}}
 
-    // blocca pan durante il drag
-    onHandlesDragStart();
-
-    // snapshot iniziale (px immagine)
-    moveStartPtsRef.current = r.points.map(p => ({ ...p }));
-    const pos = st.getPointerPosition();
-    if (!pos) return;
-    moveStartPtrImgRef.current = toImg(pos.x, pos.y); // STAGE→IMG
-
-    st.on('mousemove' + ns + ' touchmove' + ns, (ev: any) => {
-      const cur = st.getPointerPosition();
-      if (!cur || !moveStartPtsRef.current || !moveStartPtrImgRef.current) return;
-      const curImg = toImg(cur.x, cur.y); // STAGE→IMG
-
-      let dx = curImg.x - moveStartPtrImgRef.current.x;
-      let dy = curImg.y - moveStartPtrImgRef.current.y;
-
-      // Shift = vincolo asse dominante
-      const shift = ev?.evt?.shiftKey;
-      if (shift) {
-        if (Math.abs(dx) > Math.abs(dy)) dy = 0;
-        else dx = 0;
-      }
-
-      const moved = moveStartPtsRef.current.map(p => ({ x: p.x + dx, y: p.y + dy }));
-      updateRoof(r.id, { points: moved });
-
-      
-    });
-
-    const end = () => {
-      st.off(ns);
-      moveStartPtrImgRef.current = null;
-      moveStartPtsRef.current = null;
-      onHandlesDragEnd(); // sblocca pan
-    };
-    st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
-  }}
 />
 
 {/* ─── HANDLE PARALLELO LATO: shapeMode=normal ───────────────────────────── */}
-{sel && shapeMode === 'normal' && edgeMeta(pts).map((e, k) => (
+{isSel && !multi && shapeMode  === 'normal' && edgeMeta(pts).map((e, k) => (
   <KonvaGroup
     key={`edge-h-${k}`}
     x={e.mx}
@@ -376,7 +464,7 @@ const rotHandlePos = (sel && rotPivot)
             )}
 
 {/* ROTAZIONE (knob fuori, pivot al centro bbox) */}
-{sel && rotPivot && shapeMode !== 'trapezio' && rotHandlePos && (
+{isSel && !multi && rotPivot && shapeMode !== 'trapezio' && rotHandlePos && (
   <>
     {/* stelo dal bordo top del bbox al knob */}
     {/* <KonvaLine

@@ -6,7 +6,10 @@ export type LayersSlice = {
     layers: RoofArea[];
     addRoof: (r: RoofArea) => void;
     updateRoof: (id: string, patch: Partial<RoofArea>) => void;
-    deleteLayer: (id: string) => void;
+
+    // teniamo entrambi i nomi: quello “vecchio” e quello nuovo
+    deleteLayer: (id: string) => void; // legacy
+    removeRoof: (id: string) => void;  // preferito
 
     selectedId?: string;
     select: (id?: string) => void;
@@ -24,6 +27,13 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
         })),
 
     deleteLayer: (id) =>
+        set((st) => ({
+            layers: st.layers.filter((l) => l.id !== id),
+            selectedId: st.selectedId === id ? undefined : st.selectedId,
+        })),
+
+    // alias con la stessa logica di deleteLayer
+    removeRoof: (id) =>
         set((st) => ({
             layers: st.layers.filter((l) => l.id !== id),
             selectedId: st.selectedId === id ? undefined : st.selectedId,
