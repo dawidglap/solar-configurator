@@ -12,7 +12,8 @@ import {
 import RoofHandlesKonva from './RoofHandlesKonva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import { rotateAround } from '@/components_v2/roofs/alignment';
-import { TbRotateClockwise2 } from 'react-icons/tb';
+import { FaRotate } from 'react-icons/fa6';
+
 import Konva from 'konva';
 // in cima al file
 
@@ -30,6 +31,18 @@ function rotatePolygon(pts: Pt[], pivot: Pt, deg: number) {
   if (!deg) return pts;
   return pts.map(p => rotateAround(p, pivot, deg));
 }
+
+function bbox(pts: Pt[]) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+}
+
 
 function edgeMeta(pts: Pt[]) {
   const arr: {
@@ -139,11 +152,13 @@ const lastNextDegRef    = useRef<number>(0);
   const moveStartPtsRef    = useRef<Pt[] | null>(null);
 
   // icona rotazione in path
-  const ROT_ICON = useMemo(() => iconToPaths(TbRotateClockwise2), []);
+  const ROT_ICON = useMemo(() => iconToPaths(FaRotate), []);
   
 
-  const HANDLE_R  = 0;   // raggio offset icona rotazione (0 = al pivot)
-  const HANDLE_SZ = 10;  // size icona rotazione
+const ROT_KNOB_OFFSET = 46; // distanza del knob dal bordo superiore del bbox
+const HANDLE_SZ = 16;       // diametro del knob
+
+
 
 
   return (
@@ -152,7 +167,8 @@ const lastNextDegRef    = useRef<number>(0);
         const sel = r.id === selectedId;
 
         // pivot: se non definito, centroide
-        const selPivot = sel ? (pivotPx ?? centroid(r.points)) : undefined;
+        // const selPivot = sel ? (pivotPx ?? centroid(r.points)) : undefined;
+        
 
         // pts correnti (baked)
         const pts = r.points;
@@ -160,12 +176,22 @@ const lastNextDegRef    = useRef<number>(0);
         const c = centroid(pts);
         const label = showAreaLabels ? areaLabel(pts) : null;
 
-        const rotHandlePos = (sel && selPivot)
-          ? {
-              x: selPivot.x + HANDLE_R * Math.cos((rotDeg * Math.PI) / 180),
-              y: selPivot.y + HANDLE_R * Math.sin((rotDeg * Math.PI) / 180),
-            }
-          : null;
+
+
+
+
+const bb = bbox(pts);
+
+// pivot di rotazione = centro del bbox (stile Canva). Se hai un pivot custom, lo rispettiamo.
+const rotPivot = sel ? (pivotPx ?? { x: bb.cx, y: bb.cy }) : undefined;
+
+// knob fuori dal tetto: centrato orizzontalmente, sopra al bordo top del bbox
+const rotHandlePos = (sel && rotPivot)
+  ? { x: bb.cx, y: bb.minY - ROT_KNOB_OFFSET }
+  : null;
+
+
+
 
     
 
@@ -349,108 +375,116 @@ const lastNextDegRef    = useRef<number>(0);
               />
             )}
 
-            {/* ROTAZIONE (px immagine) */}
-            {sel && selPivot && shapeMode !== 'trapezio' && rotHandlePos && (
-              <KonvaGroup
-                x={rotHandlePos.x}
-                y={rotHandlePos.y}
-                
-                listening
-                onMouseEnter={(e) => { e.target.getStage()?.container()?.style.setProperty('cursor','grab'); }}
-                onMouseLeave={(e) => { e.target.getStage()?.container()?.style.removeProperty('cursor'); }}
-             onMouseDown={(e) => {
-  e.cancelBubble = true;
-  const st = e.target.getStage();
-  if (!st) return;
-  const ns = '.roof-rotate';
-  st.off(ns);
+{/* ROTAZIONE (knob fuori, pivot al centro bbox) */}
+{sel && rotPivot && shapeMode !== 'trapezio' && rotHandlePos && (
+  <>
+    {/* stelo dal bordo top del bbox al knob */}
+    {/* <KonvaLine
+      points={[bb.cx, bb.minY - 6, bb.cx, rotHandlePos.y + HANDLE_SZ / 2]}
+      stroke="#a78bfa" strokeWidth={1} listening={false}
+    /> */}
 
-  // snapshot iniziale (px immagine)
-  startPtsRef.current   = r.points.map(p => ({ ...p }));
-  startPivotRef.current = selPivot;
+    <KonvaGroup
+      x={rotHandlePos.x}
+      y={rotHandlePos.y}
+      listening
+      onMouseEnter={(e) => {
+        e.target.getStage()?.container()?.style.setProperty('cursor','grab');
+        const circle = (e.currentTarget as any).findOne('.rotKnob') as Konva.Circle;
+        if (circle) { circle.fill('#7c3aed'); circle.stroke('#a78bfa'); circle.getLayer()?.batchDraw(); }
+      }}
+      onMouseLeave={(e) => {
+        e.target.getStage()?.container()?.style.removeProperty('cursor');
+        const circle = (e.currentTarget as any).findOne('.rotKnob') as Konva.Circle;
+        if (circle) { circle.fill('#7c3aed'); circle.stroke('#a78bfa'); circle.getLayer()?.batchDraw(); }
+      }}
+      onMouseDown={(e) => {
+        e.cancelBubble = true;
+        const st = e.target.getStage(); if (!st) return;
+        const ns = '.roof-rotate';
+        st.off(ns);
 
-  // ⬇️ NEW: azimuth di partenza della falda
-  startAzimuthRef.current = r.azimuthDeg ?? 0;
+        // snapshot iniziale
+        startPtsRef.current   = r.points.map(p => ({ ...p }));
+        startPivotRef.current = rotPivot;
+        startAzimuthRef.current = r.azimuthDeg ?? 0;
 
-  const pos = st.getPointerPosition();
-  if (!pos) return;
-  const pImg = toImg(pos.x, pos.y); // STAGE→IMG (px immagine)
-  dragStartAngleRef.current = Math.atan2(pImg.y - selPivot.y, pImg.x - selPivot.x);
-  dragStartDegRef.current   = rotDeg || 0;
+        const pos = st.getPointerPosition(); if (!pos) return;
+        const pImg = toImg(pos.x, pos.y);
+        dragStartAngleRef.current = Math.atan2(pImg.y - rotPivot.y, pImg.x - rotPivot.x);
+        dragStartDegRef.current   = rotDeg || 0;
 
-  st.on('mousemove' + ns + ' touchmove' + ns, (ev: any) => {
-    const cur = st.getPointerPosition();
-    if (!cur || !startPtsRef.current || !startPivotRef.current) return;
-    const qImg = toImg(cur.x, cur.y); // STAGE→IMG (px immagine)
-    const a = Math.atan2(qImg.y - startPivotRef.current.y, qImg.x - startPivotRef.current.x);
-    let deltaDeg = (a - dragStartAngleRef.current) * (180 / Math.PI);
+        st.on('mousemove' + ns + ' touchmove' + ns, (ev: any) => {
+          const cur = st.getPointerPosition();
+          if (!cur || !startPtsRef.current || !startPivotRef.current) return;
+          const qImg = toImg(cur.x, cur.y);
+          const a = Math.atan2(qImg.y - startPivotRef.current.y, qImg.x - startPivotRef.current.x);
+          let deltaDeg = (a - dragStartAngleRef.current) * (180 / Math.PI);
 
-    const nextDeg = ev?.evt?.shiftKey
-      ? Math.round((dragStartDegRef.current + deltaDeg) / 15) * 15
-      : (dragStartDegRef.current + deltaDeg);
+          // ALT = rotazione fine (più lenta/precisa)
+          if (ev?.evt?.altKey) deltaDeg *= 0.2;
 
-    // ⬇️ NEW: tieni traccia dell'ultimo valore
-    lastNextDegRef.current = nextDeg;
+          const raw = dragStartDegRef.current + deltaDeg;
+          const nextDeg = ev?.evt?.shiftKey ? Math.round(raw / 15) * 15 : raw;
 
-    setRoofRotDeg(nextDeg);
+          lastNextDegRef.current = nextDeg;
+          setRoofRotDeg(nextDeg);
 
-    const rotated = rotatePolygon(startPtsRef.current, startPivotRef.current, nextDeg);
-    updateRoof(r.id, { points: rotated });
-  });
+          const rotated = rotatePolygon(startPtsRef.current, startPivotRef.current, nextDeg);
+          updateRoof(r.id, { points: rotated });
+        });
 
-  const end = () => {
-    st.off(ns);
+        const end = () => {
+          st.off(ns);
+          const delta = lastNextDegRef.current - (dragStartDegRef.current || 0);
+          const rawAz = startAzimuthRef.current + delta;
+          const newAz = ((rawAz % 360) + 360) % 360;
+          updateRoof(r.id, { azimuthDeg: newAz });
+          setRoofRotDeg(0);
+        };
+        st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
+      }}
+    >
+      {/* knob viola con icona bianca */}
+      <KonvaCircle
+        name="rotKnob"
+        radius={HANDLE_SZ / 2}
+        fill="#7c3aed"          // viola Canva-like
+        stroke="#a78bfa"
+        strokeWidth={1}
+        shadowColor="rgba(0,0,0,0.25)"
+        shadowBlur={4}
+        shadowOpacity={0.9}
+        listening
+      />
+{(() => {
+  // scala proporzionale al diametro del knob (60% circa)
+  const scale = (HANDLE_SZ * 0.60) / ROT_ICON.vbW / 18;
 
-    // ⬇️ NEW: a fine drag, accumula il delta sull'azimuth della falda
-    const delta = lastNextDegRef.current - (dragStartDegRef.current || 0);
-    const rawAz = startAzimuthRef.current + delta;
-    // normalizza 0..360 (facoltativo)
-    const newAz = ((rawAz % 360) + 360) % 360;
+  return (
+    <KonvaGroup
+      name="rotIcon"
+      x={-5.5}
+      y={-5.5}
+      scaleX={scale}
+      scaleY={scale}
+      offsetX={ROT_ICON.vbW / 2}
+      offsetY={ROT_ICON.vbH / 2}
+      listening={false}
+    >
+      {ROT_ICON.paths.map((d, i) => (
+        <KonvaPath key={i} data={d} fill="#ffffff" />
+      ))}
+    </KonvaGroup>
+  );
+})()}
 
-    updateRoof(r.id, { azimuthDeg: newAz });
 
-    // reset UI rotdeg
-    setRoofRotDeg(0);
-  };
-  st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
-}}
+    </KonvaGroup>
+  </>
+)}
 
-              >
-                {/* disco sfondo */}
-                <KonvaCircle
-                  radius={HANDLE_SZ / 2}
-                  fill="#ffffff"
-                  opacity={0.75}
-                  stroke="#cbd5e1"
-                  strokeWidth={0.25}
-                  shadowColor="rgba(0,0,0,0.25)"
-                  shadowBlur={4}
-                  shadowOpacity={0.9}
-                />
-                {/* icona path */}
-                {(() => {
-                  const scale = HANDLE_SZ / ROT_ICON.vbW;
-                  const strokePx = 1;
-                  const strokeWidth = strokePx / scale; // spessore costante visivo
-                  return ROT_ICON.paths.map((d, i) => (
-                    <KonvaPath
-                      key={i}
-                      data={d}
-                      scaleX={scale}
-                      scaleY={scale}
-                      offsetX={ROT_ICON.vbW / 2}
-                      offsetY={ROT_ICON.vbH / 2}
 
-                      stroke="#334155"
-                      strokeWidth={strokeWidth}
-                      lineCap={ROT_ICON.linecap}
-                      lineJoin={ROT_ICON.linejoin}
-                      listening={false}
-                    />
-                  ));
-                })()}
-              </KonvaGroup>
-            )}
 
          
 
