@@ -6,54 +6,83 @@ import { usePlannerV2Store } from '../state/plannerV2Store';
 import AddressSearchOSM from '../geocoding/AddressSearchOSM';
 import { buildTiledSnapshot, TILE_SWISSTOPO_SAT } from '../utils/stitchTilesWMTS';
 import { metersPerPixel3857, lonLatTo3857, bboxLonLatFromCenter } from '../utils/geo';
-import { fetchRoofPolysForSnapshot } from '@/components_v2/services/sonnendach';
+import axios from 'axios';
 
-/** Cluster “building” invariato */
-function pickRoofsForBuildingV1Style(
-  polys: { id:string; pointsPx:{x:number;y:number}[]; tiltDeg?:number; azimuthDeg?:number }[],
-  snap: { width?: number; height?: number },
-  opts?: { radiusPx?: number; expandGrowPx?: number; minAreaPx2?: number }
+/** proietta (lat,lon) → px immagine usando la bbox3857 dello snapshot */
+function latLonToPx(
+  lat: number,
+  lon: number,
+  snap: { width: number; height: number; bbox3857: { minX: number; minY: number; maxX: number; maxY: number } }
 ) {
-  const W = snap.width ?? 0, H = snap.height ?? 0;
-  const cx = W / 2, cy = H / 2;
-  const { radiusPx = Math.max(80, Math.min(W, H) * 0.10), expandGrowPx = 12, minAreaPx2 = 700 } = opts ?? {};
+  const { x, y } = lonLatTo3857(lon, lat);
+  const { minX, minY, maxX, maxY } = snap.bbox3857;
+  const W = snap.width, H = snap.height;
+  const px = ((x - minX) / (maxX - minX)) * W;
+  const py = ((maxY - y) / (maxY - minY)) * H; // Y invertito (north-up)
+  return { x: px, y: py };
+}
 
-  const areaPx2 = (pts:{x:number;y:number}[]) => { let a=0; for (let i=0,j=pts.length-1;i<pts.length;j=i++) a += (pts[j].x+pts[i].x)*(pts[j].y-pts[i].y); return Math.abs(a/2); };
-  const centroid = (pts:{x:number;y:number}[]) => { let sx=0, sy=0; for (const p of pts){ sx+=p.x; sy+=p.y; } const n=Math.max(1,pts.length); return { x:sx/n, y:sy/n }; };
-  const bbox = (pts:{x:number;y:number}[]) => { let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-    for (const p of pts){ if(p.x<minX)minX=p.x; if(p.y<minY)minY=p.y; if(p.x>maxX)maxX=p.x; if(p.y>maxY)maxY=p.y; }
-    return { minX, minY, maxX, maxY };
-  };
-  const expand = (b:any,m:number) => ({ minX:b.minX-m, minY:b.minY-m, maxX:b.maxX+m, maxY:b.maxY+m });
-  const overlap = (a:any,b:any) => !(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY);
+/** v1-style: prendi SOLO le falde “sotto il punto” dall’endpoint identify */
+async function fetchRoofsAtPointToPx(
+  lat: number,
+  lon: number,
+  snap: { width: number; height: number; bbox3857: { minX: number; minY: number; maxX: number; maxY: number } }
+) {
+  const { data } = await axios.get(
+    'https://api3.geo.admin.ch/rest/services/energie/MapServer/identify',
+    {
+      params: {
+        geometryType: 'esriGeometryPoint',
+        geometry: `${lon},${lat}`,
+        sr: 4326,
+        layers: 'all:ch.bfe.solarenergie-eignung-daecher',
+        tolerance: 10,
+        mapExtent: `${lon - 0.002},${lat - 0.002},${lon + 0.002},${lat + 0.002}`,
+        imageDisplay: '600,400,96',
+        lang: 'de',
+      },
+    }
+  );
 
-  const inRadius: typeof polys = [];
-  for (const p of polys) {
-    const A = areaPx2(p.pointsPx); if (A < minAreaPx2) continue;
-    const c = centroid(p.pointsPx);
-    const d2 = (c.x - cx) ** 2 + (c.y - cy) ** 2;
-    if (d2 <= radiusPx ** 2) inRadius.push(p);
-  }
-  if (!inRadius.length) return [];
+  const results: any[] = data?.results ?? [];
+  const roofs: {
+    id: string;
+    pointsPx: { x: number; y: number }[];
+    tiltDeg?: number;
+    azimuthDeg?: number;
+  }[] = [];
 
-  let seed = inRadius[0], best = { d2: Number.POSITIVE_INFINITY, area: -1 };
-  for (const p of inRadius) {
-    const c = centroid(p.pointsPx), d2 = (c.x - cx) ** 2 + (c.y - cy) ** 2, A = areaPx2(p.pointsPx);
-    if (d2 < best.d2 - 1e-6 || (Math.abs(d2-best.d2) < 1e-6 && A > best.area)) { best = { d2, area: A }; seed = p; }
-  }
+  results.forEach((res, resIdx) => {
+    const rings: number[][][] | undefined = res?.geometry?.rings;
+    const attrs: any = res?.attributes ?? {};
+    if (!Array.isArray(rings)) return;
 
-  const seedBox = expand(bbox(seed.pointsPx), expandGrowPx);
-  const cluster: typeof polys = [];
-  for (const p of inRadius) { const b = bbox(p.pointsPx); if (overlap(seedBox, b)) cluster.push(p); }
+    rings.forEach((ring, ringIdx) => {
+      const pts = ring.map(([lng2, lat2]) => latLonToPx(lat2, lng2, snap));
+      const id =
+        attrs?.id != null
+          ? String(attrs.id)
+          : `roof-${res?.layerId ?? 'layer'}-${res?.featureId ?? 'feat'}-${resIdx}-${ringIdx}`;
 
-  return cluster.length ? cluster : [seed];
+      roofs.push({
+        id,
+        pointsPx: pts,
+        tiltDeg: typeof attrs?.neigung === 'number' ? attrs.neigung : undefined,
+        azimuthDeg: typeof attrs?.ausrichtung === 'number' ? attrs.ausrichtung : undefined,
+      });
+    });
+  });
+
+  return roofs;
 }
 
 export default function TopbarAddressSearch() {
-  const setSnapshot      = usePlannerV2Store(s => s.setSnapshot);
-  const setDetectedRoofs = usePlannerV2Store(s => s.setDetectedRoofs);
-  const clearDetected    = usePlannerV2Store(s => s.clearDetectedRoofs);
-  const setUI            = usePlannerV2Store(s => s.setUI);
+  const setSnapshot = usePlannerV2Store(s => s.setSnapshot);
+  const setUI       = usePlannerV2Store(s => s.setUI);
+
+  // azioni layers
+  const addRoof     = usePlannerV2Store(s => s.addRoof);
+  const select      = usePlannerV2Store(s => s.select);
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -78,21 +107,39 @@ export default function TopbarAddressSearch() {
       } as const;
 
       setSnapshot(snapObj);
-      clearDetected();
 
-      const raw = await fetchRoofPolysForSnapshot(snapObj, 'de');
-      const building = pickRoofsForBuildingV1Style(raw, snapObj, {
-        radiusPx: Math.max(80, Math.min(w, h) * 0.10), expandGrowPx: 12, minAreaPx2: 700
+      // ✅ Azzera qualsiasi selezione precedente (persistita)
+      usePlannerV2Store.getState().select(undefined);
+
+      // 1) recupera SOLO le falde sotto il punto (logica v1)
+      const roofs = await fetchRoofsAtPointToPx(lat, lon, snapObj);
+
+      // 2) pulisci eventuali falde importate in precedenza da sonnendach
+      {
+        const st: any = usePlannerV2Store.getState();
+        const cur = st.layers as any[];
+        if (Array.isArray(cur) && typeof st.deleteRoof === 'function') {
+          cur.filter(l => l?.source === 'sonnendach').forEach(l => st.deleteRoof(l.id));
+        }
+      }
+
+      // 3) committa (tipicamente 1–6 falde; per il tuo caso: 2)
+      roofs.forEach((p, i) => {
+        addRoof({
+          id:        `sd_${p.id}_${i}`,
+          name:      `Roof ${i + 1}`,
+          points:    p.pointsPx,
+          tiltDeg:   p.tiltDeg,
+          azimuthDeg:p.azimuthDeg,
+          source:    'sonnendach',
+        } as any);
       });
 
-      setDetectedRoofs(building.map((p, i) => ({
-        id: `sd_${p.id}_${i}`,
-        points: p.pointsPx,
-        tiltDeg: p.tiltDeg,
-        azimuthDeg: p.azimuthDeg,
-        source: 'sonnendach' as const
-      })));
+      // ✅ Resta senza selezione per attivare la modalità "Canva"
+      usePlannerV2Store.getState().select(undefined);
+
       setUI({ rightPanelOpen: true });
+
     } catch (e: any) {
       setErr(e?.message ?? 'Unbekannter Fehler.');
     } finally {
@@ -117,11 +164,7 @@ export default function TopbarAddressSearch() {
         <Search className="h-4 w-4 text-neutral-500 shrink-0" />
 
         <div className="relative flex-1">
-          {/* blocco input quando loading (senza toccare AddressSearchOSM) */}
-          {loading && (
-            <div className="absolute inset-0 z-10 cursor-wait rounded-full bg-transparent" />
-          )}
-          {/* NB: AddressSearchOSM non accetta 'disabled' o altre prop extra */}
+          {loading && <div className="absolute inset-0 z-10 cursor-wait rounded-full bg-transparent" />}
           <div className="[&_input]:h-7 [&_input]:w-full [&_input]:bg-transparent [&_input]:border-0 [&_input]:outline-none [&_input]:text-sm [&_input]:placeholder:text-neutral-400">
             <AddressSearchOSM
               placeholder="Adresse suchen…"
@@ -134,7 +177,6 @@ export default function TopbarAddressSearch() {
         {!!err && <span className="ml-1 text-[10px] text-red-600">{err}</span>}
       </div>
 
-      {/* Fallback globale: forza z-index altissimo sui vari menu/suggest delle librerie più comuni */}
       <style>{`
         .planner-topbar .react-autosuggest__suggestions-container,
         .planner-topbar .react-autosuggest__suggestions-container--open,

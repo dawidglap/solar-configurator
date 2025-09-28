@@ -152,8 +152,30 @@ const lastNextDegRef    = useRef<number>(0);
 const moveStartPtrImgRef = useRef<Pt | null>(null);
 const moveStartPtsRef    = useRef<Pt[] | null>(null);
 
+
+
 // === Multi-selezione (DEVE stare sopra agli useEffect che la usano)
 const [groupSel, setGroupSel] = useState<string[]>([]);
+
+
+// modalità "Canva": drag di gruppo quando nessuna falda è selezionata
+const tool = usePlannerV2Store(s => s.tool);
+const [hoverAll, setHoverAll] = useState(false);
+
+// ✅ selezione primaria valida solo se l'id esiste davvero tra i layers
+const hasPrimarySelection = useMemo(
+  () => !!selectedId && layers.some(l => l.id === selectedId),
+  [selectedId, layers]
+);
+
+const isCanvaGroupDrag = useMemo(
+  () => tool === 'select' && !hasPrimarySelection && groupSel.length === 0,
+  [tool, hasPrimarySelection, groupSel.length]
+);
+
+
+
+
 
 // Snapshot punti per drag di gruppo (UNA sola dichiarazione)
 const groupStartPtsRef = useRef<Record<string, Pt[]>>({});
@@ -219,11 +241,28 @@ const HANDLE_SZ = 16;
         const label = showAreaLabels ? areaLabel(pts) : null;
 
         const isSel = sel || groupSel.includes(r.id);
+
+        // evidenzia TUTTE quando sto hoverando in modalità Canva
+const highlightAll = hoverAll && isCanvaGroupDrag;
+
         const multi  = groupSel.length > 0; 
-        const inGroupOnly = !sel && groupSel.includes(r.id);
-const strokeColor = sel ? strokeSelected : inGroupOnly ? '#7c3aed' : stroke;     // viola per secondarie
-const strokeW     = sel ? strokeWidthSelected : inGroupOnly ? strokeWidthSelected : strokeWidthNormal;
-const shadowOp    = (sel || inGroupOnly) ? 0.6 : 0;
+const inGroupOnly = !sel && groupSel.includes(r.id);
+const strokeColor = highlightAll
+  ? '#7c3aed'                           // viola evidenziato
+  : sel
+  ? strokeSelected
+  : inGroupOnly
+  ? '#7c3aed'
+  : stroke;
+
+const strokeW  = highlightAll
+  ? Math.max(strokeWidthSelected, 1)
+  : sel || inGroupOnly
+  ? strokeWidthSelected
+  : strokeWidthNormal;
+
+const shadowOp = (sel || inGroupOnly || highlightAll) ? 0.6 : 0;
+
 
 
 
@@ -245,119 +284,157 @@ const rotHandlePos = (isSel && rotPivot)
 
         return (
           <KonvaGroup key={r.id}>
-          <KonvaLine
+<KonvaLine
   points={flat}
   closed
- 
-
   lineJoin="round"
   lineCap="round"
   fill={fill}
-onClick={(e) => {
-  const withShift = !!(e.evt && e.evt.shiftKey);
 
-  if (withShift) {
-    // Avvio/gestione multi-selezione SENZA cambiare la primaria
-    setGroupSel((prev) => {
-      let base = prev;
+  /* --- selezione singola / multi (INVARIATO) --- */
+  onClick={(e) => {
+    const withShift = !!(e.evt && e.evt.shiftKey);
+    if (withShift) {
+      setGroupSel((prev) => {
+        let base = prev;
+        if (prev.length === 0) {
+          if (selectedId && selectedId !== r.id) base = [selectedId];
+          else base = [];
+        }
+        if (base.includes(r.id)) return base.filter((x) => x !== r.id);
+        return [...base, r.id];
+      });
+      return;
+    }
+    setGroupSel([]);
+    onSelect(r.id);
+  }}
 
-      // Se non c'è ancora multi, semina l'array con la primaria corrente
-      if (prev.length === 0) {
-        if (selectedId && selectedId !== r.id) base = [selectedId];
-        else base = [];
-      }
-
-      // Toggle dell'ID cliccato
-      if (base.includes(r.id)) return base.filter((x) => x !== r.id);
-      return [...base, r.id];
-    });
-
-    return; // non toccare selectedId
-  }
-
-  // click normale: selezione singola
-  setGroupSel([]);
-  onSelect(r.id);
-}}
-
-stroke={strokeColor}
-strokeWidth={strokeW}
-shadowOpacity={shadowOp}
-
-shadowColor={isSel ? strokeSelected : 'transparent'}
-shadowBlur={isSel ? 8 : 0}
-
-
+  stroke={strokeColor}
+  strokeWidth={strokeW}
+  shadowOpacity={shadowOp}
+  shadowColor={isSel ? strokeSelected : 'transparent'}
+  shadowBlur={isSel || highlightAll ? 8 : 0}
   hitStrokeWidth={12}
 
-  // 👇 NUOVO: cursore "move" quando è selezionata
+  /* --- HOVER: stile Canva → evidenzia tutte e cursore "move" --- */
   onMouseEnter={(e) => {
-    if (!isSel) return;
-    e.target.getStage()?.container()?.style.setProperty('cursor', 'move');
+    const c = e.target.getStage()?.container();
+    if (isCanvaGroupDrag) {
+      setHoverAll(true);
+      c?.style.setProperty('cursor', 'move');
+    } else if (isSel) {
+      c?.style.setProperty('cursor', 'move');
+    }
   }}
   onMouseLeave={(e) => {
-    if (!isSel) return;
-    e.target.getStage()?.container()?.style.removeProperty('cursor');
+    const c = e.target.getStage()?.container();
+    if (isCanvaGroupDrag) setHoverAll(false);
+    if (isSel || isCanvaGroupDrag) c?.style.removeProperty('cursor');
   }}
 
-  // 👇 NUOVO: drag dell'intera falda cliccando sulla shape
+  /* --- MOUSEDOWN: 
+       - se modalità Canva → trascina TUTTE le falde
+       - altrimenti → trascina solo selezionata / gruppo selezionato (comportamento attuale)
+  --- */
 onMouseDown={(e) => {
-  if (!isSel) return;         // drag solo se questa falda è selezionata (singola o in gruppo)
   e.cancelBubble = true;
-
   const st = e.target.getStage(); if (!st) return;
-  const ns = '.roof-move-poly';
-  st.off(ns);
 
-  onHandlesDragStart();
+  // ⇢ consenti move-all anche se c'è una selezione quando l'utente tiene premuto ALT/CMD/CTRL
+  const forceAll = !!(e?.evt?.altKey || e?.evt?.metaKey || e?.evt?.ctrlKey);
 
-  // Set di ID da spostare: questa + eventuali altre selezionate
-  const idsToMove = Array.from(new Set([r.id, ...groupSel]));
+  // ── CANVA: nessuna selezione → muovi tutte  |  oppure forzato con tasto
+  if (isCanvaGroupDrag || forceAll) {
+    const ns = '.move-all-canva';
+    st.off(ns);
+    onHandlesDragStart();
 
-  // snapshot iniziale dei punti PER OGNI tetto selezionato
-  groupStartPtsRef.current = {};
-  for (const id of idsToMove) {
-    const roof = layers.find((l) => l.id === id);
-    if (roof) groupStartPtsRef.current[id] = roof.points.map((p) => ({ ...p }));
+    groupStartPtsRef.current = {};
+    const idsToMove = layers.map(l => l.id);
+    for (const l of layers) groupStartPtsRef.current[l.id] = l.points.map(p => ({ ...p }));
+
+    const p0 = st.getPointerPosition(); if (!p0) return;
+    moveStartPtrImgRef.current = toImg(p0.x, p0.y);
+
+    st.on('mousemove' + ns + ' touchmove' + ns, (ev: any) => {
+      const pos = st.getPointerPosition();
+      if (!pos || !moveStartPtrImgRef.current) return;
+      const cur = toImg(pos.x, pos.y);
+      let dx = cur.x - moveStartPtrImgRef.current.x;
+      let dy = cur.y - moveStartPtrImgRef.current.y;
+
+      if (ev?.evt?.shiftKey) {
+        if (Math.abs(dx) > Math.abs(dy)) dy = 0;
+        else dx = 0;
+      }
+
+      const update = usePlannerV2Store.getState().updateRoof;
+      idsToMove.forEach(id => {
+        const startPts = groupStartPtsRef.current[id];
+        if (!startPts) return;
+        const moved = startPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+        update(id, { points: moved });
+      });
+    });
+
+    const end = () => {
+      st.off(ns);
+      moveStartPtrImgRef.current = null;
+      groupStartPtsRef.current = {};
+      setHoverAll(false);
+      onHandlesDragEnd();
+    };
+    st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
+    return;
   }
 
-  const pos = st.getPointerPosition(); if (!pos) return;
-  moveStartPtrImgRef.current = toImg(pos.x, pos.y); // STAGE→IMG
-
-  st.on('mousemove' + ns + ' touchmove' + ns, (evAny: any) => {
-    const cur = st.getPointerPosition();
-    if (!cur || !moveStartPtrImgRef.current) return;
-    const curImg = toImg(cur.x, cur.y);
-
-    let dx = curImg.x - moveStartPtrImgRef.current.x;
-    let dy = curImg.y - moveStartPtrImgRef.current.y;
-
-    // Shift = vincolo sull'asse dominante
-    const shift = evAny?.evt?.shiftKey;
-    if (shift) {
-      if (Math.abs(dx) > Math.abs(dy)) dy = 0;
-      else dx = 0;
-    }
-
-    // aggiorna TUTTI i tetti selezionati
-    for (const id of idsToMove) {
-      const startPts = groupStartPtsRef.current[id];
-      if (!startPts) continue;
-      const moved = startPts.map((p) => ({ x: p.x + dx, y: p.y + dy }));
-      updateRoof(id, { points: moved });
-    }
-  });
-
-  const end = () => {
+    // ── NORMALE: muovi solo selezionata o multi-selezione esistente
+    if (!isSel) return;
+    const ns = '.roof-move-poly';
     st.off(ns);
-    moveStartPtrImgRef.current = null;
-    groupStartPtsRef.current = {};
-    onHandlesDragEnd();
-  };
-  st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
-}}
+    onHandlesDragStart();
 
+    const idsToMove = Array.from(new Set([r.id, ...groupSel]));
+    groupStartPtsRef.current = {};
+    idsToMove.forEach(id => {
+      const roof = layers.find(l => l.id === id);
+      if (roof) groupStartPtsRef.current[id] = roof.points.map(p => ({ ...p }));
+    });
+
+    const p0 = st.getPointerPosition(); if (!p0) return;
+    moveStartPtrImgRef.current = toImg(p0.x, p0.y);
+
+    st.on('mousemove' + ns + ' touchmove' + ns, (ev: any) => {
+      const pos = st.getPointerPosition();
+      if (!pos || !moveStartPtrImgRef.current) return;
+      const cur = toImg(pos.x, pos.y);
+      let dx = cur.x - moveStartPtrImgRef.current.x;
+      let dy = cur.y - moveStartPtrImgRef.current.y;
+
+      if (ev?.evt?.shiftKey) {
+        if (Math.abs(dx) > Math.abs(dy)) dy = 0;
+        else dx = 0;
+      }
+
+      idsToMove.forEach(id => {
+        const startPts = groupStartPtsRef.current[id];
+        if (!startPts) return;
+        const moved = startPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+        updateRoof(id, { points: moved });
+      });
+    });
+
+    const end = () => {
+      st.off(ns);
+      moveStartPtrImgRef.current = null;
+      groupStartPtsRef.current = {};
+      onHandlesDragEnd();
+    };
+    st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
+  }}
 />
+
 
 {/* ─── HANDLE PARALLELO LATO: shapeMode=normal ───────────────────────────── */}
 {isSel && !multi && shapeMode  === 'normal' && edgeMeta(pts).map((e, k) => (
