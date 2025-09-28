@@ -269,7 +269,19 @@ const {
           onWheel={onWheel}
           // handler di disegno SOLO in building
           onMouseMove={drawingEnabled ? onStageMouseMove : undefined}
-          onClick={drawingEnabled ? onStageClick : undefined}
+          onClick={(evt: any) => {
+  if (drawingEnabled) {
+    onStageClick?.(evt);
+    return;
+  }
+  // Clic su area vuota dello stage (fuori dall’immagine/oggetti)
+  const st = stageRef.current?.getStage?.();
+  if (evt.target === st) {
+    // deseleziona primaria (il groupSel lo puliamo nel catcher trasparente)
+    usePlannerV2Store.getState().select(undefined);
+  }
+}}
+
           onDblClick={drawingEnabled ? onStageDblClick : undefined}
           className={cursor === 'grab' ? 'cursor-grab active:cursor-grabbing' : ''}
         >

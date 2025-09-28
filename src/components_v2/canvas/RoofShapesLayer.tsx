@@ -227,6 +227,22 @@ const HANDLE_SZ = 16;
 
   return (
     <>
+    {/* ⬇️ Clic sullo sfondo immagine = deseleziona tutto (stile Canva) */}
+<KonvaRect
+  x={0}
+  y={0}
+  width={imgW}
+  height={imgH}
+  fill="rgba(0,0,0,0)"  // invisibile ma "listening"
+  listening
+  onClick={() => {
+    if (tool !== 'select') return; // solo in modalità select
+    setGroupSel([]);               // svuota multi-selezione
+    onSelect(undefined);           // deseleziona primaria
+    setHoverAll(false);            // spegni highlight globale
+  }}
+/>
+
       {layers.map(r => {
         const sel = r.id === selectedId;
 
