@@ -30,6 +30,9 @@ import { nanoid } from 'nanoid';
 import ZonesLayer from '../zones/ZonesLayer';
 import FillAreaController from '../modules/fill/FillAreaController';
 import ToolHotkeys from '../layout/ToolHotkeys';
+import { history as plannerHistory } from '../state/history';
+
+
 
 // ——— ANGLES HELPERS ———
 function radToDeg(r: number) { return (r * 180) / Math.PI; }
@@ -185,6 +188,7 @@ const {
   toImgCoords,
     onZoneCommit: (poly4: Pt[]) => {
       if (!selectedId) return;
+      plannerHistory.push('add reserved zone'); 
       addZone({ id: nanoid(), roofId: selectedId, type: 'riservata', points: poly4 });
     },
     snap: { tolDeg: 12, closeRadius: 12 }, 
@@ -513,18 +517,21 @@ const angleDeg = gridDeg;
       )}
       <ToolHotkeys />
 
-      <PanelHotkeys
-        selectedPanelId={selectedPanelInstId}
-        disabled={tool !== 'select'} 
-        onDelete={(id) => {
-          deletePanel(id);
-          setSelectedPanelInstId(undefined);
-        }}
-        onDuplicate={(id) => {
-          const nid = duplicatePanel(id);
-          if (nid) setSelectedPanelInstId(nid);
-        }}
-      />
+    <PanelHotkeys
+  selectedPanelId={selectedPanelInstId}
+  disabled={tool !== 'select'}
+  onDelete={(id) => {
+    plannerHistory.push('delete panel');        // 👈 snapshot
+    deletePanel(id);
+    setSelectedPanelInstId(undefined);
+  }}
+  onDuplicate={(id) => {
+    plannerHistory.push('duplicate panel');     // 👈 snapshot
+    const nid = duplicatePanel(id);
+    if (nid) setSelectedPanelInstId(nid);
+  }}
+/>
+
 
       <OrientationHUD />
 

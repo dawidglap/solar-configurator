@@ -13,6 +13,8 @@ import {
   RotateCcw,
   RotateCw,
 } from 'lucide-react';
+import { history } from '../state/history';
+
 
 /* ───────────────────── Keycaps ───────────────────── */
 
@@ -137,8 +139,21 @@ export default function TopToolbar() {
   }, [isMac]);
 
   const handleSave = () => { console.log('[Planner] Save'); alert('Speichern (kommt später)'); };
-  const handleUndo = () => { console.log('[Planner] Undo'); alert('Rückgängig (kommt später)'); };
-  const handleRedo = () => { console.log('[Planner] Redo'); alert('Wiederholen (kommt später)'); };
+const handleUndo = () => { history.undo(); };
+const handleRedo = () => { history.redo(); };
+
+const [canUndo, setCanUndo] = useState(history.canUndo());
+const [canRedo, setCanRedo] = useState(history.canRedo());
+
+useEffect(() => {
+  const unsub = history.subscribe(() => {
+    setCanUndo(history.canUndo());
+    setCanRedo(history.canRedo());
+  });
+  return unsub;
+}, []);
+
+
 
   /* Bottoni icona+testo con tooltip (portal) */
   function ActionBtn({
@@ -193,42 +208,45 @@ export default function TopToolbar() {
   }
 
   /* Bottoni icon-only (Undo/Redo) con tooltip (portal) */
-  function IconOnlyBtn({
-    onClick,
-    Icon,
-    ariaLabel,
-    tooltipLabel,
-    tooltipKeys,
-  }: {
-    onClick: () => void;
-    Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-    ariaLabel: string;
-    tooltipLabel: string;
-    tooltipKeys: (string | React.ReactNode)[];
-  }) {
+ function IconOnlyBtn({
+  onClick,
+  Icon,
+  ariaLabel,
+  tooltipLabel,
+  tooltipKeys,
+  disabled,              // ⬅️ nuovo
+}: {
+  onClick: () => void;
+  Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  ariaLabel: string;
+  tooltipLabel: string;
+  tooltipKeys: (string | React.ReactNode)[];
+  disabled?: boolean;    // ⬅️ nuovo
+}) {
+
     const ref = useRef<HTMLButtonElement>(null);
     const { visible, pos, show, hide } = useBottomTooltip(ref);
 
     return (
       <>
-        <button
-          ref={ref}
-          type="button"
-          aria-label={ariaLabel}
-          onMouseEnter={show}
-          onMouseLeave={hide}
-          onFocus={show}
-          onBlur={hide}
-          onClick={onClick}
-          className="
-            inline-flex h-8 w-8 items-center justify-center rounded-full
-            border border-neutral-200 bg-white/80 text-neutral-800
-            hover:bg-neutral-100 transition
-            focus:outline-none focus:ring-2 focus:ring-black/10
-          "
-        >
-          <Icon className="h-4 w-4" />
-        </button>
+       <button
+  ref={ref}
+  type="button"
+  aria-label={ariaLabel}
+  onMouseEnter={show}
+  onMouseLeave={hide}
+  onFocus={show}
+  onBlur={hide}
+  onClick={onClick}
+  disabled={disabled}   // ⬅️ nuovo
+  className={[
+    "inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200 bg-white/80 text-neutral-800 hover:bg-neutral-100 transition focus:outline-none focus:ring-2 focus:ring-black/10",
+    disabled ? "opacity-40 cursor-not-allowed hover:bg-white/80" : ""
+  ].join(" ")}
+>
+  <Icon className="h-4 w-4" />
+</button>
+
         <PortalTooltip visible={visible} pos={pos} label={tooltipLabel} keys={tooltipKeys} />
       </>
     );
@@ -303,20 +321,23 @@ export default function TopToolbar() {
 
       {/* DX: Undo/Redo (icon-only) + Save */}
       <div className="flex shrink-0 items-center gap-2 pl-2">
-        <IconOnlyBtn
-          onClick={handleUndo}
-          Icon={RotateCcw}
-          ariaLabel="Rückgängig"
-          tooltipLabel="Rückgängig"
-          tooltipKeys={isMac ? ['⌘', 'Z'] : ['Ctrl', 'Z']}
-        />
-        <IconOnlyBtn
-          onClick={handleRedo}
-          Icon={RotateCw}
-          ariaLabel="Wiederholen"
-          tooltipLabel="Wiederholen"
-          tooltipKeys={isMac ? ['⇧', '⌘', 'Z'] : ['Ctrl', 'Y']}
-        />
+    <IconOnlyBtn
+  onClick={handleUndo}
+  Icon={RotateCcw}
+  ariaLabel="Rückgängig"
+  tooltipLabel="Rückgängig"
+  tooltipKeys={isMac ? ['⌘', 'Z'] : ['Ctrl', 'Z']}
+  disabled={!canUndo}          // ⬅️ nuovo
+/>
+<IconOnlyBtn
+  onClick={handleRedo}
+  Icon={RotateCw}
+  ariaLabel="Wiederholen"
+  tooltipLabel="Wiederholen"
+  tooltipKeys={isMac ? ['⇧', '⌘', 'Z'] : ['Ctrl', 'Y']}
+  disabled={!canRedo}          // ⬅️ nuovo
+/>
+
         <ActionBtn
           onClick={handleSave}
           Icon={Save}

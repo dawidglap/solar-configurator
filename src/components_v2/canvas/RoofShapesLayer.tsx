@@ -13,6 +13,8 @@ import RoofHandlesKonva from './RoofHandlesKonva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import { rotateAround } from '@/components_v2/roofs/alignment';
 import { FaRotate } from 'react-icons/fa6';
+// in cima al file
+import { history as plannerHistory } from '../state/history';
 
 import Konva from 'konva';
 // in cima al file
@@ -222,6 +224,7 @@ useEffect(() => {
       const ids = groupSel.length ? groupSel : (selectedId ? [selectedId] : []);
       if (!ids.length) return;
       e.preventDefault();
+      plannerHistory.push('delete roof');  
       ids.forEach(id => removeRoof(id));
       setGroupSel([]);
       onSelect(undefined);
@@ -351,6 +354,7 @@ if (isSel && !multi && shapeMode === 'normal') {
             onMouseDown={(ev) => {
               ev.cancelBubble = true;
               const st = ev.target.getStage(); if (!st) return;
+              plannerHistory.push('move roof');
               const ns = `.roof-edge-${k}`;
               st.off(ns);
 
@@ -454,6 +458,7 @@ if (isSel && !multi && shapeMode === 'normal') {
 onMouseDown={(e) => {
   e.cancelBubble = true;
   const st = e.target.getStage(); if (!st) return;
+  plannerHistory.push('offset edge'); 
 
   // ⇢ consenti move-all anche se c'è una selezione quando l'utente tiene premuto ALT/CMD/CTRL
   const forceAll = !!(e?.evt?.altKey || e?.evt?.metaKey || e?.evt?.ctrlKey);
@@ -590,6 +595,7 @@ onMouseDown={(e) => {
   onMouseDown={(ev) => {
     ev.cancelBubble = true;
     const st = ev.target.getStage(); if (!st) return;
+    plannerHistory.push('rotate roof'); 
     const ns = `.roof-edge-${k}`;
     st.off(ns);
 
