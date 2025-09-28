@@ -74,6 +74,13 @@ export default function CanvasStage() {
   const roofAlign = usePlannerV2Store(s => s.roofAlign);
   const setTool = usePlannerV2Store((s) => s.setTool);
 
+  // wrapper per soddisfare useDrawingTools che tipizza setTool come (t: string) => void
+const setToolForHook = useCallback((t: string) => {
+  // se hai un tipo Tool a union string, questo cast è sicuro a runtime
+  setTool(t as any);
+}, [setTool]);
+
+
 
   // size + base image
   const size = useContainerSize(containerRef);
@@ -181,7 +188,8 @@ const {
       addZone({ id: nanoid(), roofId: selectedId, type: 'riservata', points: poly4 });
     },
     snap: { tolDeg: 12, closeRadius: 12 }, 
-    setTool,
+    setTool: setToolForHook,
+
   });
 
   // stile tetti
