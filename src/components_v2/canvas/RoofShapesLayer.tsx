@@ -336,7 +336,7 @@ if (isSel && !multi && shapeMode === 'normal') {
       >
         <KonvaGroup rotation={e.angleDeg}>
           <KonvaRect
-            x={-12} y={-2} width={24} height={6} cornerRadius={6.5}
+            x={-6} y={-1} width={12} height={3} cornerRadius={3.5}
             fill="#ffffff" stroke="#fff" strokeWidth={0.5}
             shadowColor="rgba(0,0,0,0.25)" shadowBlur={3} shadowOpacity={0.9}
             onMouseEnter={(ev) => {
@@ -567,7 +567,7 @@ onMouseDown={(e) => {
     <KonvaGroup rotation={e.angleDeg}>
       {/* Maniglia stile Canva (fa anche da hit-area) */}
    <KonvaRect
-  x={-12} y={-2} width={24} height={6} cornerRadius={6.5}
+  x={-6} y={-1} width={12} height={3} cornerRadius={3.5}
   fill="#ffffff"                  // bianco di base
   stroke="#fff"
   strokeWidth={0.5}
