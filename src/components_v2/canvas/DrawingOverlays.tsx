@@ -1,7 +1,14 @@
 'use client';
 
 import React from 'react';
-import { Line as KonvaLine, Circle as KonvaCircle, Text as KonvaText } from 'react-konva';
+import {
+  Line as KonvaLine,
+  Circle as KonvaCircle,
+  Text as KonvaText,
+  Group as KonvaGroup,     // ⬅️ nuovo
+  Rect as KonvaRect        // ⬅️ nuovo
+} from 'react-konva';
+
 import { snapParallelPerp, isNear, Pt } from './utils/snap';
 
 function rectFrom3(A: Pt, B: Pt, C: Pt): Pt[] {
@@ -35,6 +42,7 @@ export default function DrawingOverlays({
   mouseImg,
   stroke,
   areaLabel,
+  mpp,                // ⬅️ nuovo
 }: {
   tool: string;
   drawingPoly: Pt[] | null;
@@ -42,6 +50,7 @@ export default function DrawingOverlays({
   mouseImg: Pt | null;
   stroke: string;
   areaLabel: (pts: Pt[]) => string | null;
+  mpp?: number;       // ⬅️ nuovo
 }) {
   // palette UI
   const PREVIEW = '#7c3aed'; // viola (segmento in movimento)
@@ -64,7 +73,7 @@ export default function DrawingOverlays({
     let target = mouseImg ?? last;
     let snapGuide: { a: Pt; b: Pt } | undefined;
 
-    // magnete per chiudere sul primo punto
+        // magnete per chiudere sul primo punto
     if (mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS)) {
       target = pts[0];
     } else if (mouseImg) {
@@ -73,6 +82,30 @@ export default function DrawingOverlays({
       target = pt;
       if (guide) snapGuide = guide;
     }
+
+    // — misure live sul segmento attivo —
+let angleDeg = 0;
+let lenPx = 0;
+if (mouseImg) {
+  const dx = target.x - last.x;
+  const dy = target.y - last.y;
+  angleDeg = Math.round(((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360);
+  lenPx = Math.hypot(dx, dy);
+}
+const lenLabel = (() => {
+  if (!mouseImg) return '';
+  if (mpp) {
+    const m = lenPx * mpp;
+    return m >= 2 ? `${(Math.round(m * 10) / 10).toFixed(1)} m` : `${Math.round(m * 100)} cm`;
+  }
+  return `${Math.round(lenPx)} px`;
+})();
+
+// — stato "vicino al primo punto" per hint chiusura —
+const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS);
+
+
+
 
     return (
       <>
@@ -112,19 +145,93 @@ export default function DrawingOverlays({
           />
         )}
 
-        {/* handle dei vertici fissati */}
-        {pts.map((p, i) => (
-          <KonvaCircle
-            key={i}
-            x={p.x}
-            y={p.y}
-            radius={3.2}
-            fill={HANDLE_BG}
-            stroke={ACCEPT}
-            strokeWidth={1.4}
-            listening={false}
-          />
-        ))}
+        {/* etichetta lunghezza + angolo sul segmento attivo */}
+{/* etichetta lunghezza + angolo (piccola + offset fuori dal segmento) */}
+{mouseImg && (() => {
+  // midpoint del segmento
+  const mx0 = (last.x + target.x) / 2;
+  const my0 = (last.y + target.y) / 2;
+
+  // normale unitaria al segmento
+  const dx = target.x - last.x;
+  const dy = target.y - last.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny =  dx / len;
+
+  // offset di 12px lungo la normale (sposta la label fuori dal segmento)
+  const OFF = 12;
+  const mx = mx0 + nx * OFF;
+  const my = my0 + ny * OFF;
+
+  // dimensioni ridotte ~2/5 (40%)
+  const SCALE = 0.3;
+  const W  = 70 * SCALE;     // prima 70
+  const H  = 18 * SCALE;     // prima 18
+  const FS = 10 * SCALE;     // font size
+  const CR = 9  * SCALE;     // corner radius
+
+  return (
+    <KonvaGroup x={mx} y={my} listening={false}>
+      <KonvaRect
+        x={-W / 2}
+        y={-H / 2}
+        width={W}
+        height={H}
+        cornerRadius={CR}
+        fill="#ffffff"
+        shadowColor="rgba(0,0,0,0.25)"
+        shadowBlur={2 * SCALE}
+        shadowOpacity={0.8}
+      />
+      <KonvaText
+        text={`${lenLabel}  •  ${angleDeg}°`}
+        fontSize={FS}
+        fill="#111827"
+        width={W}
+        height={H}
+        offsetX={W / 2}
+        offsetY={H / 2}
+        align="center"
+        verticalAlign="middle"
+        listening={false}
+      />
+    </KonvaGroup>
+  );
+})()}
+
+
+{/* handle dei vertici fissati */}
+{pts.map((p, i) => (
+  <KonvaCircle
+    key={i}
+    x={p.x}
+    y={p.y}
+    radius={3.2}
+    fill="#ffffff"
+    stroke={ACCEPT}
+    strokeWidth={1.4}
+    listening={false}
+  />
+))}
+
+
+{/* primo punto: hint chiusura */}
+{pts.length >= 1 && (
+  <KonvaCircle
+    x={pts[0].x}
+    y={pts[0].y}
+    radius={closeToFirst ? 5 : 3.2}
+    fill="#ffffff"
+    stroke={closeToFirst ? '#16a34a' : '#9ca3af'}
+    strokeWidth={closeToFirst ? 1.5 : 1}
+    shadowColor="rgba(0,0,0,0.25)"
+    shadowBlur={2}
+    shadowOpacity={0.8}
+    listening={false}
+  />
+)}
+
 
         {/* area live (se già >=3 punti fissati) */}
         {pts.length >= 3 && (

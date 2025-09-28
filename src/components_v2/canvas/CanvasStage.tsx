@@ -488,14 +488,16 @@ const angleDeg = gridDeg;
 
             {/* Overlay di disegno: SOLO in building */}
             {step === 'building' && (
-              <DrawingOverlays
-                tool={tool}
-                drawingPoly={drawingPoly}
-                rectDraft={rectDraft}
-                mouseImg={mouseImg}
-                stroke={stroke}
-                areaLabel={areaLabel}
-              />
+           <DrawingOverlays
+  tool={tool}
+  drawingPoly={drawingPoly}
+  rectDraft={rectDraft}
+  mouseImg={mouseImg}
+  stroke={stroke}
+  areaLabel={areaLabel}
+  mpp={snap.mppImage}   // ⬅️ nuovo
+/>
+
             )}
           </Layer>
         </Stage>
