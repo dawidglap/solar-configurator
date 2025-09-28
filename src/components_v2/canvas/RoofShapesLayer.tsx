@@ -44,35 +44,56 @@ function bbox(pts: Pt[]) {
 }
 
 
-function edgeMeta(pts: Pt[]) {
-  const arr: {
+function edgeMeta(
+  pts: Pt[],
+  opts: { minLenPx?: number; nearVertexPx?: number } = {}
+) {
+  const MIN_LEN = opts.minLenPx ?? 12;         // ignora segmenti troppo corti
+  const NEAR_V  = opts.nearVertexPx ?? 10;     // distanza sotto cui "è un vertice"
+
+  const out: {
     i: number; j: number;
     mx: number; my: number;
-    nx: number; ny: number;   // normale unitaria del lato (una delle due)
-    angleDeg: number;         // orientamento del lato (per ruotare l'handle)
+    nx: number; ny: number;
+    angleDeg: number;
     cursor: 'ns-resize' | 'ew-resize';
   }[] = [];
+
+  const dist2 = (ax:number, ay:number, bx:number, by:number) => {
+    const dx = ax - bx, dy = ay - by; return dx*dx + dy*dy;
+  };
 
   for (let i = 0; i < pts.length; i++) {
     const j = (i + 1) % pts.length;
     const a = pts[i], b = pts[j];
     const dx = b.x - a.x, dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
+    const len = Math.hypot(dx, dy);
+
+    // 1) scarta lati molto corti
+    if (len < MIN_LEN) continue;
 
     const mx = (a.x + b.x) / 2;
     const my = (a.y + b.y) / 2;
 
-    // normale (perpendicolare) unitaria: (-dy, dx)/len
+    // 2) scarta midpoint troppo vicino a un vertice
+    if (Math.sqrt(dist2(mx, my, a.x, a.y)) < NEAR_V) continue;
+    if (Math.sqrt(dist2(mx, my, b.x, b.y)) < NEAR_V) continue;
+
     const nx = -dy / len;
     const ny =  dx / len;
 
     const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
     const cursor = Math.abs(dx) >= Math.abs(dy) ? 'ns-resize' : 'ew-resize';
 
-    arr.push({ i, j, mx, my, nx, ny, angleDeg, cursor });
+    // 3) dedup: evita maniglie quasi sovrapposte
+    const tooClose = out.some(h => dist2(h.mx, h.my, mx, my) < (NEAR_V*NEAR_V));
+    if (!tooClose) {
+      out.push({ i, j, mx, my, nx, ny, angleDeg, cursor });
+    }
   }
-  return arr;
+  return out;
 }
+
 
 
 // Estrai i path dell’icona rotazione
@@ -154,6 +175,7 @@ const moveStartPtsRef    = useRef<Pt[] | null>(null);
 
 
 
+
 // === Multi-selezione (DEVE stare sopra agli useEffect che la usano)
 const [groupSel, setGroupSel] = useState<string[]>([]);
 
@@ -222,7 +244,8 @@ const ROT_KNOB_OFFSET = 46;
 const HANDLE_SZ = 16;
 
 
-
+// subito prima del return
+const topHandles: JSX.Element[] = [];
 
 
   return (
@@ -296,9 +319,83 @@ const rotHandlePos = (isSel && rotPivot)
 
 
 
-    
+    // ⬇️ PUSH DELLE MANIGLIE “AL TOP” (fuori dal JSX)
+if (isSel && !multi && shapeMode === 'normal') {
+  edgeMeta(pts, { minLenPx: 12, nearVertexPx: 10 }).forEach((e, k) => {
+    topHandles.push(
+      <KonvaGroup
+        key={`edge-h-${r.id}-${k}`}
+        x={e.mx}
+        y={e.my}
+        onMouseEnter={(ev) => {
+          ev.target.getStage()?.container()?.style.setProperty('cursor', e.cursor);
+        }}
+        onMouseLeave={(ev) => {
+          ev.target.getStage()?.container()?.style.removeProperty('cursor');
+        }}
+      >
+        <KonvaGroup rotation={e.angleDeg}>
+          <KonvaRect
+            x={-12} y={-2} width={24} height={6} cornerRadius={6.5}
+            fill="#ffffff" stroke="#fff" strokeWidth={0.5}
+            shadowColor="rgba(0,0,0,0.25)" shadowBlur={3} shadowOpacity={0.9}
+            onMouseEnter={(ev) => {
+              const rect = ev.target as unknown as Konva.Rect;
+              rect.fill('#2269c5'); rect.stroke('#164aa3'); rect.getLayer()?.batchDraw();
+            }}
+            onMouseLeave={(ev) => {
+              const rect = ev.target as unknown as Konva.Rect;
+              rect.fill('#ffffff'); rect.stroke('#fff'); rect.getLayer()?.batchDraw();
+            }}
+            onMouseDown={(ev) => {
+              ev.cancelBubble = true;
+              const st = ev.target.getStage(); if (!st) return;
+              const ns = `.roof-edge-${k}`;
+              st.off(ns);
+
+              onHandlesDragStart();
+
+              // snapshot iniziale
+              moveStartPtsRef.current = r.points.map(p => ({ ...p }));
+              const pos = st.getPointerPosition(); if (!pos) return;
+              moveStartPtrImgRef.current = toImg(pos.x, pos.y);
+
+              st.on('mousemove' + ns + ' touchmove' + ns, () => {
+                const cur = st.getPointerPosition();
+                if (!cur || !moveStartPtsRef.current || !moveStartPtrImgRef.current) return;
+                const curImg = toImg(cur.x, cur.y);
+
+                const dx = curImg.x - moveStartPtrImgRef.current.x;
+                const dy = curImg.y - moveStartPtrImgRef.current.y;
+
+                const t = dx * e.nx + dy * e.ny;
+                const off = { x: e.nx * t, y: e.ny * t };
+
+                const next = moveStartPtsRef.current.map((p, idx) =>
+                  (idx === e.i || idx === e.j) ? { x: p.x + off.x, y: p.y + off.y } : p
+                );
+
+                updateRoof(r.id, { points: next });
+              });
+
+              const end = () => {
+                st.off(ns);
+                moveStartPtrImgRef.current = null;
+                moveStartPtsRef.current = null;
+                onHandlesDragEnd();
+              };
+              st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
+            }}
+          />
+        </KonvaGroup>
+      </KonvaGroup>
+    );
+  });
+}
+
 
         return (
+          
           <KonvaGroup key={r.id}>
 <KonvaLine
   points={flat}
@@ -453,7 +550,8 @@ onMouseDown={(e) => {
 
 
 {/* ─── HANDLE PARALLELO LATO: shapeMode=normal ───────────────────────────── */}
-{isSel && !multi && shapeMode  === 'normal' && edgeMeta(pts).map((e, k) => (
+{isSel && !multi && shapeMode === 'normal' &&
+  edgeMeta(pts, { minLenPx: 12, nearVertexPx: 10 }).map((e, k) => (
   <KonvaGroup
     key={`edge-h-${k}`}
     x={e.mx}
@@ -684,6 +782,9 @@ onMouseDown={(e) => {
           </KonvaGroup>
         );
       })}
+      {/* maniglie disegnate DOPO tutte le falde → sempre sopra */}
+{topHandles}
+
     </>
   );
 }
