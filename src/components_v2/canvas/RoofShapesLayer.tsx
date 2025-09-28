@@ -245,7 +245,8 @@ const HANDLE_SZ = 16;
 
 
 // subito prima del return
-const topHandles: JSX.Element[] = [];
+const topHandles: React.ReactElement[] = [];
+
 
 
   return (
