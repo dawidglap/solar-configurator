@@ -5,6 +5,8 @@ import * as React from 'react';
 import type { Pt } from '../../canvas/geom';
 import { rectFrom3WithAz } from '../../canvas/geom';
 import { snapParallelPerp, isNear } from '../utils/snap';
+// ⬇️ NEW: undo/redo
+import { history } from '../../state/history';
 
 // Tool supportati
 type Tool = 'select' | 'draw-roof' | 'draw-rect' | 'draw-reserved' | string;
@@ -65,10 +67,14 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         if (pts.length < 3) { setDrawingPoly(null); return; }
         const id = 'roof_' + Date.now().toString(36);
         const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
+
+        // ⬇️ NEW: snapshot PRIMA della mutazione
+        history.push('add roof (free)');
+
         addRoof({ id, name, points: pts } as T);
         select(id);
         setDrawingPoly(null);
-        setTool('select'); // ⬅️ torna allo strumento di selezione
+        setTool('select'); // torna allo strumento di selezione
     }, [layers, addRoof, select, setTool]);
 
     // CLICK handler unico
@@ -116,14 +122,17 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
             const { poly, azimuthDeg } = rectFrom3WithAz(rectDraft[0], rectDraft[1], p);
             const id = 'roof_' + Date.now().toString(36);
             const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
+
+            // ⬇️ NEW: snapshot PRIMA della mutazione
+            history.push('add roof (rect)');
+
             addRoof({ id, name, points: poly, azimuthDeg, source: 'manual' } as T);
             select(id);
             setRectDraft(null);
-            setTool('select'); // ⬅️ torna alla selezione
+            setTool('select'); // torna alla selezione
             return;
         }
 
-        // ── ZONA VIETATA da 3 click (parallelogramma)
         // ── ZONA VIETATA da 3 click (parallelogramma)
         if (tool === 'draw-reserved') {
             if (Date.now() - lastReservedCommitTs.current < RESERVED_COOLDOWN_MS) return;
@@ -139,10 +148,14 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
 
             // terzo click → commit zona
             const { poly } = rectFrom3WithAz(rectDraft[0], rectDraft[1], p);
+
+            // ⬇️ TODO: quando sistemiamo le riservate, aggiungere:
+            // history.push('add reserved zone');
+
             onZoneCommit?.(poly);
             setRectDraft(null);
 
-            // ⬇️ NEW: svuota selezione attiva (tetto/altro)
+            // svuota selezione attiva (tetto/altro)
             select(undefined);
 
             // torna alla selezione
@@ -150,7 +163,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
             lastReservedCommitTs.current = Date.now();
             return;
         }
-
 
         // ── select: click vuoto deseleziona
         if (e.target === e.target.getStage()) select(undefined);

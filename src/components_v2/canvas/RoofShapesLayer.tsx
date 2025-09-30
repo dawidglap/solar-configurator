@@ -206,11 +206,7 @@ const groupStartPtsRef = useRef<Record<string, Pt[]>>({});
 
 // --- Keyboard: ESC per deselezionare, DELETE per eliminare selezionati
 useEffect(() => {
-  const isEditing = (el: any) => {
-    if (!el) return false;
-    const tag = el.tagName?.toLowerCase();
-    return tag === 'input' || tag === 'textarea' || el.isContentEditable;
-  };
+  const isEditing = (el: any) => { /* com’è ora */ };
 
   const onKey = (e: KeyboardEvent) => {
     if (isEditing(e.target)) return;
@@ -221,10 +217,16 @@ useEffect(() => {
     }
 
     if (e.key === 'Delete' || e.key === 'Backspace') {
+      // ⬇️ NOVITÀ: se un pannello è selezionato, non toccare i tetti
+      const hasSelectedPanel =
+        !!usePlannerV2Store.getState().getSelectedPanel?.();
+      if (hasSelectedPanel) return;
+
       const ids = groupSel.length ? groupSel : (selectedId ? [selectedId] : []);
       if (!ids.length) return;
       e.preventDefault();
-      plannerHistory.push('delete roof');  
+
+      plannerHistory.push('delete roof');
       ids.forEach(id => removeRoof(id));
       setGroupSel([]);
       onSelect(undefined);
@@ -234,6 +236,7 @@ useEffect(() => {
   window.addEventListener('keydown', onKey);
   return () => window.removeEventListener('keydown', onKey);
 }, [groupSel, selectedId, removeRoof, onSelect]);
+
 
 // --- Pulisci groupSel se i layers cambiano (es. dopo delete)
 useEffect(() => {

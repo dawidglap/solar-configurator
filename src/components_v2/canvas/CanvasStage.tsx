@@ -484,7 +484,13 @@ const angleDeg = gridDeg;
               layers={layers}
               textureUrl="/images/panel.webp"
               selectedPanelId={selectedPanelInstId}
-              onSelect={setSelectedPanelInstId}
+                onSelect={(id) => {
+    setSelectedPanelInstId(id);
+    if (id) {
+      // se seleziono un pannello, tolgo la selezione tetto
+      usePlannerV2Store.getState().select(undefined);
+    }
+  }}
               stageToImg={toImgCoords}
               onAnyDragStart={() => setDraggingPanel(true)}
               onAnyDragEnd={() => setDraggingPanel(false)}

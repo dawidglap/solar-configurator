@@ -6,6 +6,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { isToolAllowed, defaultToolFor } from './capabilities';
 import { ALLOWED_TOOLS, DEFAULT_TOOL } from '../../constants/stepTools';
 
+import { history } from './history';
 
 
 // ───────────────────────────────────────────────────────────
@@ -100,6 +101,41 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             // ── Snapshot (non persistito)
             snapshot: {},
             setSnapshot: (s) => set((st) => ({ snapshot: { ...st.snapshot, ...s } })),
+
+            resetForNewAddress: (snap: Partial<Snapshot>) => {
+                set((s) => ({
+                    // aggiorna i metadati dell’immagine
+                    snapshot: { ...s.snapshot, ...snap },
+
+                    // reset navigazione/strumenti
+                    view: { scale: 1, offsetX: 0, offsetY: 0, fitScale: 1 },
+                    tool: 'select',
+                    step: 'building',
+                    roofAlign: { rotDeg: 0, pivotPx: undefined },
+
+                    // pulizia selezioni
+                    selectedId: undefined,
+                    selectedZoneId: undefined,
+
+                    // svuota progetto corrente
+                    layers: [],
+                    zones: [],
+                    panels: [],
+                    detectedRoofs: [],
+
+                    // (opzionale) reset leggeri della griglia
+                    modules: {
+                        ...s.modules,
+                        gridAngleDeg: 0,
+                        gridPhaseX: 0,
+                        gridPhaseY: 0,
+                        coverageRatio: 1,
+                    },
+                }));
+                // niente “undo” verso il progetto precedente
+                history.clear();
+            },
+
 
             // ── Snapshot scale
             snapshotScale: 2,

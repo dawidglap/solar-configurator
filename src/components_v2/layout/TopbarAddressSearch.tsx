@@ -7,6 +7,7 @@ import AddressSearchOSM from '../geocoding/AddressSearchOSM';
 import { buildTiledSnapshot, TILE_SWISSTOPO_SAT } from '../utils/stitchTilesWMTS';
 import { metersPerPixel3857, lonLatTo3857, bboxLonLatFromCenter } from '../utils/geo';
 import axios from 'axios';
+import { history as plannerHistory } from '../state/history';
 
 /** proietta (lat,lon) → px immagine usando la bbox3857 dello snapshot */
 function latLonToPx(
@@ -18,7 +19,7 @@ function latLonToPx(
   const { minX, minY, maxX, maxY } = snap.bbox3857;
   const W = snap.width, H = snap.height;
   const px = ((x - minX) / (maxX - minX)) * W;
-  const py = ((maxY - y) / (maxY - minY)) * H; // Y invertito (north-up)
+  const py = ((maxY - y) / (minY - maxY)) * H * -1; // equivalente a ((maxY - y)/(maxY - minY))*H
   return { x: px, y: py };
 }
 
@@ -77,12 +78,9 @@ async function fetchRoofsAtPointToPx(
 }
 
 export default function TopbarAddressSearch() {
-  const setSnapshot = usePlannerV2Store(s => s.setSnapshot);
-  const setUI       = usePlannerV2Store(s => s.setUI);
-
-  // azioni layers
-  const addRoof     = usePlannerV2Store(s => s.addRoof);
-  const select      = usePlannerV2Store(s => s.select);
+  const resetForNewAddress = usePlannerV2Store(s => s.resetForNewAddress);
+  const setUI              = usePlannerV2Store(s => s.setUI);
+  const addRoof            = usePlannerV2Store(s => s.addRoof);
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -106,38 +104,26 @@ export default function TopbarAddressSearch() {
         bbox3857: { minX: bl.x, minY: bl.y, maxX: tr.x, maxY: tr.y },
       } as const;
 
-      setSnapshot(snapObj);
+      // 1) reset totale progetto + snapshot nuovo (svuota layers/zones/panels, selezioni e history)
+      resetForNewAddress(snapObj);
 
-      // ✅ Azzera qualsiasi selezione precedente (persistita)
-      usePlannerV2Store.getState().select(undefined);
+      // 2) crea un checkpoint per consentire UNDO dell'import massivo
+      plannerHistory.push('before import roofs');
 
-      // 1) recupera SOLO le falde sotto il punto (logica v1)
+      // 3) importa solo le falde “sotto il punto”
       const roofs = await fetchRoofsAtPointToPx(lat, lon, snapObj);
-
-      // 2) pulisci eventuali falde importate in precedenza da sonnendach
-      {
-        const st: any = usePlannerV2Store.getState();
-        const cur = st.layers as any[];
-        if (Array.isArray(cur) && typeof st.deleteRoof === 'function') {
-          cur.filter(l => l?.source === 'sonnendach').forEach(l => st.deleteRoof(l.id));
-        }
-      }
-
-      // 3) committa (tipicamente 1–6 falde; per il tuo caso: 2)
       roofs.forEach((p, i) => {
         addRoof({
-          id:        `sd_${p.id}_${i}`,
-          name:      `Roof ${i + 1}`,
-          points:    p.pointsPx,
-          tiltDeg:   p.tiltDeg,
-          azimuthDeg:p.azimuthDeg,
-          source:    'sonnendach',
+          id:         `sd_${p.id}_${i}`,
+          name:       `Roof ${i + 1}`,
+          points:     p.pointsPx,
+          tiltDeg:    p.tiltDeg,
+          azimuthDeg: p.azimuthDeg,
+          source:     'sonnendach',
         } as any);
       });
 
-      // ✅ Resta senza selezione per attivare la modalità "Canva"
-      usePlannerV2Store.getState().select(undefined);
-
+      // 4) pannello proprietà visibile
       setUI({ rightPanelOpen: true });
 
     } catch (e: any) {
