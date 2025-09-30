@@ -5,7 +5,7 @@ import * as React from 'react';
 import type { Pt } from '../../canvas/geom';
 import { rectFrom3WithAz } from '../../canvas/geom';
 import { snapParallelPerp, isNear } from '../utils/snap';
-// ⬇️ NEW: undo/redo
+// undo/redo
 import { history } from '../../state/history';
 
 // Tool supportati
@@ -33,9 +33,9 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     addRoof: (r: T) => void;
     select: (id?: string) => void;
     toImgCoords: (stageX: number, stageY: number) => Pt;
-    onZoneCommit?: (poly4: Pt[]) => void;
+    onZoneCommit?: (poly4: Pt[]) => void; // per Hindernis
     snap?: SnapOptions;
-    // ⬇️ NEW: per tornare allo strumento di selezione al commit
+    // per tornare allo strumento di selezione al commit
     setTool: (t: Tool) => void;
 }) {
     const {
@@ -52,7 +52,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     const [rectDraft, setRectDraft] = React.useState<Pt[] | null>(null); // [A,B] poi C al commit
     const [mouseImg, setMouseImg] = React.useState<Pt | null>(null);
 
-    // cooldown per evitare doppio-commit in reserved
+    // evita doppio-commit su draw-reserved (click + dblclick ravvicinati)
     const lastReservedCommitTs = React.useRef(0);
     const RESERVED_COOLDOWN_MS = 150;
 
@@ -62,13 +62,13 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         setMouseImg(toImgCoords(pos.x, pos.y));
     }, [toImgCoords]);
 
-    // chiusura + salvataggio tetto libero
+    // —— commit tetto (poligono libero)
     const finishPolygon = React.useCallback((pts: Pt[]) => {
         if (pts.length < 3) { setDrawingPoly(null); return; }
         const id = 'roof_' + Date.now().toString(36);
         const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
 
-        // ⬇️ NEW: snapshot PRIMA della mutazione
+        // snapshot PRIMA della mutazione
         history.push('add roof (free)');
 
         addRoof({ id, name, points: pts } as T);
@@ -77,7 +77,26 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         setTool('select'); // torna allo strumento di selezione
     }, [layers, addRoof, select, setTool]);
 
-    // CLICK handler unico
+    // —— commit hindernis (poligono libero)
+    const finishZone = React.useCallback((pts: Pt[]) => {
+        if (pts.length < 3) { setDrawingPoly(null); return; }
+        // anti-doppio commit
+        const now = Date.now();
+        if (now - lastReservedCommitTs.current < RESERVED_COOLDOWN_MS) return;
+        lastReservedCommitTs.current = now;
+
+        // snapshot PRIMA della mutazione (la mutazione la fa onZoneCommit → store)
+        history.push('add reserved zone');
+
+        onZoneCommit?.(pts);
+        setDrawingPoly(null);
+        // svuota selezione attiva (tetto/altro)
+        select(undefined);
+        // torna alla selezione
+        setTool('select');
+    }, [onZoneCommit, select, setTool]);
+
+    // —— CLICK handler unico
     const onStageClick = React.useCallback((e: any) => {
         const pos = e.target.getStage().getPointerPosition();
         if (!pos) return;
@@ -85,7 +104,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
 
         // ── Poligono tetto libero (con SNAP al click)
         if (tool === 'draw-roof') {
-            // primo punto
             if (!drawingPoly || drawingPoly.length === 0) {
                 setDrawingPoly([p]);
                 return;
@@ -123,7 +141,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
             const id = 'roof_' + Date.now().toString(36);
             const name = `Dach ${layers.filter(l => l.id.startsWith('roof_')).length + 1}`;
 
-            // ⬇️ NEW: snapshot PRIMA della mutazione
+            // snapshot PRIMA della mutazione
             history.push('add roof (rect)');
 
             addRoof({ id, name, points: poly, azimuthDeg, source: 'manual' } as T);
@@ -133,34 +151,25 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
             return;
         }
 
-        // ── ZONA VIETATA da 3 click (parallelogramma)
+        // ── Hindernis: poligono libero (come draw-roof)
         if (tool === 'draw-reserved') {
-            if (Date.now() - lastReservedCommitTs.current < RESERVED_COOLDOWN_MS) return;
-
-            if (!rectDraft || rectDraft.length === 0) {
-                setRectDraft([p]); // A
-                return;
-            }
-            if (rectDraft.length === 1) {
-                setRectDraft([rectDraft[0], p]); // A,B
+            if (!drawingPoly || drawingPoly.length === 0) {
+                setDrawingPoly([p]);
                 return;
             }
 
-            // terzo click → commit zona
-            const { poly } = rectFrom3WithAz(rectDraft[0], rectDraft[1], p);
+            const pts = drawingPoly;
+            const last = pts[pts.length - 1];
+            const prev = pts.length >= 2 ? pts[pts.length - 2] : undefined;
+            const refDir = prev ? { x: last.x - prev.x, y: last.y - prev.y } : undefined;
 
-            // ⬇️ TODO: quando sistemiamo le riservate, aggiungere:
-            // history.push('add reserved zone');
+            if (pts.length >= 3 && isNear(p, pts[0], CLOSE_RADIUS)) {
+                finishZone(pts);
+                return;
+            }
 
-            onZoneCommit?.(poly);
-            setRectDraft(null);
-
-            // svuota selezione attiva (tetto/altro)
-            select(undefined);
-
-            // torna alla selezione
-            setTool('select');
-            lastReservedCommitTs.current = Date.now();
+            const { pt } = snapParallelPerp(last, p, refDir, SNAP_TOL_DEG);
+            setDrawingPoly([...pts, pt]);
             return;
         }
 
@@ -174,38 +183,46 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         layers,
         addRoof,
         select,
-        onZoneCommit,
         finishPolygon,
+        finishZone,
         CLOSE_RADIUS,
         SNAP_TOL_DEG,
         setTool,
     ]);
 
-    // DOPPIO click → chiusura poligono tetto
+    // —— DOPPIO click → chiusura poligono
     const onStageDblClick = React.useCallback(() => {
-        if (tool !== 'draw-roof') return;
-        if (drawingPoly && drawingPoly.length >= 3) {
-            finishPolygon(drawingPoly);
-        } else {
-            setDrawingPoly(null);
-        }
-    }, [tool, drawingPoly, finishPolygon]);
+        if (!drawingPoly || drawingPoly.length < 3) return;
 
-    // ESC / ENTER
+        if (tool === 'draw-roof') {
+            finishPolygon(drawingPoly);
+            return;
+        }
+        if (tool === 'draw-reserved') {
+            finishZone(drawingPoly);
+            return;
+        }
+    }, [tool, drawingPoly, finishPolygon, finishZone]);
+
+    // —— ESC / ENTER
     React.useEffect(() => {
         const onKey = (ev: KeyboardEvent) => {
-            if (tool === 'draw-roof') {
+            // poligoni liberi (roof + reserved)
+            if (tool === 'draw-roof' || tool === 'draw-reserved') {
                 if (ev.key === 'Escape') setDrawingPoly(null);
-                if (ev.key === 'Enter' && drawingPoly && drawingPoly.length >= 3) finishPolygon(drawingPoly);
+                if (ev.key === 'Enter' && drawingPoly && drawingPoly.length >= 3) {
+                    if (tool === 'draw-roof') finishPolygon(drawingPoly);
+                    else finishZone(drawingPoly);
+                }
             }
-            // ESC chiude anche i draft di rect e reserved
-            if (tool === 'draw-rect' || tool === 'draw-reserved') {
+            // rettangolo (roof-rect)
+            if (tool === 'draw-rect') {
                 if (ev.key === 'Escape') setRectDraft(null);
             }
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [tool, drawingPoly, finishPolygon]);
+    }, [tool, drawingPoly, finishPolygon, finishZone]);
 
     return {
         drawingPoly,

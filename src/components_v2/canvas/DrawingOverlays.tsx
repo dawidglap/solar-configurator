@@ -58,6 +58,10 @@ export default function DrawingOverlays({
   const GUIDE   = '#a78bfa'; // guida snap
   const HANDLE_BG = '#ffffff';
 
+    // ... in cima ai colori già esistenti
+const DANGER   = '#ef4444';  // rosso (segmento in movimento)
+const DANGER_OK= '#dc2626';  // rosso scuro (segmenti fissati)
+
   const SNAP_TOL_DEG = 12;
   const CLOSE_RADIUS = 12;
 
@@ -317,10 +321,94 @@ const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLO
     );
   };
 
+
+
+// ——— DRAW-RESERVED (poligono libero come draw-roof, ma rosso)
+const renderDrawReserved = () => {
+  if (!drawingPoly || drawingPoly.length === 0) return null;
+
+  const pts = drawingPoly;
+  const last = pts[pts.length - 1];
+  const prev = pts.length >= 2 ? pts[pts.length - 2] : null;
+  const refDir = prev ? { x: last.x - prev.x, y: last.y - prev.y } : undefined;
+
+  let target = mouseImg ?? last;
+  let snapGuide: { a: Pt; b: Pt } | undefined;
+
+  // magnete chiusura sul primo punto
+  const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS);
+  if (mouseImg && closeToFirst) {
+    target = pts[0];
+  } else if (mouseImg) {
+    const { pt, guide } = snapParallelPerp(last, mouseImg, refDir, SNAP_TOL_DEG);
+    target = pt;
+    if (guide) snapGuide = guide;
+  }
+
+  return (
+    <>
+      {/* guida snap */}
+      {snapGuide && (
+        <KonvaLine
+          points={[snapGuide.a.x, snapGuide.a.y, snapGuide.b.x, snapGuide.b.y]}
+          stroke={DANGER}
+          strokeWidth={1}
+          dash={[6, 6]}
+          listening={false}
+        />
+      )}
+
+      {/* segmenti confermati (rosso scuro) */}
+      {pts.length >= 2 && (
+        <KonvaLine
+          points={toFlat(pts)}
+          stroke={DANGER_OK}
+          strokeWidth={2}
+          lineJoin="round"
+          lineCap="round"
+          listening={false}
+        />
+      )}
+
+      {/* segmento in anteprima (rosso) */}
+      {mouseImg && (
+        <KonvaLine
+          points={[last.x, last.y, target.x, target.y]}
+          stroke={DANGER}
+          strokeWidth={2}
+          dash={[6, 6]}
+          lineJoin="round"
+          lineCap="round"
+          listening={false}
+        />
+      )}
+
+      {/* primo punto: hint chiusura */}
+      {pts.length >= 1 && (
+        <KonvaCircle
+          x={pts[0].x}
+          y={pts[0].y}
+          radius={closeToFirst ? 5 : 3.2}
+          fill="#ffffff"
+          stroke={closeToFirst ? DANGER_OK : '#9ca3af'}
+          strokeWidth={closeToFirst ? 1.5 : 1}
+          shadowColor="rgba(0,0,0,0.25)"
+          shadowBlur={2}
+          shadowOpacity={0.8}
+          listening={false}
+        />
+      )}
+    </>
+  );
+};
+
+
   return (
     <>
       {tool === 'draw-roof' && renderDrawRoof()}
       {tool === 'draw-rect' && renderDrawRect()}
+      {tool === 'draw-reserved' && renderDrawReserved()}
+
     </>
   );
 }
