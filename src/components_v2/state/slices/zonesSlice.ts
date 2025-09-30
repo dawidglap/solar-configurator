@@ -1,3 +1,4 @@
+// src/components_v2/state/slices/zonesSlice.ts
 'use client';
 import type { StateCreator } from 'zustand';
 import type { Pt } from '@/types/planner';
@@ -14,9 +15,13 @@ export type ZonesSlice = {
     selectedZoneId?: string;
 
     addZone: (z: Zone) => void;
-    updateZone: (id: string, patch: Partial<Zone>) => void; // ⬅️ aggiunto
+    updateZone: (id: string, patch: Partial<Zone>) => void;
     removeZone: (id: string) => void;
 
+    // ✅ nuova API
+    selectZone: (id?: string) => void;
+
+    // 🔁 alias per retro-compatibilità (puoi rimuoverla quando hai migrato tutte le chiamate)
     setSelectedZone: (id?: string) => void;
 
     getZonesForRoof: (roofId: string) => Zone[];
@@ -30,10 +35,9 @@ export const createZonesSlice: StateCreator<ZonesSlice, [], [], ZonesSlice> = (s
     addZone: (z) =>
         set((s) => ({
             zones: [...s.zones, z],
-            selectedZoneId: z.id,
+            selectedZoneId: z.id, // seleziona subito la nuova zona (puoi rimuoverlo se non lo vuoi)
         })),
 
-    // ⬇️ nuovo
     updateZone: (id, patch) =>
         set((s) => ({
             zones: s.zones.map((z) => (z.id === id ? { ...z, ...patch } : z)),
@@ -45,6 +49,10 @@ export const createZonesSlice: StateCreator<ZonesSlice, [], [], ZonesSlice> = (s
             selectedZoneId: s.selectedZoneId === id ? undefined : s.selectedZoneId,
         })),
 
+    // ✅ implementazione nuova API
+    selectZone: (id) => set({ selectedZoneId: id }),
+
+    // 🔁 alias legacy
     setSelectedZone: (id) => set({ selectedZoneId: id }),
 
     getZonesForRoof: (roofId) => get().zones.filter((z) => z.roofId === roofId),

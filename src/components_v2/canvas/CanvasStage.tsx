@@ -77,6 +77,11 @@ export default function CanvasStage() {
   const roofAlign = usePlannerV2Store(s => s.roofAlign);
   const setTool = usePlannerV2Store((s) => s.setTool);
 
+  // in cima a CanvasStage
+
+const selectZone  = usePlannerV2Store((s) => s.selectZone); // ⬅️ nuovo
+
+
   // wrapper per soddisfare useDrawingTools che tipizza setTool come (t: string) => void
 const setToolForHook = useCallback((t: string) => {
   // se hai un tipo Tool a union string, questo cast è sicuro a runtime
@@ -190,6 +195,7 @@ const {
       if (!selectedId) return;
       plannerHistory.push('add reserved zone'); 
       addZone({ id: nanoid(), roofId: selectedId, type: 'riservata', points: poly4 });
+      selectZone(undefined); 
     },
     snap: { tolDeg: 12, closeRadius: 12 }, 
     setTool: setToolForHook,
@@ -281,18 +287,19 @@ const {
           onWheel={onWheel}
           // handler di disegno SOLO in building
           onMouseMove={drawingEnabled ? onStageMouseMove : undefined}
-          onClick={(evt: any) => {
+onClick={(evt: any) => {
   if (drawingEnabled) {
     onStageClick?.(evt);
     return;
   }
-  // Clic su area vuota dello stage (fuori dall’immagine/oggetti)
   const st = stageRef.current?.getStage?.();
   if (evt.target === st) {
-    // deseleziona primaria (il groupSel lo puliamo nel catcher trasparente)
-    usePlannerV2Store.getState().select(undefined);
+    const store = usePlannerV2Store.getState();
+    store.select(undefined);        // deseleziona tetto
+    store.selectZone?.(undefined);  // ⬅️ deseleziona zona
   }
 }}
+
 
           onDblClick={drawingEnabled ? onStageDblClick : undefined}
           className={cursor === 'grab' ? 'cursor-grab active:cursor-grabbing' : ''}
