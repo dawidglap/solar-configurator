@@ -30,20 +30,28 @@ export default function PanelsLayer({
   const togglePanelSelection = usePlannerV2Store((s) => s.togglePanelSelection);
   const clearPanelSelection = usePlannerV2Store((s) => s.clearPanelSelection);
 
-  // Supporta selezione additiva (shift/ctrl/cmd)
-  const handleSelect = (id?: string, opts?: { additive?: boolean }) => {
-    const additive = !!opts?.additive;
+// Supporta selezione additiva (shift/ctrl/cmd)
+const handleSelect = (id?: string, opts?: { additive?: boolean }) => {
+  const additive = !!opts?.additive;
 
-    if (!id) {
-      clearPanelSelection();
-      return;
-    }
+  // Se seleziono un pannello -> deseleziono tetto + zona
+  if (id) {
+    const st = usePlannerV2Store.getState();
+    st.select?.(undefined);            // ⬅️ deseleziona falda
+    st.setSelectedZone?.(undefined);   // ⬅️ deseleziona eventuale zona
+
     if (additive) {
       togglePanelSelection(id);
     } else {
       setSelectedPanels([id]);
     }
-  };
+    return;
+  }
+
+  // Se id non c'è, vuol dire "clear selection" dei pannelli
+  clearPanelSelection();
+};
+
 
   const compatSelectedId = selectedIds[0] ?? selectedPanelId;
 

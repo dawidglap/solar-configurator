@@ -206,7 +206,43 @@ const groupStartPtsRef = useRef<Record<string, Pt[]>>({});
 
 // --- Keyboard: ESC per deselezionare, DELETE per eliminare selezionati
 useEffect(() => {
-  const isEditing = (el: any) => { /* com’è ora */ };
+  // 👇 Deve restituire boolean
+  const isEditing = (t: EventTarget | null): boolean => {
+    const el = t as HTMLElement | null;
+    if (!el) return false;
+
+    // elemento stesso
+    const tag = el.tagName?.toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return true;
+    if ((el as any).isContentEditable) return true;
+
+    // a volte l'input è in un portal → controlla anche activeElement
+    const active = document.activeElement as HTMLElement | null;
+    if (active) {
+      const aTag = active.tagName?.toLowerCase();
+      if (aTag === 'input' || aTag === 'textarea') return true;
+      if ((active as any).isContentEditable) return true;
+    }
+
+    // controlli rapidi su wrapper comuni (tuo AddressSearch/Select ecc.)
+    if (
+      el.closest?.(
+        'input, textarea, [contenteditable="true"], ' +
+        '.osm-anchor, .osm-dropdown, .react-select__control, .pac-container, ' +
+        '[role="textbox"], [role="combobox"]'
+      )
+    ) return true;
+
+    // risalita nel DOM come fallback
+    let p: HTMLElement | null = el.parentElement;
+    while (p) {
+      const pTag = p.tagName?.toLowerCase();
+      if (pTag === 'input' || pTag === 'textarea') return true;
+      if ((p as any).isContentEditable) return true;
+      p = p.parentElement;
+    }
+    return false;
+  };
 
   const onKey = (e: KeyboardEvent) => {
     if (isEditing(e.target)) return;
@@ -217,17 +253,13 @@ useEffect(() => {
     }
 
     if (e.key === 'Delete' || e.key === 'Backspace') {
-      // ⬇️ NOVITÀ: se un pannello è selezionato, non toccare i tetti
-      const hasSelectedPanel =
-        !!usePlannerV2Store.getState().getSelectedPanel?.();
-      if (hasSelectedPanel) return;
-
+      // niente guard su getSelectedPanel: elimina i tetti se selezionati
       const ids = groupSel.length ? groupSel : (selectedId ? [selectedId] : []);
       if (!ids.length) return;
       e.preventDefault();
 
       plannerHistory.push('delete roof');
-      ids.forEach(id => removeRoof(id));
+      ids.forEach((id) => removeRoof(id));
       setGroupSel([]);
       onSelect(undefined);
     }

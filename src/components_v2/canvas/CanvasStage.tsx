@@ -491,15 +491,22 @@ const angleDeg = gridDeg;
               layers={layers}
               textureUrl="/images/panel.webp"
               selectedPanelId={selectedPanelInstId}
-                onSelect={(id) => {
+onSelect={(id) => {
     setSelectedPanelInstId(id);
-    if (id) {
-      // se seleziono un pannello, tolgo la selezione tetto
-      usePlannerV2Store.getState().select(undefined);
-    }
+    if (!id) return;
+    const st = usePlannerV2Store.getState();
+    st.select?.(undefined);            // deseleziona falda
+    st.setSelectedZone?.(undefined);   // deseleziona eventuale zona
   }}
+
               stageToImg={toImgCoords}
-              onAnyDragStart={() => setDraggingPanel(true)}
+              onAnyDragStart={() => {
+  setDraggingPanel(true);
+  const st = usePlannerV2Store.getState();
+  st.select?.(undefined);
+  st.setSelectedZone?.(undefined);
+}}
+
               onAnyDragEnd={() => setDraggingPanel(false)}
             />
 
