@@ -14,6 +14,7 @@ import {
   RotateCw,
 } from 'lucide-react';
 import { history } from '../state/history';
+import OrientationToggle from './TopToolbar/OrientationToggle';
 
 
 /* ───────────────────── Keycaps ───────────────────── */
@@ -307,16 +308,22 @@ useEffect(() => {
         )}
 
         {/* ——— MODULES ——— */}
-        {step === 'modules' && (
-          <ActionBtn
-            active={tool === 'fill-area'}
-            onClick={() => setTool('fill-area' as any)}
-            Icon={Grid2x2}
-            label="Fläche füllen"
-            tooltipLabel="Fläche füllen"
-            tooltipKeys={['F']}
-          />
-        )}
+     {/* ——— MODULES ——— */}
+{step === 'modules' && (
+  <>
+    <ActionBtn
+      active={tool === 'fill-area'}
+      onClick={() => setTool('fill-area' as any)}
+      Icon={Grid2x2}
+      label="Fläche füllen"
+      tooltipLabel="Fläche füllen"
+      tooltipKeys={['F']}
+    />
+    <div className="mx-1 h-6 w-px bg-neutral-200" />
+    <OrientationToggle />
+  </>
+)}
+
       </div>
 
       {/* DX: Undo/Redo (icon-only) + Save */}
