@@ -58,6 +58,8 @@ type PlannerV2State = {
     snapshot: Snapshot;
     setSnapshot: (s: Partial<Snapshot>) => void;
 
+    resetForNewAddress: (snap: Partial<Snapshot>) => void;
+
     // view & tools
     snapshotScale: 1 | 2 | 3;
     setSnapshotScale: (n: 1 | 2 | 3) => void;
