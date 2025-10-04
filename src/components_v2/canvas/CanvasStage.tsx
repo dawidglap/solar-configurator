@@ -144,8 +144,14 @@ const setToolForHook = useCallback((t: string) => {
   const deletePanel = usePlannerV2Store((s) => s.deletePanel);
   const SHOW_AREA_LABELS = false;
 
+  // inside CanvasStage, near other useCallbacks
+const ignoreSelect = useCallback((_: string | undefined) => {}, []);
+
+
   // draft del riempi-area
-  const [fillDraft, setFillDraft] = useState<{ a: Pt; b: Pt } | null>(null);
+ const [fillDraft, setFillDraft] =
+  useState<{ a: Pt; b: Pt; poly: Pt[]; rects: {cx:number;cy:number;wPx:number;hPx:number;angleDeg:number}[] } | null>(null);
+
 
   const selectedRoof = useMemo(
     () => layers.find((l) => l.id === selectedId) ?? null,
@@ -309,7 +315,8 @@ const {
   canDrag &&
   tool !== 'draw-roof' &&
   tool !== 'draw-rect' &&
-  tool !== 'draw-reserved' &&   // ⬅️ aggiungi questo
+  tool !== 'draw-reserved' &&  
+  tool !== 'fill-area' && 
   !draggingVertex &&
   !draggingPanel
 }
@@ -317,7 +324,19 @@ const {
           onDragMove={onDragMove}
           onWheel={onWheel}
           // handler di disegno SOLO in building
-          onMouseMove={drawingEnabled ? onStageMouseMove : undefined}
+          onMouseMove={(evt: any) => {
+  if (tool === 'fill-area') {
+    const el = stageRef.current?.getStage?.()?.container?.();
+    if (el) el.style.cursor = 'crosshair';
+    return; // non inoltrare agli handler di building
+  }
+  if (drawingEnabled) onStageMouseMove?.(evt);
+}}
+onMouseEnter={tool === 'fill-area' ? () => {
+  const el = stageRef.current?.getStage?.()?.container?.();
+  if (el) el.style.cursor = 'crosshair';
+} : undefined}
+
 onClick={(evt: any) => {
   if (drawingEnabled) {
     onStageClick?.(evt);
@@ -375,7 +394,7 @@ onClick={(evt: any) => {
             <RoofShapesLayer
               layers={layers}
               selectedId={selectedId}
-              onSelect={select}
+              onSelect={tool === 'fill-area' ? ignoreSelect : select}
               showAreaLabels={SHOW_AREA_LABELS}
               stroke={stroke}
               strokeSelected={strokeSelected}
@@ -396,7 +415,7 @@ onClick={(evt: any) => {
               <ZonesLayer
                 key={l.id}
                 roofId={l.id}
-                interactive={l.id === selectedId}
+                interactive={l.id === selectedId && tool !== 'fill-area'} 
                 shapeMode={shapeMode}
                 toImg={toImgCoords}
                 imgW={snap.width ?? img?.naturalWidth ?? 0}
@@ -428,113 +447,35 @@ onClick={(evt: any) => {
                 );
               })()}
 
-              {/* ⬇️ Anteprima moduli DENTRO il rettangolo fill-area */}
-{step === 'modules' &&
-  tool === 'fill-area' &&
-  fillDraft &&
-  selectedRoof &&
-  selPanel &&
-  snap.mppImage && (() => {
-    const { a, b } = fillDraft;
-    const angleDeg = gridDeg;
-
-    // --- rettangolo ruotato A→B (stesso della tua versione corrente) ---
-    const t = (angleDeg * Math.PI) / 180;
-    const ux = { x: Math.cos(t),  y: Math.sin(t)  };
-    const uy = { x: -Math.sin(t), y: Math.cos(t) };
-    const vx = b.x - a.x, vy = b.y - a.y;
-    const w = vx * ux.x + vy * ux.y;
-    const h = vx * uy.x + vy * uy.y;
-    const p1 = { x: a.x,                 y: a.y };
-    const p2 = { x: a.x + w * ux.x,      y: a.y + w * ux.y };
-    const p3 = { x: p2.x + h * uy.x,     y: p2.y + h * uy.y };
-    const p4 = { x: a.x + h * uy.x,      y: a.y + h * uy.y };
-    const rectPoly = [p1, p2, p3, p4];
-
-    // --- calcolo rettangoli come al COMMIT: sulla falda + Randabstand + allineamenti ---
-    const rectsAll = computeAutoLayoutRects({
-      polygon: selectedRoof.points,
-      mppImage: snap.mppImage,
-      azimuthDeg: angleDeg,
-      orientation: modules.orientation,
-      panelSizeM: { w: selPanel.widthM, h: selPanel.heightM },
-      spacingM: modules.spacingM,
-      marginM: modules.marginM,                   // <-- ora la preview rispetta Randabstand
-      phaseX: gridMods.gridPhaseX || 0,
-      phaseY: gridMods.gridPhaseY || 0,
-      anchorX: (gridMods.gridAnchorX as any) || 'start',
-      anchorY: (gridMods.gridAnchorY as any) || 'start',
-      coverageRatio: gridMods.coverageRatio ?? 1,
-    });
-
-    // --- limita al rettangolo e filtra zone riservate (coerente col commit) ---
-    const rects = rectsAll
-      .filter(r => pointInPoly({ x: r.cx, y: r.cy }, rectPoly))
-      .filter(r => !isInReservedZone({ x: r.cx, y: r.cy }, selectedRoof.id));
-
-    // --- render: preview == commit ---
-    return (
-      <>
-        {rects.map((r, i) => (
-          <Rect
-            key={i}
-            x={r.cx}
-            y={r.cy}
-            width={r.wPx}
-            height={r.hPx}
-            offsetX={r.wPx / 2}
-            offsetY={r.hPx / 2}
-            rotation={r.angleDeg}
-            fill="#2b4b7c"
-            opacity={0.85}
-            listening={false}
-          />
-        ))}
-      </>
-    );
-  })()}
+{step === 'modules' && tool === 'fill-area' && fillDraft && (() => {
+  const outlinePts = fillDraft.poly.flatMap(p => [p.x, p.y]);
+  return (
+    <>
+      <Line points={outlinePts} closed stroke="#10b981" strokeWidth={1} listening={false} />
+      {fillDraft.rects.map((r, i) => (
+        <Rect
+          key={i}
+          x={r.cx}
+          y={r.cy}
+          width={r.wPx}
+          height={r.hPx}
+          offsetX={r.wPx/2}
+          offsetY={r.hPx/2}
+          rotation={r.angleDeg}
+          fill="#2b4b7c"
+          opacity={0.85}
+          listening={false}
+        />
+      ))}
+    </>
+  );
+})()}
 
 
 
-            {/* ⬇️ Rubber-band fill-area RUOTATO: SOLO in modules + fill-area */}
-            {step === 'modules' && tool === 'fill-area' && fillDraft && selectedRoof && (() => {
-              const { a, b } = fillDraft;
 
-              // angolo totale = azimuth falda + eventuale rotazione griglia
-const angleDeg = gridDeg;
 
-              const t = (angleDeg * Math.PI) / 180;
-
-              // assi ruotati
-              const ux = { x: Math.cos(t),  y: Math.sin(t)  };
-              const uy = { x: -Math.sin(t), y: Math.cos(t) };
-
-              // proietta il vettore AB sugli assi ruotati → width/height (possono essere negativi)
-              const vx = b.x - a.x;
-              const vy = b.y - a.y;
-              const w = vx * ux.x + vy * ux.y; // componente lungo ux
-              const h = vx * uy.x + vy * uy.y; // componente lungo uy
-
-              // ricostruisci i 4 vertici ruotati
-              const p1 = { x: a.x,                 y: a.y };
-              const p2 = { x: a.x + w * ux.x,      y: a.y + w * ux.y };
-              const p3 = { x: p2.x + h * uy.x,     y: p2.y + h * uy.y };
-              const p4 = { x: a.x + h * uy.x,      y: a.y + h * uy.y };
-
-              const points = [p1.x,p1.y, p2.x,p2.y, p3.x,p3.y, p4.x,p4.y];
-
-              return (
-                <Line
-                  points={points}
-                  closed
-                  stroke="#111827"
-                  strokeWidth={1}
-                  dash={[8, 6]}
-                  fill="rgba(17,24,39,0.06)"
-                  listening={false}
-                />
-              );
-            })()}
+          
 
             {/* Pannelli reali */}
             <PanelsLayer
@@ -573,6 +514,19 @@ onSelect={(id) => {
 />
 
             )}
+
+{step === 'modules' && tool === 'fill-area' && img && (
+  <Rect
+    x={0}
+    y={0}
+    width={img.naturalWidth}
+    height={img.naturalHeight}
+    fill="rgba(0,0,0,0.01)"  // quasi invisibile, ma cattura gli eventi
+    listening={true}
+  />
+)}
+
+
           </Layer>
         </Stage>
       )}
