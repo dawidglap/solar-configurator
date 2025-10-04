@@ -4,7 +4,7 @@
 import React, { useMemo } from 'react';
 import { Group, Rect, Line, Image as KonvaImage } from 'react-konva';
 import { computeAutoLayoutRects } from './layout';      // ← stessa cartella
-import { isInReservedZone } from '../zones/utils';
+import { overlapsReservedRect } from '../zones/utils'
 
 type Pt = { x: number; y: number };
 type Anchor = 'start' | 'center' | 'end';
@@ -137,10 +137,17 @@ export default function ModulesPreview({
   ]);
 
   // 2) Filtro zone riservate (coerente col commit)
-  const rects = useMemo(
-    () => rectsAll.filter(r => !isInReservedZone({ x: r.cx, y: r.cy }, roofId)),
-    [rectsAll, roofId]
-  );
+ const rects = useMemo(
+   () =>
+     rectsAll.filter(r =>
+       !overlapsReservedRect(
+         { cx: r.cx, cy: r.cy, w: r.wPx, h: r.hPx, angleDeg: r.angleDeg },
+         roofId,
+         1 // epsilon px
+       )
+     ),
+   [rectsAll, roofId]
+ );
 
   // 3) Griglia visiva (linee) — calcolata con la stessa logica di anchor/phase
   const gridLinesWorld = useMemo(() => {

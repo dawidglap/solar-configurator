@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { nanoid } from 'nanoid';
 import { usePlannerV2Store } from '@/components_v2/state/plannerV2Store';
 import type { Pt, PanelInstance } from '@/types/planner';
-import { isInReservedZone } from '../../zones/utils';
+import { overlapsReservedRect } from '../../zones/utils'
 
 type ModRect = { cx: number; cy: number; wPx: number; hPx: number; angleDeg: number };
 
@@ -196,7 +196,8 @@ function rectsForSelection(poly: Pt[], basics: ReturnType<typeof gridBasics>): M
       if (cyL < minY + panelH / 2 || cyL > maxY - panelH / 2) continue;
 
       const Cw = localToWorld({ x: cxL, y: cyL }, O, theta);
-      if (isInReservedZone(Cw, roof.id)) continue;
+      if (overlapsReservedRect({ cx: Cw.x, cy: Cw.y, w: panelW, h: panelH, angleDeg }, roof.id, 1))
+       continue;
 
       res.push({ cx: Cw.x, cy: Cw.y, wPx: panelW, hPx: panelH, angleDeg });
     }

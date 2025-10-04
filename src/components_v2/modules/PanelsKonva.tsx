@@ -351,6 +351,15 @@ const roofBBox = React.useMemo(() => {
     updatePanel, onDragStart, onDragEnd,
   ]);
 
+  
+
+const startMultiDrag = React.useCallback((e: any) => {
+  if (!groupBBox || selectedPanels.length < 2) return;
+  e.cancelBubble = true;      // blocca il pan dello Stage
+  beginGroupDrag(e);          // riusa la logica già pronta
+}, [groupBBox, selectedPanels.length, beginGroupDrag]);
+
+
   const handlePos = React.useMemo(() => {
     if (!groupBBox || selectedPanels.length < 2) return null;
     return {
@@ -360,40 +369,20 @@ const roofBBox = React.useMemo(() => {
   }, [groupBBox, invScale, selectedPanels.length]);
 
   // ======================= RENDER =======================
-  return (
+ return (
+  <>
+    {/* --- CLIPPED: pannelli + guide + banda margine --- */}
     <Group clipFunc={clipFunc} listening>
       <RoofMarginBand polygon={roofPolygon} marginPx={edgeMarginPx} />
-{roofBBox && (
-  <Rect
-    x={roofBBox.x}
-    y={roofBBox.y}
-    width={roofBBox.w}
-    height={roofBBox.h}
-    fill="rgba(0,0,0,0.01)"   // quasi invisibile, ma cliccabile
-    listening
-    onMouseDown={(e) => {
-      // clic in zona vuota della falda → clear pannelli + seleziona falda
-      e.cancelBubble = true; // non propagare allo stage
-      const st = usePlannerV2Store.getState();
-
-      // 1) deseleziona pannelli (multi/single)
-      st.clearPanelSelection?.();
-
-      // 2) opzionale: deseleziona eventuale zona attiva
-      st.setSelectedZone?.(undefined);
-
-      // 3) seleziona la falda, MA non in 'fill-area' per non interferire col tool
-      if (st.tool !== 'fill-area') {
-        st.select?.(roofId);
-      }
-    }}
-  />
-)}
-
 
       {panels.map((p) => {
-        const sel = (selectedIds?.length ? selectedSet.has(p.id) : p.id === selectedPanelId);
-        const rotationDeg = (typeof p.angleDeg === 'number') ? p.angleDeg : defaultAngleDeg;
+        const sel =
+          (selectedIds && selectedIds.length > 0 && selectedIds.includes(p.id)) ||
+          (!selectedIds?.length && p.id === selectedPanelId);
+
+        const rotationDeg =
+          typeof p.angleDeg === 'number' ? p.angleDeg : defaultAngleDeg;
+
         return (
           <PanelItem
             key={p.id}
@@ -411,45 +400,48 @@ const roofBBox = React.useMemo(() => {
         );
       })}
 
-      {/* guides snap: singolo + gruppo (stesso stile) */}
-      <Guides hintU={hintU} hintV={hintV} />
-      <Guides hintU={groupHintU} hintV={groupHintV} />
+      <Guides hintU={groupHintU ?? hintU} hintV={groupHintV ?? hintV} />
 
-      {/* handle gruppo (visuale + mousedown) */}
-      {handlePos && (
-        <Group
-          x={handlePos.x}
-          y={handlePos.y}
-          listening
-          onMouseDown={beginGroupDrag}
-          onTouchStart={beginGroupDrag}
-        >
-          <Rect
-            x={-(HANDLE_STAGE_PX * invScale) / 2}
-            y={-(HANDLE_STAGE_PX * invScale) / 2}
-            width={HANDLE_STAGE_PX * invScale}
-            height={HANDLE_STAGE_PX * invScale}
-            cornerRadius={8 * invScale}
-            fill="rgba(255,255,255,0.95)"
-            stroke="rgba(0,0,0,0.08)"
-            strokeWidth={1 * invScale}
-            shadowColor="black"
-            shadowBlur={12 * invScale}
-            shadowOpacity={0.18}
-            shadowOffsetY={2 * invScale}
-          />
-          <Line
-            points={[ -(6 * invScale), 0, (6 * invScale), 0 ]}
-            stroke="rgba(20,20,20,0.9)"
-            strokeWidth={1.5 * invScale}
-          />
-          <Line
-            points={[ 0, -(6 * invScale), 0, (6 * invScale) ]}
-            stroke="rgba(20,20,20,0.9)"
-            strokeWidth={1.5 * invScale}
-          />
-        </Group>
-      )}
     </Group>
-  );
+
+    {/* --- UNCLIPPED OVERLAY: handle multiselect sempre visibile --- */}
+    {groupBBox && (
+      <Group
+        x={groupBBox.x + groupBBox.w / 2}
+        y={groupBBox.y + groupBBox.h + HANDLE_GAP_STAGE_PX * invScale}
+         listening={true}                 // ← era false
+    onMouseDown={startMultiDrag}     // ← AGGIUNTO
+    onTouchStart={startMultiDrag}   // se hai la versione “draggable”, sposta qui gli handlers
+      >
+        <Rect
+          x={-(HANDLE_STAGE_PX * invScale) / 2}
+          y={-(HANDLE_STAGE_PX * invScale) / 2}
+          width={HANDLE_STAGE_PX * invScale}
+          height={HANDLE_STAGE_PX * invScale}
+          cornerRadius={8 * invScale}
+          fill="rgba(255,255,255,0.95)"
+          stroke="rgba(0,0,0,0.08)"
+          strokeWidth={1 * invScale}
+          shadowColor="black"
+          shadowBlur={12 * invScale}
+          shadowOpacity={0.18}
+          shadowOffsetY={2 * invScale}
+        />
+        <Line
+          points={[ -(6 * invScale), 0, (6 * invScale), 0 ]}
+          stroke="rgba(20,20,20,0.9)"
+          strokeWidth={1.5 * invScale}
+          listening={false}
+        />
+        <Line
+          points={[ 0, -(6 * invScale), 0, (6 * invScale) ]}
+          stroke="rgba(20,20,20,0.9)"
+          strokeWidth={1.5 * invScale}
+          listening={false}
+        />
+      </Group>
+    )}
+  </>
+);
+
 }

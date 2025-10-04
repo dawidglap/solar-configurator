@@ -150,9 +150,13 @@ useEffect(() => {
   const unsub = history.subscribe(() => {
     setCanUndo(history.canUndo());
     setCanRedo(history.canRedo());
-  });
-  return unsub;
+  }) as () => boolean;
+
+  return () => {
+    void unsub();    // forza il tipo a void
+  };
 }, []);
+
 
 
 
