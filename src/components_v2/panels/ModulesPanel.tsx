@@ -9,6 +9,26 @@ import GridAlignmentControl from '../modules/GridAlignmentControl';
 import GridCoverageControl from '../modules/GridCoverageControl';
 
 
+// --- helper in cima al file (fuori dal componente)
+function normDeg(d: number) { const x = d % 360; return x < 0 ? x + 360 : x; }
+function angleDiffDeg(a: number, b: number) {
+  let d = Math.abs(normDeg(a) - normDeg(b));
+  return d > 180 ? 360 - d : d;
+}
+function longestEdgeAngleDeg(pts: {x:number;y:number}[]) {
+  if (!pts || pts.length < 2) return 0;
+  let best = 0, maxLen2 = -1;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y;
+    const len2 = dx*dx + dy*dy;
+    if (len2 > maxLen2) { maxLen2 = len2; best = Math.atan2(dy, dx) * 180/Math.PI; }
+  }
+  return best;
+}
+
+
+
 
 
 const inputBase =
@@ -202,13 +222,37 @@ const m = usePlannerV2Store.getState().modules;
   disabled={disabled}
 onClick={() => {
   if (!selectedId || !selSpec || !snapshot.mppImage) return;
-  const roof = layers.find(l => l.id === selectedId);
-  if (!roof) return;
+
+const roof = layers.find(l => l.id === selectedId);
+if (!roof) return;
+
+// ⚠️ usa la stessa identica logica della preview
+const eavesCanvasDeg = -(roof.azimuthDeg ?? 0) + 90;
+const polyDeg = (() => {
+  let best = 0, len2 = -1;
+  for (let i = 0; i < roof.points.length; i++) {
+    const j = (i + 1) % roof.points.length;
+    const dx = roof.points[j].x - roof.points[i].x;
+    const dy = roof.points[j].y - roof.points[i].y;
+    const L2 = dx*dx + dy*dy;
+    if (L2 > len2) { len2 = L2; best = Math.atan2(dy, dx) * 180 / Math.PI; }
+  }
+  return best;
+})();
+
+// stessa soglia della preview
+const baseCanvasDeg = (Math.abs(((eavesCanvasDeg - polyDeg) % 360 + 360) % 360) > 180
+  ? 360 - Math.abs(((eavesCanvasDeg - polyDeg) % 360 + 360) % 360)
+  : Math.abs(((eavesCanvasDeg - polyDeg) % 360 + 360) % 360)) > 5
+  ? polyDeg
+  : eavesCanvasDeg;
+
+const gridCanvasDeg = baseCanvasDeg + (m.gridAngleDeg || 0);
 
 const rects = computeAutoLayoutRects({
   polygon: roof.points,
-  mppImage: snapshot.mppImage,
-  azimuthDeg: (roof.azimuthDeg ?? 0) + (m.gridAngleDeg || 0),
+  mppImage: snapshot.mppImage!,
+  azimuthDeg: gridCanvasDeg,   // 👈 ora matcha la preview
   orientation: modules.orientation,
   panelSizeM: { w: selSpec.widthM, h: selSpec.heightM },
   spacingM: modules.spacingM,
@@ -217,26 +261,24 @@ const rects = computeAutoLayoutRects({
   phaseY: m.gridPhaseY || 0,
   anchorX: (m.gridAnchorX as any) || 'start',
   anchorY: (m.gridAnchorY as any) || 'start',
-    coverageRatio: m.coverageRatio ?? 1,  
+  coverageRatio: m.coverageRatio ?? 1,
 });
 
-  // ⛔️ filtro: scarta i moduli il cui CENTRO cade in una zona "riservata"
-  const safe = rects.filter(r => !isInReservedZone({ x: r.cx, y: r.cy }, selectedId));
 
+
+  const safe = rects.filter(r => !isInReservedZone({ x: r.cx, y: r.cy }, selectedId));
   const instances = safe.map((r, idx) => ({
     id: `${selectedId}_p_${Date.now().toString(36)}_${idx}`,
     roofId: selectedId,
-    cx: r.cx,
-    cy: r.cy,
-    wPx: r.wPx,
-    hPx: r.hPx,
-    angleDeg: r.angleDeg,              // preserva l’angolo originale
+    cx: r.cx, cy: r.cy, wPx: r.wPx, hPx: r.hPx,
+    angleDeg: r.angleDeg,
     orientation: modules.orientation,
     panelId: selSpec.id,
   }));
 
   addPanelsForRoof(selectedId, instances);
 }}
+
 
   className={[
     'w-full rounded-full px-3 py-2 text-[13px] font-semibold border transition-colors',

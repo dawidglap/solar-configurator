@@ -1,6 +1,8 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage, Line } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Line, Rect } from 'react-konva';
+import { computeAutoLayoutRects } from '../modules/layout';
+import { isInReservedZone } from '../zones/utils';
 
 import { Pt, polygonAreaPx2, rectFrom3WithAz } from '../canvas/geom';
 import { usePlannerV2Store } from '../state/plannerV2Store';
@@ -52,6 +54,36 @@ function longestEdgeAngleDeg(pts: Pt[] | null | undefined) {
   }
   return radToDeg(best);
 }
+
+function pointInPoly(p: Pt, poly: Pt[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    const inter = (yi > p.y) !== (yj > p.y) &&
+      p.x < ((xj - xi) * (p.y - yi)) / ((yj - yi) || 1e-9) + xi;
+    if (inter) inside = !inside;
+  }
+  return inside;
+}
+
+
+const deg2rad = (d: number) => (d * Math.PI) / 180;
+function centroid(pts: Pt[]) {
+  let x = 0, y = 0;
+  for (const p of pts) { x += p.x; y += p.y; }
+  const n = Math.max(1, pts.length);
+  return { x: x / n, y: y / n };
+}
+function sub(a: Pt, b: Pt): Pt { return { x: a.x - b.x, y: a.y - b.y }; }
+function add(a: Pt, b: Pt): Pt { return { x: a.x + b.x, y: a.y + b.y }; }
+function rot(p: Pt, theta: number): Pt {
+  const c = Math.cos(theta), s = Math.sin(theta);
+  return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
+}
+function worldToLocal(p: Pt, O: Pt, theta: number): Pt { return rot(sub(p, O), -theta); }
+function localToWorld(p: Pt, O: Pt, theta: number): Pt { return add(rot(p, theta), O); }
+
 
 
 export default function CanvasStage() {
@@ -129,8 +161,7 @@ const baseGridDeg = useMemo(() => {
 }, [selectedRoof?.azimuthDeg, selectedRoof?.points]);
 
 // arrotonda per coerenza con i pannelli reali
-const baseGridDegRounded = Math.round(baseGridDeg * 100) / 100;
-const gridDeg = baseGridDegRounded + (gridMods.gridAngleDeg || 0);
+const gridDeg = baseGridDeg + (gridMods.gridAngleDeg || 0);
 
 
 // applica offset utente
@@ -324,7 +355,7 @@ onClick={(evt: any) => {
   roofId={selectedRoof.id}
   polygon={selectedRoof.points}
   mppImage={snap.mppImage}
-  azimuthDeg={(selectedRoof.azimuthDeg ?? 0) + (gridMods.gridAngleDeg || 0)}
+  azimuthDeg={gridDeg}  
   orientation={modules.orientation}
   panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
   spacingM={modules.spacingM}
@@ -405,45 +436,64 @@ onClick={(evt: any) => {
   selPanel &&
   snap.mppImage && (() => {
     const { a, b } = fillDraft;
-  const angleDeg = gridDeg;
+    const angleDeg = gridDeg;
 
+    // --- rettangolo ruotato A→B (stesso della tua versione corrente) ---
     const t = (angleDeg * Math.PI) / 180;
-
     const ux = { x: Math.cos(t),  y: Math.sin(t)  };
     const uy = { x: -Math.sin(t), y: Math.cos(t) };
-
-    const vx = b.x - a.x;
-    const vy = b.y - a.y;
+    const vx = b.x - a.x, vy = b.y - a.y;
     const w = vx * ux.x + vy * ux.y;
     const h = vx * uy.x + vy * uy.y;
-
     const p1 = { x: a.x,                 y: a.y };
     const p2 = { x: a.x + w * ux.x,      y: a.y + w * ux.y };
     const p3 = { x: p2.x + h * uy.x,     y: p2.y + h * uy.y };
     const p4 = { x: a.x + h * uy.x,      y: a.y + h * uy.y };
     const rectPoly = [p1, p2, p3, p4];
 
+    // --- calcolo rettangoli come al COMMIT: sulla falda + Randabstand + allineamenti ---
+    const rectsAll = computeAutoLayoutRects({
+      polygon: selectedRoof.points,
+      mppImage: snap.mppImage,
+      azimuthDeg: angleDeg,
+      orientation: modules.orientation,
+      panelSizeM: { w: selPanel.widthM, h: selPanel.heightM },
+      spacingM: modules.spacingM,
+      marginM: modules.marginM,                   // <-- ora la preview rispetta Randabstand
+      phaseX: gridMods.gridPhaseX || 0,
+      phaseY: gridMods.gridPhaseY || 0,
+      anchorX: (gridMods.gridAnchorX as any) || 'start',
+      anchorY: (gridMods.gridAnchorY as any) || 'start',
+      coverageRatio: gridMods.coverageRatio ?? 1,
+    });
+
+    // --- limita al rettangolo e filtra zone riservate (coerente col commit) ---
+    const rects = rectsAll
+      .filter(r => pointInPoly({ x: r.cx, y: r.cy }, rectPoly))
+      .filter(r => !isInReservedZone({ x: r.cx, y: r.cy }, selectedRoof.id));
+
+    // --- render: preview == commit ---
     return (
-      <ModulesPreview
-        // usiamo la falda selezionata per leggere eventuali zone/margini,
-        // ma il "target" da riempire è il poligono del rettangolo:
-        roofId={selectedRoof.id}
-        polygon={rectPoly}
-        mppImage={snap.mppImage}
-        azimuthDeg={angleDeg}
-        orientation={modules.orientation}
-        panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
-        spacingM={modules.spacingM}
-        marginM={modules.marginM}
-        textureUrl="/images/panel.webp"
-        phaseX={gridMods.gridPhaseX || 0}
-        phaseY={gridMods.gridPhaseY || 0}
-        anchorX={(gridMods.gridAnchorX as any) || 'start'}
-        anchorY={(gridMods.gridAnchorY as any) || 'start'}
-        coverageRatio={1} // qui riempiamo tutto il rettangolo
-      />
+      <>
+        {rects.map((r, i) => (
+          <Rect
+            key={i}
+            x={r.cx}
+            y={r.cy}
+            width={r.wPx}
+            height={r.hPx}
+            offsetX={r.wPx / 2}
+            offsetY={r.hPx / 2}
+            rotation={r.angleDeg}
+            fill="#2b4b7c"
+            opacity={0.85}
+            listening={false}
+          />
+        ))}
+      </>
     );
   })()}
+
 
 
             {/* ⬇️ Rubber-band fill-area RUOTATO: SOLO in modules + fill-area */}

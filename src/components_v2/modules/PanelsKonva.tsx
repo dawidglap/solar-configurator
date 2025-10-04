@@ -140,8 +140,12 @@ const gapPx = React.useMemo(() => (mpp ? spacingM / mpp : 0), [spacingM, mpp]);
 
       {panels.map((p) => {
         const sel = p.id === selectedPanelId;
-        const hasAngle = typeof p.angleDeg === 'number' && Math.abs(p.angleDeg) > 1e-6;
-        const rotationDeg = hasAngle ? (p.angleDeg as number) : defaultAngleDeg;
+  //  const hasAngle = typeof p.angleDeg === 'number' && Math.abs(p.angleDeg) > 1e-6;
+const rotationDeg = (typeof p.angleDeg === 'number')
+  ? p.angleDeg                 // 0° è valido
+  : defaultAngleDeg;
+
+
 
         return (
           <PanelItem

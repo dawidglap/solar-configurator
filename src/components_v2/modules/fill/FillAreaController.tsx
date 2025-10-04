@@ -45,6 +45,24 @@ function rectPolyFromAB(a: Pt, b: Pt, angleDeg: number): Pt[] {
   return [p1, p2, p3, p4];
 }
 
+function normDeg(d: number) { const x = d % 360; return x < 0 ? x + 360 : x; }
+function angleDiffDeg(a: number, b: number) {
+  let d = Math.abs(normDeg(a) - normDeg(b));
+  return d > 180 ? 360 - d : d;
+}
+function longestEdgeAngleDeg(pts: Pt[] | null | undefined) {
+  if (!pts || pts.length < 2) return 0;
+  let best = 0, maxLen2 = -1;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y;
+    const len2 = dx*dx + dy*dy;
+    if (len2 > maxLen2) { maxLen2 = len2; best = Math.atan2(dy, dx) * 180/Math.PI; }
+  }
+  return best;
+}
+
+
 export default function FillAreaController({ stageRef, toImgCoords, onDraftChange }: Props) {
   const step             = usePlannerV2Store((s) => s.step);
   const tool             = usePlannerV2Store((s) => s.tool);
@@ -70,10 +88,24 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       return toImgCoords(pos.x, pos.y);
     };
 
-    const currentAngleDeg = () => {
-      const roof = layers.find((l) => l.id === selectedId);
-      return ((roof?.azimuthDeg ?? 0) + (modules.gridAngleDeg || 0));
-    };
+const currentAngleDeg = () => {
+  const roof = layers.find((l) => l.id === selectedId);
+  if (!roof) return 0;
+
+  // 1) azimut → canvas
+  const eavesCanvasDeg = -(roof.azimuthDeg ?? 0) + 90;
+
+  // 2) edge più lungo del poligono (in canvas)
+  const polyDeg = longestEdgeAngleDeg(roof.points);
+
+  // 3) soglia 5° tra gronda e edge lungo
+  const baseCanvasDeg =
+    angleDiffDeg(eavesCanvasDeg, polyDeg) > 5 ? polyDeg : eavesCanvasDeg;
+
+  // 4) offset utente della griglia
+  return baseCanvasDeg + (modules.gridAngleDeg || 0);
+};
+
 
     const handleMouseMove = () => {
       if (!drawingRef.current || !draftRef.current) return;
