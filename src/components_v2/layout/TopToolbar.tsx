@@ -17,6 +17,8 @@ import { history } from '../state/history';
 import OrientationToggle from './TopToolbar/OrientationToggle';
 
 
+
+
 /* ───────────────────── Keycaps ───────────────────── */
 
 function Keycap({ children }: { children: React.ReactNode }) {
@@ -119,6 +121,11 @@ export default function TopToolbar() {
   const step    = usePlannerV2Store((s) => s.step);   // 'building' | 'modules' | ...
   const tool    = usePlannerV2Store((s) => s.tool);
   const setTool = usePlannerV2Store((s) => s.setTool);
+  // catalogo moduli (TopToolbar)
+const catalogPanels    = usePlannerV2Store(s => s.catalogPanels);
+const selectedPanelId  = usePlannerV2Store(s => s.selectedPanelId);
+const setSelectedPanel = usePlannerV2Store(s => s.setSelectedPanel);
+
 
   const isMac = useMemo(
     () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform),
@@ -325,8 +332,31 @@ useEffect(() => {
     />
     <div className="mx-1 h-6 w-px bg-neutral-200" />
     <OrientationToggle />
+    {/* ⬇️ INCOLLA QUI IL DROPDOWN */}
+    <div className="mx-1 h-6 w-px bg-neutral-200" />
+    <label htmlFor="topbar-panel-select" className="sr-only">Modul wählen</label>
+    <select
+      id="topbar-panel-select"
+      aria-label="Modul wählen"
+      value={selectedPanelId}
+      onChange={(e) => setSelectedPanel(e.target.value)}
+      className="
+        h-8 min-w-[220px] max-w-[320px]
+        rounded-full border border-neutral-200 bg-white/80
+        px-2 text-xs text-neutral-900
+        hover:bg-neutral-100
+        focus:outline-none focus:ring-2 focus:ring-black/10
+      "
+    >
+      {catalogPanels.map(p => (
+        <option key={p.id} value={p.id}>
+          {p.brand} {p.model} — {p.wp} W
+        </option>
+      ))}
+    </select>
   </>
 )}
+
 
       </div>
 
