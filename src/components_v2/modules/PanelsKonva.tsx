@@ -10,7 +10,7 @@ import { usePanelDragSnap } from './panels/usePanelDragSnap';
 import { PanelItem } from './panels/PanelItem';
 import { Guides } from './panels/Guides';
 import { RoofMarginBand } from './panels/RoofMarginBand';
-import { isInReservedZone } from '../zones/utils';  
+import { isInReservedZone } from '../zones/utils';
 
 // ---------- costanti snap (pixel SCHERMO) ----------
 const SNAP_STAGE_PX = 6; // quanto “tira” lo snap sullo schermo (modifica qui)
@@ -19,8 +19,8 @@ export default function PanelsKonva(props: {
   roofId: string;
   roofPolygon: Pt[];
   textureUrl?: string;
-  selectedPanelId?: string;
-  onSelect?: (id?: string) => void;
+  selectedPanelId?: string;               // legacy compat (fallback)
+  onSelect?: (id?: string, opts?: { additive?: boolean }) => void;
   onDragStart?: () => void;
   onDragEnd?: () => void;
   stageToImg?: (x: number, y: number) => Pt; // Stage → Img
@@ -39,7 +39,13 @@ export default function PanelsKonva(props: {
   // --- store
   const allPanels = usePlannerV2Store((s) => s.panels);
   const updatePanel = usePlannerV2Store((s) => s.updatePanel);
-  const panels = React.useMemo(() => allPanels.filter((p) => p.roofId === roofId), [allPanels, roofId]);
+  const panels = React.useMemo(
+    () => allPanels.filter((p) => p.roofId === roofId),
+    [allPanels, roofId]
+  );
+
+  // ⚠️ nuovo: array degli ID selezionati (multiselect)
+  const selectedIds = usePlannerV2Store((s) => s.selectedPanelIds || []);
 
   // --- scale corrente (per convertire px schermo → px immagine per lo snap)
   const stageScale = usePlannerV2Store((s) => s.view.scale || s.view.fitScale || 1);
@@ -49,9 +55,8 @@ export default function PanelsKonva(props: {
   const marginM = usePlannerV2Store((s) => s.modules.marginM) ?? 0;
   const mpp = usePlannerV2Store((s) => s.snapshot.mppImage) ?? 1; // metri per pixel
   const edgeMarginPx = React.useMemo(() => (mpp ? marginM / mpp : 0), [marginM, mpp]);
-  const spacingM = usePlannerV2Store(s => s.modules.spacingM) ?? 0;
-const gapPx = React.useMemo(() => (mpp ? spacingM / mpp : 0), [spacingM, mpp]);
-
+  const spacingM = usePlannerV2Store((s) => s.modules.spacingM) ?? 0;
+  const gapPx = React.useMemo(() => (mpp ? spacingM / mpp : 0), [spacingM, mpp]);
 
   // --- texture pannello (opzionale)
   const [img, setImg] = React.useState<HTMLImageElement | null>(null);
@@ -80,8 +85,13 @@ const gapPx = React.useMemo(() => (mpp ? spacingM / mpp : 0), [spacingM, mpp]);
   );
 
   // --- angolo falda: pannelli PARALLELI alla gronda ⇒ -azimuth + 90
-  const roofAzimuthDeg = usePlannerV2Store((s) => s.layers.find((l) => l.id === roofId)?.azimuthDeg);
-  const polyAngleDeg = React.useMemo(() => (longestEdgeAngle(roofPolygon) * 180) / Math.PI, [roofPolygon]);
+  const roofAzimuthDeg = usePlannerV2Store(
+    (s) => s.layers.find((l) => l.id === roofId)?.azimuthDeg
+  );
+  const polyAngleDeg = React.useMemo(
+    () => (longestEdgeAngle(roofPolygon) * 180) / Math.PI,
+    [roofPolygon]
+  );
 
   const defaultAngleDeg = React.useMemo(() => {
     if (typeof roofAzimuthDeg === 'number') {
@@ -128,24 +138,26 @@ const gapPx = React.useMemo(() => (mpp ? spacingM / mpp : 0), [spacingM, mpp]);
     onDragStart,
     onDragEnd,
     snapPxImg,   // soglia in px immagine
-    edgeMarginPx, // ⬅️ NOVITÀ: margine interno ai bordi tetto
+    edgeMarginPx, // margine interno ai bordi tetto
     gapPx,
     reservedGuard: (cx: number, cy: number) => !isInReservedZone({ x: cx, y: cy }, roofId),
   });
 
   return (
     <Group clipFunc={clipFunc} listening>
-        {/* Banda margine tetto (dietro ai pannelli) */}
-<RoofMarginBand polygon={roofPolygon} marginPx={edgeMarginPx} />
+      {/* Banda margine tetto (dietro ai pannelli) */}
+      <RoofMarginBand polygon={roofPolygon} marginPx={edgeMarginPx} />
 
       {panels.map((p) => {
-        const sel = p.id === selectedPanelId;
-  //  const hasAngle = typeof p.angleDeg === 'number' && Math.abs(p.angleDeg) > 1e-6;
-const rotationDeg = (typeof p.angleDeg === 'number')
-  ? p.angleDeg                 // 0° è valido
-  : defaultAngleDeg;
+        // ✅ multiselezione visibile
+        // - se ci sono ID nello store → usa quelli
+        // - fallback legacy: se array vuoto, usa selectedPanelId
+        const sel =
+          (selectedIds && selectedIds.length > 0 && selectedIds.includes(p.id)) ||
+          (!selectedIds?.length && p.id === selectedPanelId);
 
-
+        const rotationDeg =
+          typeof p.angleDeg === 'number' ? p.angleDeg : defaultAngleDeg;
 
         return (
           <PanelItem
