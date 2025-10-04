@@ -115,6 +115,20 @@ export default function PanelsKonva(props: {
     return { minU, maxU, minV, maxV };
   }, [roofPolygon, theta]);
 
+
+  // ⬇️ PRIMA del `return ( ... )`
+const roofBBox = React.useMemo(() => {
+  if (!roofPolygon.length) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of roofPolygon) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}, [roofPolygon]);
+
   // drag singolo (immutato)
   const { startDrag, hintU, hintV } = usePanelDragSnap({
     defaultAngleDeg,
@@ -349,6 +363,33 @@ export default function PanelsKonva(props: {
   return (
     <Group clipFunc={clipFunc} listening>
       <RoofMarginBand polygon={roofPolygon} marginPx={edgeMarginPx} />
+{roofBBox && (
+  <Rect
+    x={roofBBox.x}
+    y={roofBBox.y}
+    width={roofBBox.w}
+    height={roofBBox.h}
+    fill="rgba(0,0,0,0.01)"   // quasi invisibile, ma cliccabile
+    listening
+    onMouseDown={(e) => {
+      // clic in zona vuota della falda → clear pannelli + seleziona falda
+      e.cancelBubble = true; // non propagare allo stage
+      const st = usePlannerV2Store.getState();
+
+      // 1) deseleziona pannelli (multi/single)
+      st.clearPanelSelection?.();
+
+      // 2) opzionale: deseleziona eventuale zona attiva
+      st.setSelectedZone?.(undefined);
+
+      // 3) seleziona la falda, MA non in 'fill-area' per non interferire col tool
+      if (st.tool !== 'fill-area') {
+        st.select?.(roofId);
+      }
+    }}
+  />
+)}
+
 
       {panels.map((p) => {
         const sel = (selectedIds?.length ? selectedSet.has(p.id) : p.id === selectedPanelId);

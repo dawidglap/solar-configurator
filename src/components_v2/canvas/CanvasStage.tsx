@@ -346,7 +346,8 @@ onClick={(evt: any) => {
   if (evt.target === st) {
     const store = usePlannerV2Store.getState();
     store.select(undefined);        // deseleziona tetto
-    store.selectZone?.(undefined);  // ⬅️ deseleziona zona
+    store.selectZone?.(undefined);  
+    store.clearPanelSelection?.(); // ⬅️ deseleziona zona
   }
 }}
 
