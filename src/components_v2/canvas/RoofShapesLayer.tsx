@@ -326,11 +326,11 @@ const highlightAll = hoverAll && isCanvaGroupDrag;
         const multi  = groupSel.length > 0; 
 const inGroupOnly = !sel && groupSel.includes(r.id);
 const strokeColor = highlightAll
-  ? '#7c3aed'                           // viola evidenziato
+  ? '#59AC77'                           // viola evidenziato
   : sel
   ? strokeSelected
   : inGroupOnly
-  ? '#7c3aed'
+  ? '#59AC77'
   : stroke;
 
 const strokeW  = highlightAll
@@ -712,12 +712,12 @@ onMouseDown={(e) => {
       onMouseEnter={(e) => {
         e.target.getStage()?.container()?.style.setProperty('cursor','grab');
         const circle = (e.currentTarget as any).findOne('.rotKnob') as Konva.Circle;
-        if (circle) { circle.fill('#7c3aed'); circle.stroke('#a78bfa'); circle.getLayer()?.batchDraw(); }
+        if (circle) { circle.fill('#ffffff'); circle.stroke('#fdfdfd'); circle.getLayer()?.batchDraw(); }
       }}
       onMouseLeave={(e) => {
         e.target.getStage()?.container()?.style.removeProperty('cursor');
         const circle = (e.currentTarget as any).findOne('.rotKnob') as Konva.Circle;
-        if (circle) { circle.fill('#7c3aed'); circle.stroke('#a78bfa'); circle.getLayer()?.batchDraw(); }
+        if (circle) { circle.fill('#ffffff'); circle.stroke('#ffffff'); circle.getLayer()?.batchDraw(); }
       }}
       onMouseDown={(e) => {
         e.cancelBubble = true;
@@ -770,8 +770,8 @@ onMouseDown={(e) => {
       <KonvaCircle
         name="rotKnob"
         radius={HANDLE_SZ / 2}
-        fill="#7c3aed"          // viola Canva-like
-        stroke="#a78bfa"
+        fill="#dbd9d9"          // viola Canva-like
+        stroke="#565656"
         strokeWidth={1}
         shadowColor="rgba(0,0,0,0.25)"
         shadowBlur={4}
@@ -794,7 +794,7 @@ onMouseDown={(e) => {
       listening={false}
     >
       {ROT_ICON.paths.map((d, i) => (
-        <KonvaPath key={i} data={d} fill="#ffffff" />
+        <KonvaPath key={i} data={d} fill="#545454" />
       ))}
     </KonvaGroup>
   );
