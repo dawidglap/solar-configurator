@@ -65,10 +65,13 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
     const t = setTimeout(async () => {
       try {
         setLoading(true);
-        const url =
+          const url =
           `https://nominatim.openstreetmap.org/search` +
           `?q=${encodeURIComponent(q)}` +
-          `&format=json&addressdetails=1&limit=8`;
+          `&format=json` +
+          `&addressdetails=1` +
+          `&limit=8` +
+         `&countrycodes=ch`;  
         const res = await fetch(url, {
           headers: {
             'Accept': 'application/json',
@@ -76,12 +79,27 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
             'User-Agent': 'SOLA-Planner/1.0 (contact: your-email@example.com)',
           },
         });
-        const json = await res.json();
-        const mapped: Suggest[] = (json ?? []).map((r: any) => ({
-          label: r.display_name as string,
-          lat: parseFloat(r.lat),
-          lon: parseFloat(r.lon),
-        }));
+          const json = await res.json();
+        const mapped: Suggest[] = (json ?? []).map((r: any) => {
+          const a = r.address || {};
+          const street =
+            a.road || a.pedestrian || a.footway || a.path || a.cycleway || a.residential;
+          const number = a.house_number;
+          const postcode = a.postcode;
+          const city = a.city || a.town || a.village || a.hamlet || a.suburb;
+
+          // "Schachenstrasse 4 9450 Lüchingen"
+          const left = [street, number].filter(Boolean).join(' ');
+          const right = [postcode, city].filter(Boolean).join(' ');
+          const label =
+            [left, right].filter(Boolean).join(' ') || (r.display_name as string);
+
+          return {
+            label,
+            lat: parseFloat(r.lat),
+            lon: parseFloat(r.lon),
+          };
+        });
         setResults(mapped);
         setOpen(mapped.length > 0);
         setActive(mapped.length ? 0 : -1);
