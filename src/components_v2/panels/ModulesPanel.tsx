@@ -1,34 +1,36 @@
 // src/components_v2/modules/ModulesPanel.tsx
 'use client';
 
+import React from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
+import RoofAreaInfo from '../ui/RoofAreaInfo';
+import DetectedRoofsImport from '../panels/DetectedRoofsImport';
+
+type Pt = { x: number; y: number };
 
 const inputBase =
   'w-full h-7 rounded-xl border border-neutral-200 bg-neutral-50/90 px-2 text-[11px] leading-none outline-none ' +
   'focus:ring-1 focus:ring-neutral-400 focus:border-neutral-300 transition';
 
-const btnBase =
-  'w-full h-8 rounded-full text-[11px] font-medium transition border';
-
-const btnPrimary =
-  'bg-neutral-900 text-white border-neutral-900 hover:bg-neutral-800 disabled:bg-neutral-200 disabled:text-neutral-500 disabled:border-neutral-200 disabled:cursor-not-allowed';
-
+const btnBase = 'w-full h-8 rounded-full text-[11px] font-medium transition border';
 const btnGhost =
   'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50 disabled:text-neutral-400 disabled:cursor-not-allowed';
 
-const chip =
-  'h-7 rounded-full border px-3 text-[11px] font-medium transition';
-
 export default function ModulesPanel() {
+  // --- Stato per lista livelli (ex LeftLayersOverlay) ---
+  const layers     = usePlannerV2Store(s => s.layers);
+  const selectedId = usePlannerV2Store(s => s.selectedId);
+  const select     = usePlannerV2Store(s => s.select);
+  const del        = usePlannerV2Store(s => s.deleteLayer);
+  const mpp        = usePlannerV2Store(s => s.snapshot.mppImage);
+  const detected   = usePlannerV2Store(s => s.detectedRoofs);
+
+  // --- Stato pannelli/moduli ---
   const modules            = usePlannerV2Store(s => s.modules);
   const setModules         = usePlannerV2Store(s => s.setModules);
-
-  const selectedId         = usePlannerV2Store(s => s.selectedId);
   const panels             = usePlannerV2Store(s => s.panels);
   const clearPanelsForRoof = usePlannerV2Store(s => s.clearPanelsForRoof);
-
   const selSpec            = usePlannerV2Store(s => s.getSelectedPanel());
-  const mpp                = usePlannerV2Store(s => s.snapshot.mppImage);
 
   const panelsOnRoof = panels.filter(p => p.roofId === selectedId);
   const count  = panelsOnRoof.length;
@@ -42,8 +44,70 @@ export default function ModulesPanel() {
   const disabled = !selectedId;
 
   return (
-    <div className="w-full max-w-[240px] space-y-3 p-2">
-      {/* ABSTÄNDE */}
+    <div className="w-full max-w-[240px] space-y-3 p-2 ">
+      {/* === EBENEN (inline, sempre visibile) === */}
+      <section className="rounded-2xl  border border-neutral-200 bg-white/85 backdrop-blur-sm shadow-sm">
+        <div className="border-b bg-white/80 rounded-t-2xl px-3 py-2">
+          <h3 className="text-xs font-semibold tracking-tight">
+            Ebenen{layers.length ? ` (${layers.length})` : ''}
+          </h3>
+        </div>
+
+        <div className="p-3 space-y-3">
+          {/* Erkannte Dächer (se presenti) */}
+          {detected?.length > 0 && (
+            <div className="rounded-lg border border-neutral-200 bg-white px-2.5 py-2">
+              <h4 className="mb-1 text-[11px] font-semibold text-neutral-900">Erkannte Dächer</h4>
+              <DetectedRoofsImport />
+            </div>
+          )}
+
+          {/* Lista livelli */}
+          {layers.length === 0 ? (
+            <p className="text-xs text-neutral-600">Noch keine Ebenen.</p>
+          ) : (
+            <ul className="flex flex-col gap-1 pr-1">
+              {layers.map((l) => {
+                const active = selectedId === l.id;
+                return (
+                  <li key={l.id}>
+                    <div
+                      className={[
+                        'flex items-center justify-between rounded-md border px-2 py-[2px] text-xs',
+                        active
+                          ? 'bg-black text-white border-black'
+                          : 'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50',
+                      ].join(' ')}
+                    >
+                      <button
+                        onClick={() => select(l.id)}
+                        className="min-w-0 flex-1 truncate text-left"
+                        title={l.name}
+                        aria-label={`Ebene auswählen: ${l.name}`}
+                      >
+                        {l.name}
+                      </button>
+
+                      <RoofAreaInfo points={l.points as Pt[]} mpp={mpp} />
+
+                      <button
+                        onClick={() => del(l.id)}
+                        className={`ml-2 ${active ? 'opacity-90 hover:opacity-100' : 'text-neutral-400 hover:text-red-600'}`}
+                        title="Löschen"
+                        aria-label={`Ebene löschen: ${l.name}`}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </section>
+<div className='w-full border-b-1 border-neutral-200'></div>
+      {/* === EIGENSCHAFTEN / ABSTÄNDE === */}
       <fieldset className="space-y-1">
         <label className="block text-[10px] font-medium uppercase tracking-wide text-neutral-600">
           Abstände
@@ -90,59 +154,8 @@ export default function ModulesPanel() {
         </div>
       </fieldset>
 
-      {/* Allineamento/ancoraggi raster (manteniamo il componente) */}
-      {/* <GridAlignmentControl /> */}
-
-      {/* Rotazione raster (manteniamo il componente) */}
-      {/* <GridRotationControl /> */}
-
-      {/* SEGMENT TOGGLES */}
-      {/*
-      <div className="flex gap-2">
-        <button
-          onClick={() => setModules({ showGrid: !modules.showGrid })}
-          className={[
-            'flex-1', chip,
-            modules.showGrid
-              ? 'bg-neutral-900 text-white border-neutral-900'
-              : 'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50'
-          ].join(' ')}
-          title="Raster ein/aus"
-          aria-pressed={modules.showGrid}
-        >
-          {modules.showGrid ? 'Raster: AN' : 'Raster: AUS'}
-        </button>
-      </div>
-      */}
-
-      {/* AKTIONEN */}
+      {/* Azioni */}
       <div className="space-y-2">
-        {/*
-        <button
-          disabled={disabled}
-          onClick={() => console.info('[auto-layout] roof:', selectedId)}
-          className={[btnBase, btnPrimary].join(' ')}
-        >
-          Auto-Layout
-        </button>
-        */}
-
-        {/*
-        // In Module umwandeln – mantiene la stessa logica della preview
-        // Richiede: computeAutoLayoutRects, isInReservedZone, snapshot, layers, m, addPanelsForRoof
-        <button
-          disabled={disabled}
-          onClick={...}
-          className={[
-            'w-full rounded-full px-3 py-2 text-[13px] font-semibold border transition-colors',
-            disabled ? 'bg-white text-neutral-400 border-neutral-200 cursor-not-allowed'
-                     : 'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50'
-          ].join(' ')}
-        >
-          In Module umwandeln
-        </button>
-        */}
-
         <button
           disabled={disabled || panelsOnRoof.length === 0}
           onClick={() => selectedId && clearPanelsForRoof(selectedId)}
@@ -152,14 +165,13 @@ export default function ModulesPanel() {
         </button>
       </div>
 
-      {/* KENNZAHLEN */}
+      {/* KPI */}
       <div className="rounded-xl border border-neutral-200 bg-white/70 p-2">
         <Row label="Module" value={String(count)} />
         <Row label="Fläche" value={`${areaM2 ? areaM2.toFixed(1) : '0,0'} m²`} />
         <Row label="Leistung" value={`${kWp ? kWp.toFixed(2) : '0,00'} kWp`} />
       </div>
 
-      {/* FOOT NOTE */}
       <p className="text-[10px] text-neutral-400 text-center">
         Änderungen werden sofort übernommen
       </p>

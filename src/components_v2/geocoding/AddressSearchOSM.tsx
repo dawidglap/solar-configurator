@@ -18,6 +18,35 @@ type Props = {
   placeholder?: string;
 };
 
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightMatches(label: string, query: string): React.ReactNode {
+  const q = query.trim();
+  if (!q) return label;
+  try {
+    const re = new RegExp(escapeRegExp(q), 'ig');
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(label)) !== null) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (start > lastIndex) parts.push(label.slice(lastIndex, start));
+      parts.push(<mark key={`${start}-${end}`} className="bg-yellow-200/60 rounded-sm px-0.5">{label.slice(start, end)}</mark>);
+      lastIndex = end;
+      // protezione da regex senza avanzamento
+      if (re.lastIndex === start) re.lastIndex++;
+    }
+    if (lastIndex < label.length) parts.push(label.slice(lastIndex));
+    return parts;
+  } catch {
+    return label;
+  }
+}
+
+
 type Suggest = { label: string; lat: number; lon: number };
 
 export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen…' }: Props) {
@@ -72,6 +101,8 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
           `&addressdetails=1` +
           `&limit=8` +
          `&countrycodes=ch`;  
+
+         
         const res = await fetch(url, {
           headers: {
             'Accept': 'application/json',
@@ -79,7 +110,15 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
             'User-Agent': 'SOLA-Planner/1.0 (contact: your-email@example.com)',
           },
         });
-       const json = await res.json();
+  const json = await res.json();
+
+// --- analizza la query utente per capire se ha scritto CAP o numero civico ---
+const ql = q.trim().toLowerCase();
+const capInQuery = (ql.match(/\b\d{4}\b/) || [null])[0];                 // es. "9450" oppure null
+const houseTokenMatch = ql.match(/\b(\d{1,3}(?:[a-z]|(?:\.\d+)?)?)\b/);  // 4, 4a, 4.1, ecc.
+let houseInQuery: string | null = houseTokenMatch ? houseTokenMatch[1] : null;
+// se quel numero coincide con il CAP, non trattarlo come house number
+if (houseInQuery && capInQuery && houseInQuery === capInQuery) houseInQuery = null;
 
 // Costruiamo prima un array che può contenere Suggest | null
 const tmp: Array<Suggest | null> = (json ?? []).map((r: any): Suggest | null => {
@@ -90,10 +129,13 @@ const tmp: Array<Suggest | null> = (json ?? []).map((r: any): Suggest | null => 
   const postcode = a.postcode;
   const city = a.city || a.town || a.village || a.hamlet || a.suburb;
 
-  // 🔒 FILTRO: accetta solo indirizzi con via + numero
-  if (!street || !number) return null;
+  // ❗ Nuovo filtro:
+  // - serve SEMPRE la via
+  // - il numero civico è richiesto SOLO se l'utente lo ha scritto nella query
+  if (!street) return null;
+  if (houseInQuery && !number) return null;
 
-  // "Schachenstrasse 4 9450 Lüchingen"
+  // "Schachenstrasse 4 9450 Lüchingen" | se manca il numero: "Schachenstrasse 9450 Lüchingen"
   const left = [street, number].filter(Boolean).join(' ');
   const right = [postcode, city].filter(Boolean).join(' ');
   const label = [left, right].filter(Boolean).join(' ') || (r.display_name as string);
@@ -108,9 +150,35 @@ const tmp: Array<Suggest | null> = (json ?? []).map((r: any): Suggest | null => 
 // ✅ Type guard esplicito: ora è Suggest[]
 const mapped: Suggest[] = tmp.filter((x: Suggest | null): x is Suggest => x !== null);
 
-setResults(mapped);
-setOpen(mapped.length > 0);
-setActive(mapped.length ? 0 : -1);
+// ---- ORDINAMENTO PER RILEVANZA ----
+const sorted = mapped.slice().sort((a, b) => {
+  const al = a.label.toLowerCase();
+  const bl = b.label.toLowerCase();
+
+  // 1) startsWith query
+  const aStarts = Number(al.startsWith(ql));
+  const bStarts = Number(bl.startsWith(ql));
+  if (aStarts !== bStarts) return bStarts - aStarts;
+
+  // 2) CAP esatto
+  if (capInQuery) {
+    const aCap = Number(al.includes(capInQuery));
+    const bCap = Number(bl.includes(capInQuery));
+    if (aCap !== bCap) return bCap - aCap;
+  }
+
+  // 3) prima occorrenza della query (minore è meglio)
+  const ai = al.indexOf(ql);
+  const bi = bl.indexOf(ql);
+  if (ai !== bi) return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
+
+  // 4) label più corta prima
+  return a.label.length - b.label.length;
+});
+
+setResults(sorted);
+setOpen(sorted.length > 0);
+setActive(sorted.length ? 0 : -1);
 } catch (e: any) {
   setErr(e?.message ?? 'Search error');
   setResults([]);
@@ -122,6 +190,8 @@ setActive(mapped.length ? 0 : -1);
 }, 250);
 return () => clearTimeout(t);
 }, [q]);
+
+
 
 
 
@@ -241,7 +311,9 @@ return () => clearTimeout(t);
                 i === active ? 'bg-neutral-100' : 'hover:bg-neutral-50',
               ].join(' ')}
             >
-              {r.label}
+              <div className="truncate" title={r.label}>
+              {highlightMatches(r.label, q)}
+           </div>
             </div>
           ))}
       </div>

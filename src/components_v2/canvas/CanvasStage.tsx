@@ -33,6 +33,7 @@ import ZonesLayer from '../zones/ZonesLayer';
 import FillAreaController from '../modules/fill/FillAreaController';
 import ToolHotkeys from '../layout/ToolHotkeys';
 import { history as plannerHistory } from '../state/history';
+import ProjectStatsBar from '../ui/ProjectStatsBar';
 
 
 
@@ -301,8 +302,8 @@ const {
 </div>
 
 
-      <OverlayLeftToggle />
-      <LeftLayersOverlay />
+      
+      
 
       {img && size.w > 0 && size.h > 0 && (
         <Stage
@@ -568,6 +569,7 @@ onSelect={(id) => {
         mpp={snap.mppImage}
         edgeColor={strokeSelected}
       />
+      <ProjectStatsBar />
     </div>
   );
 }
