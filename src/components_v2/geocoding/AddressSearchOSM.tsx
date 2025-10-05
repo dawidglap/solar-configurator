@@ -81,47 +81,48 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
         });
        const json = await res.json();
 
-      const mapped: Suggest[] = (json ?? [])
-        .map((r: any) => {
-          const a = r.address || {};
-          const street =
-            a.road || a.pedestrian || a.footway || a.path || a.cycleway || a.residential;
-          const number = a.house_number;
-          const postcode = a.postcode;
-          const city = a.city || a.town || a.village || a.hamlet || a.suburb;
+// Costruiamo prima un array che può contenere Suggest | null
+const tmp: Array<Suggest | null> = (json ?? []).map((r: any): Suggest | null => {
+  const a = r.address || {};
+  const street =
+    a.road || a.pedestrian || a.footway || a.path || a.cycleway || a.residential;
+  const number = a.house_number;
+  const postcode = a.postcode;
+  const city = a.city || a.town || a.village || a.hamlet || a.suburb;
 
-          // 🔒 FILTRO: accetta solo indirizzi con via + numero
-          if (!street || !number) return null;
+  // 🔒 FILTRO: accetta solo indirizzi con via + numero
+  if (!street || !number) return null;
 
-          // "Schachenstrasse 4 9450 Lüchingen"
-          const left = [street, number].filter(Boolean).join(' ');
-          const right = [postcode, city].filter(Boolean).join(' ');
-          const label = [left, right].filter(Boolean).join(' ') || (r.display_name as string);
+  // "Schachenstrasse 4 9450 Lüchingen"
+  const left = [street, number].filter(Boolean).join(' ');
+  const right = [postcode, city].filter(Boolean).join(' ');
+  const label = [left, right].filter(Boolean).join(' ') || (r.display_name as string);
 
-          const s: Suggest = {
-            label,
-            lat: parseFloat(r.lat),
-            lon: parseFloat(r.lon),
-          };
-          return s;
-        })
-        // ✅ type guard: dopo questo filtro l'array è Suggest[]
-        .filter((x): x is Suggest => x !== null);
+  return {
+    label,
+    lat: parseFloat(r.lat),
+    lon: parseFloat(r.lon),
+  };
+});
 
-      setResults(mapped);
-      setOpen(mapped.length > 0);
-      setActive(mapped.length ? 0 : -1);
-    } catch (e: any) {
-      setErr(e?.message ?? 'Search error');
-      setResults([]);
-      setOpen(false);
-      setActive(-1);
-    } finally {
-      setLoading(false);
-    }
-  }, 250);
-  return () => clearTimeout(t);
+// ✅ Type guard esplicito: ora è Suggest[]
+const mapped: Suggest[] = tmp.filter((x: Suggest | null): x is Suggest => x !== null);
+
+setResults(mapped);
+setOpen(mapped.length > 0);
+setActive(mapped.length ? 0 : -1);
+} catch (e: any) {
+  setErr(e?.message ?? 'Search error');
+  setResults([]);
+  setOpen(false);
+  setActive(-1);
+} finally {
+  setLoading(false);
+}
+}, 250);
+return () => clearTimeout(t);
 }, [q]);
+
 
 
   // Calcola e applica la posizione del dropdown (fixed) sotto l'anchor
