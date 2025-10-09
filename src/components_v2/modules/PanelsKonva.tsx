@@ -372,7 +372,12 @@ const startMultiDrag = React.useCallback((e: any) => {
  return (
   <>
     {/* --- CLIPPED: pannelli + guide + banda margine --- */}
-    <Group clipFunc={clipFunc} listening>
+    <Group
+      clipFunc={clipFunc}
+      listening
+      onMouseDown={(e) => { e.cancelBubble = true; }}
+      onTouchStart={(e) => { e.cancelBubble = true; }}
+    >
       <RoofMarginBand polygon={roofPolygon} marginPx={edgeMarginPx} />
 
       {panels.map((p) => {

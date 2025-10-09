@@ -59,9 +59,9 @@ export default function ZonesLayer({
         if (!flat) return null;
 
         const isSel = z.id === selectedZoneId;
-        const stroke = isSel ? '#ff2d55' : '#ff5f56';
+        const stroke = isSel ? '#948979' : '#DFD0B8';
         const strokeWidth = isSel ? 2 : 0.8;
-        const fill = isSel ? 'rgba(255,95,86,0.28)' : 'rgba(255,95,86,0.18)';
+        const fill = isSel ? 'rgba(148, 137, 121, 0.28)' : 'rgba(148, 137, 121, 0.18)';
 
         return (
           <Group key={z.id}>
@@ -72,7 +72,7 @@ export default function ZonesLayer({
               fill={fill}
               stroke={stroke}
               strokeWidth={strokeWidth}
-              shadowColor={isSel ? '#ff2d55' : undefined}
+              shadowColor={isSel ? '#948979' : undefined}
               shadowBlur={isSel ? 6 : 0}
               listening={false}
             />

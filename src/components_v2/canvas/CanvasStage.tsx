@@ -489,7 +489,7 @@ onSelect={(id) => {
     if (!id) return;
     const st = usePlannerV2Store.getState();
     st.select?.(undefined);            // deseleziona falda
-    st.setSelectedZone?.(undefined);   // deseleziona eventuale zona
+    st.selectZone?.(undefined);   // deseleziona eventuale zona
   }}
 
               stageToImg={toImgCoords}
@@ -497,7 +497,7 @@ onSelect={(id) => {
   setDraggingPanel(true);
   const st = usePlannerV2Store.getState();
   st.select?.(undefined);
-  st.setSelectedZone?.(undefined);
+  st.selectZone?.(undefined);
 }}
 
               onAnyDragEnd={() => setDraggingPanel(false)}
