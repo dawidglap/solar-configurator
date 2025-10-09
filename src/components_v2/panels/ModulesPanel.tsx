@@ -226,6 +226,7 @@ onClick={() => {
   }));
 
   addPanelsForRoof(selectedId, instances);
+    if (modules.showGrid) setModules({ showGrid: false });
 }}
 
 

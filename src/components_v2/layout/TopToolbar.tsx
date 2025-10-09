@@ -9,7 +9,7 @@ import {
   PenLine,
   Square,
   ShieldAlert,
-  Grid2x2,
+  Expand,
   RotateCcw,
   RotateCw,
 } from 'lucide-react';
@@ -189,7 +189,7 @@ useEffect(() => {
     const { visible, pos, show, hide } = useBottomTooltip(ref);
 
     const base =
-      'inline-flex items-center gap-1.5 rounded-full h-8 px-3 text-[10px] uppercase tracking-wide font-medium transition';
+      'inline-flex items-center gap-0 rounded-full h-8 px-3 text-[10px] uppercase tracking-wide font-medium transition';
     const inactive = 'border border-neutral-200 bg-white/80 text-neutral-800 hover:bg-neutral-100';
     const activeCls = 'bg-neutral-900 text-white';
     const disabledCls = 'opacity-50 cursor-not-allowed hover:bg-inherit';
@@ -278,12 +278,12 @@ useEffect(() => {
       }}
     >
       {/* SX: azioni contestuali */}
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="ms-[278px] flex min-w-0 items-center gap-2">
         <ActionBtn
           active={tool === 'select'}
           onClick={() => setTool('select' as any)}
           Icon={MousePointer}
-          label="Auswählen"
+          label=""
           tooltipLabel="Auswählen"
           tooltipKeys={['A']}
         />
@@ -295,7 +295,7 @@ useEffect(() => {
               active={tool === 'draw-roof'}
               onClick={() => setTool('draw-roof' as any)}
               Icon={PenLine}
-              label="Dach zeichnen"
+              label=""
               tooltipLabel="Dach zeichnen"
               tooltipKeys={['D']}
             />
@@ -303,7 +303,7 @@ useEffect(() => {
               active={tool === 'draw-rect'}
               onClick={() => setTool('draw-rect' as any)}
               Icon={Square}
-              label="Rechteck"
+              label=""
               tooltipLabel="Rechteck zeichnen"
               tooltipKeys={['R']}
             />
@@ -311,7 +311,7 @@ useEffect(() => {
               active={tool === 'draw-reserved'}
               onClick={() => setTool('draw-reserved' as any)}
               Icon={ShieldAlert}
-              label="Hindernis"
+              label=""
               tooltipLabel="Hindernis / Reservierte Zone"
               tooltipKeys={['H']}
             />
@@ -325,8 +325,8 @@ useEffect(() => {
     <ActionBtn
       active={tool === 'fill-area'}
       onClick={() => setTool('fill-area' as any)}
-      Icon={Grid2x2}
-      label="Fläche füllen"
+      Icon={Expand}
+      label=""
       tooltipLabel="Fläche füllen"
       tooltipKeys={['F']}
     />
