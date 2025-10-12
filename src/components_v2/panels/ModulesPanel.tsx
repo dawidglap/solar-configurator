@@ -6,8 +6,6 @@ import { usePlannerV2Store } from '../state/plannerV2Store';
 import RoofAreaInfo from '../ui/RoofAreaInfo';
 import DetectedRoofsImport from '../panels/DetectedRoofsImport';
 import { MdViewModule } from 'react-icons/md';
-
-// Modullayout: spostiamo qui il toggle (stesso componente già usato in TopToolbar)
 import OrientationToggle from '../layout/TopToolbar/OrientationToggle';
 
 type Pt = { x: number; y: number };
@@ -33,93 +31,113 @@ export default function ModulesPanel() {
   const setModules = usePlannerV2Store(s => s.setModules);
   const selSpec    = usePlannerV2Store(s => s.getSelectedPanel());
 
+  // --- Catalogo / selezione PV modulo (spostato qui dalla topbar) ---
+  const catalogPanels    = usePlannerV2Store(s => s.catalogPanels);
+  const selectedPanelId  = usePlannerV2Store(s => s.selectedPanelId);
+  const setSelectedPanel = usePlannerV2Store(s => s.setSelectedPanel);
+
   return (
     <div className="w-full max-w-[240px] space-y-4 p-2">
-{/* === EBENEN (ultra-compact, 1 row per roof, no cards) === */}
-<div className="px-2">
-  <div className="mb-1 text-[10px] font-semibold tracking-wide text-neutral-600">
-    Ebenen{layers.length ? ` (${layers.length})` : ''}
-  </div>
 
-  {/* opzionale: import tetti rilevati, compatto */}
-  {detected?.length > 0 && (
-    <div className="mb-2">
-      <div className="mb-1 text-[10px] font-medium text-neutral-700">Erkannte Dächer</div>
-      <DetectedRoofsImport />
-    </div>
-  )}
+      {/* === EBENEN (tabella compatta con header) === */}
+      <div className="px-0">
+        <div className={`${labelSm} mb-2 text-neutral-600`}>
+          Ebenen{layers.length ? ` (${layers.length})` : ''}
+        </div>
 
-  {layers.length === 0 ? (
-    <p className="px-1 py-1 text-[11px] text-neutral-600">Noch keine Ebenen.</p>
-  ) : (
-    <ul className="text-[10px]">
-      {layers.map((l, i) => {
-        const roofId = l.id;
-        const active = selectedId === roofId;
+        {detected?.length > 0 && (
+          <div className="mb-2">
+            <div className="mb-1 text-[10px] font-medium text-neutral-700">Erkannte Dächer</div>
+            <DetectedRoofsImport />
+          </div>
+        )}
 
-        const count = panels.filter(p => p.roofId === roofId).length;
-        const kWp   = selSpec ? (selSpec.wp / 1000) * count : 0;
-
-        return (
-          <li key={roofId}>
+        {layers.length === 0 ? (
+          <p className="px-1 py-1 text-[11px] text-neutral-600">Noch keine Ebenen.</p>
+        ) : (
+          <div className="text-[10px]">
+            {/* Header */}
             <div
-              className={[
-                'flex h-6 items-center gap-2 border-b border-neutral-200 px-1',
-                active ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50'
-              ].join(' ')}
+              className="
+                grid grid-cols-[36px_36px_56px_60px_18px]
+                items-center px-1 py-1 text-neutral-500
+              "
             >
-              {/* D1 / D2 ... */}
-              <button
-                onClick={() => select(roofId)}
-                title={l.name ?? `D${i + 1}`}
-                aria-label={`Ebene auswählen: ${l.name ?? `D${i + 1}`}`}
-                className="w-8 text-left font-semibold tracking-wide"
-              >
-                {`D${i + 1}`}
-              </button>
-
-              {/* moduli (icona + numero) */}
-              <button
-                onClick={() => select(roofId)}
-                title={`${count} Module`}
-                aria-label={`${count} Module`}
-                className="inline-flex items-center gap-1 tabular-nums opacity-80 w-10"
-              >
-                <MdViewModule className="h-3 w-3" />
-                <span>{count}</span>
-              </button>
-
-              {/* m² */}
-              <div className="opacity-80 tabular-nums w-[52px] text-right">
-                <RoofAreaInfo points={l.points as Pt[]} mpp={mpp} />
-              </div>
-
-              {/* kWp */}
-              <div className="ml-auto opacity-80 tabular-nums w-[74px] text-right">
-                {kWp ? kWp.toFixed(2) : '0,00'} kWp
-              </div>
-
-              {/* elimina */}
-              <button
-                onClick={() => del(roofId)}
-                title="Löschen"
-                aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
-                className={[
-                  'ml-1 text-[12px] leading-none',
-                  active ? 'opacity-90 hover:opacity-100' : 'opacity-50 hover:opacity-100 hover:text-red-600'
-                ].join(' ')}
-              >
-                ✕
-              </button>
+              <div className="font-medium">D</div>
+              <div className="flex items-center gap-1"><MdViewModule className="h-3 w-3" /></div>
+              <div className="text-right font-medium">m²</div>
+              <div className="text-right font-medium">kWp</div>
+              <div />
             </div>
-          </li>
-        );
-      })}
-    </ul>
-  )}
-</div>
 
+            {/* Righe */}
+            <ul className="divide-y divide-neutral-200">
+              {layers.map((l, i) => {
+                const roofId = l.id;
+                const active = selectedId === roofId;
 
+                const count = panels.filter(p => p.roofId === roofId).length;
+                const kWp   = selSpec ? (selSpec.wp / 1000) * count : 0;
+
+                return (
+                  <li key={roofId}>
+                    <div
+                      className={[
+                        "grid grid-cols-[36px_36px_56px_60px_18px] items-center px-1 py-1 h-6",
+                        active ? "bg-neutral-900 text-white" : "hover:bg-neutral-50 text-neutral-900"
+                      ].join(" ")}
+                    >
+                      {/* D1/D2... */}
+                      <button
+                        onClick={() => select(roofId)}
+                        title={l.name ?? `D${i + 1}`}
+                        aria-label={`Ebene auswählen: ${l.name ?? `D${i + 1}`}`}
+                        className="text-left font-semibold"
+                      >
+                        {`D${i + 1}`}
+                      </button>
+
+                      {/* # moduli */}
+                      <button
+                        onClick={() => select(roofId)}
+                        title={`${count} Module`}
+                        aria-label={`${count} Module`}
+                        className="tabular-nums text-left opacity-80"
+                      >
+                        {count}
+                      </button>
+
+                      {/* m² (solo numero) */}
+                      <div className="tabular-nums text-right opacity-80">
+                        <RoofAreaInfo points={l.points as Pt[]} mpp={mpp} variant="text" showUnit={false} />
+                      </div>
+
+                      {/* kWp (solo numero) */}
+                      <div className="tabular-nums text-right opacity-80">
+                        {kWp ? kWp.toFixed(2) : '0,00'}
+                      </div>
+
+                      {/* elimina */}
+                      <button
+                        onClick={() => del(roofId)}
+                        title="Löschen"
+                        aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
+                        className={[
+                          "text-[12px] leading-none ms-2",
+                          active ? "opacity-90 hover:opacity-100"
+                                 : "opacity-50 hover:opacity-100 hover:text-red-600"
+                        ].join(" ")}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </div>
 
       {/* === RANDABSTAND === */}
       <section className="space-y-2">
@@ -139,8 +157,25 @@ export default function ModulesPanel() {
           </div>
           <span className="pb-1 text-[10px] text-neutral-500">m</span>
         </div>
-        {/* Nota: il “Abstand” (spaziatura tra pannelli) è stato rimosso dalla UI.
-           Rimane a 0,02 m come default interno. */}
+        {/* Nota: distanza tra pannelli (Abstand) rimane a 0,02 internamente e non è mostrata. */}
+      </section>
+
+      {/* === PV MODUL (select spostata qui) === */}
+      <section className="space-y-1">
+        <label htmlFor="panel-select" className={labelSm}>PV Modul</label>
+        <select
+          id="panel-select"
+          aria-label="Modul wählen"
+          value={selectedPanelId}
+          onChange={(e) => setSelectedPanel(e.target.value)}
+          className={inputBase}
+        >
+          {catalogPanels.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.brand} {p.model} — {p.wp} W
+            </option>
+          ))}
+        </select>
       </section>
 
       {/* === BLINDMODULE (disabled) === */}
@@ -159,7 +194,7 @@ export default function ModulesPanel() {
         </select>
       </section>
 
-      {/* === MODULLAYOUT (ora qui) === */}
+      {/* === MODULLAYOUT (spostato qui) === */}
       <section className="space-y-2">
         <label className={labelSm}>Modullayout</label>
         <OrientationToggle />
@@ -191,8 +226,8 @@ export default function ModulesPanel() {
         </select>
       </section>
 
-      {/* Nessun KPI finale e nessun "Fläche leeren":
-          i numeri sono su ogni Ebenen e la cancellazione avviene dalla toolbar/shortcut */}
+      {/* KPI finali rimossi: i valori sono mostrati per ogni Ebenen in alto.
+          Nessun “Fläche leeren”: si userà selezione + delete o toolbar. */}
     </div>
   );
 }

@@ -416,7 +416,7 @@ export default function TopToolbar() {
 
         <div className="mx-1 h-6 w-px bg-neutral-200" /> */}
 
-        <label htmlFor="topbar-panel-select" className="sr-only">Modul wählen</label>
+        {/* <label htmlFor="topbar-panel-select" className="sr-only">Modul wählen</label>
         <select
           id="topbar-panel-select"
           aria-label="Modul wählen"
@@ -433,7 +433,7 @@ export default function TopToolbar() {
               {p.brand} {p.model} — {p.wp} W
             </option>
           ))}
-        </select>
+        </select> */}
       </div>
 
       {/* DESTRA: 7–10 compatti + Undo/Redo */}

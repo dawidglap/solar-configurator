@@ -12,9 +12,15 @@ function polygonAreaPx2(pts: Pt[]) {
   return Math.abs(a / 2);
 }
 
-// usa spazio non-interrompibile (NBSP) tra numero e unità
-function formatM2(m2:number) {
-  const nb = '\u00A0'; // NBSP
+function formatNumberM2(m2:number) {
+  // solo numero formattato (senza unità)
+  if (m2 < 10) return m2.toFixed(1);
+  return String(Math.round(m2));
+}
+
+// con NBSP per la variante con unità
+function formatM2WithUnit(m2:number) {
+  const nb = '\u00A0';
   if (m2 < 10) return `${m2.toFixed(1)}${nb}m²`;
   return `${Math.round(m2)}${nb}m²`;
 }
@@ -23,18 +29,20 @@ export default function RoofAreaInfo({
   points,
   mpp,
   className = '',
-  variant = 'badge', // 'badge' | 'text'
+  variant = 'badge',           // 'badge' | 'text'
+  showUnit = true,             // ⬅️ nuovo: mostra o meno "m²"
 }: {
   points: Pt[];
-  mpp?: number;               // meter per pixel (immagine)
+  mpp?: number;
   className?: string;
   variant?: 'badge' | 'text';
+  showUnit?: boolean;
 }) {
   const label = useMemo(() => {
     if (!mpp || points.length < 3) return null;
     const m2 = polygonAreaPx2(points) * (mpp * mpp);
-    return formatM2(m2);
-  }, [points, mpp]);
+    return showUnit ? formatM2WithUnit(m2) : formatNumberM2(m2);
+  }, [points, mpp, showUnit]);
 
   if (!label) return null;
 
