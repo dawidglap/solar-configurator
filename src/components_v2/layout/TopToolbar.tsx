@@ -365,8 +365,8 @@ export default function TopToolbar() {
           onClick={handleConvertToModules}
           Icon={MdViewModule}
           label=""
-          tooltipLabel="In Module umwandeln"
-          tooltipKeys={[]}
+          tooltipLabel="Autolayout umwandeln"
+          tooltipKeys={['U']}
         />
 
         {/* 4) Fläche füllen (tool moduli) */}
