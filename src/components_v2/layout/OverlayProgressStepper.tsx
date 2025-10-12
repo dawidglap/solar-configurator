@@ -2,50 +2,62 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
-import { User, Home, Grid, GitBranch, ListChecks, BadgeCheck, Check } from 'lucide-react';
+import {
+  User, Home, GitBranch, ListChecks, BadgeCheck, Check,
+  Monitor, Map, FileText
+} from 'lucide-react';
 import TopbarAddressSearch from './TopbarAddressSearch';
 
+// NON tocchiamo lo store
 type StoreKey = 'building' | 'modules' | 'strings' | 'parts';
-type Step =
-  | { key: 'profile';  label: string; short: string; Icon: any; clickable: false }
-  | { key: 'building'; label: string; short: string; Icon: any; clickable: true  }
-  | { key: 'modules';  label: string; short: string; Icon: any; clickable: true  }
-  | { key: 'strings';  label: string; short: string; Icon: any; clickable: false }
-  | { key: 'parts';    label: string; short: string; Icon: any; clickable: false }
-  | { key: 'offer';    label: string; short: string; Icon: any; clickable: false };
 
-const STEPS: Step[] = [
-  { key: 'profile',  label: 'Profil',          short: 'Profil',     Icon: User,       clickable: false },
-  { key: 'building', label: 'Gebäudeplanung',  short: 'Gebäude',    Icon: Home,       clickable: true  },
-  { key: 'modules',  label: 'Modulplanung',    short: 'Module',     Icon: Grid,       clickable: true  },
-  { key: 'strings',  label: 'String',          short: 'String',     Icon: GitBranch,  clickable: false },
-  { key: 'parts',    label: 'Stückliste',      short: 'Stückliste', Icon: ListChecks, clickable: false },
-  { key: 'offer',    label: 'Angebot',         short: 'Angebot',    Icon: BadgeCheck, clickable: false },
+// Step UI: “planning” è virtuale e rappresenta building+modules
+type UiStep =
+  | { key: 'profile';    label: string; short: string; Icon: any; clickable: false }
+  | { key: 'presentation';label: string; short: string; Icon: any; clickable: false }
+  | { key: 'ist';        label: string; short: string; Icon: any; clickable: false }
+  | { key: 'planning';   label: string; short: string; Icon: any; clickable: true  } // ← unifica
+  | { key: 'strings';    label: string; short: string; Icon: any; clickable: false }
+  | { key: 'parts';      label: string; short: string; Icon: any; clickable: false }
+  | { key: 'report';     label: string; short: string; Icon: any; clickable: false }
+  | { key: 'offer';      label: string; short: string; Icon: any; clickable: false };
+
+const UI_STEPS: UiStep[] = [
+  { key: 'profile',     label: 'Profil',         short: 'Profil',         Icon: User,      clickable: false },
+  { key: 'presentation',label: 'Präsentation',   short: 'Präsentation',    Icon: Monitor,   clickable: false },
+  { key: 'ist',         label: 'IST-Situation',  short: 'IST-Situation',   Icon: Map,       clickable: false },
+  { key: 'planning',    label: 'Planungsmodus',  short: 'Planungsmodus',   Icon: Home,      clickable: true  }, // building+modules
+  { key: 'strings',     label: 'String',         short: 'String',          Icon: GitBranch, clickable: false },
+  { key: 'parts',       label: 'Stückliste',     short: 'Stückliste',      Icon: ListChecks,clickable: false },
+  { key: 'report',      label: 'Bericht',        short: 'Bericht',         Icon: FileText,  clickable: false },
+  { key: 'offer',       label: 'Angebot',        short: 'Angebot',         Icon: BadgeCheck,clickable: false },
 ];
 
 export default function OverlayProgressStepper() {
-  const step = usePlannerV2Store((s) => s.step);
+  const step    = usePlannerV2Store((s) => s.step);     // 'building' | 'modules' | 'strings' | 'parts'
   const setStep = usePlannerV2Store((s) => s.setStep);
-  const activeIndex = useMemo(
-    () => Math.max(0, STEPS.findIndex((s) => (s.key as any) === step)),
-    [step]
-  );
 
-  // ⬇️ Scrive dinamicamente --tb con l’altezza reale della topbar
+  // Mappiamo building/modules → planning; altri step come da store
+  const activeIndex = useMemo(() => {
+    const uiKey =
+      step === 'building' || step === 'modules'
+        ? 'planning'
+        : (step as any);
+    return Math.max(0, UI_STEPS.findIndex((s) => s.key === uiKey));
+  }, [step]);
+
+  // Aggiorna --tb con l’altezza reale della topbar
   const barRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = barRef.current;
     if (!el) return;
-
     const apply = () => {
-      const h = el.offsetHeight || 48; // fallback
+      const h = el.offsetHeight || 48;
       document.body.style.setProperty('--tb', `${h}px`);
     };
     apply();
-
     const ro = new ResizeObserver(apply);
     ro.observe(el);
-
     return () => {
       ro.disconnect();
       document.body.style.removeProperty('--tb');
@@ -69,7 +81,7 @@ export default function OverlayProgressStepper() {
         {/* RIGHT: stepper minimal */}
         <nav aria-label="Wizard progress" className="mr-1">
           <ol className="flex items-center gap-2">
-            {STEPS.map((s, i) => {
+            {UI_STEPS.map((s, i) => {
               const isActive = i === activeIndex;
               const isCompleted = i < activeIndex;
               const Icon = s.Icon;
@@ -88,19 +100,29 @@ export default function OverlayProgressStepper() {
                   <span className={`${dot} ${dotCls}`}>
                     {isCompleted ? <Check className="h-3 w-3" /> : i + 1}
                   </span>
-                  <Icon className={`h-3.5 w-3.5 ${isActive ? 'opacity-90' : 'opacity-60'}`} />
+                  {/* <Icon className={`h-3.5 w-3.5 ${isActive ? 'opacity-90' : 'opacity-60'}`} /> */}
                   <span className={`hidden sm:inline text-[10px] ${isActive ? 'text-neutral-900' : 'text-neutral-700'}`}>
                     {s.short}
                   </span>
                 </>
               );
 
+              const onClick = () => {
+                if (s.key === 'planning') {
+                  // opzionale: forzare ‘building’ come atterraggio
+                  // setStep('building' as StoreKey);
+                  return;
+                }
+                // Le altre voci sono non cliccabili (clickable: false). Se un giorno servirà:
+                // setStep(s.key as StoreKey);
+              };
+
               return (
                 <li key={s.key} className="flex items-center gap-2">
                   {s.clickable ? (
                     <button
                       type="button"
-                      onClick={() => setStep(s.key as StoreKey)}
+                      onClick={onClick}
                       title={s.label}
                       aria-current={isActive ? 'step' : undefined}
                       className={`${btnBase} ${btnCls}`}
@@ -110,7 +132,7 @@ export default function OverlayProgressStepper() {
                   ) : (
                     <div className={`${btnBase} opacity-70 cursor-default select-none`}>{content}</div>
                   )}
-                  {i < STEPS.length - 1 && (
+                  {i < UI_STEPS.length - 1 && (
                     <span
                       aria-hidden
                       className={`h-px w-5 rounded-full ${i < activeIndex ? 'bg-emerald-600' : 'bg-neutral-200'}`}
