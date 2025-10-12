@@ -16,6 +16,10 @@ import { LuSnowflake, LuShapes } from 'react-icons/lu';
 import { FaRegTrashAlt } from 'react-icons/fa';
 import { IoIosSave } from 'react-icons/io';
 
+// ⬇️ IMPORT FUNZIONI DALLA LOGICA ESISTENTE (ADEGUA PATH SE SERVE)
+import { computeAutoLayoutRects } from '../modules/layout';
+import { overlapsReservedRect } from '../zones/utils';
+
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
   return (
@@ -89,6 +93,16 @@ export default function TopToolbar() {
   const catalogPanels    = usePlannerV2Store(s => s.catalogPanels);
   const selectedPanelId  = usePlannerV2Store(s => s.selectedPanelId);
   const setSelectedPanel = usePlannerV2Store(s => s.setSelectedPanel);
+
+  // dati necessari per "In Module umwandeln"
+  const layers              = usePlannerV2Store(s => s.layers);
+  const selectedId          = usePlannerV2Store(s => s.selectedId);
+  const modules             = usePlannerV2Store(s => s.modules);
+  const setModules          = usePlannerV2Store(s => s.setModules);
+  const panels              = usePlannerV2Store(s => s.panels);
+  const addPanelsForRoof    = usePlannerV2Store(s => s.addPanelsForRoof);
+  const snapshot            = usePlannerV2Store(s => s.snapshot);
+  const selSpec             = usePlannerV2Store(s => s.getSelectedPanel());
 
   const isMac = useMemo(
     () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform),
@@ -212,20 +226,96 @@ export default function TopToolbar() {
   /* ── Helper: mappa tool → step e switch automatico ───────────────── */
   function stepForTool(t: string): 'building' | 'modules' {
     switch (t) {
-      case 'fill-area':            // strumenti “moduli”
-        return 'modules';
-      case 'draw-roof':            // strumenti “building”
+      case 'fill-area':            return 'modules';
+      case 'draw-roof':
       case 'draw-reserved':
-      case 'draw-rect':
-        return 'building';
-      default:
-        return step as any;        // lascia lo step attuale (es. select)
+      case 'draw-rect':            return 'building';
+      default:                     return step as any; // select, ecc.
     }
   }
   function go(t: any) {
     const target = stepForTool(t);
     if (target && target !== step) setStep(target as any);
     setTool(t);
+  }
+
+  /* ── Handler: In Module umwandeln (icona #3) ─────────────────────── */
+  function handleConvertToModules() {
+    // Porta l'interfaccia in "modules" (coerente con comportamiento atteso)
+    if (step !== 'modules') setStep('modules' as any);
+
+    if (!selectedId || !selSpec || !snapshot?.mppImage) {
+      // nessun tetto selezionato o modulo selezionato o mpp mancante
+      return;
+    }
+
+    const roof = layers.find(l => l.id === selectedId);
+    if (!roof?.points?.length) return;
+
+    // === angolo canvas (come ModulesPanel) ===
+    const eavesCanvasDeg = -(roof.azimuthDeg ?? 0) + 90;
+
+    // angolo del lato più lungo del poligono
+    let polyDeg = 0, len2 = -1;
+    for (let i = 0; i < roof.points.length; i++) {
+      const j = (i + 1) % roof.points.length;
+      const dx = roof.points[j].x - roof.points[i].x;
+      const dy = roof.points[j].y - roof.points[i].y;
+      const L2 = dx * dx + dy * dy;
+      if (L2 > len2) { len2 = L2; polyDeg = Math.atan2(dy, dx) * 180 / Math.PI; }
+    }
+
+    const norm = (d: number) => { const x = d % 360; return x < 0 ? x + 360 : x; };
+    const diff = Math.abs(norm(eavesCanvasDeg - polyDeg));
+    const small = diff > 180 ? 360 - diff : diff;
+    const baseCanvasDeg = small > 5 ? polyDeg : eavesCanvasDeg;
+    const azimuthDeg = baseCanvasDeg + (modules.gridAngleDeg || 0);
+
+    // === rettangoli come la preview ===
+    const rectsAll = computeAutoLayoutRects({
+      polygon: roof.points,
+      mppImage: snapshot.mppImage!,
+      azimuthDeg,
+      orientation: modules.orientation,
+      panelSizeM: { w: selSpec.widthM, h: selSpec.heightM },
+      spacingM: modules.spacingM,
+      marginM:  modules.marginM,
+      phaseX:   modules.gridPhaseX ?? 0,
+      phaseY:   modules.gridPhaseY ?? 0,
+      anchorX: (modules.gridAnchorX as 'start'|'center'|'end') ?? 'start',
+      anchorY: (modules.gridAnchorY as 'start'|'center'|'end') ?? 'start',
+      coverageRatio: modules.coverageRatio ?? 1,
+    });
+
+    // === filtro Hindernisse
+    const rects = rectsAll.filter(r =>
+      !overlapsReservedRect(
+        { cx: r.cx, cy: r.cy, w: r.wPx, h: r.hPx, angleDeg: r.angleDeg },
+        selectedId,
+        1 // epsilon px
+      )
+    );
+    if (!rects.length) return;
+
+    // === crea pannelli reali
+    const now = Date.now().toString(36);
+    const instances = rects.map((r, idx) => ({
+      id: `${selectedId}_p_${now}_${idx}`,
+      roofId: selectedId,
+      cx: r.cx, cy: r.cy,
+      wPx: r.wPx, hPx: r.hPx,
+      angleDeg: r.angleDeg,
+      orientation: modules.orientation,
+      panelId: selSpec.id,
+    }));
+
+    addPanelsForRoof(selectedId, instances);
+
+    // spegni il raster dopo la conversione (come da brief)
+    if (modules.showGrid) setModules({ showGrid: false });
+
+    // attiva lo strumento di selezione dopo il commit (facoltativo)
+    setTool('select' as any);
   }
 
   return (
@@ -270,13 +360,12 @@ export default function TopToolbar() {
           tooltipKeys={['H']}
         />
 
-        {/* 3) Autolayout/Umwandeln (placeholder UI) */}
+        {/* 3) In Module umwandeln */}
         <ActionBtn
-          onClick={() => {}}
+          onClick={handleConvertToModules}
           Icon={MdViewModule}
           label=""
-          disabled
-          tooltipLabel="Module umwandeln (in arrivo)"
+          tooltipLabel="In Module umwandeln"
           tooltipKeys={[]}
         />
 
