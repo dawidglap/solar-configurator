@@ -404,7 +404,7 @@ export default function TopToolbar() {
         />
 
         {/* Controls specifici moduli (sempre visibili; clic portarli in 'modules') */}
-        <div className="mx-1 h-6 w-px bg-neutral-200" />
+        {/* <div className="mx-1 h-6 w-px bg-neutral-200" />
 
         <div
           aria-disabled={!canUseModulesTools}
@@ -414,7 +414,7 @@ export default function TopToolbar() {
           <OrientationToggle />
         </div>
 
-        <div className="mx-1 h-6 w-px bg-neutral-200" />
+        <div className="mx-1 h-6 w-px bg-neutral-200" /> */}
 
         <label htmlFor="topbar-panel-select" className="sr-only">Modul wählen</label>
         <select

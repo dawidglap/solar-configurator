@@ -11,9 +11,12 @@ function polygonAreaPx2(pts: Pt[]) {
   }
   return Math.abs(a / 2);
 }
+
+// usa spazio non-interrompibile (NBSP) tra numero e unità
 function formatM2(m2:number) {
-  if (m2 < 10) return `${m2.toFixed(1)} m²`;
-  return `${Math.round(m2)} m²`;
+  const nb = '\u00A0'; // NBSP
+  if (m2 < 10) return `${m2.toFixed(1)}${nb}m²`;
+  return `${Math.round(m2)}${nb}m²`;
 }
 
 export default function RoofAreaInfo({
@@ -36,11 +39,20 @@ export default function RoofAreaInfo({
   if (!label) return null;
 
   if (variant === 'text') {
-    return <span className={`text-[11px] text-neutral-600 ${className}`}>{label}</span>;
+    return (
+      <span className={`text-[11px] text-neutral-600 whitespace-nowrap tabular-nums ${className}`}>
+        {label}
+      </span>
+    );
   }
+
   return (
     <span
-      className={`ml-2 inline-block rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] font-medium text-neutral-700 ${className}`}
+      className={`
+        ml-2 inline-block rounded bg-neutral-100 px-1.5 py-0.5
+        text-[11px] font-medium text-neutral-700
+        whitespace-nowrap tabular-nums ${className}
+      `}
       title="Fläche (Plan)"
     >
       {label}
