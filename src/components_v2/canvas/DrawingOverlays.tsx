@@ -59,7 +59,7 @@ export default function DrawingOverlays({
   // palette UI
   const PREVIEW = '#7c3aed';
   const ACCEPT  = '#16a34a';
-  const GUIDE   = '#a78bfa';
+  const GUIDE   = 'rgba(255,255,255,0.50)';
   const HANDLE_BG = '#ffffff';
 
   const DANGER    = '#ef4444';
@@ -68,8 +68,8 @@ export default function DrawingOverlays({
   const SNAP_TOL_DEG = 12;
   const CLOSE_RADIUS = 12;
 
-  const guideAxisColor = 'rgba(239,68,68,0.25)'; // rosso tenue per assi guida
-  const guideAxisW = 1;
+  const guideAxisColor = 'rgba(255,255,255,0.50)'; // rosso tenue per assi guida
+  const guideAxisW = 0.75;
 
   // —— DRAW-ROOF (immutato)
   const renderDrawRoof = () => {
@@ -117,7 +117,7 @@ export default function DrawingOverlays({
             points={[snapGuide.a.x, snapGuide.a.y, snapGuide.b.x, snapGuide.b.y]}
             stroke={GUIDE}
             strokeWidth={1}
-            dash={[6, 6]}
+            dash={[2, 2]}
             listening={false}
           />
         )}
@@ -362,8 +362,8 @@ export default function DrawingOverlays({
       const a2 = [p.x - perp.x * AXIS_LEN, p.y - perp.y * AXIS_LEN, p.x + perp.x * AXIS_LEN, p.y + perp.y * AXIS_LEN];
       return (
         <>
-          <KonvaLine points={a1} stroke={guideAxisColor} strokeWidth={guideAxisW} listening={false} />
-          <KonvaLine points={a2} stroke={guideAxisColor} strokeWidth={guideAxisW} listening={false} />
+          <KonvaLine points={a1} stroke={guideAxisColor} dash={[2, 2]} strokeWidth={guideAxisW} listening={false} />
+          <KonvaLine points={a2} stroke={guideAxisColor} dash={[2, 2]} strokeWidth={guideAxisW} listening={false} />
         </>
       );
     })();
@@ -378,6 +378,7 @@ export default function DrawingOverlays({
           <KonvaLine
             points={[snapGuide.a.x, snapGuide.a.y, snapGuide.b.x, snapGuide.b.y]}
             stroke={guideAxisColor}
+            dash={[2, 2]}
             strokeWidth={1}
             listening={false}
           />
