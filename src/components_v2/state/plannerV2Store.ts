@@ -173,7 +173,8 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             modules: {
                 orientation: 'portrait',
                 spacingM: 0.02,
-                marginM: 0.20,
+                marginM: 0.00,
+                // marginM: 0.20,
                 showGrid: true,
                 placingSingle: false,
                 gridAngleDeg: 0,

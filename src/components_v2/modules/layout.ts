@@ -129,6 +129,8 @@ const normPhase = (p: number) => {
 };
 type Anchor = 'start' | 'center' | 'end';
 
+
+
 /** Calcola i rettangoli modulo “auto-layout” (centro+size in px, angolo in °). */
 export function computeAutoLayoutRects(args: {
     polygon: Pt[];
