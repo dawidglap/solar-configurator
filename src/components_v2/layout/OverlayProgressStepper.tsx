@@ -17,7 +17,7 @@ type UiStep =
   | { key: 'presentation';label: string; short: string; Icon: any; clickable: false }
   | { key: 'ist';        label: string; short: string; Icon: any; clickable: false }
   | { key: 'planning';   label: string; short: string; Icon: any; clickable: true  } // ← unifica
-  | { key: 'strings';    label: string; short: string; Icon: any; clickable: false }
+  // | { key: 'strings';    label: string; short: string; Icon: any; clickable: false }
   | { key: 'parts';      label: string; short: string; Icon: any; clickable: false }
   | { key: 'report';     label: string; short: string; Icon: any; clickable: false }
   | { key: 'offer';      label: string; short: string; Icon: any; clickable: false };
@@ -27,7 +27,7 @@ const UI_STEPS: UiStep[] = [
   { key: 'presentation',label: 'Präsentation',   short: 'Präsentation',    Icon: Monitor,   clickable: false },
   { key: 'ist',         label: 'IST-Situation',  short: 'IST-Situation',   Icon: Map,       clickable: false },
   { key: 'planning',    label: 'Planungsmodus',  short: 'Planungsmodus',   Icon: Home,      clickable: true  }, // building+modules
-  { key: 'strings',     label: 'String',         short: 'String',          Icon: GitBranch, clickable: false },
+  // { key: 'strings',     label: 'String',         short: 'String',          Icon: GitBranch, clickable: false },
   { key: 'parts',       label: 'Stückliste',     short: 'Stückliste',      Icon: ListChecks,clickable: false },
   { key: 'report',      label: 'Bericht',        short: 'Bericht',         Icon: FileText,  clickable: false },
   { key: 'offer',       label: 'Angebot',        short: 'Angebot',         Icon: BadgeCheck,clickable: false },
