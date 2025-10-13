@@ -27,6 +27,11 @@ type SnapOptions = {
     closeRadius?: number; // raggio px per chiusura magnete (default 12)
 };
 
+// Helper: alcune implementazioni del browser espongono stopImmediatePropagation su KeyboardEvent
+type KeyboardEventMaybeImmediate = KeyboardEvent & {
+    stopImmediatePropagation?: () => void;
+};
+
 export function useDrawingTools<T extends RoofAreaLike>(args: {
     tool: Tool;
     layers: Layer[];
@@ -293,8 +298,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
                     e.preventDefault();
                     // importantissimo: blocca la history globale
                     e.stopPropagation();
-                    // @ts-expect-error: su alcuni browser esiste
-                    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                    (e as KeyboardEventMaybeImmediate).stopImmediatePropagation?.();
                 }
                 return;
             }
@@ -305,8 +309,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
                 if (handled) {
                     e.preventDefault();
                     e.stopPropagation();
-                    // @ts-expect-error
-                    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                    (e as KeyboardEventMaybeImmediate).stopImmediatePropagation?.();
                 }
                 return;
             }
@@ -317,24 +320,21 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
                 polyRedoRef.current = [];
                 e.preventDefault();
                 e.stopPropagation();
-                // @ts-expect-error
-                if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                (e as KeyboardEventMaybeImmediate).stopImmediatePropagation?.();
             }
             if (t === 'draw-rect' && key === 'escape') {
                 setRectDraft(null);
                 rectRedoRef.current = [];
                 e.preventDefault();
                 e.stopPropagation();
-                // @ts-expect-error
-                if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                (e as KeyboardEventMaybeImmediate).stopImmediatePropagation?.();
             }
             if ((t === 'draw-roof' || t === 'draw-reserved') && key === 'enter' && polyRef.current && polyRef.current.length >= 3) {
                 if (t === 'draw-roof') finishPolygon(polyRef.current);
                 else finishZone(polyRef.current);
                 e.preventDefault();
                 e.stopPropagation();
-                // @ts-expect-error
-                if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                (e as KeyboardEventMaybeImmediate).stopImmediatePropagation?.();
             }
         };
 
@@ -342,7 +342,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         window.addEventListener('keydown', onKey, { capture: true });
         return () => window.removeEventListener('keydown', onKey, { capture: true } as any);
     }, [popLastPoint, pushRedoPoint, finishPolygon, finishZone]);
-
 
     return {
         drawingPoly,
