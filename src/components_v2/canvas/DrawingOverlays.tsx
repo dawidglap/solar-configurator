@@ -126,7 +126,7 @@ export default function DrawingOverlays({
           <KonvaLine
             points={toFlat(pts)}
             stroke={ACCEPT}
-            strokeWidth={2}
+            strokeWidth={1}
             lineJoin="round"
             lineCap="round"
             listening={false}
@@ -137,8 +137,8 @@ export default function DrawingOverlays({
           <KonvaLine
             points={[last.x, last.y, target.x, target.y]}
             stroke={PREVIEW}
-            strokeWidth={2}
-            dash={[6, 6]}
+            strokeWidth={0.5}
+            // dash={[6, 6]}
             lineJoin="round"
             lineCap="round"
             listening={false}
@@ -198,10 +198,10 @@ export default function DrawingOverlays({
             key={i}
             x={p.x}
             y={p.y}
-            radius={3.2}
+            radius={1.6}
             fill="#ffffff"
             stroke={ACCEPT}
-            strokeWidth={1.4}
+            strokeWidth={1.0}
             listening={false}
           />
         ))}
@@ -226,7 +226,7 @@ export default function DrawingOverlays({
             x={polygonCentroid(pts).x}
             y={polygonCentroid(pts).y}
             text={areaLabel(pts) ?? ''}
-            fontSize={12}
+            fontSize={6}
             fill="#fff"
             offsetX={18}
             offsetY={-6}
