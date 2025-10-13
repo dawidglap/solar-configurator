@@ -259,7 +259,12 @@ if (st.selectedZoneId) {
       // 3) Falda selezionata? → elimina la falda
       if (st.selectedId) {
         plannerHistory.push('delete roof');
-        st.deleteRoof?.(st.selectedId) || st.removeRoof?.(st.selectedId) || st.deleteLayer?.(st.selectedId);
+        const del =
+  (st as any).deleteRoof      // legacy name in some branches
+  ?? st.removeRoof            // current LayersSlice name (likely)
+  ?? st.deleteLayer;          // fallback
+
+del?.(st.selectedId);
         st.select?.(undefined);
         e.preventDefault();
         e.stopPropagation();
