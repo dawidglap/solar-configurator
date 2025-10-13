@@ -1,12 +1,16 @@
 // src/components_v2/modules/ModulesPanel.tsx
 'use client';
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import RoofAreaInfo from '../ui/RoofAreaInfo';
 import DetectedRoofsImport from '../panels/DetectedRoofsImport';
 import { MdViewModule } from 'react-icons/md';
 import OrientationToggle from '../layout/TopToolbar/OrientationToggle';
+
+// ⬇️ funzioni esistenti per autolayout e filtri ostacoli
+import { computeAutoLayoutRects } from '../modules/layout';
+import { overlapsReservedRect } from '../zones/utils';
 
 type Pt = { x: number; y: number };
 
@@ -17,29 +21,106 @@ const inputBase =
 const labelSm = 'block text-[10px] font-medium uppercase tracking-wide text-neutral-600';
 
 export default function ModulesPanel() {
-  // --- Stato layers ---
-  const layers     = usePlannerV2Store(s => s.layers);
-  const selectedId = usePlannerV2Store(s => s.selectedId);
-  const select     = usePlannerV2Store(s => s.select);
-  const del        = usePlannerV2Store(s => s.deleteLayer);
-  const mpp        = usePlannerV2Store(s => s.snapshot.mppImage);
-  const detected   = usePlannerV2Store(s => s.detectedRoofs);
+  // --- Layers / selezione tetto ---
+  const layers       = usePlannerV2Store(s => s.layers);
+  const selectedId   = usePlannerV2Store(s => s.selectedId);
+  const select       = usePlannerV2Store(s => s.select);
+  const delLayer     = usePlannerV2Store(s => s.deleteLayer);
+  const mpp          = usePlannerV2Store(s => s.snapshot.mppImage);
+  const detected     = usePlannerV2Store(s => s.detectedRoofs);
 
-  // --- Stato pannelli/moduli ---
-  const panels     = usePlannerV2Store(s => s.panels);
-  const modules    = usePlannerV2Store(s => s.modules);
-  const setModules = usePlannerV2Store(s => s.setModules);
-  const selSpec    = usePlannerV2Store(s => s.getSelectedPanel());
+  // --- Moduli / pannelli ---
+  const panels             = usePlannerV2Store(s => s.panels);
+  const modules            = usePlannerV2Store(s => s.modules);
+  const setModules         = usePlannerV2Store(s => s.setModules);
+  const selSpec            = usePlannerV2Store(s => s.getSelectedPanel());
+  const snapshot           = usePlannerV2Store(s => s.snapshot);
+  const addPanelsForRoof   = usePlannerV2Store(s => s.addPanelsForRoof);
+  const clearPanelsForRoof = usePlannerV2Store(s => s.clearPanelsForRoof);
 
-  // --- Catalogo / selezione PV modulo (spostato qui dalla topbar) ---
+  // --- Catalogo PV (spostato qui dalla topbar) ---
   const catalogPanels    = usePlannerV2Store(s => s.catalogPanels);
   const selectedPanelId  = usePlannerV2Store(s => s.selectedPanelId);
   const setSelectedPanel = usePlannerV2Store(s => s.setSelectedPanel);
 
+  /** Re-layout immediato della falda selezionata (usato dal toggle orientamento) */
+  const relayoutSelectedRoof = useCallback((nextOrientation?: 'portrait' | 'landscape') => {
+    if (!selectedId || !selSpec || !snapshot?.mppImage) return;
+
+    const roof = layers.find(l => l.id === selectedId);
+    if (!roof?.points?.length) return;
+
+    // calcolo angolo canvas come in CanvasStage / topbar
+    const eavesCanvasDeg = -(roof.azimuthDeg ?? 0) + 90;
+
+    // angolo lato più lungo poligono
+    let polyDeg = 0, len2 = -1;
+    for (let i = 0; i < roof.points.length; i++) {
+      const j = (i + 1) % roof.points.length;
+      const dx = roof.points[j].x - roof.points[i].x;
+      const dy = roof.points[j].y - roof.points[i].y;
+      const L2 = dx * dx + dy * dy;
+      if (L2 > len2) { len2 = L2; polyDeg = Math.atan2(dy, dx) * 180 / Math.PI; }
+    }
+    const norm = (d: number) => { const x = d % 360; return x < 0 ? x + 360 : x; };
+    const diff = Math.abs(norm(eavesCanvasDeg - polyDeg));
+    const small = diff > 180 ? 360 - diff : diff;
+    const baseCanvasDeg = small > 5 ? polyDeg : eavesCanvasDeg;
+    const azimuthDeg = baseCanvasDeg + (modules.gridAngleDeg || 0);
+
+    const spacingM = typeof modules.spacingM === 'number' ? modules.spacingM : 0.02; // default interno
+    const orientation = (nextOrientation ?? modules.orientation) as 'portrait' | 'landscape';
+
+    // rettangoli autolayout
+    const rectsAll = computeAutoLayoutRects({
+      polygon: roof.points,
+      mppImage: snapshot.mppImage!,
+      azimuthDeg,
+      orientation,
+      panelSizeM: { w: selSpec.widthM, h: selSpec.heightM },
+      spacingM,
+      marginM: modules.marginM,                // ← rispetta i 20 cm (0.2) di default o quanto scelto
+      phaseX: modules.gridPhaseX ?? 0,
+      phaseY: modules.gridPhaseY ?? 0,
+      anchorX: (modules.gridAnchorX as 'start'|'center'|'end') ?? 'start',
+      anchorY: (modules.gridAnchorY as 'start'|'center'|'end') ?? 'start',
+      coverageRatio: modules.coverageRatio ?? 1,
+    });
+
+    // filtra contro Hindernis (nessuna intersezione, neppure parziale)
+    const rects = rectsAll.filter(r =>
+      !overlapsReservedRect(
+        { cx: r.cx, cy: r.cy, w: r.wPx, h: r.hPx, angleDeg: r.angleDeg },
+        selectedId,
+        0 // usa 0 px per essere più rigidi sul contatto
+      )
+    );
+    if (!rects.length) { clearPanelsForRoof(selectedId); return; }
+
+    // sostituisci i pannelli esistenti con i nuovi
+    clearPanelsForRoof(selectedId);
+    const now = Date.now().toString(36);
+    const instances = rects.map((r, idx) => ({
+      id: `${selectedId}_p_${now}_${idx}`,
+      roofId: selectedId,
+      cx: r.cx, cy: r.cy,
+      wPx: r.wPx, hPx: r.hPx,
+      angleDeg: r.angleDeg,
+      orientation,
+      panelId: selSpec.id,
+    }));
+    addPanelsForRoof(selectedId, instances);
+  }, [
+    selectedId, selSpec, snapshot?.mppImage, layers,
+    modules.gridAngleDeg, modules.marginM, modules.gridPhaseX, modules.gridPhaseY,
+    modules.gridAnchorX, modules.gridAnchorY, modules.coverageRatio,
+    modules.spacingM, modules.orientation,
+    addPanelsForRoof, clearPanelsForRoof
+  ]);
+
   return (
     <div className="w-full max-w-[240px] space-y-4 p-2">
-
-      {/* === EBENEN (tabella compatta con header) === */}
+      {/* === EBENEN (tabella compatta) === */}
       <div className="px-0">
         <div className={`${labelSm} mb-2 text-neutral-600`}>
           Ebenen{layers.length ? ` (${layers.length})` : ''}
@@ -57,12 +138,7 @@ export default function ModulesPanel() {
         ) : (
           <div className="text-[10px]">
             {/* Header */}
-            <div
-              className="
-                grid grid-cols-[36px_36px_56px_60px_18px]
-                items-center px-1 py-1 text-neutral-500
-              "
-            >
+            <div className="grid grid-cols-[36px_36px_56px_60px_18px] items-center px-1 py-1 text-neutral-500">
               <div className="font-medium">D</div>
               <div className="flex items-center gap-1"><MdViewModule className="h-3 w-3" /></div>
               <div className="text-right font-medium">m²</div>
@@ -83,9 +159,9 @@ export default function ModulesPanel() {
                   <li key={roofId}>
                     <div
                       className={[
-                        "grid grid-cols-[36px_36px_56px_60px_18px] items-center px-1 py-1 h-6",
-                        active ? "bg-neutral-900 text-white" : "hover:bg-neutral-50 text-neutral-900"
-                      ].join(" ")}
+                        'grid grid-cols-[36px_36px_56px_60px_18px] items-center px-1 py-1 h-6',
+                        active ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50 text-neutral-900'
+                      ].join(' ')}
                     >
                       {/* D1/D2... */}
                       <button
@@ -117,16 +193,16 @@ export default function ModulesPanel() {
                         {kWp ? kWp.toFixed(2) : '0,00'}
                       </div>
 
-                      {/* elimina */}
+                      {/* elimina layer */}
                       <button
-                        onClick={() => del(roofId)}
+                        onClick={() => delLayer(roofId)}
                         title="Löschen"
                         aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
                         className={[
-                          "text-[12px] leading-none ms-2",
-                          active ? "opacity-90 hover:opacity-100"
-                                 : "opacity-50 hover:opacity-100 hover:text-red-600"
-                        ].join(" ")}
+                          'text-[12px] leading-none ms-2',
+                          active ? 'opacity-90 hover:opacity-100'
+                                 : 'opacity-50 hover:opacity-100 hover:text-red-600'
+                        ].join(' ')}
                       >
                         ✕
                       </button>
@@ -157,7 +233,7 @@ export default function ModulesPanel() {
           </div>
           <span className="pb-1 text-[10px] text-neutral-500">m</span>
         </div>
-        {/* Nota: distanza tra pannelli (Abstand) rimane a 0,02 internamente e non è mostrata. */}
+        {/* Abstand tra pannelli rimane 0,02 interno/non visibile */}
       </section>
 
       {/* === PV MODUL (select spostata qui) === */}
@@ -194,10 +270,15 @@ export default function ModulesPanel() {
         </select>
       </section>
 
-      {/* === MODULLAYOUT (spostato qui) === */}
+      {/* === MODULLAYOUT (usa onChange per re-layout immediato) === */}
       <section className="space-y-2">
         <label className={labelSm}>Modullayout</label>
-        <OrientationToggle />
+        <OrientationToggle
+          onChange={(next) => {
+            // appena cambia l'orientamento, rilancia l’autolayout sulla falda selezionata
+            relayoutSelectedRoof(next);
+          }}
+        />
       </section>
 
       {/* === MODULNEIGUNG (placeholder, disabled) === */}
@@ -225,9 +306,6 @@ export default function ModulesPanel() {
           <option>Auswählen</option>
         </select>
       </section>
-
-      {/* KPI finali rimossi: i valori sono mostrati per ogni Ebenen in alto.
-          Nessun “Fläche leeren”: si userà selezione + delete o toolbar. */}
     </div>
   );
 }

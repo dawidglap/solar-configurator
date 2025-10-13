@@ -1,3 +1,4 @@
+// src/components_v2/layout/TopToolbar/OrientationToggle.tsx
 'use client';
 
 import React, { useCallback, useRef, useState, useEffect } from 'react';
@@ -8,68 +9,54 @@ import { createPortal } from 'react-dom';
 
 type Orientation = 'portrait' | 'landscape';
 
-/* ───────────────────── Tooltip (coerente con TopToolbar) ───────────────────── */
+// ───────────────────── Tooltip (coerente con TopToolbar) ─────────────────────
 type TooltipPos = { x: number; y: number };
 
 function Keycap({ children }: { children: React.ReactNode }) {
   return (
-    <span
-      className="
-        inline-flex h-5 min-w-[20px] items-center justify-center
-        rounded-[6px] border border-neutral-700/70 bg-neutral-800
-        px-1 text-[10px] font-medium leading-none text-white/90
-        shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_1px_6px_rgba(0,0,0,0.4)]
-      "
-    >
+    <span className="
+      inline-flex h-5 min-w-[20px] items-center justify-center
+      rounded-[6px] border border-neutral-700/70 bg-neutral-800
+      px-1 text-[10px] font-medium leading-none text-white/90
+      shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_1px_6px_rgba(0,0,0,0.4)]
+    ">
       {children}
     </span>
   );
 }
 
 function PortalTooltip({
-  visible,
-  pos,
-  label,
-  keys,
+  visible, pos, label, keys,
 }: {
   visible: boolean;
   pos: TooltipPos | null;
   label: string;
   keys?: (string | React.ReactNode)[];
 }) {
-  if (typeof window === 'undefined') return null;
-  if (!visible || !pos) return null;
-
+  if (typeof window === 'undefined' || !visible || !pos) return null;
 
   return createPortal(
-  <div
-    role="tooltip"
-    style={{
-      position: 'fixed',
-      left: pos.x,
-      top: pos.y,
-      transform: 'translate(-50%, 0)',
-      zIndex: 100000,
-      pointerEvents: 'none',
-    }}
-    className="
-      rounded-md border border-neutral-800
-      bg-neutral-900/98 px-2.5 py-2 text-xs text-white shadow-xl whitespace-nowrap
-    "
-  >
-    <div className="font-medium">{label}</div>
-    {keys?.length ? (
-      <div className="mt-1 flex items-center justify-center gap-1">
-        {keys.map((k, i) => (
-          <Keycap key={i}>{k}</Keycap>
-        ))}
-      </div>
-    ) : null}
-  </div>,
-  document.body
-);
-
-  
+    <div
+      role="tooltip"
+      style={{
+        position: 'fixed',
+        left: pos.x,
+        top: pos.y,
+        transform: 'translate(-50%, 0)',
+        zIndex: 100000,
+        pointerEvents: 'none',
+      }}
+      className="rounded-md border border-neutral-800 bg-neutral-900/98 px-2.5 py-2 text-xs text-white shadow-xl whitespace-nowrap"
+    >
+      <div className="font-medium">{label}</div>
+      {keys?.length ? (
+        <div className="mt-1 flex items-center justify-center gap-1">
+          {keys.map((k, i) => (<Keycap key={i}>{k}</Keycap>))}
+        </div>
+      ) : null}
+    </div>,
+    document.body
+  );
 }
 
 type AnyRef<T extends HTMLElement> = React.RefObject<T> | React.MutableRefObject<T | null>;
@@ -102,27 +89,41 @@ function useBottomTooltip<T extends HTMLElement>(triggerRef: AnyRef<T>) {
 
   return { visible, pos, show, hide };
 }
-/* ─────────────────────────────────────────────────────────────── */
+// ───────────────────────────────────────────────────────────────
 
-export default function OrientationToggle() {
+export default function OrientationToggle({
+  onChange,
+}: {
+  /** Callback opzionale: viene chiamata subito dopo l'update nello store */
+  onChange?: (next: Orientation) => void;
+}) {
   const orientation = usePlannerV2Store((s) => s.modules.orientation as Orientation);
 
   const setOrientation = useCallback((o: Orientation) => {
     const st: any = usePlannerV2Store.getState();
     plannerHistory?.push?.(`orientation: ${o}`);
-    if (typeof st.setModulesOrientation === 'function') return st.setModulesOrientation(o);
-    if (typeof st.setModules === 'function')          return st.setModules({ ...st.modules, orientation: o });
-    if (typeof st.updateModules === 'function')       return st.updateModules({ orientation: o });
-    (usePlannerV2Store as any).setState(
-      (prev: any) => ({ ...prev, modules: { ...prev.modules, orientation: o } }),
-      false,
-      'modules.orientation'
-    );
-  }, []);
+
+    // aggiorna lo store (compatibile con diverse versioni dello store)
+    if (typeof st.setModulesOrientation === 'function') {
+      st.setModulesOrientation(o);
+    } else if (typeof st.setModules === 'function') {
+      st.setModules({ ...st.modules, orientation: o });
+    } else if (typeof st.updateModules === 'function') {
+      st.updateModules({ orientation: o });
+    } else {
+      (usePlannerV2Store as any).setState(
+        (prev: any) => ({ ...prev, modules: { ...prev.modules, orientation: o } }),
+        false,
+        'modules.orientation'
+      );
+    }
+
+    // notifica il parent se richiesto (es. per re-layout immediato)
+    onChange?.(o);
+  }, [onChange]);
 
   const baseBtn =
-    'h-8 w-8 rounded-full inline-flex items-center justify-center ' +
-    'text-[10px] uppercase tracking-wide font-medium';
+    'h-8 w-8 rounded-full inline-flex items-center justify-center text-[10px] uppercase tracking-wide font-medium';
 
   // tooltip hooks per i due bottoni
   const portraitRef = useRef<HTMLButtonElement>(null);
@@ -145,20 +146,14 @@ export default function OrientationToggle() {
           onMouseLeave={portraitTip.hide}
           onFocus={portraitTip.show}
           onBlur={portraitTip.hide}
-          className={`${baseBtn} ${
-            orientation === 'portrait'
-              ? 'bg-neutral-900 text-white'
-              : 'text-neutral-800 hover:bg-neutral-100'
-          }`}
+          className={`${baseBtn} ${orientation === 'portrait'
+            ? 'bg-neutral-900 text-white'
+            : 'text-neutral-800 hover:bg-neutral-100'}`}
           aria-label="Portrait (vertikal)"
         >
           <RectangleVertical className="h-4 w-4" />
         </button>
-        <PortalTooltip
-          visible={portraitTip.visible}
-          pos={portraitTip.pos}
-          label="Portrait (vertikal)"
-        />
+        <PortalTooltip visible={portraitTip.visible} pos={portraitTip.pos} label="Portrait (vertikal)" />
       </>
 
       {/* Landscape */}
@@ -171,20 +166,14 @@ export default function OrientationToggle() {
           onMouseLeave={landscapeTip.hide}
           onFocus={landscapeTip.show}
           onBlur={landscapeTip.hide}
-          className={`${baseBtn} ${
-            orientation === 'landscape'
-              ? 'bg-neutral-900 text-white'
-              : 'text-neutral-800 hover:bg-neutral-100'
-          }`}
+          className={`${baseBtn} ${orientation === 'landscape'
+            ? 'bg-neutral-900 text-white'
+            : 'text-neutral-800 hover:bg-neutral-100'}`}
           aria-label="Landscape (horizontal)"
         >
           <RectangleHorizontal className="h-4 w-4" />
         </button>
-        <PortalTooltip
-          visible={landscapeTip.visible}
-          pos={landscapeTip.pos}
-          label="Landscape (horizontal)"
-        />
+        <PortalTooltip visible={landscapeTip.visible} pos={landscapeTip.pos} label="Landscape (horizontal)" />
       </>
     </div>
   );
