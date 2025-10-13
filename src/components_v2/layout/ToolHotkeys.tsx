@@ -14,6 +14,9 @@ const isTextTarget = (t: EventTarget | null) => {
   return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || (el as any).isContentEditable);
 };
 
+
+
+
 export default function ToolHotkeys() {
   const step            = usePlannerV2Store(s => s.step);
   const setStep         = usePlannerV2Store(s => s.setStep);
@@ -116,6 +119,11 @@ export default function ToolHotkeys() {
 
     const onKey = (e: KeyboardEvent) => {
       if (isTextTarget(e.target)) return;
+      // Evita l'undo/redo globale mentre sto disegnando (lascia fare all'hook)
+const t = usePlannerV2Store.getState().tool;
+if (t === 'draw-roof' || t === 'draw-reserved' || t === 'draw-rect') {
+  return; // non gestire qui: l'hook intercetterà Cmd/Ctrl+Z
+}
 
       const k = e.key?.toLowerCase();
       const meta = e.metaKey;

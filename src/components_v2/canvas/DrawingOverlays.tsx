@@ -5,8 +5,8 @@ import {
   Line as KonvaLine,
   Circle as KonvaCircle,
   Text as KonvaText,
-  Group as KonvaGroup,     // ⬅️ nuovo
-  Rect as KonvaRect        // ⬅️ nuovo
+  Group as KonvaGroup,
+  Rect as KonvaRect
 } from 'react-konva';
 
 import { snapParallelPerp, isNear, Pt } from './utils/snap';
@@ -34,6 +34,7 @@ function polygonCentroid(pts: Pt[]) {
 }
 
 const toFlat = (pts: Pt[]) => pts.flatMap((p) => [p.x, p.y]);
+const deg2rad = (d: number) => (d * Math.PI) / 180;
 
 export default function DrawingOverlays({
   tool,
@@ -42,7 +43,9 @@ export default function DrawingOverlays({
   mouseImg,
   stroke,
   areaLabel,
-  mpp,                // ⬅️ nuovo
+  mpp,
+  /** ⬇️ nuovo: angolo base del tetto in COORDINATE CANVAS (come baseGridDeg) */
+  roofSnapDeg,
 }: {
   tool: string;
   drawingPoly: Pt[] | null;
@@ -50,22 +53,25 @@ export default function DrawingOverlays({
   mouseImg: Pt | null;
   stroke: string;
   areaLabel: (pts: Pt[]) => string | null;
-  mpp?: number;       // ⬅️ nuovo
+  mpp?: number;
+  roofSnapDeg?: number; // ⬅️ nuovo
 }) {
   // palette UI
-  const PREVIEW = '#7c3aed'; // viola (segmento in movimento)
-  const ACCEPT  = '#16a34a'; // verde (segmenti fissati)
-  const GUIDE   = '#a78bfa'; // guida snap
+  const PREVIEW = '#7c3aed';
+  const ACCEPT  = '#16a34a';
+  const GUIDE   = '#a78bfa';
   const HANDLE_BG = '#ffffff';
 
-    // ... in cima ai colori già esistenti
-const DANGER   = '#ef4444';  // rosso (segmento in movimento)
-const DANGER_OK= '#dc2626';  // rosso scuro (segmenti fissati)
+  const DANGER    = '#ef4444';
+  const DANGER_OK = '#dc2626';
 
   const SNAP_TOL_DEG = 12;
   const CLOSE_RADIUS = 12;
 
-  // —— DRAW-ROOF (con snap in preview e guida)
+  const guideAxisColor = 'rgba(239,68,68,0.25)'; // rosso tenue per assi guida
+  const guideAxisW = 1;
+
+  // —— DRAW-ROOF (immutato)
   const renderDrawRoof = () => {
     if (!drawingPoly || drawingPoly.length === 0) return null;
 
@@ -77,43 +83,35 @@ const DANGER_OK= '#dc2626';  // rosso scuro (segmenti fissati)
     let target = mouseImg ?? last;
     let snapGuide: { a: Pt; b: Pt } | undefined;
 
-        // magnete per chiudere sul primo punto
     if (mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS)) {
       target = pts[0];
     } else if (mouseImg) {
-      // snap parallelo/perpendicolare sul segmento precedente
       const { pt, guide } = snapParallelPerp(last, mouseImg, refDir, SNAP_TOL_DEG);
       target = pt;
       if (guide) snapGuide = guide;
     }
 
-    // — misure live sul segmento attivo —
-let angleDeg = 0;
-let lenPx = 0;
-if (mouseImg) {
-  const dx = target.x - last.x;
-  const dy = target.y - last.y;
-  angleDeg = Math.round(((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360);
-  lenPx = Math.hypot(dx, dy);
-}
-const lenLabel = (() => {
-  if (!mouseImg) return '';
-  if (mpp) {
-    const m = lenPx * mpp;
-    return m >= 2 ? `${(Math.round(m * 10) / 10).toFixed(1)} m` : `${Math.round(m * 100)} cm`;
-  }
-  return `${Math.round(lenPx)} px`;
-})();
+    let angleDeg = 0;
+    let lenPx = 0;
+    if (mouseImg) {
+      const dx = target.x - last.x;
+      const dy = target.y - last.y;
+      angleDeg = Math.round(((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360);
+      lenPx = Math.hypot(dx, dy);
+    }
+    const lenLabel = (() => {
+      if (!mouseImg) return '';
+      if (mpp) {
+        const m = lenPx * mpp;
+        return m >= 2 ? `${(Math.round(m * 10) / 10).toFixed(1)} m` : `${Math.round(m * 100)} cm`;
+      }
+      return `${Math.round(lenPx)} px`;
+    })();
 
-// — stato "vicino al primo punto" per hint chiusura —
-const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS);
-
-
-
+    const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS);
 
     return (
       <>
-        {/* guida snap (tratteggiata) */}
         {snapGuide && (
           <KonvaLine
             points={[snapGuide.a.x, snapGuide.a.y, snapGuide.b.x, snapGuide.b.y]}
@@ -124,7 +122,6 @@ const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLO
           />
         )}
 
-        {/* segmenti già confermati (verde) */}
         {pts.length >= 2 && (
           <KonvaLine
             points={toFlat(pts)}
@@ -136,7 +133,6 @@ const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLO
           />
         )}
 
-        {/* segmento in anteprima (viola) */}
         {mouseImg && (
           <KonvaLine
             points={[last.x, last.y, target.x, target.y]}
@@ -149,95 +145,82 @@ const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLO
           />
         )}
 
-        {/* etichetta lunghezza + angolo sul segmento attivo */}
-{/* etichetta lunghezza + angolo (piccola + offset fuori dal segmento) */}
-{mouseImg && (() => {
-  // midpoint del segmento
-  const mx0 = (last.x + target.x) / 2;
-  const my0 = (last.y + target.y) / 2;
+        {mouseImg && (() => {
+          const mx0 = (last.x + target.x) / 2;
+          const my0 = (last.y + target.y) / 2;
+          const dx = target.x - last.x;
+          const dy = target.y - last.y;
+          const len = Math.hypot(dx, dy) || 1;
+          const nx = -dy / len;
+          const ny =  dx / len;
 
-  // normale unitaria al segmento
-  const dx = target.x - last.x;
-  const dy = target.y - last.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = -dy / len;
-  const ny =  dx / len;
+          const OFF = 12;
+          const mx = mx0 + nx * OFF;
+          const my = my0 + ny * OFF;
 
-  // offset di 12px lungo la normale (sposta la label fuori dal segmento)
-  const OFF = 12;
-  const mx = mx0 + nx * OFF;
-  const my = my0 + ny * OFF;
+          const SCALE = 0.3;
+          const W  = 70 * SCALE;
+          const H  = 18 * SCALE;
+          const FS = 10 * SCALE;
+          const CR = 9  * SCALE;
 
-  // dimensioni ridotte ~2/5 (40%)
-  const SCALE = 0.3;
-  const W  = 70 * SCALE;     // prima 70
-  const H  = 18 * SCALE;     // prima 18
-  const FS = 10 * SCALE;     // font size
-  const CR = 9  * SCALE;     // corner radius
+          return (
+            <KonvaGroup x={mx} y={my} listening={false}>
+              <KonvaRect
+                x={-W / 2}
+                y={-H / 2}
+                width={W}
+                height={H}
+                cornerRadius={CR}
+                fill="#ffffff"
+                shadowColor="rgba(0,0,0,0.25)"
+                shadowBlur={2 * SCALE}
+                shadowOpacity={0.8}
+              />
+              <KonvaText
+                text={`${len >= 1 ? (mpp ? (len*mpp >= 2 ? `${(Math.round((len*mpp) * 10) / 10).toFixed(1)} m` : `${Math.round(len*mpp*100)} cm`) : `${Math.round(len)} px`) : ''}  •  ${angleDeg}°`}
+                fontSize={FS}
+                fill="#111827"
+                width={W}
+                height={H}
+                offsetX={W / 2}
+                offsetY={H / 2}
+                align="center"
+                verticalAlign="middle"
+                listening={false}
+              />
+            </KonvaGroup>
+          );
+        })()}
 
-  return (
-    <KonvaGroup x={mx} y={my} listening={false}>
-      <KonvaRect
-        x={-W / 2}
-        y={-H / 2}
-        width={W}
-        height={H}
-        cornerRadius={CR}
-        fill="#ffffff"
-        shadowColor="rgba(0,0,0,0.25)"
-        shadowBlur={2 * SCALE}
-        shadowOpacity={0.8}
-      />
-      <KonvaText
-        text={`${lenLabel}  •  ${angleDeg}°`}
-        fontSize={FS}
-        fill="#111827"
-        width={W}
-        height={H}
-        offsetX={W / 2}
-        offsetY={H / 2}
-        align="center"
-        verticalAlign="middle"
-        listening={false}
-      />
-    </KonvaGroup>
-  );
-})()}
+        {pts.map((p, i) => (
+          <KonvaCircle
+            key={i}
+            x={p.x}
+            y={p.y}
+            radius={3.2}
+            fill="#ffffff"
+            stroke={ACCEPT}
+            strokeWidth={1.4}
+            listening={false}
+          />
+        ))}
 
+        {pts.length >= 1 && (
+          <KonvaCircle
+            x={pts[0].x}
+            y={pts[0].y}
+            radius={closeToFirst ? 5 : 3.2}
+            fill="#ffffff"
+            stroke={closeToFirst ? '#16a34a' : '#9ca3af'}
+            strokeWidth={closeToFirst ? 1.5 : 1}
+            shadowColor="rgba(0,0,0,0.25)"
+            shadowBlur={2}
+            shadowOpacity={0.8}
+            listening={false}
+          />
+        )}
 
-{/* handle dei vertici fissati */}
-{pts.map((p, i) => (
-  <KonvaCircle
-    key={i}
-    x={p.x}
-    y={p.y}
-    radius={3.2}
-    fill="#ffffff"
-    stroke={ACCEPT}
-    strokeWidth={1.4}
-    listening={false}
-  />
-))}
-
-
-{/* primo punto: hint chiusura */}
-{pts.length >= 1 && (
-  <KonvaCircle
-    x={pts[0].x}
-    y={pts[0].y}
-    radius={closeToFirst ? 5 : 3.2}
-    fill="#ffffff"
-    stroke={closeToFirst ? '#16a34a' : '#9ca3af'}
-    strokeWidth={closeToFirst ? 1.5 : 1}
-    shadowColor="rgba(0,0,0,0.25)"
-    shadowBlur={2}
-    shadowOpacity={0.8}
-    listening={false}
-  />
-)}
-
-
-        {/* area live (se già >=3 punti fissati) */}
         {pts.length >= 3 && (
           <KonvaText
             x={polygonCentroid(pts).x}
@@ -258,7 +241,7 @@ const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLO
     );
   };
 
-  // —— DRAW-RECT (preview classico)
+  // —— DRAW-RECT (immutato)
   const renderDrawRect = () => {
     if (!rectDraft || rectDraft.length === 0) return null;
 
@@ -321,133 +304,159 @@ const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLO
     );
   };
 
+  // ——— DRAW-RESERVED con assi guida dal primo punto
+  const renderDrawReserved = () => {
+    if (!drawingPoly || drawingPoly.length === 0) return null;
 
+    const pts = drawingPoly;
+    const last = pts[pts.length - 1];
 
+    // 1) asse del tetto (se disponibile)
+    const baseDir =
+      typeof roofSnapDeg === 'number'
+        ? { x: Math.cos(deg2rad(roofSnapDeg)), y: Math.sin(deg2rad(roofSnapDeg)) }
+        : undefined;
 
-// ——— DRAW-RESERVED (poligono libero, rosso pieno + maniglie quadrate)
-const renderDrawReserved = () => {
-  if (!drawingPoly || drawingPoly.length === 0) return null;
+    // 2) refDir: se ho già due punti uso il segmento precedente,
+    //            altrimenti uso l’asse tetto per mostrare subito snap parallelo/perpendicolare
+    const refDir =
+      pts.length >= 2
+        ? { x: last.x - pts[pts.length - 2].x, y: last.y - pts[pts.length - 2].y }
+        : baseDir;
 
-  const pts = drawingPoly;
-  const last = pts[pts.length - 1];
-  const prev = pts.length >= 2 ? pts[pts.length - 2] : null;
-  const refDir = prev ? { x: last.x - prev.x, y: last.y - prev.y } : undefined;
+    let target = mouseImg ?? last;
+    let snapGuide: { a: Pt; b: Pt } | undefined;
 
-  let target = mouseImg ?? last;
-  let snapGuide: { a: Pt; b: Pt } | undefined;
+    const closeToFirst =
+      mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS);
 
-  // magnete chiusura sul primo punto
-  const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS);
-  if (mouseImg && closeToFirst) {
-    target = pts[0];
-  } else if (mouseImg) {
-    const { pt, guide } = snapParallelPerp(last, mouseImg, refDir, SNAP_TOL_DEG);
-    target = pt;
-    if (guide) snapGuide = guide;
-  }
+    if (mouseImg && closeToFirst) {
+      target = pts[0];
+    } else if (mouseImg) {
+      const { pt, guide } = snapParallelPerp(last, mouseImg, refDir, SNAP_TOL_DEG);
+      target = pt;
+      if (guide) snapGuide = guide;
+    }
 
-  // stile
-  const STROKE      = '#FF2D2D';            // rosso pieno
-  const STROKE_OK   = '#DC2626';            // rosso scuro per segmenti già fissati
-  const STROKE_W    = 0.5;
-  const FILL_PRE    = 'rgba(255,45,45,0.08)'; // fill leggero quando >=3 punti
+    // stile
+    const STROKE      = '#FF2D2D';
+    const STROKE_OK   = '#DC2626';
+    const STROKE_W    = 0.5;
+    const FILL_PRE    = 'rgba(255,45,45,0.08)';
 
-  // maniglie quadrate mini
-  const HANDLE_SIZE     = 3;
-  const HALF            = HANDLE_SIZE / 2;
-  const HANDLE_FILL     = 'rgba(255,255,255,0.65)';
-  const HANDLE_STROKE   = 'rgba(0,0,0,0.4)';
-  const HANDLE_STROKE_W = 0.5;
+    // maniglie quadrate mini
+    const HANDLE_SIZE     = 3;
+    const HALF            = HANDLE_SIZE / 2;
+    const HANDLE_FILL     = 'rgba(255,255,255,0.65)';
+    const HANDLE_STROKE   = 'rgba(0,0,0,0.4)';
+    const HANDLE_STROKE_W = 0.5;
 
-  return (
-    <>
-      {/* guida snap (puoi lasciarla tratteggiata o toglierla del tutto; qui la metto tenue e NON tratteggiata) */}
-      {snapGuide && (
-        <KonvaLine
-          points={[snapGuide.a.x, snapGuide.a.y, snapGuide.b.x, snapGuide.b.y]}
-          stroke="rgba(239,68,68,0.35)"   // rosso tenue
-          strokeWidth={1}
-          listening={false}
-        />
-      )}
+    // 3) assi guida visuali già dal primo punto (se ho roofSnapDeg)
+    const AXIS_LEN = 200;
+    const axisLines = (() => {
+      if (!(baseDir && pts.length === 1)) return null;
+      const p = last;
+      const d = baseDir;
+      const perp = { x: -d.y, y: d.x };
+      const a1 = [p.x - d.x * AXIS_LEN, p.y - d.y * AXIS_LEN, p.x + d.x * AXIS_LEN, p.y + d.y * AXIS_LEN];
+      const a2 = [p.x - perp.x * AXIS_LEN, p.y - perp.y * AXIS_LEN, p.x + perp.x * AXIS_LEN, p.y + perp.y * AXIS_LEN];
+      return (
+        <>
+          <KonvaLine points={a1} stroke={guideAxisColor} strokeWidth={guideAxisW} listening={false} />
+          <KonvaLine points={a2} stroke={guideAxisColor} strokeWidth={guideAxisW} listening={false} />
+        </>
+      );
+    })();
 
-      {/* segmenti già confermati: rosso scuro, linea piena */}
-      {pts.length >= 2 && (
-        <KonvaLine
-          points={toFlat(pts)}
-          stroke={STROKE_OK}
-          strokeWidth={STROKE_W}
-          lineJoin="round"
-          lineCap="round"
-          listening={false}
-        />
-      )}
+    return (
+      <>
+        {/* assi guida dal primo punto */}
+        {axisLines}
 
-      {/* segmento in anteprima: rosso pieno, linea piena */}
-      {mouseImg && (
-        <KonvaLine
-          points={[last.x, last.y, target.x, target.y]}
-          stroke={STROKE}
-          strokeWidth={STROKE_W}
-          lineJoin="round"
-          lineCap="round"
-          listening={false}
-        />
-      )}
+        {/* guida snap dinamica */}
+        {snapGuide && (
+          <KonvaLine
+            points={[snapGuide.a.x, snapGuide.a.y, snapGuide.b.x, snapGuide.b.y]}
+            stroke={guideAxisColor}
+            strokeWidth={1}
+            listening={false}
+          />
+        )}
 
-      {/* fill leggero quando già 3+ punti (anteprima area) */}
-      {pts.length >= 3 && (
-        <KonvaLine
-          points={toFlat(pts)}
-          closed
-          stroke="transparent"
-          fill={FILL_PRE}
-          listening={false}
-        />
-      )}
+        {/* segmenti confermati */}
+        {pts.length >= 2 && (
+          <KonvaLine
+            points={toFlat(pts)}
+            stroke={STROKE_OK}
+            strokeWidth={STROKE_W}
+            lineJoin="round"
+            lineCap="round"
+            listening={false}
+          />
+        )}
 
-      {/* maniglie quadrate sui vertici fissati */}
-      {pts.map((p, i) => (
-        <KonvaRect
-          key={i}
-          x={p.x - HALF}
-          y={p.y - HALF}
-          width={HANDLE_SIZE}
-          height={HANDLE_SIZE}
-          cornerRadius={2}
-          fill={HANDLE_FILL}
-          stroke={HANDLE_STROKE}
-          strokeWidth={HANDLE_STROKE_W}
-          listening={false}
-        />
-      ))}
+        {/* segmento attivo */}
+        {mouseImg && (
+          <KonvaLine
+            points={[last.x, last.y, target.x, target.y]}
+            stroke={STROKE}
+            strokeWidth={STROKE_W}
+            lineJoin="round"
+            lineCap="round"
+            listening={false}
+          />
+        )}
 
-      {/* primo punto: hint chiusura (quadrato leggermente più grande quando vicino) */}
-      {pts.length >= 1 && (
-        <KonvaRect
-          x={pts[0].x - (closeToFirst ? 4.5 : HALF)}
-          y={pts[0].y - (closeToFirst ? 4.5 : HALF)}
-          width={closeToFirst ? 9 : HANDLE_SIZE}
-          height={closeToFirst ? 9 : HANDLE_SIZE}
-          cornerRadius={2}
-          fill="#ffffff"
-          stroke={closeToFirst ? STROKE_OK : 'rgba(156,163,175,1)'}
-          strokeWidth={closeToFirst ? 1.5 : 1}
-          listening={false}
-        />
-      )}
-    </>
-  );
-};
+        {/* fill live */}
+        {pts.length >= 3 && (
+          <KonvaLine
+            points={toFlat(pts)}
+            closed
+            stroke="transparent"
+            fill={FILL_PRE}
+            listening={false}
+          />
+        )}
 
+        {/* maniglie quadrate */}
+        {pts.map((p, i) => (
+          <KonvaRect
+            key={i}
+            x={p.x - HALF}
+            y={p.y - HALF}
+            width={HANDLE_SIZE}
+            height={HANDLE_SIZE}
+            cornerRadius={2}
+            fill={HANDLE_FILL}
+            stroke={HANDLE_STROKE}
+            strokeWidth={HANDLE_STROKE_W}
+            listening={false}
+          />
+        ))}
 
+        {/* hint chiusura sul primo punto */}
+        {pts.length >= 1 && (
+          <KonvaRect
+            x={pts[0].x - (closeToFirst ? 4.5 : HALF)}
+            y={pts[0].y - (closeToFirst ? 4.5 : HALF)}
+            width={closeToFirst ? 9 : HANDLE_SIZE}
+            height={closeToFirst ? 9 : HANDLE_SIZE}
+            cornerRadius={2}
+            fill="#ffffff"
+            stroke={closeToFirst ? STROKE_OK : 'rgba(156,163,175,1)'}
+            strokeWidth={closeToFirst ? 1.5 : 1}
+            listening={false}
+          />
+        )}
+      </>
+    );
+  };
 
   return (
     <>
       {tool === 'draw-roof' && renderDrawRoof()}
       {tool === 'draw-rect' && renderDrawRect()}
       {tool === 'draw-reserved' && renderDrawReserved()}
-
     </>
   );
 }

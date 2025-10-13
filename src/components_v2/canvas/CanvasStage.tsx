@@ -220,6 +220,25 @@ useEffect(() => {
   return () => window.removeEventListener('keydown', onKey);
 }, []);
 
+// CanvasStage.tsx – subito dopo la definizione di stageRef
+useEffect(() => {
+  const stage = stageRef.current?.getStage?.();
+  const container: HTMLDivElement | undefined = stage?.container?.();
+  if (!container) return;
+
+  // rende il container focusabile e focus al primo click
+  container.tabIndex = 0;
+  const focusOnPointer = () => container.focus();
+  container.addEventListener('mousedown', focusOnPointer, { passive: true });
+  container.addEventListener('touchstart', focusOnPointer, { passive: true });
+
+  return () => {
+    container.removeEventListener('mousedown', focusOnPointer);
+    container.removeEventListener('touchstart', focusOnPointer);
+  };
+}, []);
+
+
 
 
   // pan/zoom
@@ -570,6 +589,7 @@ onSelect={(id) => {
   stroke={stroke}
   areaLabel={areaLabel}
   mpp={snap.mppImage}   // ⬅️ nuovo
+   roofSnapDeg={baseGridDeg} 
 />
 
             )}
