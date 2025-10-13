@@ -195,30 +195,85 @@ useEffect(() => {
 }, [tool]);
 
 // CanvasStage.tsx – vicino ad altri useEffect in alto
+// CanvasStage.tsx – SOSTITUISCI il vecchio useEffect con questo
 useEffect(() => {
-  const onKey = (e: KeyboardEvent) => {
+  type KbEvt = KeyboardEvent & { stopImmediatePropagation?: () => void };
+
+  const onKey = (ev: KeyboardEvent) => {
+    const e = ev as KbEvt;
     const st = usePlannerV2Store.getState();
-    if (e.key === 'Escape') {
-      // priorità: 1) zona  2) pannello  3) falda
+    const key = e.key;
+
+    // ---------- DELETE con PRIORITÀ ----------
+    if (key === 'Delete' || key === 'Backspace') {
+      
+// 1) ZONA selezionata → elimina SOLO la zona
+if (st.selectedZoneId) {
+  plannerHistory.push('delete zone');
+  st.removeZone?.(st.selectedZoneId);   // <-- usa removeZone (esiste nella zonesSlice)
+  st.selectZone?.(undefined);           // <-- usa selectZone (non setSelectedZone)
+  e.preventDefault();
+  e.stopPropagation();
+  (e as any).stopImmediatePropagation?.();
+  return;
+}
+
+
+      // 2) Pannelli selezionati? → elimina SOLO i pannelli
+      if (Array.isArray(st.selectedPanelIds) && st.selectedPanelIds.length > 0) {
+        plannerHistory.push('delete panels');
+        if (st.deletePanelsBulk) st.deletePanelsBulk(st.selectedPanelIds);
+        else st.selectedPanelIds.forEach((id: string) => st.deletePanel?.(id));
+        st.setSelectedPanels?.([]);
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation?.();
+        return;
+      }
+
+      // 3) Falda selezionata? → elimina la falda
+      if (st.selectedId) {
+        plannerHistory.push('delete roof');
+        st.deleteRoof?.(st.selectedId) || st.removeRoof?.(st.selectedId) || st.deleteLayer?.(st.selectedId);
+        st.select?.(undefined);
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation?.();
+        return;
+      }
+    }
+
+    // ---------- ESC con PRIORITÀ ----------
+    if (key === 'Escape') {
       if (st.selectedZoneId) {
         st.setSelectedZone?.(undefined);
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation?.();
         return;
       }
       if (st.clearPanelSelection) {
         st.clearPanelSelection();
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation?.();
         return;
       }
       if (st.selectedId) {
         st.select?.(undefined);
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation?.();
+        return;
       }
     }
   };
-  window.addEventListener('keydown', onKey);
-  return () => window.removeEventListener('keydown', onKey);
+
+  // capture:true → questo handler corre PRIMA di altri (es. PanelHotkeys)
+  window.addEventListener('keydown', onKey, { capture: true });
+  return () => window.removeEventListener('keydown', onKey, { capture: true } as any);
 }, []);
+
 
 // CanvasStage.tsx – subito dopo la definizione di stageRef
 useEffect(() => {
@@ -399,7 +454,7 @@ onClick={(evt: any) => {
   // 1) se NON ho cliccato su un nodo "interactive", deseleziono zona + pannelli
   const clickedInteractive = targetName?.includes('interactive');
   if (!clickedInteractive) {
-    store.setSelectedZone?.(undefined);
+    store.selectZone?.(undefined);
     store.clearPanelSelection?.();
   }
 

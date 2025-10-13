@@ -65,8 +65,8 @@ export default function DrawingOverlays({
   const DANGER    = '#ef4444';
   const DANGER_OK = '#dc2626';
 
-  const SNAP_TOL_DEG = 12;
-  const CLOSE_RADIUS = 12;
+  const SNAP_TOL_DEG = 4;
+  const CLOSE_RADIUS = 4;
 
   const guideAxisColor = 'rgba(255,255,255,0.50)'; // rosso tenue per assi guida
   const guideAxisW = 0.75;
