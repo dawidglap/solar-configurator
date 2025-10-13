@@ -1,6 +1,6 @@
 'use client';
 import React, { useMemo, useEffect } from 'react';
-import { Group, Line } from 'react-konva';
+import { Group as KonvaGroup, Line as KonvaLine } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import type { Pt } from '@/types/planner';
 import ZoneHandlesKonva from './ZoneHandlesKonva';
@@ -36,7 +36,10 @@ export default function ZonesLayer({
   const updateZone = usePlannerV2Store((s) => s.updateZone);
   const removeZone = usePlannerV2Store((s) => s.removeZone);
 
-  const zonesForRoof = useMemo(() => zones.filter(z => z.roofId === roofId), [zones, roofId]);
+  const zonesForRoof = useMemo(
+    () => zones.filter((z) => z.roofId === roofId),
+    [zones, roofId]
+  );
 
   // Backspace su zona selezionata
   useEffect(() => {
@@ -52,44 +55,58 @@ export default function ZonesLayer({
 
   if (!zonesForRoof.length) return null;
 
+  // --- Palette rosso pieno ---
+  const RED      = '#FF2D2D';              // bordo default
+  const RED_SEL  = '#DC2626';              // bordo selezionato
+  const FILL     = 'rgba(255,45,45,0.12)'; // riempimento leggero
+  const FILL_SEL = 'rgba(255,45,45,0.20)'; // riempimento selezionato
+  const W        = 0.25;                   // spessore bordo default
+  const W_SEL    = 1;                      // spessore bordo selezionato
+
   return (
-    <Group listening>
+    <KonvaGroup listening>
       {zonesForRoof.map((z) => {
         const flat = toFlatSafe(z.points);
         if (!flat) return null;
 
         const isSel = z.id === selectedZoneId;
-        const stroke = isSel ? '#948979' : '#DFD0B8';
-        const strokeWidth = isSel ? 2 : 0.8;
-        const fill = isSel ? 'rgba(148, 137, 121, 0.28)' : 'rgba(148, 137, 121, 0.18)';
 
         return (
-          <Group key={z.id}>
-            {/* visuale */}
-            <Line
+          <KonvaGroup key={z.id}>
+            {/* shape visiva: rosso pieno, niente tratteggio */}
+            <KonvaLine
               points={flat}
               closed
-              fill={fill}
-              stroke={stroke}
-              strokeWidth={strokeWidth}
-              shadowColor={isSel ? '#948979' : undefined}
-              shadowBlur={isSel ? 6 : 0}
+              fill={isSel ? FILL_SEL : FILL}
+              stroke={isSel ? RED_SEL : RED}
+              strokeWidth={isSel ? W_SEL : W}
+              lineJoin="round"
+              lineCap="round"
               listening={false}
+              perfectDrawEnabled={false}
             />
 
-            {/* hit-area per selezione (blocca bubbling) */}
-            <Line
+            {/* hit-area per selezione (trasparente) */}
+            <KonvaLine
               points={flat}
               closed
               stroke="transparent"
               strokeWidth={14}
               hitStrokeWidth={14}
               listening
-              onClick={(e) => { e.cancelBubble = true; setSelectedZone(z.id); }}
-              onTap={(e) => { e.cancelBubble = true; setSelectedZone(z.id); }}
+              name="zone-hit interactive"
+              onMouseDown={(e) => { e.cancelBubble = true; setSelectedZone(z.id); }}
+              onClick={(e) => {
+                e.cancelBubble = true;
+                setSelectedZone(z.id);
+              }}
+              onTap={(e) => {
+                e.cancelBubble = true;
+                setSelectedZone(z.id);
+              }}
             />
 
-            {/* maniglie SOLO quando: zona selezionata + interattiva + modalità trapezio */}
+            {/* maniglie quadrate: solo se selezionata + modalità trapezio + interattiva */}
             {interactive && isSel && shapeMode === 'trapezio' && (
               <ZoneHandlesKonva
                 points={z.points}
@@ -101,9 +118,9 @@ export default function ZonesLayer({
                 onChange={(next) => updateZone(z.id, { points: next })}
               />
             )}
-          </Group>
+          </KonvaGroup>
         );
       })}
-    </Group>
+    </KonvaGroup>
   );
 }

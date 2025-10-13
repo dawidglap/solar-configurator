@@ -323,7 +323,8 @@ const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLO
 
 
 
-// ——— DRAW-RESERVED (poligono libero come draw-roof, ma rosso)
+
+// ——— DRAW-RESERVED (poligono libero, rosso pieno + maniglie quadrate)
 const renderDrawReserved = () => {
   if (!drawingPoly || drawingPoly.length === 0) return null;
 
@@ -345,62 +346,100 @@ const renderDrawReserved = () => {
     if (guide) snapGuide = guide;
   }
 
+  // stile
+  const STROKE      = '#FF2D2D';            // rosso pieno
+  const STROKE_OK   = '#DC2626';            // rosso scuro per segmenti già fissati
+  const STROKE_W    = 0.5;
+  const FILL_PRE    = 'rgba(255,45,45,0.08)'; // fill leggero quando >=3 punti
+
+  // maniglie quadrate mini
+  const HANDLE_SIZE     = 3;
+  const HALF            = HANDLE_SIZE / 2;
+  const HANDLE_FILL     = 'rgba(255,255,255,0.65)';
+  const HANDLE_STROKE   = 'rgba(0,0,0,0.4)';
+  const HANDLE_STROKE_W = 0.5;
+
   return (
     <>
-      {/* guida snap */}
+      {/* guida snap (puoi lasciarla tratteggiata o toglierla del tutto; qui la metto tenue e NON tratteggiata) */}
       {snapGuide && (
         <KonvaLine
           points={[snapGuide.a.x, snapGuide.a.y, snapGuide.b.x, snapGuide.b.y]}
-          stroke={DANGER}
+          stroke="rgba(239,68,68,0.35)"   // rosso tenue
           strokeWidth={1}
-          dash={[6, 6]}
           listening={false}
         />
       )}
 
-      {/* segmenti confermati (rosso scuro) */}
+      {/* segmenti già confermati: rosso scuro, linea piena */}
       {pts.length >= 2 && (
         <KonvaLine
           points={toFlat(pts)}
-          stroke={DANGER_OK}
-          strokeWidth={2}
+          stroke={STROKE_OK}
+          strokeWidth={STROKE_W}
           lineJoin="round"
           lineCap="round"
           listening={false}
         />
       )}
 
-      {/* segmento in anteprima (rosso) */}
+      {/* segmento in anteprima: rosso pieno, linea piena */}
       {mouseImg && (
         <KonvaLine
           points={[last.x, last.y, target.x, target.y]}
-          stroke={DANGER}
-          strokeWidth={2}
-          dash={[6, 6]}
+          stroke={STROKE}
+          strokeWidth={STROKE_W}
           lineJoin="round"
           lineCap="round"
           listening={false}
         />
       )}
 
-      {/* primo punto: hint chiusura */}
+      {/* fill leggero quando già 3+ punti (anteprima area) */}
+      {pts.length >= 3 && (
+        <KonvaLine
+          points={toFlat(pts)}
+          closed
+          stroke="transparent"
+          fill={FILL_PRE}
+          listening={false}
+        />
+      )}
+
+      {/* maniglie quadrate sui vertici fissati */}
+      {pts.map((p, i) => (
+        <KonvaRect
+          key={i}
+          x={p.x - HALF}
+          y={p.y - HALF}
+          width={HANDLE_SIZE}
+          height={HANDLE_SIZE}
+          cornerRadius={2}
+          fill={HANDLE_FILL}
+          stroke={HANDLE_STROKE}
+          strokeWidth={HANDLE_STROKE_W}
+          listening={false}
+        />
+      ))}
+
+      {/* primo punto: hint chiusura (quadrato leggermente più grande quando vicino) */}
       {pts.length >= 1 && (
-        <KonvaCircle
-          x={pts[0].x}
-          y={pts[0].y}
-          radius={closeToFirst ? 5 : 3.2}
+        <KonvaRect
+          x={pts[0].x - (closeToFirst ? 4.5 : HALF)}
+          y={pts[0].y - (closeToFirst ? 4.5 : HALF)}
+          width={closeToFirst ? 9 : HANDLE_SIZE}
+          height={closeToFirst ? 9 : HANDLE_SIZE}
+          cornerRadius={2}
           fill="#ffffff"
-          stroke={closeToFirst ? DANGER_OK : '#9ca3af'}
+          stroke={closeToFirst ? STROKE_OK : 'rgba(156,163,175,1)'}
           strokeWidth={closeToFirst ? 1.5 : 1}
-          shadowColor="rgba(0,0,0,0.25)"
-          shadowBlur={2}
-          shadowOpacity={0.8}
           listening={false}
         />
       )}
     </>
   );
 };
+
 
 
   return (

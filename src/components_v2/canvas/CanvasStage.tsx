@@ -194,6 +194,33 @@ useEffect(() => {
   }
 }, [tool]);
 
+// CanvasStage.tsx – vicino ad altri useEffect in alto
+useEffect(() => {
+  const onKey = (e: KeyboardEvent) => {
+    const st = usePlannerV2Store.getState();
+    if (e.key === 'Escape') {
+      // priorità: 1) zona  2) pannello  3) falda
+      if (st.selectedZoneId) {
+        st.setSelectedZone?.(undefined);
+        e.preventDefault();
+        return;
+      }
+      if (st.clearPanelSelection) {
+        st.clearPanelSelection();
+        e.preventDefault();
+        return;
+      }
+      if (st.selectedId) {
+        st.select?.(undefined);
+        e.preventDefault();
+      }
+    }
+  };
+  window.addEventListener('keydown', onKey);
+  return () => window.removeEventListener('keydown', onKey);
+}, []);
+
+
 
   // pan/zoom
   const { canDrag, onWheel, onDragMove } = useStagePanZoom({ img, size, view, setView });
@@ -343,14 +370,26 @@ onClick={(evt: any) => {
     onStageClick?.(evt);
     return;
   }
+
   const st = stageRef.current?.getStage?.();
-  if (evt.target === st) {
-    const store = usePlannerV2Store.getState();
-    store.select(undefined);        // deseleziona tetto
-    store.selectZone?.(undefined);  
-    store.clearPanelSelection?.(); // ⬅️ deseleziona zona
+  const target = evt.target;
+  const targetName = typeof target?.name === 'function' ? target.name() : '';
+
+  const store = usePlannerV2Store.getState();
+
+  // 1) se NON ho cliccato su un nodo "interactive", deseleziono zona + pannelli
+  const clickedInteractive = targetName?.includes('interactive');
+  if (!clickedInteractive) {
+    store.setSelectedZone?.(undefined);
+    store.clearPanelSelection?.();
+  }
+
+  // 2) se ho cliccato il vuoto (Stage) o il background catcher, deseleziono anche la falda
+  if (target === st || targetName === 'bg-catcher') {
+    store.select?.(undefined);
   }
 }}
+
 
 
           onDblClick={drawingEnabled ? onStageDblClick : undefined}
@@ -364,6 +403,24 @@ onClick={(evt: any) => {
               height={img.naturalHeight}
               listening={false}
             />
+
+            {/* background click-catcher: deseleziona zona/pannelli/falda quando clicchi sul vuoto */}
+<Rect
+  x={0}
+  y={0}
+  width={img.naturalWidth}
+  height={img.naturalHeight}
+  fill="rgba(0,0,0,0.001)"
+  listening
+  name="bg-catcher"
+  onClick={() => {
+    const st = usePlannerV2Store.getState();
+    st.setSelectedZone?.(undefined);
+    st.clearPanelSelection?.();
+    st.select?.(undefined);
+  }}
+/>
+
 
             {/* Anteprima moduli SOLO in modules */}
             {step === 'modules' &&
