@@ -366,8 +366,10 @@ const {
       addZone({ id: nanoid(), roofId: selectedId, type: 'riservata', points: poly4 });
       selectZone(undefined); 
     },
-    snap: { tolDeg: 12, closeRadius: 12 }, 
-    setTool: setToolForHook,
+     snap: tool === 'draw-reserved'
+    ? { tolDeg: 3, closeRadius: 4 }   // was { tolDeg: 12, closeRadius: 12 }
+    : { tolDeg: 5, closeRadius: 5 }, // also milder for roofs/rects
+  setTool: setToolForHook,
 
   });
 
