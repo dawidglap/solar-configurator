@@ -155,6 +155,11 @@ if (t === 'draw-roof' || t === 'draw-reserved' || t === 'draw-rect') {
     };
 
     window.addEventListener('keydown', onKey, { capture: true });
+    const st = usePlannerV2Store.getState();
+// Se c'è una zona selezionata, NON gestire qui Delete.
+// (La priorità di delete-zone è più alta)
+if (st.selectedZoneId) return;
+
     return () => window.removeEventListener('keydown', onKey, { capture: true } as any);
   }, [step, setStep, setTool, layers, selectedId, modules, setModules, snapshot, selSpec, addPanelsForRoof]);
 

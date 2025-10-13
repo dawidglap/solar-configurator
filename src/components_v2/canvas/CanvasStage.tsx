@@ -208,15 +208,40 @@ useEffect(() => {
     if (key === 'Delete' || key === 'Backspace') {
       
 // 1) ZONA selezionata → elimina SOLO la zona
+// 1) ZONA selezionata → elimina SOLO la zona (con guardie)
 if (st.selectedZoneId) {
+  const zoneId = st.selectedZoneId;
+  const z = (st as any).zones?.find?.((zz: any) => zz.id === zoneId);
+  const roofId = z?.roofId as string | undefined;
+
+  // ⬇️ prima di tutto, "disinnesca" gli altri hotkey handler:
+  // - svuota selezione pannelli
+  st.setSelectedPanels?.([]);
+  st.clearPanelSelection?.();
+
+  // - rimuovi temporaneamente la selezione della falda
+  //   (così eventuali handler roof-delete non vedono selectedId)
+  st.select?.(undefined);
+
   plannerHistory.push('delete zone');
-  st.removeZone?.(st.selectedZoneId);   // <-- usa removeZone (esiste nella zonesSlice)
-  st.selectZone?.(undefined);           // <-- usa selectZone (non setSelectedZone)
+  st.removeZone?.(zoneId);
+  st.selectZone?.(undefined);
+
+  // blocca completamente la propagazione
   e.preventDefault();
   e.stopPropagation();
   (e as any).stopImmediatePropagation?.();
+
+  // ripristina la selezione della falda (se esiste) NEL TICK SUCCESSIVO
+  if (roofId) {
+    setTimeout(() => {
+      const S = usePlannerV2Store.getState();
+      S.select?.(roofId);
+    }, 0);
+  }
   return;
 }
+
 
 
       // 2) Pannelli selezionati? → elimina SOLO i pannelli
