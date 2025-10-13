@@ -20,6 +20,7 @@ import { IoIosSave } from 'react-icons/io';
 import { computeAutoLayoutRects } from '../modules/layout';
 import { overlapsReservedRect } from '../zones/utils';
 import ProjectStatsBar from '../ui/ProjectStatsBar';
+import TopbarAddressSearch from './TopbarAddressSearch';
 
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
@@ -328,7 +329,8 @@ export default function TopToolbar() {
       }}
     >
       {/* SX: sequenza unica — Auswählen + icone 1–6 + controlli moduli */}
-      <div className="ms-[278px] flex min-w-0 items-center gap-2">
+      <div className=" flex min-w-0 items-center gap-2">
+        <TopbarAddressSearch />
         {/* (11) Auswählen */}
         <ActionBtn
           active={tool === 'select'}

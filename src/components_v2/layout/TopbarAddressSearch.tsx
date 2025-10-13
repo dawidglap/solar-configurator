@@ -140,7 +140,7 @@ export default function TopbarAddressSearch() {
         className={`
           planner-topbar
           relative z-[1000000]
-          flex min-w-[360px] max-w-[64vw] items-center gap-2
+          flex min-w-[348px] max-w-[64vw] items-center gap-2
           h-9 rounded-full border border-neutral-300 bg-white pl-2 pr-2
           focus-within:ring-1 focus-within:ring-neutral-400
           overflow-visible

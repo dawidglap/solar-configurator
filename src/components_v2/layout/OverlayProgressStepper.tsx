@@ -72,9 +72,9 @@ export default function OverlayProgressStepper() {
     >
       <div className="flex h-12 w-full items-center gap-3 px-3">
         {/* LEFT: barra ricerca indirizzo */}
-        <div className="hidden md:flex">
+        {/* <div className="hidden md:flex">
           <TopbarAddressSearch />
-        </div>
+        </div> */}
 
         <div className="flex-1" />
 
