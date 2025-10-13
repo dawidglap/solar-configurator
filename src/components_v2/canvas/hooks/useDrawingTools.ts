@@ -161,9 +161,10 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         onZoneCommit?.(pts);
         setDrawingPoly(null);
         polyRedoRef.current = [];
-        select(undefined);  // svuota selezione attiva
+        // 🔵 NON deselezioniamo la falda: lasciamo intatta la selezione corrente
+        // (CanvasStage si occupa già di NON selezionare la zona)
         setTool('select');  // torna alla selezione
-    }, [onZoneCommit, select, setTool]);
+    }, [onZoneCommit, setTool]);
 
     // —— CLICK handler unico
     const onStageClick = React.useCallback((e: any) => {
@@ -273,7 +274,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         }
     }, [tool, drawingPoly, finishPolygon, finishZone]);
 
-    // —— Keybindings locali: Undo/Redo SOLO in modalità disegno
     // —— Keybindings locali: Undo/Redo SOLO in modalità disegno
     React.useEffect(() => {
         const onKey = (e: KeyboardEvent) => {

@@ -18,6 +18,7 @@ export type PanelItemProps = {
 };
 
 const DRAG_THRESHOLD_PX = 3; // piccola soglia per distinguere click vs drag
+const INTERACTIVE_NAME = 'interactive-panel';
 
 export const PanelItem: React.FC<PanelItemProps> = React.memo(
   ({ id, cx, cy, wPx, hPx, rotationDeg, selected, image, onStartDrag, onSelect }) => {
@@ -83,7 +84,11 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
       offsetY: hPx / 2,
       rotation: rotationDeg,
 
-      // niente draggable Konva
+      // importante: contrassegna come interattivo per non far fare "clear" allo Stage
+      name: INTERACTIVE_NAME,
+      listening: true,
+
+      // niente draggable Konva (drag gestito dal nostro hook)
       draggable: false,
 
       // gestione press/move per decidere se avviare drag
