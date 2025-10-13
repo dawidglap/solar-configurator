@@ -646,7 +646,7 @@ onSelect={(id) => {
         mpp={snap.mppImage}
         edgeColor={strokeSelected}
       />
-      <ProjectStatsBar />
+      {/* <ProjectStatsBar /> */}
     </div>
   );
 }

@@ -19,6 +19,7 @@ import { IoIosSave } from 'react-icons/io';
 // ⬇️ IMPORT FUNZIONI DALLA LOGICA ESISTENTE (ADEGUA PATH SE SERVE)
 import { computeAutoLayoutRects } from '../modules/layout';
 import { overlapsReservedRect } from '../zones/utils';
+import ProjectStatsBar from '../ui/ProjectStatsBar';
 
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
@@ -496,6 +497,9 @@ export default function TopToolbar() {
           tooltipKeys={isMac ? ['⇧', '⌘', 'Z'] : ['Ctrl', 'Y']}
           disabled={!canRedo}
         />
+      <div className="mx-1 h-6 w-px bg-neutral-200" />
+
+        <ProjectStatsBar />
       </div>
     </div>
   );
