@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 
-export type Pt = { x:number; y:number };
+export type Pt = { x: number; y: number };
 
 function polygonAreaPx2(pts: Pt[]) {
   let a = 0;
@@ -12,17 +12,19 @@ function polygonAreaPx2(pts: Pt[]) {
   return Math.abs(a / 2);
 }
 
-function formatNumberM2(m2:number) {
+// formatter locali
+const fmt0 = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 });
+const fmt1 = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+function formatNumberM2(m2: number) {
   // solo numero formattato (senza unità)
-  if (m2 < 10) return m2.toFixed(1);
-  return String(Math.round(m2));
+  return m2 < 10 ? fmt1.format(m2) : fmt0.format(Math.round(m2));
 }
 
 // con NBSP per la variante con unità
-function formatM2WithUnit(m2:number) {
+function formatM2WithUnit(m2: number) {
   const nb = '\u00A0';
-  if (m2 < 10) return `${m2.toFixed(1)}${nb}m²`;
-  return `${Math.round(m2)}${nb}m²`;
+  return m2 < 10 ? `${fmt1.format(m2)}${nb}m²` : `${fmt0.format(Math.round(m2))}${nb}m²`;
 }
 
 export default function RoofAreaInfo({
@@ -30,25 +32,49 @@ export default function RoofAreaInfo({
   mpp,
   className = '',
   variant = 'badge',           // 'badge' | 'text'
-  showUnit = true,             // ⬅️ nuovo: mostra o meno "m²"
+  showUnit = true,
+  // ⬇️ nuovi opzionali
+  tiltDeg,
+  correctForTilt = false,
 }: {
   points: Pt[];
   mpp?: number;
   className?: string;
   variant?: 'badge' | 'text';
   showUnit?: boolean;
+  /** inclinazione falda in gradi (se fornita) */
+  tiltDeg?: number;
+  /** se true mostra l'area corretta per inclinazione */
+  correctForTilt?: boolean;
 }) {
-  const label = useMemo(() => {
-    if (!mpp || points.length < 3) return null;
-    const m2 = polygonAreaPx2(points) * (mpp * mpp);
-    return showUnit ? formatM2WithUnit(m2) : formatNumberM2(m2);
-  }, [points, mpp, showUnit]);
+  const { label, title } = useMemo(() => {
+    if (!mpp || points.length < 3) return { label: null as string | null, title: '' };
+
+    const areaPlanM2 = polygonAreaPx2(points) * (mpp * mpp);
+
+    let areaM2 = areaPlanM2;
+    if (correctForTilt && typeof tiltDeg === 'number') {
+      const rad = (tiltDeg * Math.PI) / 180;
+      const cos = Math.max(0.1736, Math.cos(rad)); // ≥ cos(80°) per robustezza
+      areaM2 = areaPlanM2 / cos;                   // superficie reale di falda
+    }
+
+    const label = showUnit ? formatM2WithUnit(areaM2) : formatNumberM2(areaM2);
+    const title = correctForTilt
+      ? `Fläche (Dach). Plan: ${formatNumberM2(areaPlanM2)} m²`
+      : 'Fläche (Plan)';
+
+    return { label, title };
+  }, [points, mpp, showUnit, correctForTilt, tiltDeg]);
 
   if (!label) return null;
 
   if (variant === 'text') {
     return (
-      <span className={`text-[11px] text-neutral-600 whitespace-nowrap tabular-nums ${className}`}>
+      <span
+        className={`text-[11px] text-neutral-600 whitespace-nowrap tabular-nums ${className}`}
+        title={title}
+      >
         {label}
       </span>
     );
@@ -61,7 +87,7 @@ export default function RoofAreaInfo({
         text-[11px] font-medium text-neutral-700
         whitespace-nowrap tabular-nums ${className}
       `}
-      title="Fläche (Plan)"
+      title={title}
     >
       {label}
     </span>

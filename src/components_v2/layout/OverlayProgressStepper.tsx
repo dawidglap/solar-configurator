@@ -1,3 +1,4 @@
+// src/components_v2/layout/OverlayProgressStepper.tsx
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
@@ -6,45 +7,44 @@ import {
   User, Home, GitBranch, ListChecks, BadgeCheck, Check,
   Monitor, Map, FileText
 } from 'lucide-react';
-import TopbarAddressSearch from './TopbarAddressSearch';
+// import TopbarAddressSearch from './TopbarAddressSearch';
 
-// NON tocchiamo lo store
+// Non tocchiamo lo store
 type StoreKey = 'building' | 'modules' | 'strings' | 'parts';
 
-// Step UI: “planning” è virtuale e rappresenta building+modules
+// Step UI separati
 type UiStep =
-  | { key: 'profile';    label: string; short: string; Icon: any; clickable: false }
-  | { key: 'presentation';label: string; short: string; Icon: any; clickable: false }
-  | { key: 'ist';        label: string; short: string; Icon: any; clickable: false }
-  | { key: 'planning';   label: string; short: string; Icon: any; clickable: true  } // ← unifica
-  // | { key: 'strings';    label: string; short: string; Icon: any; clickable: false }
-  | { key: 'parts';      label: string; short: string; Icon: any; clickable: false }
-  | { key: 'report';     label: string; short: string; Icon: any; clickable: false }
-  | { key: 'offer';      label: string; short: string; Icon: any; clickable: false };
+  | { key: 'profile';      label: string; short: string; Icon: any; clickable: false }
+  | { key: 'presentation'; label: string; short: string; Icon: any; clickable: false }
+  | { key: 'ist';          label: string; short: string; Icon: any; clickable: false }
+  | { key: 'building';     label: string; short: string; Icon: any; clickable: true  }
+  | { key: 'modules';      label: string; short: string; Icon: any; clickable: true  }
+  // | { key: 'strings';      label: string; short: string; Icon: any; clickable: false }
+  | { key: 'parts';        label: string; short: string; Icon: any; clickable: false }
+  | { key: 'report';       label: string; short: string; Icon: any; clickable: false }
+  | { key: 'offer';        label: string; short: string; Icon: any; clickable: false };
 
 const UI_STEPS: UiStep[] = [
-  { key: 'profile',     label: 'Profil',         short: 'Profil',         Icon: User,      clickable: false },
-  { key: 'presentation',label: 'Präsentation',   short: 'Präsentation',    Icon: Monitor,   clickable: false },
-  { key: 'ist',         label: 'IST-Situation',  short: 'IST-Situation',   Icon: Map,       clickable: false },
-  { key: 'planning',    label: 'Planungsmodus',  short: 'Planungsmodus',   Icon: Home,      clickable: true  }, // building+modules
-  // { key: 'strings',     label: 'String',         short: 'String',          Icon: GitBranch, clickable: false },
-  { key: 'parts',       label: 'Stückliste',     short: 'Stückliste',      Icon: ListChecks,clickable: false },
-  { key: 'report',      label: 'Bericht',        short: 'Bericht',         Icon: FileText,  clickable: false },
-  { key: 'offer',       label: 'Angebot',        short: 'Angebot',         Icon: BadgeCheck,clickable: false },
+  { key: 'profile',      label: 'Profil',         short: 'Profil',         Icon: User,      clickable: false },
+  { key: 'presentation', label: 'Präsentation',   short: 'Präsentation',   Icon: Monitor,   clickable: false },
+  { key: 'ist',          label: 'IST-Situation',  short: 'IST-Situation',  Icon: Map,       clickable: false },
+  { key: 'building',     label: 'Gebäude',        short: 'Gebäude',        Icon: Home,      clickable: true  },
+  { key: 'modules',      label: 'Module',         short: 'Module',         Icon: Home,      clickable: true  },
+  // { key: 'strings',       label: 'String',         short: 'String',        Icon: GitBranch, clickable: false },
+  { key: 'parts',        label: 'Stückliste',     short: 'Stückliste',     Icon: ListChecks,clickable: false },
+  { key: 'report',       label: 'Bericht',        short: 'Bericht',        Icon: FileText,  clickable: false },
+  { key: 'offer',        label: 'Angebot',        short: 'Angebot',        Icon: BadgeCheck,clickable: false },
 ];
 
 export default function OverlayProgressStepper() {
   const step    = usePlannerV2Store((s) => s.step);     // 'building' | 'modules' | 'strings' | 'parts'
   const setStep = usePlannerV2Store((s) => s.setStep);
 
-  // Mappiamo building/modules → planning; altri step come da store
-  const activeIndex = useMemo(() => {
-    const uiKey =
-      step === 'building' || step === 'modules'
-        ? 'planning'
-        : (step as any);
-    return Math.max(0, UI_STEPS.findIndex((s) => s.key === uiKey));
-  }, [step]);
+  // Active index diretto (niente mapping “planning”)
+  const activeIndex = useMemo(
+    () => Math.max(0, UI_STEPS.findIndex((s) => s.key === (step as any))),
+    [step]
+  );
 
   // Aggiorna --tb con l’altezza reale della topbar
   const barRef = useRef<HTMLDivElement>(null);
@@ -71,7 +71,7 @@ export default function OverlayProgressStepper() {
       style={{ paddingLeft: 'var(--sb, 64px)' }}
     >
       <div className="flex h-12 w-full items-center gap-3 px-3">
-        {/* LEFT: barra ricerca indirizzo */}
+        {/* LEFT: barra ricerca indirizzo (tenuta spenta) */}
         {/* <div className="hidden md:flex">
           <TopbarAddressSearch />
         </div> */}
@@ -108,13 +108,8 @@ export default function OverlayProgressStepper() {
               );
 
               const onClick = () => {
-                if (s.key === 'planning') {
-                  // opzionale: forzare ‘building’ come atterraggio
-                  // setStep('building' as StoreKey);
-                  return;
-                }
-                // Le altre voci sono non cliccabili (clickable: false). Se un giorno servirà:
-                // setStep(s.key as StoreKey);
+                if (!s.clickable) return;
+                setStep(s.key as StoreKey); // 'building' o 'modules'
               };
 
               return (

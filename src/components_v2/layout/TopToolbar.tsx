@@ -222,24 +222,16 @@ export default function TopToolbar() {
   }
 
   /* UI unificata: tutti i tool sempre visibili (attivi logici via step auto-switch) */
-  const canUseBuildingTools = true;
-  const canUseModulesTools  = true;
+ /* Tool attivi solo nello step corrente */
+const canUseBuildingTools = step === 'building';
+const canUseModulesTools  = step === 'modules';
 
-  /* ── Helper: mappa tool → step e switch automatico ───────────────── */
-  function stepForTool(t: string): 'building' | 'modules' {
-    switch (t) {
-      case 'fill-area':            return 'modules';
-      case 'draw-roof':
-      case 'draw-reserved':
-      case 'draw-rect':            return 'building';
-      default:                     return step as any; // select, ecc.
-    }
-  }
-  function go(t: any) {
-    const target = stepForTool(t);
-    if (target && target !== step) setStep(target as any);
-    setTool(t);
-  }
+/* ── Nessun auto-switch: il tool cambia solo se lo step corrente lo consente ── */
+function go(t: any) {
+  setTool(t);
+}
+
+
 
   /* ── Handler: In Module umwandeln (icona #3) ─────────────────────── */
   function handleConvertToModules() {
@@ -331,68 +323,67 @@ export default function TopToolbar() {
       {/* SX: sequenza unica — Auswählen + icone 1–6 + controlli moduli */}
       <div className=" flex min-w-0 items-center gap-2">
         <TopbarAddressSearch />
-        {/* (11) Auswählen */}
-        <ActionBtn
-          active={tool === 'select'}
-          onClick={() => go('select' as any)}
-          Icon={MousePointer}
-          label=""
-          tooltipLabel="Auswählen"
-          tooltipKeys={['A']}
-        />
+  {/* Auswählen → SEMPRE attivo */}
+<ActionBtn
+  active={tool === 'select'}
+  onClick={() => go('select' as any)}
+  Icon={MousePointer}
+  label=""
+  tooltipLabel="Auswählen"
+  tooltipKeys={['A']}
+/>
 
-        {/* 1) Dach zeichnen */}
-        <ActionBtn
-          active={tool === 'draw-roof'}
-          onClick={() => go('draw-roof' as any)}
-          Icon={TbShape3}
-          label=""
-          disabled={!canUseBuildingTools}
-          tooltipLabel="Dach zeichnen"
-          tooltipKeys={['D']}
-        />
+{/* Gebäude-only */}
+<ActionBtn
+  active={tool === 'draw-roof'}
+  onClick={() => go('draw-roof' as any)}
+  Icon={TbShape3}
+  label=""
+  disabled={!canUseBuildingTools}
+  tooltipLabel="Dach zeichnen"
+  tooltipKeys={['D']}
+/>
 
-        {/* 2) Hindernis / Reservierte Zone */}
-        <ActionBtn
-          active={tool === 'draw-reserved'}
-          onClick={() => go('draw-reserved' as any)}
-          Icon={MdOutlineTexture}
-          label=""
-          disabled={!canUseBuildingTools}
-          tooltipLabel="Hindernis / Reservierte Zone"
-          tooltipKeys={['H']}
-        />
+<ActionBtn
+  active={tool === 'draw-reserved'}
+  onClick={() => go('draw-reserved' as any)}
+  Icon={MdOutlineTexture}
+  label=""
+  disabled={!canUseBuildingTools}
+  tooltipLabel="Hindernis / Reservierte Zone"
+  tooltipKeys={['H']}
+/>
 
-        {/* 3) In Module umwandeln */}
-        <ActionBtn
-          onClick={handleConvertToModules}
-          Icon={MdViewModule}
-          label=""
-          tooltipLabel="Autolayout umwandeln"
-          tooltipKeys={['U']}
-        />
+<ActionBtn
+  active={tool === 'draw-rect'}
+  onClick={() => go('draw-rect' as any)}
+  Icon={AiOutlineBorderHorizontal}
+  label=""
+  disabled={!canUseBuildingTools}
+  tooltipLabel="Rechteck zeichnen"
+  tooltipKeys={['R']}
+/>
 
-        {/* 4) Fläche füllen (tool moduli) */}
-        <ActionBtn
-          active={tool === 'fill-area'}
-          onClick={() => go('fill-area' as any)}
-          Icon={MdBorderStyle}
-          label=""
-          disabled={!canUseModulesTools}
-          tooltipLabel="Fläche füllen"
-          tooltipKeys={['F']}
-        />
+{/* Module-only */}
+<ActionBtn
+  onClick={handleConvertToModules}
+  Icon={MdViewModule}
+  label=""
+  disabled={!canUseModulesTools}
+  tooltipLabel="Autolayout umwandeln"
+  tooltipKeys={['U']}
+/>
 
-        {/* 5) Rechteck zeichnen */}
-        <ActionBtn
-          active={tool === 'draw-rect'}
-          onClick={() => go('draw-rect' as any)}
-          Icon={AiOutlineBorderHorizontal}
-          label=""
-          disabled={!canUseBuildingTools}
-          tooltipLabel="Rechteck zeichnen"
-          tooltipKeys={['R']}
-        />
+<ActionBtn
+  active={tool === 'fill-area'}
+  onClick={() => go('fill-area' as any)}
+  Icon={MdBorderStyle}
+  label=""
+  disabled={!canUseModulesTools}
+  tooltipLabel="Fläche füllen"
+  tooltipKeys={['F']}
+/>
+
 
         <div className="mx-1 h-6 w-px bg-neutral-200" />
 

@@ -43,6 +43,32 @@ export default function ModulesPanel() {
   const selectedPanelId  = usePlannerV2Store(s => s.selectedPanelId);
   const setSelectedPanel = usePlannerV2Store(s => s.setSelectedPanel);
 
+// --- Edit inline tilt/az (spostato sotto per evitare TDZ) ---
+const updateRoof = usePlannerV2Store(s => s.updateRoof);
+const [editing, setEditing] = React.useState<{ id: string; field: 'tilt'|'az' } | null>(null);
+const [tempVal, setTempVal] = React.useState<string>('');
+const relayoutRef = React.useRef<null | ((next?: 'portrait'|'landscape') => void)>(null);
+
+
+const commitInline = React.useCallback((roofId: string, field: 'tilt'|'az') => {
+  const raw = Number(tempVal);
+  if (!Number.isFinite(raw)) { setEditing(null); return; }
+
+  if (field === 'tilt') {
+    const v = Math.max(0, Math.min(60, raw));
+    updateRoof(roofId, { tiltDeg: v, source: 'manual' as any });
+ } else {
+  const display = Math.round(raw);                             // valore inserito in UI (0° = N)
+  const stored  = ((display - 180) % 360 + 360) % 360;         // inverti la +180° della UI
+  updateRoof(roofId, { azimuthDeg: stored, source: 'manual' as any });
+}
+
+
+  setEditing(null);
+  if (selectedId === roofId) relayoutRef.current?.(); // ← usa la ref
+}, [tempVal, updateRoof, selectedId]);                 // ← rimosso relayoutSelectedRoof
+
+
   /** Re-layout immediato della falda selezionata (usato dal toggle orientamento) */
   const relayoutSelectedRoof = useCallback((nextOrientation?: 'portrait' | 'landscape') => {
     if (!selectedId || !selSpec || !snapshot?.mppImage) return;
@@ -118,6 +144,30 @@ export default function ModulesPanel() {
     addPanelsForRoof, clearPanelsForRoof
   ]);
 
+  React.useEffect(() => {
+  relayoutRef.current = relayoutSelectedRoof;
+}, [relayoutSelectedRoof]);
+
+// --- helpers area corretta per inclinazione ---
+const polygonAreaPx2 = (pts: Pt[]) => {
+  let a = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    a += (pts[j].x + pts[i].x) * (pts[j].y - pts[i].y);
+  }
+  return Math.abs(a / 2);
+};
+
+const roofAreaM2Corrected = React.useCallback((pts: Pt[] | undefined, mpp?: number, tiltDeg?: number) => {
+  if (!pts?.length || !mpp) return 0;
+  const m2Plan = polygonAreaPx2(pts) * mpp * mpp;          // area in pianta
+  if (typeof tiltDeg !== 'number') return m2Plan;
+  const tiltRad = (tiltDeg * Math.PI) / 180;
+  const cos = Math.max(0.1736, Math.cos(tiltRad));         // clamp (≥ cos 80°) per sicurezza
+  return m2Plan / cos;                                      // area di falda (superficie reale)
+}, []);
+
+
+
   return (
     <div className="w-full max-w-[240px] space-y-4 p-2">
       {/* === EBENEN (tabella compatta) === */}
@@ -137,80 +187,207 @@ export default function ModulesPanel() {
           <p className="px-1 py-1 text-[11px] text-neutral-600">Noch keine Ebenen.</p>
         ) : (
           <div className="text-[10px]">
-            {/* Header */}
-            <div className="grid grid-cols-[36px_36px_56px_60px_18px] items-center px-1 py-1 text-neutral-500">
-              <div className="font-medium">D</div>
-              <div className="flex items-center gap-1"><MdViewModule className="h-3 w-3" /></div>
-              <div className="text-right font-medium">m²</div>
-              <div className="text-right font-medium">kWp</div>
-              <div />
-            </div>
+{/* Header (7 colonne, griglia aggiornata) */}
+<div className="grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-6 text-[10px] text-neutral-500">
+  <div className="font-medium">D</div>
+  <div className="flex items-center justify-center"><MdViewModule className="h-3 w-3" /></div>
+  <div className="text-right font-medium">m²</div>
+  <div className="text-right font-medium">kWp</div>
+  <div className="text-center font-medium" title="Neigung (°)">∠</div>
+  <div className="text-center font-medium" title="Ausrichtung (° vs N)">N</div>
+  <div />
+</div>
 
-            {/* Righe */}
-            <ul className="divide-y divide-neutral-200">
-              {layers.map((l, i) => {
-                const roofId = l.id;
-                const active = selectedId === roofId;
 
-                const count = panels.filter(p => p.roofId === roofId).length;
-                const kWp   = selSpec ? (selSpec.wp / 1000) * count : 0;
+{/* Righe (monolinea) */}
+<ul className="divide-y divide-neutral-200">
+  {layers.map((l, i) => {
+    const roofId = l.id;
+    const active = selectedId === roofId;
 
-                return (
-                  <li key={roofId}>
-                    <div
-                      className={[
-                        'grid grid-cols-[36px_36px_56px_60px_18px] items-center px-1 py-1 h-6',
-                        active ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50 text-neutral-900'
-                      ].join(' ')}
-                    >
-                      {/* D1/D2... */}
-                      <button
-                        onClick={() => select(roofId)}
-                        title={l.name ?? `D${i + 1}`}
-                        aria-label={`Ebene auswählen: ${l.name ?? `D${i + 1}`}`}
-                        className="text-left font-semibold"
-                      >
-                        {`D${i + 1}`}
-                      </button>
+    const count = panels.filter(p => p.roofId === roofId).length;
+    const kWp   = selSpec ? (selSpec.wp / 1000) * count : 0;
 
-                      {/* # moduli */}
-                      <button
-                        onClick={() => select(roofId)}
-                        title={`${count} Module`}
-                        aria-label={`${count} Module`}
-                        className="tabular-nums text-left opacity-80"
-                      >
-                        {count}
-                      </button>
+    // helpers compatti
+    const norm360 = (d: number) => ((d % 360) + 360) % 360;
+    const toCard8 = (az: number) => ['N','NE','E','SE','S','SW','W','NW'][Math.round(norm360(az)/45)%8];
+    const fmtDe2 = new Intl.NumberFormat('de-DE', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
-                      {/* m² (solo numero) */}
-                      <div className="tabular-nums text-right opacity-80">
-                        <RoofAreaInfo points={l.points as Pt[]} mpp={mpp} variant="text" showUnit={false} />
-                      </div>
+    const toCard4 = (az: number) => ['N','E','S','W'][Math.round(norm360(az)/90)%4];
+    
 
-                      {/* kWp (solo numero) */}
-                      <div className="tabular-nums text-right opacity-80">
-                        {kWp ? kWp.toFixed(2) : '0,00'}
-                      </div>
 
-                      {/* elimina layer */}
-                      <button
-                        onClick={() => delLayer(roofId)}
-                        title="Löschen"
-                        aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
-                        className={[
-                          'text-[12px] leading-none ms-2',
-                          active ? 'opacity-90 hover:opacity-100'
-                                 : 'opacity-50 hover:opacity-100 hover:text-red-600'
-                        ].join(' ')}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+    const az = typeof l.azimuthDeg === 'number' ? norm360(l.azimuthDeg) : undefined;
+    const tilt = typeof (l as any).tiltDeg === 'number' ? (l as any).tiltDeg : undefined;
+
+    
+    const tiltShort = tilt != null ? Math.round(tilt) : undefined;
+
+    const toViewAz = (a: number) => norm360(a + 180); // conversione per la UI
+const azView = az != null ? toViewAz(az) : undefined;
+const azShort = azView != null ? Math.round(azView) : undefined; // <-- ricalcola qui
+
+
+    const src = (l as any).source as ('sonnendach'|'manual'|undefined);
+    const srcBadge = src === 'sonnendach' ? 'S' : src === 'manual' ? 'M' : '';
+const m2Plan  = mpp ? polygonAreaPx2(l.points as Pt[]) * mpp * mpp : 0;
+const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
+    return (
+      
+      <li key={roofId}>
+        <div
+  className={[
+    'grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-6',
+    active ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50 text-neutral-900'
+  ].join(' ')}
+>
+          {/* D1/D2 */}
+          <button
+            onClick={() => select(roofId)}
+            title={l.name ?? `D${i + 1}`}
+            aria-label={`Ebene auswählen: ${l.name ?? `D${i + 1}`}`}
+            className="text-left font-semibold"
+          >
+            {`D${i + 1}`}
+          </button>
+
+          {/* # moduli */}
+          <button
+            onClick={() => select(roofId)}
+            title={`${count} Module`}
+            aria-label={`${count} Module`}
+            className="tabular-nums text-center opacity-80"
+          >
+            {count}
+          </button>
+
+        {/* m² (corretto per inclinazione; tooltip mostra anche la planimetrica) */}
+<div className="tabular-nums text-right opacity-80">
+  <RoofAreaInfo
+    points={l.points as Pt[]}
+    mpp={mpp}
+    variant="text"
+    showUnit={false}
+    tiltDeg={(l as any).tiltDeg}
+    correctForTilt
+  />
+</div>
+
+
+          {/* kWp */}
+         <div className="tabular-nums text-right opacity-80">
+  {fmtDe2.format(kWp || 0)}
+</div>
+
+
+       {/* tilt (°) */}
+<div
+  className="tabular-nums text-center opacity-80"
+  title="Neigung (°)"
+  onClick={() => {
+    if (editing?.id === roofId && editing.field === 'tilt') return;
+    setEditing({ id: roofId, field: 'tilt' });
+    setTempVal(tiltShort != null ? String(tiltShort) : '');
+  }}
+>
+  {(editing?.id === roofId && editing.field === 'tilt') ? (
+    <input
+      autoFocus
+      type="number"
+      min={0}
+      max={60}
+      step={1}
+      value={tempVal}
+      onChange={e => setTempVal(e.target.value)}
+      onBlur={() => commitInline(roofId, 'tilt')}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commitInline(roofId, 'tilt');
+        if (e.key === 'Escape') setEditing(null);
+      }}
+      className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
+      style={{ padding: 0 }}
+    />
+  ) : (
+    <span>{tiltShort != null ? `${tiltShort}°` : '—'}</span>
+  )}
+</div>
+
+{/* azimuth (°) – UI mostra (interno + 180) */}
+<div
+  className="tabular-nums text-center opacity-80"
+  title={azView != null ? `${Math.round(azView)}° ${toCard8(azView)}` : 'Ausrichtung'}
+  onClick={() => {
+    if (editing?.id === roofId && editing.field === 'az') return;
+    setEditing({ id: roofId, field: 'az' });
+    setTempVal(azShort != null ? String(azShort) : '');
+  }}
+>
+  {(editing?.id === roofId && editing.field === 'az') ? (
+    <input
+      autoFocus
+      type="number"
+      min={0}
+      max={359}
+      step={1}
+      value={tempVal}
+      onChange={e => setTempVal(e.target.value)}
+      onBlur={() => commitInline(roofId, 'az')}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commitInline(roofId, 'az');
+        if (e.key === 'Escape') setEditing(null);
+      }}
+      className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
+      style={{ padding: 0 }}
+    />
+  ) : (
+    
+<span>
+  {azShort != null
+    ? `${toCard8((180 - azShort + 360) % 360)} ${azShort}°`
+    : '—'}
+</span>
+
+  )}
+</div>
+
+
+
+          {/* elimina / fonte */}
+          <div className="flex items-center justify-end  gap-1">
+            {srcBadge && (
+              <span
+                className={[
+                  'inline-flex  h-[14px] min-w-[14px] items-center justify-center rounded-sm px-[4px] text-[9px]',
+                  active ? 'bg-blue-800 text-white' : 'bg-neutral-200 text-neutral-700'
+                ].join(' ')}
+                title={srcBadge === 'S' ? 'Sonnendach' : 'Manuell'}
+              >
+                {srcBadge}
+              </span>
+            )}
+            <button
+              onClick={() => delLayer(roofId)}
+              title="Löschen"
+              aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
+              className={[
+                'text-[12px] leading-none',
+                active ? 'opacity-90 hover:opacity-100'
+                       : 'opacity-50 hover:opacity-100 hover:text-red-600'
+              ].join(' ')}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      </li>
+    );
+  })}
+</ul>
+
+
           </div>
         )}
       </div>

@@ -1,10 +1,11 @@
+// src/components_v2/canvas/RoofHudOverlay.tsx
 'use client';
 
 import React from 'react';
 import EdgeLengthBadges from './EdgeLengthBadges';
 
 type Pt = { x: number; y: number };
-type Roof = { id: string; points: Pt[] } | null;
+type Roof = { id: string; points: Pt[]; azimuthDeg?: number; tiltDeg?: number } | null;
 
 export default function RoofHudOverlay({
   selectedRoof,
@@ -52,13 +53,16 @@ export default function RoofHudOverlay({
         {shapeMode === 'normal' ? 'Normal' : 'Trapez'}
       </button>
 
-      {/* Etichette lunghezze lati */}
+      {/* Etichette lunghezze lati (corrette per inclinazione se disponibili) */}
       {mpp && (
         <EdgeLengthBadges
           points={selectedRoof.points}
           mpp={mpp}
           view={view}
           color={edgeColor}
+          // ⬇️ nuovi: attivano la correzione 3D
+          tiltDeg={selectedRoof.tiltDeg}
+          eavesAzimuthDeg={selectedRoof.azimuthDeg}
         />
       )}
     </>

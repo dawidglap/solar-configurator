@@ -529,29 +529,31 @@ onClick={(evt: any) => {
 
 
             {/* Anteprima moduli SOLO in modules */}
-            {step === 'modules' &&
-              selectedRoof &&
-              selPanel &&
-              snap.mppImage &&
-              modules.showGrid &&
-              !hasPanelsOnSelected && (
-   <ModulesPreview
-  roofId={selectedRoof.id}
-  polygon={selectedRoof.points}
-  mppImage={snap.mppImage}
-  azimuthDeg={gridDeg}  
-  orientation={modules.orientation}
-  panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
-  spacingM={modules.spacingM}
-  marginM={modules.marginM}
-  textureUrl="/images/panel.webp"
-  phaseX={gridMods.gridPhaseX || 0}
-  phaseY={gridMods.gridPhaseY || 0}
-  anchorX={(gridMods.gridAnchorX as any) || 'start'}
-  anchorY={(gridMods.gridAnchorY as any) || 'start'}
-  coverageRatio={gridMods.coverageRatio ?? 1}   // 👈 importante
-/>
-              )}
+       {step === 'modules' &&
+  selectedRoof &&
+  selPanel &&
+  snap.mppImage &&
+  modules.showGrid &&
+  !hasPanelsOnSelected &&
+  tool === 'select' && (        // ⬅️ aggiunto
+  <ModulesPreview
+    roofId={selectedRoof.id}
+    polygon={selectedRoof.points}
+    mppImage={snap.mppImage}
+    azimuthDeg={gridDeg}
+    orientation={modules.orientation}
+    panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
+    spacingM={modules.spacingM}
+    marginM={modules.marginM}
+    textureUrl="/images/panel.webp"
+    phaseX={gridMods.gridPhaseX || 0}
+    phaseY={gridMods.gridPhaseY || 0}
+    anchorX={(gridMods.gridAnchorX as any) || 'start'}
+    anchorY={(gridMods.gridAnchorY as any) || 'start'}
+    coverageRatio={gridMods.coverageRatio ?? 1}
+  />
+)}
+
 
             <SonnendachOverlayKonva />
 
@@ -723,7 +725,7 @@ onSelect={(id) => {
 />
 
 
-      <OrientationHUD />
+      {/* <OrientationHUD /> */}
 
       <RoofHudOverlay
         selectedRoof={selectedRoof}
