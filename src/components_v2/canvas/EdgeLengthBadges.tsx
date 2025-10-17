@@ -6,14 +6,6 @@ import React, { useMemo } from 'react';
 type Pt = { x: number; y: number };
 type View = { scale?: number; offsetX?: number; offsetY?: number };
 
-// px immagine -> px schermo
-function toScreen(p: Pt, view: View) {
-  const s  = view.scale  ?? 1;
-  const ox = view.offsetX ?? 0;
-  const oy = view.offsetY ?? 0;
-  return { left: ox + p.x * s, top: oy + p.y * s };
-}
-
 function formatMeters(m: number) {
   if (m < 10) return `${m.toFixed(2)} m`;
   if (m < 100) return `${m.toFixed(1)} m`;
@@ -34,11 +26,11 @@ function correctedLenM(
   if (!tiltDeg || !fallUnit) return planLenPx * mpp;
 
   // componente parallela/perpendicolare alla “caduta” (perp. alla gronda)
-  const vParPlan  = vpx.x * fallUnit.x + vpx.y * fallUnit.y;            // px
-  const vPerpPlan = vpx.x * (-fallUnit.y) + vpx.y * (fallUnit.x);       // px
+  const vParPlan  = vpx.x * fallUnit.x + vpx.y * fallUnit.y;      // px
+  const vPerpPlan = vpx.x * (-fallUnit.y) + vpx.y * (fallUnit.x); // px
 
-  const cosT = Math.max(0.1736, Math.cos(deg2rad(tiltDeg)));            // clamp ≥ cos 80°
-  const vParTrue  = vParPlan / cosT;                                    // de-foreshortening
+  const cosT = Math.max(0.1736, Math.cos(deg2rad(tiltDeg)));      // ≥ cos 80°
+  const vParTrue  = vParPlan / cosT;                               // de-foreshortening
   const vPerpTrue = vPerpPlan;
 
   const trueLenPx = Math.hypot(vParTrue, vPerpTrue);
@@ -47,50 +39,63 @@ function correctedLenM(
 
 /**
  * Badge lunghezza per ogni lato.
- * Ora opzionalmente corregge per inclinazione e direzione gronda.
+ * - Corregge le lunghezze per inclinazione/gronda (opzionale)
+ * - Allinea posizione e rotazione dei badge alla rotazione del Group Konva
  */
 export default function EdgeLengthBadges({
   points,
-  mpp,               // metri per pixel (immagine)
+  mpp,
   view,
-  color = '#3b82f6', // blue-500
+  imgW,
+  imgH,
+  rotateDeg = 0,          // ← rotazione applicata al Group Konva
+  color = '#3b82f6',
   fontSize = 9,
   edgeOffsetPx = 10,
-  // ⬇️ nuovi opzionali
+  // opzionali per correzione inclinazione
   tiltDeg,
   eavesAzimuthDeg,
 }: {
   points: Pt[];
   mpp: number;
   view: View;
+  imgW: number;
+  imgH: number;
+  rotateDeg?: number;
   color?: string;
   fontSize?: number;
   edgeOffsetPx?: number;
-  /** inclinazione falda in gradi (se assente: misura in pianta) */
   tiltDeg?: number;
-  /** azimut della GRONDA in gradi (come salvato nello store) */
+  /** azimut della GRONDA in gradi (come salvato nello store, non “+180 UI”) */
   eavesAzimuthDeg?: number;
 }) {
-  const s = view.scale ?? 1;
+  const s  = view.scale  ?? 1;
+  const ox = view.offsetX ?? 0;
+  const oy = view.offsetY ?? 0;
 
+  // vettore unitario “caduta” (perp. alla gronda) in coordinate immagine
   const fallUnit = useMemo(() => {
     if (typeof eavesAzimuthDeg !== 'number') return null;
-    // tua convenzione canvas: eavesCanvasDeg = -(az) + 90
-    const eavesCanvasDeg = -(eavesAzimuthDeg) + 90;
-    const fallDeg = normDeg(eavesCanvasDeg - 90); // perpendicolare alla gronda
+    const eavesCanvasDeg = -(eavesAzimuthDeg) + 90;       // convenzione canvas
+    const fallDeg = normDeg(eavesCanvasDeg - 90);         // perpendicolare
     const th = deg2rad(fallDeg);
     return { x: Math.cos(th), y: Math.sin(th) };
   }, [eavesAzimuthDeg]);
 
+  // immagine → schermo con rotazione attorno al centro immagine
+  const imgToScreen = (p: Pt) => {
+    const cx = imgW / 2, cy = imgH / 2;
+    const dx = p.x - cx, dy = p.y - cy;
+    const t  = deg2rad(rotateDeg);
+    const rx = dx * Math.cos(t) - dy * Math.sin(t);
+    const ry = dx * Math.sin(t) + dy * Math.cos(t);
+    const x2 = cx + rx, y2 = cy + ry;
+    return { left: ox + x2 * s, top: oy + y2 * s };
+  };
+
   const items = useMemo(() => {
-    if (!points || points.length < 2 || !mpp) return [];
-    const out: {
-      key: string;
-      left: number;
-      top: number;
-      text: string;
-      deg: number;
-    }[] = [];
+    if (!points || points.length < 2 || !mpp || !imgW || !imgH) return [];
+    const out: { key: string; left: number; top: number; text: string; deg: number }[] = [];
 
     for (let i = 0; i < points.length; i++) {
       const a = points[i];
@@ -101,24 +106,25 @@ export default function EdgeLengthBadges({
       const L = Math.hypot(dx, dy);
       if (L < 1e-3) continue;
 
+      // lunghezza corretta (se tilt/gronda disponibili)
       const lenM = correctedLenM({ x: dx, y: dy }, mpp, tiltDeg, fallUnit);
       const text = formatMeters(lenM);
 
-      // punto medio + offset normale (indipendente dallo zoom)
+      // punto medio + offset normale (in SPAZIO IMMAGINE)
       const mid: Pt = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const nx = -dy / L, ny = dx / L;
+      const nx = -dy / L, ny =  dx / L;
       const offsetImg = edgeOffsetPx / s;
       const pOff: Pt = { x: mid.x + nx * offsetImg, y: mid.y + ny * offsetImg };
 
-      // angolo lungo il lato + “upright”
-      let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
-      if (deg > 90 || deg < -90) deg += 180;
+      // angolo del lato SU SCHERMO = angolo immagine + rotateDeg
+      let deg = (Math.atan2(dy, dx) * 180) / Math.PI + rotateDeg;
+      if (deg > 90 || deg < -90) deg += 180;  // upright
 
-      const { left, top } = toScreen(pOff, view);
+      const { left, top } = imgToScreen(pOff);
       out.push({ key: `${i}-${i + 1}`, left, top, text, deg });
     }
     return out;
-  }, [points, mpp, view.scale, view.offsetX, view.offsetY, s, edgeOffsetPx, tiltDeg, fallUnit]);
+  }, [points, mpp, imgW, imgH, s, ox, oy, edgeOffsetPx, tiltDeg, fallUnit, rotateDeg]);
 
   return (
     <>
@@ -132,14 +138,13 @@ export default function EdgeLengthBadges({
             transform: `translate(-50%, -50%) rotate(${it.deg}deg)`,
             transformOrigin: 'center',
             background: 'transparent',
-            border: `0px solid ${color}`,
             color: '#fff',
             borderRadius: 3,
             padding: '1px 4px',
             fontSize,
             lineHeight: 1.1,
-            boxShadow: '0 0 0.5px rgba(0,0,0,0.15)',
             whiteSpace: 'nowrap',
+            textShadow: '0 0 2px rgba(0,0,0,0.45)',
           }}
         >
           {it.text}

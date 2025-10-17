@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage, Line, Rect } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Line, Rect, Group } from 'react-konva';
+
 import { computeAutoLayoutRects } from '../modules/layout';
 import { isInReservedZone } from '../zones/utils';
 
@@ -110,6 +111,13 @@ export default function CanvasStage() {
   const roofAlign = usePlannerV2Store(s => s.roofAlign);
   const setTool = usePlannerV2Store((s) => s.setTool);
 
+  // subito dopo gli altri useRef/useState
+const contentGroupRef = useRef<any>(null);
+const [rotateDeg, setRotateDeg] = useState(0);
+const hasAutoRotatedRef = useRef(false);
+
+
+
   // in cima a CanvasStage
 
 const selectZone  = usePlannerV2Store((s) => s.selectZone); // ⬅️ nuovo
@@ -120,6 +128,8 @@ const setToolForHook = useCallback((t: string) => {
   // se hai un tipo Tool a union string, questo cast è sicuro a runtime
   setTool(t as any);
 }, [setTool]);
+
+
 
 
 
@@ -169,6 +179,16 @@ const baseGridDeg = useMemo(() => {
 
 // arrotonda per coerenza con i pannelli reali
 const gridDeg = baseGridDeg + (gridMods.gridAngleDeg || 0);
+
+useEffect(() => {
+  if (!selectedRoof) return;
+  if (hasAutoRotatedRef.current) return;      // già allineato: non toccare più
+  setRotateDeg(-baseGridDeg);                 // allinea una sola volta
+  hasAutoRotatedRef.current = true;           // blocca ulteriori cambi
+}, [selectedRoof?.id, baseGridDeg]);
+
+
+
 
 
 // applica offset utente
@@ -330,16 +350,22 @@ useEffect(() => {
   const { canDrag, onWheel, onDragMove } = useStagePanZoom({ img, size, view, setView });
 
   // stage -> image coords
-  const toImgCoords = useCallback(
-    (stageX: number, stageY: number): Pt => {
-      const s = view.scale || view.fitScale || 1;
-      return {
-        x: (stageX - (view.offsetX || 0)) / s,
-        y: (stageY - (view.offsetY || 0)) / s,
-      };
-    },
-    [view.scale, view.fitScale, view.offsetX, view.offsetY]
-  );
+// stage -> image coords (considera rotazione del gruppo)
+const toImgCoords = useCallback(
+  (stageX: number, stageY: number): Pt => {
+    const g = contentGroupRef.current;
+    if (g?.getAbsoluteTransform) {
+      const inv = g.getAbsoluteTransform().copy().invert();
+      const p = inv.point({ x: stageX, y: stageY });
+      return { x: p.x, y: p.y };
+    }
+    // fallback (non dovrebbe servire più)
+    const s = view.scale || view.fitScale || 1;
+    return { x: (stageX - (view.offsetX || 0)) / s, y: (stageY - (view.offsetY || 0)) / s };
+  },
+  [view.scale, view.fitScale, view.offsetX, view.offsetY]
+);
+
 
   // abilita i tool di disegno solo in building
   const drawingEnabled =
@@ -502,6 +528,14 @@ onClick={(evt: any) => {
           className={cursor === 'grab' ? 'cursor-grab active:cursor-grabbing' : ''}
         >
           <Layer scaleX={layerScale} scaleY={layerScale}>
+            <Group
+  ref={contentGroupRef}
+  x={img?.naturalWidth ? img.naturalWidth / 2 : 0}
+  y={img?.naturalHeight ? img.naturalHeight / 2 : 0}
+  offsetX={img?.naturalWidth ? img.naturalWidth / 2 : 0}
+  offsetY={img?.naturalHeight ? img.naturalHeight / 2 : 0}
+  rotation={rotateDeg}
+>
             {/* base image */}
             <KonvaImage
               image={img}
@@ -694,7 +728,7 @@ onSelect={(id) => {
   />
 )}
 
-
+</Group>
           </Layer>
         </Stage>
       )}
@@ -727,14 +761,18 @@ onSelect={(id) => {
 
       {/* <OrientationHUD /> */}
 
-      <RoofHudOverlay
-        selectedRoof={selectedRoof}
-        view={view}
-        shapeMode={shapeMode}
-        onToggleShape={() => setShapeMode((prev) => (prev === 'normal' ? 'trapezio' : 'normal'))}
-        mpp={snap.mppImage}
-        edgeColor={strokeSelected}
-      />
+  <RoofHudOverlay
+  selectedRoof={selectedRoof}
+  view={view}
+  shapeMode={shapeMode}
+  onToggleShape={() => setShapeMode(prev => (prev === 'normal' ? 'trapezio' : 'normal'))}
+  mpp={snap.mppImage}
+  edgeColor={strokeSelected}
+  imgW={img?.naturalWidth ?? 0}
+  imgH={img?.naturalHeight ?? 0}
+  rotateDeg={rotateDeg}
+/>
+
       {/* <ProjectStatsBar /> */}
     </div>
   );
