@@ -690,14 +690,17 @@ onClick={(evt: any) => {
 
       {/* <OrientationHUD /> */}
 
-      <RoofHudOverlay
-        selectedRoof={selectedRoof}
-        view={view}
-        shapeMode={shapeMode}
-        onToggleShape={() => setShapeMode((prev) => (prev === 'normal' ? 'trapezio' : 'normal'))}
-        mpp={snap.mppImage}
-        edgeColor={strokeSelected}
-      />
+  <RoofHudOverlay
+  selectedRoof={selectedRoof}
+  view={view}
+  shapeMode={shapeMode}
+  onToggleShape={() => setShapeMode(prev => (prev === 'normal' ? 'trapezio' : 'normal'))}
+  mpp={snap.mppImage}
+  edgeColor={strokeSelected}
+  imgW={img?.naturalWidth ?? 0}
+  imgH={img?.naturalHeight ?? 0}
+  rotateDeg={rotateDeg}
+/>
 {/* ROTATION HUD */}
 <div className="fixed right-3 bottom-3 z-[500] bg-neutral-800/90 text-neutral-400 rounded-md shadow px-3 py-2 flex items-center gap-2"
      style={{ backdropFilter: 'blur(3px)' }}>
