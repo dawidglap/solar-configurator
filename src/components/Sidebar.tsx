@@ -16,8 +16,8 @@ import {
   FiChevronRight,
 } from "react-icons/fi";
 
-const W_COLLAPSED = 64;   // px (w-16)
-const W_EXPANDED  = 224;  // px (w-56)
+const W_COLLAPSED = 0;   // px (w-0) — solo freccia
+const W_EXPANDED  = 56;  // px (w-12) — solo icone
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -26,94 +26,95 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState<boolean>(isPlannerV2);
   useEffect(() => { setCollapsed(isPlannerV2); }, [isPlannerV2]);
 
-useEffect(() => {
-  const w = collapsed ? W_COLLAPSED : W_EXPANDED;
-  document.body?.style.setProperty('--sb', `${w}px`);
+  useEffect(() => {
+    const w = collapsed ? W_COLLAPSED : W_EXPANDED;
+    document.body?.style.setProperty('--sb', `${w}px`);
+    // Collassata: piccolo overlap (adatta se serve)
+    document.body?.style.setProperty('--panel-gap', collapsed ? '-24px' : '8px');
 
-  // Gap del pannello rispetto al bordo SINISTRO del contenitore (già shiftato da --sb)
-  // Collassata: sovrapponi un po' (negativo). Espansa: un piccolo margine positivo.
-  document.body?.style.setProperty('--panel-gap', collapsed ? '-68px' : '8px');
-
-  return () => {
-    document.body?.style.removeProperty('--sb');
-    document.body?.style.removeProperty('--panel-gap');
-  };
-}, [collapsed]);
-
-
+    return () => {
+      document.body?.style.removeProperty('--sb');
+      document.body?.style.removeProperty('--panel-gap');
+    };
+  }, [collapsed]);
 
   const items = useMemo(
     () => [
-      { href: "/",          icon: <FiHome />,      label: "Home" },
-      { href: "/kunden",    icon: <FiUsers />,     label: "Kunden" },
-      { href: "/auftraege", icon: <FiClipboard />, label: "Aufträge" },
-      { href: "/umsatz",    icon: <FiBarChart2 />, label: "Umsatz" },
-      { href: "/aufgaben",  icon: <FiBell />,      label: "Aufgaben" },
-      { href: "/planung",   icon: <FiSettings />,  label: "Planung" },
-      { href: "/produkte",  icon: <FiBox />,       label: "Produkte" },
+      { href: "/",          icon: <FiHome /> },
+      { href: "/kunden",    icon: <FiUsers /> },
+      { href: "/auftraege", icon: <FiClipboard /> },
+      { href: "/umsatz",    icon: <FiBarChart2 /> },
+      { href: "/aufgaben",  icon: <FiBell /> },
+      { href: "/planner-v2",   icon: <FiSettings /> },
+      { href: "/produkte",  icon: <FiBox /> },
     ],
     []
   );
 
   return (
     <>
-      {isPlannerV2 && (
-        <button
-          aria-label={collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"}
-          title={collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"}
-          onClick={() => setCollapsed((s) => !s)}
-          className="fixed left-[calc(var(--sb,64px)_-_18px)] top-2/3 z-[999360] -translate-y-1/2
-                     flex h-9 w-9 items-center justify-center rounded-full border border-black/10
-                     bg-neutral-700 shadow hover:bg-black transition"
-        >
-          {collapsed ? <FiChevronRight className="text-white" /> : <FiChevronLeft className="text-white" />}
-        </button>
-      )}
+     {isPlannerV2 && (
+  <button
+    aria-label={collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"}
+    title={collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"}
+    onClick={() => setCollapsed((s) => !s)}
+    // ⬇️ posizionato più in basso e ancora più a sinistra
+    style={{
+      left: collapsed ? 6 : `calc(var(--sb, ${W_EXPANDED}px) - 26px)`,
+      bottom: 40,
+    }}
+    className="fixed z-[999360]
+               flex h-10 w-10 items-center justify-center rounded-full
+               border border-neutral-900 bg-neutral-800/95 text-white
+               shadow-lg shadow-black/30
+               hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-white/20
+               transition"
+  >
+    {collapsed ? (
+      <FiChevronRight className="text-white/95" />
+    ) : (
+      <FiChevronLeft className="text-white/95" />
+    )}
+  </button>
+)}
+
 
       <aside
         className={[
           "fixed left-0 top-0 z-50 flex h-dvh flex-col justify-between border-r border-black/5",
-          "bg-white text-black shadow-xl backdrop-blur-xs transition-[width] duration-300",
-          collapsed ? "w-16" : "w-56",
+          "bg-white text-black shadow-xl backdrop-blur-xs transition-[width] duration-300 overflow-hidden",
+          collapsed ? "w-0" : "w-14",
         ].join(" ")}
       >
         {/* Navigation */}
-        <nav className="px-3 pt-5">
-          {/* Logo */}
-          <div className="mb-8 select-none font-black tracking-tight flex items-center justify-center ">
-            {collapsed ? (
-              <span className="text-xl leading-none">S</span>
-            ) : (
-              <span className="ms-2 text-3xl leading-none">SOLA</span>
-            )}
+        <nav className="px-2 pt-4">
+          {/* Logo compatto: solo iniziale */}
+          <div className="mb-6 select-none font-black tracking-tight flex items-center justify-center">
+            <span className="text-xl leading-none">S</span>
           </div>
 
-          {/* Menu */}
+          {/* Menu: solo icone */}
           <ul className="flex flex-col gap-2">
             {items.map((it) => (
               <li key={it.href}>
                 <SidebarLink
                   href={it.href}
                   icon={it.icon}
-                  label={it.label}
                   pathname={pathname ?? "/"}
-                  collapsed={collapsed}
                 />
               </li>
             ))}
           </ul>
         </nav>
 
-        {/* Profilo in basso */}
-        <div className="px-3 pb-4">
+        {/* Profilo in basso: solo icona */}
+        <div className="px-2 pb-4">
           <div
             className={[
-              "flex items-center rounded-full px-3 py-2 text-sm text-black/80 select-none",
-              collapsed ? "justify-center gap-0" : "gap-3",
+              "flex items-center justify-center rounded-full p-2 text-sm text-black/80 select-none",
             ].join(" ")}
           >
             <FiUser className="text-xl" />
-            {!collapsed && <span>Mein Profil</span>}
           </div>
         </div>
       </aside>
@@ -124,15 +125,11 @@ useEffect(() => {
 function SidebarLink({
   href,
   icon,
-  label,
   pathname,
-  collapsed,
 }: {
   href: string;
   icon: React.ReactNode;
-  label: string;
   pathname: string;
-  collapsed: boolean;
 }) {
   const isActive = pathname === href;
 
@@ -140,9 +137,8 @@ function SidebarLink({
     <Link
       href={href}
       className={[
-        "group relative flex items-center rounded-full px-3 py-2 text-sm transition-colors",
+        "group relative flex items-center justify-center rounded-full p-2 text-sm transition-colors",
         isActive ? "font-semibold text-black" : "text-black hover:text-blue-600",
-        collapsed ? "justify-center gap-0" : "gap-3",
       ].join(" ")}
     >
       {isActive && (
@@ -153,7 +149,6 @@ function SidebarLink({
         />
       )}
       <span className="text-xl">{icon}</span>
-      {!collapsed && <span className="whitespace-nowrap">{label}</span>}
     </Link>
   );
 }

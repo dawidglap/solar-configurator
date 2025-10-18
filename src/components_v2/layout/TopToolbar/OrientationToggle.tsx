@@ -118,12 +118,12 @@ export default function OrientationToggle({
       );
     }
 
-    // notifica il parent se richiesto (es. per re-layout immediato)
     onChange?.(o);
   }, [onChange]);
 
+  // Bottoni dark + testo
   const baseBtn =
-    'h-8 w-8 rounded-full inline-flex items-center justify-center text-[10px] uppercase tracking-wide font-medium';
+    'h-8 inline-flex items-center gap-1 rounded-full px-2 text-[10px] uppercase tracking-wide font-semibold transition';
 
   // tooltip hooks per i due bottoni
   const portraitRef = useRef<HTMLButtonElement>(null);
@@ -133,7 +133,7 @@ export default function OrientationToggle({
 
   return (
     <div
-      className="ml-1 inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white/80 px-1 py-0.5"
+      className="ml-1 inline-flex items-center gap-1 rounded-full border border-neutral-800 bg-neutral-900/80 px-1 py-0.5 text-white"
       aria-label="Ausrichtung"
     >
       {/* Portrait */}
@@ -147,11 +147,12 @@ export default function OrientationToggle({
           onFocus={portraitTip.show}
           onBlur={portraitTip.hide}
           className={`${baseBtn} ${orientation === 'portrait'
-            ? 'bg-neutral-900 text-white'
-            : 'text-neutral-800 hover:bg-neutral-100'}`}
+            ? 'bg-neutral-700 text-white'
+            : 'text-neutral-200 hover:bg-neutral-800'}`}
           aria-label="Portrait (vertikal)"
         >
           <RectangleVertical className="h-4 w-4" />
+          <span>VERTICAL</span>
         </button>
         <PortalTooltip visible={portraitTip.visible} pos={portraitTip.pos} label="Portrait (vertikal)" />
       </>
@@ -167,11 +168,12 @@ export default function OrientationToggle({
           onFocus={landscapeTip.show}
           onBlur={landscapeTip.hide}
           className={`${baseBtn} ${orientation === 'landscape'
-            ? 'bg-neutral-900 text-white'
-            : 'text-neutral-800 hover:bg-neutral-100'}`}
+            ? 'bg-neutral-700 text-white'
+            : 'text-neutral-200 hover:bg-neutral-800'}`}
           aria-label="Landscape (horizontal)"
         >
           <RectangleHorizontal className="h-4 w-4" />
+          <span>HORIZONTAL</span>
         </button>
         <PortalTooltip visible={landscapeTip.visible} pos={landscapeTip.pos} label="Landscape (horizontal)" />
       </>
