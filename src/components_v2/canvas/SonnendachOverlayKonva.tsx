@@ -1,10 +1,9 @@
 'use client';
 
 import React from 'react';
-import { Line as KonvaLine } from 'react-konva';
-import { Group as KonvaGroup } from 'react-konva';
-
+import { Line as KonvaLine, Group as KonvaGroup } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
+import { normalizeRoof } from './normalizeRoof';
 
 type Pt = { x:number; y:number };
 const toFlat = (pts: Pt[]) => pts.flatMap(p => [p.x, p.y]);
@@ -14,53 +13,60 @@ export default function SonnendachOverlayKonva() {
   const addRoof  = usePlannerV2Store(s => s.addRoof);
   const select   = usePlannerV2Store(s => s.select);
 
+  // ⬅️ PRENDI mpp dallo snapshot (il tuo tipo già ha mppImage)
+  const mpp = usePlannerV2Store(s => s.snapshot.mppImage ?? 0.05); // fallback 5 cm/px
+
   if (!detected || detected.length === 0) return null;
 
-return (
-  <>
-    {detected.map((d, idx) => (
-      <KonvaGroup
-        key={d.id}
-        onMouseEnter={e => e.target.getStage()?.container().style.setProperty('cursor', 'pointer')}
-        onMouseLeave={e => e.target.getStage()?.container().style.setProperty('cursor', 'default')}
-        onClick={() => {
-          const id = 'roof_' + Date.now().toString(36);
-          const name = `Dach ${idx + 1} (Sonnendach)`;
-          addRoof({
-            id, name,
-            points: d.points,
-            tiltDeg: d.tiltDeg,
-            azimuthDeg: d.azimuthDeg,
-            source: 'sonnendach',
-          });
-          select(id);
-        }}
-      >
-        {/* BG bianco semi-trasparente (non riceve eventi) */}
-        <KonvaLine
-          points={toFlat(d.points)}
-          closed
-          fill="rgba(255, 255, 255, 0.25)"   // <-- opacità regolabile
-          strokeEnabled={false}
-          listening={false}
-          shadowColor="black"
-          shadowBlur={2}
-          shadowOpacity={0.08}
-        />
+  return (
+    <>
+      {detected.map((d, idx) => (
+        <KonvaGroup
+          key={d.id}
+          onMouseEnter={e => e.target.getStage()?.container().style.setProperty('cursor', 'pointer')}
+          onMouseLeave={e => e.target.getStage()?.container().style.setProperty('cursor', 'default')}
+          onClick={() => {
+            const id = 'roof_' + Date.now().toString(36);
+            const name = `Dach ${idx + 1} (Sonnendach)`;
 
-        {/* bordo tratteggiato sopra il bg (cliccabile) */}
-        <KonvaLine
-          points={toFlat(d.points)}
-          closed
-          stroke="#ffffff"
-          strokeWidth={1}
-          dash={[8, 6]}
-          lineJoin="round"
-          lineCap="round"
-        />
-      </KonvaGroup>
-    ))}
-  </>
-);
+            // ⬅️ NORMALIZZA PRIMA DI AGGIUNGERE
+            const cleanPoints = normalizeRoof(
+              d.points,
+              mpp,
+              { mergeTolM: 0.6, collinearEpsDeg: 5, minSpurM: 1.5, maxPasses: 5 } // strong
+            );
 
+            addRoof({
+              id, name,
+              points: cleanPoints,
+              tiltDeg: d.tiltDeg,
+              azimuthDeg: d.azimuthDeg,
+              source: 'sonnendach',
+            });
+            select(id);
+          }}
+        >
+          <KonvaLine
+            points={toFlat(d.points)}
+            closed
+            fill="rgba(255, 255, 255, 0.25)"
+            strokeEnabled={false}
+            listening={false}
+            shadowColor="black"
+            shadowBlur={2}
+            shadowOpacity={0.08}
+          />
+          <KonvaLine
+            points={toFlat(d.points)}
+            closed
+            stroke="#ffffff"
+            strokeWidth={1}
+            dash={[8, 6]}
+            lineJoin="round"
+            lineCap="round"
+          />
+        </KonvaGroup>
+      ))}
+    </>
+  );
 }

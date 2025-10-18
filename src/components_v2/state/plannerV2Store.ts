@@ -78,7 +78,8 @@ type PlannerV2State = {
 
     // Sonnendach rilevati
     detectedRoofs: DetectedRoof[];
-    setDetectedRoofs: (arr: DetectedRoof[]) => void;
+
+    setDetectedRoofs: (arr: DetectedRoof[], meta?: { mppImage?: number; width?: number; height?: number }) => void;
     clearDetectedRoofs: () => void;
 
     roofAlign: RoofAlign;
@@ -190,7 +191,12 @@ export const usePlannerV2Store = create<PlannerV2State>()(
 
             // ── Sonnendach rilevati
             detectedRoofs: [],
-            setDetectedRoofs: (arr) => set({ detectedRoofs: arr }),
+
+            setDetectedRoofs: (arr, meta) =>
+                set((s) => ({
+                    detectedRoofs: arr,
+                    snapshot: meta ? { ...s.snapshot, ...meta } : s.snapshot, // 👈 salva mpp/size se passato
+                })),
             clearDetectedRoofs: () => set({ detectedRoofs: [] }),
 
             // ── Roof alignment (rotazione falde)
