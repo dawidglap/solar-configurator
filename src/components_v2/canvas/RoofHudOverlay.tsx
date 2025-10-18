@@ -1,11 +1,10 @@
-// src/components_v2/canvas/RoofHudOverlay.tsx
 'use client';
 
 import React from 'react';
 import EdgeLengthBadges from './EdgeLengthBadges';
 
 type Pt = { x: number; y: number };
-type Roof = { id: string; points: Pt[]; azimuthDeg?: number; tiltDeg?: number } | null;
+type Roof = { id: string; points: Pt[] } | null;
 
 export default function RoofHudOverlay({
   selectedRoof,
@@ -14,10 +13,6 @@ export default function RoofHudOverlay({
   onToggleShape,
   mpp,
   edgeColor,
-  // ⬇️ nuovi: dimensioni immagine e rotazione del contenuto Konva
-  imgW,
-  imgH,
-  rotateDeg = 0,
 }: {
   selectedRoof: Roof;
   view: { scale?: number; fitScale?: number; offsetX?: number; offsetY?: number };
@@ -25,9 +20,6 @@ export default function RoofHudOverlay({
   onToggleShape: () => void;
   mpp?: number | null;
   edgeColor: string;
-  imgW: number;
-  imgH: number;
-  rotateDeg?: number;
 }) {
   if (!selectedRoof) return null;
 
@@ -35,7 +27,7 @@ export default function RoofHudOverlay({
   const ox = view.offsetX || 0;
   const oy = view.offsetY || 0;
 
-  // bbox in coordinate immagine (per posizionare il toggle)
+  // bbox in coordinate immagine
   let minX = Infinity, maxX = -Infinity, minY = Infinity;
   for (const p of selectedRoof.points) {
     if (p.x < minX) minX = p.x;
@@ -44,7 +36,7 @@ export default function RoofHudOverlay({
   }
   const midXImg = (minX + maxX) / 2;
 
-  // posizione sullo Stage (HUD fisso in screen-space)
+  // posizione sullo Stage
   const left = ox + midXImg * s;
   const top  = Math.max(8, oy + minY * s - 36);
 
@@ -60,18 +52,13 @@ export default function RoofHudOverlay({
         {shapeMode === 'normal' ? 'Normal' : 'Trapez'}
       </button>
 
-      {/* Etichette lunghezze lati (corrette per inclinazione e allineate alla rotazione) */}
-      {mpp && imgW > 0 && imgH > 0 && (
+      {/* Etichette lunghezze lati */}
+      {mpp && (
         <EdgeLengthBadges
           points={selectedRoof.points}
           mpp={mpp}
           view={view}
-          imgW={imgW}
-          imgH={imgH}
-          rotateDeg={rotateDeg}
           color={edgeColor}
-          tiltDeg={selectedRoof.tiltDeg}
-          eavesAzimuthDeg={selectedRoof.azimuthDeg}
         />
       )}
     </>

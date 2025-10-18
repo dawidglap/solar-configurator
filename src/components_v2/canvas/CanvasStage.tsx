@@ -1,7 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage, Line, Rect, Group } from 'react-konva';
-
+import { Stage, Layer, Image as KonvaImage, Line, Rect , Group} from 'react-konva';
 import { computeAutoLayoutRects } from '../modules/layout';
 import { isInReservedZone } from '../zones/utils';
 
@@ -111,13 +110,6 @@ export default function CanvasStage() {
   const roofAlign = usePlannerV2Store(s => s.roofAlign);
   const setTool = usePlannerV2Store((s) => s.setTool);
 
-  // subito dopo gli altri useRef/useState
-const contentGroupRef = useRef<any>(null);
-const [rotateDeg, setRotateDeg] = useState(0);
-const hasAutoRotatedRef = useRef(false);
-
-
-
   // in cima a CanvasStage
 
 const selectZone  = usePlannerV2Store((s) => s.selectZone); // ⬅️ nuovo
@@ -128,8 +120,6 @@ const setToolForHook = useCallback((t: string) => {
   // se hai un tipo Tool a union string, questo cast è sicuro a runtime
   setTool(t as any);
 }, [setTool]);
-
-
 
 
 
@@ -155,6 +145,24 @@ const setToolForHook = useCallback((t: string) => {
   const deletePanel = usePlannerV2Store((s) => s.deletePanel);
   const SHOW_AREA_LABELS = false;
 
+  // --- ROTAZIONE MANUALE ---
+// const [rotateDeg, setRotateDeg] = useState(0);
+const contentGroupRef = useRef<any>(null);
+
+// Hotkeys: [ e ] per ±1°, Shift+[ / Shift+] per ±10°
+useEffect(() => {
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === '[' || e.key === ']') {
+      e.preventDefault();
+      const step = e.shiftKey ? 10 : 1;
+      setRotateDeg((d) => d + (e.key === ']' ? step : -step));
+    }
+  };
+  window.addEventListener('keydown', onKey);
+  return () => window.removeEventListener('keydown', onKey);
+}, []);
+
+
   // inside CanvasStage, near other useCallbacks
 const ignoreSelect = useCallback((_: string | undefined) => {}, []);
 
@@ -179,16 +187,6 @@ const baseGridDeg = useMemo(() => {
 
 // arrotonda per coerenza con i pannelli reali
 const gridDeg = baseGridDeg + (gridMods.gridAngleDeg || 0);
-
-useEffect(() => {
-  if (!selectedRoof) return;
-  if (hasAutoRotatedRef.current) return;      // già allineato: non toccare più
-  setRotateDeg(-baseGridDeg);                 // allinea una sola volta
-  hasAutoRotatedRef.current = true;           // blocca ulteriori cambi
-}, [selectedRoof?.id, baseGridDeg]);
-
-
-
 
 
 // applica offset utente
@@ -343,6 +341,30 @@ useEffect(() => {
   };
 }, []);
 
+// --- ROTAZIONE: utils + handlers ---
+const wrapDeg = (d: number) => {
+  // normalizza in [-180, 180]
+  const n = ((d + 180) % 360 + 360) % 360 - 180;
+  return Math.round(n);
+};
+
+const [rotateDeg, setRotateDeg] = useState(0);        // se non l'hai già
+const [rotInput, setRotInput] = useState<string>('0');
+
+// mantieni l'input sincronizzato quando ruoti da bottoni/hotkeys/altro
+useEffect(() => {
+  setRotInput(String(rotateDeg));
+}, [rotateDeg]);
+
+const bumpRotation = (delta: number) => {
+  setRotateDeg((d) => wrapDeg(d + delta));
+};
+
+const applyRotationFromInput = () => {
+  const v = parseFloat(rotInput.replace(',', '.'));
+  if (Number.isFinite(v)) setRotateDeg(wrapDeg(v));
+  else setRotInput(String(rotateDeg)); // ripristina se input invalido
+};
 
 
 
@@ -350,7 +372,7 @@ useEffect(() => {
   const { canDrag, onWheel, onDragMove } = useStagePanZoom({ img, size, view, setView });
 
   // stage -> image coords
-// stage -> image coords (considera rotazione del gruppo)
+// stage -> image coords (considera rotazione e scala/pan del gruppo)
 const toImgCoords = useCallback(
   (stageX: number, stageY: number): Pt => {
     const g = contentGroupRef.current;
@@ -359,12 +381,14 @@ const toImgCoords = useCallback(
       const p = inv.point({ x: stageX, y: stageY });
       return { x: p.x, y: p.y };
     }
-    // fallback (non dovrebbe servire più)
+    // fallback (non dovrebbe servire)
     const s = view.scale || view.fitScale || 1;
     return { x: (stageX - (view.offsetX || 0)) / s, y: (stageY - (view.offsetY || 0)) / s };
   },
   [view.scale, view.fitScale, view.offsetX, view.offsetY]
 );
+
+
 
 
   // abilita i tool di disegno solo in building
@@ -527,209 +551,114 @@ onClick={(evt: any) => {
           onDblClick={drawingEnabled ? onStageDblClick : undefined}
           className={cursor === 'grab' ? 'cursor-grab active:cursor-grabbing' : ''}
         >
-          <Layer scaleX={layerScale} scaleY={layerScale}>
-            <Group
-  ref={contentGroupRef}
-  x={img?.naturalWidth ? img.naturalWidth / 2 : 0}
-  y={img?.naturalHeight ? img.naturalHeight / 2 : 0}
-  offsetX={img?.naturalWidth ? img.naturalWidth / 2 : 0}
-  offsetY={img?.naturalHeight ? img.naturalHeight / 2 : 0}
-  rotation={rotateDeg}
->
-            {/* base image */}
-            <KonvaImage
-              image={img}
-              width={img.naturalWidth}
-              height={img.naturalHeight}
-              listening={false}
-            />
+       <Layer scaleX={layerScale} scaleY={layerScale}>
+  <Group
+    ref={contentGroupRef}
+    x={img?.naturalWidth ? img.naturalWidth / 2 : 0}
+    y={img?.naturalHeight ? img.naturalHeight / 2 : 0}
+    offsetX={img?.naturalWidth ? img.naturalWidth / 2 : 0}
+    offsetY={img?.naturalHeight ? img.naturalHeight / 2 : 0}
+    rotation={rotateDeg}
+  >
+    {/* base image */}
+    <KonvaImage
+      image={img}
+      width={img.naturalWidth}
+      height={img.naturalHeight}
+      listening={false}
+    />
 
-            {/* background click-catcher: deseleziona zona/pannelli/falda quando clicchi sul vuoto */}
-<Rect
-  x={0}
-  y={0}
-  width={img.naturalWidth}
-  height={img.naturalHeight}
-  fill="rgba(0,0,0,0.001)"
-  listening
-  name="bg-catcher"
-  onClick={() => {
-    const st = usePlannerV2Store.getState();
-    st.setSelectedZone?.(undefined);
-    st.clearPanelSelection?.();
-    st.select?.(undefined);
-  }}
-/>
+    {/* background click-catcher */}
+    <Rect
+      x={0}
+      y={0}
+      width={img.naturalWidth}
+      height={img.naturalHeight}
+      fill="rgba(0,0,0,0.001)"
+      listening
+      name="bg-catcher"
+      onClick={() => {
+        const st = usePlannerV2Store.getState();
+        st.setSelectedZone?.(undefined);
+        st.clearPanelSelection?.();
+        st.select?.(undefined);
+      }}
+    />
 
-
-            {/* Anteprima moduli SOLO in modules */}
-       {step === 'modules' &&
-  selectedRoof &&
-  selPanel &&
-  snap.mppImage &&
-  modules.showGrid &&
-  !hasPanelsOnSelected &&
-  tool === 'select' && (        // ⬅️ aggiunto
-  <ModulesPreview
-    roofId={selectedRoof.id}
-    polygon={selectedRoof.points}
-    mppImage={snap.mppImage}
-    azimuthDeg={gridDeg}
-    orientation={modules.orientation}
-    panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
-    spacingM={modules.spacingM}
-    marginM={modules.marginM}
-    textureUrl="/images/panel.webp"
-    phaseX={gridMods.gridPhaseX || 0}
-    phaseY={gridMods.gridPhaseY || 0}
-    anchorX={(gridMods.gridAnchorX as any) || 'start'}
-    anchorY={(gridMods.gridAnchorY as any) || 'start'}
-    coverageRatio={gridMods.coverageRatio ?? 1}
-  />
-)}
-
-
-            <SonnendachOverlayKonva />
-
-            {/* Roofs */}
-            <RoofShapesLayer
-              layers={layers}
-              selectedId={selectedId}
-              onSelect={tool === 'fill-area' ? ignoreSelect : select}
-              showAreaLabels={SHOW_AREA_LABELS}
-              stroke={stroke}
-              strokeSelected={strokeSelected}
-              fill={fill}
-              strokeWidthNormal={strokeWidthNormal}
-              strokeWidthSelected={strokeWidthSelected}
-              shapeMode={shapeMode}
-              toImg={toImgCoords}
-              imgW={snap.width ?? img?.naturalWidth ?? 0}
-              imgH={snap.height ?? img?.naturalHeight ?? 0}
-              onHandlesDragStart={() => setDraggingVertex(true)}
-              onHandlesDragEnd={() => setDraggingVertex(false)}
-              areaLabel={areaLabel}
-            />
-
-            {/* Zones */}
-            {layers.map((l) => (
-              <ZonesLayer
-                key={l.id}
-                roofId={l.id}
-                interactive={l.id === selectedId && tool !== 'fill-area'} 
-                shapeMode={shapeMode}
-                toImg={toImgCoords}
-                imgW={snap.width ?? img?.naturalWidth ?? 0}
-                imgH={snap.height ?? img?.naturalHeight ?? 0}
-              />
-            ))}
-
-            {/* Anteprima zona riservata: SOLO in building */}
-            {step === 'building' &&
-              tool === 'draw-reserved' &&
-              rectDraft &&
-              rectDraft.length >= 1 &&
-              mouseImg && (() => {
-                const A = rectDraft[0];
-                const B = rectDraft[1] ?? mouseImg;
-                const C = mouseImg;
-                const { poly } = rectFrom3WithAz(A, B, C);
-                const flat = poly.flatMap((p) => [p.x, p.y]);
-                return (
-                  <Line
-                    points={flat}
-                    closed
-                    stroke="#ff5f56"
-                    strokeWidth={1.5}
-                    dash={[10, 6]}
-                    fill="rgba(255,95,86,0.10)"
-                    listening={false}
-                  />
-                );
-              })()}
-
-{step === 'modules' && tool === 'fill-area' && fillDraft && (() => {
-  const outlinePts = fillDraft.poly.flatMap(p => [p.x, p.y]);
-  return (
-    <>
-      <Line points={outlinePts} closed stroke="#10b981" strokeWidth={1} listening={false} />
-      {fillDraft.rects.map((r, i) => (
-        <Rect
-          key={i}
-          x={r.cx}
-          y={r.cy}
-          width={r.wPx}
-          height={r.hPx}
-          offsetX={r.wPx/2}
-          offsetY={r.hPx/2}
-          rotation={r.angleDeg}
-          fill="#2b4b7c"
-          opacity={0.85}
-          listening={false}
+    {/* --- TUTTO IL RESTO (ModulesPreview, SonnendachOverlayKonva, RoofShapesLayer, ZonesLayer, pannelli, anteprime, ecc.) RIMANE QUI DENTRO --- */}
+    {step === 'modules' &&
+      selectedRoof &&
+      selPanel &&
+      snap.mppImage &&
+      modules.showGrid &&
+      !hasPanelsOnSelected && (
+        <ModulesPreview
+          roofId={selectedRoof.id}
+          polygon={selectedRoof.points}
+          mppImage={snap.mppImage}
+          azimuthDeg={gridDeg}
+          orientation={modules.orientation}
+          panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
+          spacingM={modules.spacingM}
+          marginM={modules.marginM}
+          textureUrl="/images/panel.webp"
+          phaseX={gridMods.gridPhaseX || 0}
+          phaseY={gridMods.gridPhaseY || 0}
+          anchorX={(gridMods.gridAnchorX as any) || 'start'}
+          anchorY={(gridMods.gridAnchorY as any) || 'start'}
+          coverageRatio={gridMods.coverageRatio ?? 1}
         />
-      ))}
-    </>
-  );
-})()}
+      )}
 
+    <SonnendachOverlayKonva />
 
+    <RoofShapesLayer
+      layers={layers}
+      selectedId={selectedId}
+      onSelect={tool === 'fill-area' ? ignoreSelect : select}
+      showAreaLabels={SHOW_AREA_LABELS}
+      stroke={stroke}
+      strokeSelected={strokeSelected}
+      fill={fill}
+      strokeWidthNormal={strokeWidthNormal}
+      strokeWidthSelected={strokeWidthSelected}
+      shapeMode={shapeMode}
+      toImg={toImgCoords}
+      imgW={snap.width ?? img?.naturalWidth ?? 0}
+      imgH={snap.height ?? img?.naturalHeight ?? 0}
+      onHandlesDragStart={() => setDraggingVertex(true)}
+      onHandlesDragEnd={() => setDraggingVertex(false)}
+      areaLabel={areaLabel}
+    />
 
+    {layers.map((l) => (
+      <ZonesLayer
+        key={l.id}
+        roofId={l.id}
+        interactive={l.id === selectedId && tool !== 'fill-area'}
+        shapeMode={shapeMode}
+        toImg={toImgCoords}
+        imgW={snap.width ?? img?.naturalWidth ?? 0}
+        imgH={snap.height ?? img?.naturalHeight ?? 0}
+      />
+    ))}
 
+    {/* …tutto il resto che avevi (preview riservata, fill-area preview, PanelsLayer, DrawingOverlays ecc.) */}
+    {step === 'building' && (
+      <DrawingOverlays
+        tool={tool}
+        drawingPoly={drawingPoly}
+        rectDraft={rectDraft}
+        mouseImg={mouseImg}
+        stroke={stroke}
+        areaLabel={areaLabel}
+        mpp={snap.mppImage}
+        roofSnapDeg={baseGridDeg}
+      />
+    )}
+  </Group>
+</Layer>
 
-          
-
-            {/* Pannelli reali */}
-            <PanelsLayer
-              layers={layers}
-              textureUrl="/images/panel.webp"
-              selectedPanelId={selectedPanelInstId}
-onSelect={(id) => {
-    setSelectedPanelInstId(id);
-    if (!id) return;
-    const st = usePlannerV2Store.getState();
-    st.select?.(undefined);            // deseleziona falda
-    st.selectZone?.(undefined);   // deseleziona eventuale zona
-  }}
-
-              stageToImg={toImgCoords}
-              onAnyDragStart={() => {
-  setDraggingPanel(true);
-  const st = usePlannerV2Store.getState();
-  st.select?.(undefined);
-  st.selectZone?.(undefined);
-}}
-
-              onAnyDragEnd={() => setDraggingPanel(false)}
-            />
-
-            {/* Overlay di disegno: SOLO in building */}
-            {step === 'building' && (
-           <DrawingOverlays
-  tool={tool}
-  drawingPoly={drawingPoly}
-  rectDraft={rectDraft}
-  mouseImg={mouseImg}
-  stroke={stroke}
-  areaLabel={areaLabel}
-  mpp={snap.mppImage}   // ⬅️ nuovo
-   roofSnapDeg={baseGridDeg} 
-/>
-
-            )}
-
-{step === 'modules' && tool === 'fill-area' && img && (
-  <Rect
-    x={0}
-    y={0}
-    width={img.naturalWidth}
-    height={img.naturalHeight}
-    fill="rgba(0,0,0,0.01)"  // quasi invisibile, ma cattura gli eventi
-    listening={true}
-  />
-)}
-
-</Group>
-          </Layer>
         </Stage>
       )}
 
@@ -761,19 +690,73 @@ onSelect={(id) => {
 
       {/* <OrientationHUD /> */}
 
-  <RoofHudOverlay
-  selectedRoof={selectedRoof}
-  view={view}
-  shapeMode={shapeMode}
-  onToggleShape={() => setShapeMode(prev => (prev === 'normal' ? 'trapezio' : 'normal'))}
-  mpp={snap.mppImage}
-  edgeColor={strokeSelected}
-  imgW={img?.naturalWidth ?? 0}
-  imgH={img?.naturalHeight ?? 0}
-  rotateDeg={rotateDeg}
-/>
+      <RoofHudOverlay
+        selectedRoof={selectedRoof}
+        view={view}
+        shapeMode={shapeMode}
+        onToggleShape={() => setShapeMode((prev) => (prev === 'normal' ? 'trapezio' : 'normal'))}
+        mpp={snap.mppImage}
+        edgeColor={strokeSelected}
+      />
+{/* ROTATION HUD */}
+<div className="fixed right-3 bottom-3 z-[500] bg-neutral-800/90 text-neutral-400 rounded-md shadow px-3 py-2 flex items-center gap-2"
+     style={{ backdropFilter: 'blur(3px)' }}>
+  <button
+    className="px-2 py-1 rounded border hover:bg-neutral-700"
+    onClick={() => bumpRotation(-10)}
+    title="Ruota -10°"
+  >−10°</button>
 
-      {/* <ProjectStatsBar /> */}
+  <button
+    className="px-2 py-1 rounded border hover:bg-neutral-700"
+    onClick={() => bumpRotation(-1)}
+    title="Ruota -1°"
+  >−1°</button>
+
+  <input
+    type="range"
+    min={-180}
+    max={180}
+    step={1}
+    value={rotateDeg}
+    onChange={(e) => setRotateDeg(wrapDeg(parseInt(e.target.value, 10)))}
+    className="w-44"
+  />
+
+  <button
+    className="px-2 py-1 rounded border hover:bg-neutral-700"
+    onClick={() => bumpRotation(+1)}
+    title="Ruota +1°"
+  >+1°</button>
+
+  <button
+    className="px-2 py-1 rounded border hover:bg-neutral-700"
+    onClick={() => bumpRotation(+10)}
+    title="Ruota +10°"
+  >+10°</button>
+
+  <div className="flex items-center gap-1">
+    <input
+      type="text"
+      inputMode="decimal"
+      className="w-16 px-2 py-1 rounded border text-right"
+      value={rotInput}
+      onChange={(e) => setRotInput(e.target.value)}
+      onBlur={applyRotationFromInput}
+      onKeyDown={(e) => { if (e.key === 'Enter') applyRotationFromInput(); }}
+      title="Inserisci gradi e premi Invio"
+    />
+    <span className="text-sm text-gray-600">°</span>
+  </div>
+
+  <button
+    className="px-2 py-1 rounded border hover:bg-neutral-700"
+    onClick={() => setRotateDeg(0)}
+    title="Reset 0°"
+  >Reset</button>
+</div>
+
+
     </div>
   );
 }
