@@ -30,26 +30,31 @@ export default function ProjectStatsBar() {
   return (
     <div
       className="
-       
+        inline-flex items-center h-8 rounded-full
+        border border-neutral-800 bg-neutral-900/70
+        px-2 select-none
       "
       aria-live="polite"
     >
       <div
         className="
           text-[13px] sm:text-[14px] font-medium tracking-tight
-          text-neutral-200/95
+          text-neutral-100
         "
       >
-        <span className='text-neutral-700'>{fmt(count)}</span>
-        <span className="mx-2 text-neutral-900">Module</span>
-              <span className='me-2'>|</span>
+        {/* Count */}
+        <span className="text-neutral-100">{fmt(count)}</span>
+        <span className="mx-2 text-neutral-300">Module</span>
+        <span className="me-2 text-neutral-700">|</span>
 
-         <span className='text-neutral-700'>{fmt(kwp, { min: 2, max: 2 })}</span>
-        <span className="ml-1 text-neutral-900">kWp</span>
-              <span className='me-2 ms-2'>|</span>
+        {/* kWp */}
+        <span className="text-neutral-100">{fmt(kwp, { min: 2, max: 2 })}</span>
+        <span className="ml-1 text-neutral-300">kWp</span>
+        <span className="me-2 ms-2 text-neutral-700">|</span>
 
-         <span className='text-neutral-700'>{fmt(Math.round(areaM2))}</span>
-        <span className="ml-1 text-neutral-900">m²</span>
+        {/* m² */}
+        <span className="text-neutral-100">{fmt(Math.round(areaM2))}</span>
+        <span className="ml-1 text-neutral-300">m²</span>
       </div>
     </div>
   );

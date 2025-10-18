@@ -8,7 +8,7 @@ export default function OverlayTopToolbar() {
       className="pointer-events-none absolute left-0 right-0 z-[200] w-full px-0"
       style={{ top: 'var(--tb, 48px)' }} // fallback 56px, così resta sotto la topbar
     >
-      <div className="pointer-events-auto relative mx-auto max-w-[1600px]  border border-neutral-200 bg-neutral-100 backdrop-blur shadow-sm">
+      <div className="pointer-events-auto relative mx-auto max-w-[1600px]  border border-black bg-neutral-800 backdrop-blur shadow-sm">
         {/* gradient fade ai bordi quando c'è overflow */}
        
         

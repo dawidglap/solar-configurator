@@ -154,10 +154,11 @@ export default function TopToolbar() {
     const ref = useRef<HTMLButtonElement>(null);
     const { visible, pos, show, hide } = useBottomTooltip(ref);
 
-    const base = 'inline-flex items-center gap-0 rounded-full h-8 px-3 text-[10px] uppercase tracking-wide font-medium transition';
-    const inactive = 'border border-neutral-200 bg-white/80 text-neutral-800 hover:bg-neutral-100';
-    const activeCls = 'bg-neutral-900 text-white';
-    const disabledCls = 'opacity-50 cursor-not-allowed hover:bg-inherit';
+const base = 'inline-flex items-center gap-0 rounded-full h-8 px-3 text-[10px] uppercase tracking-wide font-medium transition border';
+const inactive = 'border-neutral-800 bg-neutral-900/80 text-neutral-200 hover:bg-neutral-800';
+const activeCls = 'border-neutral-600 bg-neutral-700 text-white hover:bg-neutral-600';
+const disabledCls = 'opacity-40 cursor-not-allowed hover:bg-inherit';
+
 
     return (
       <>
@@ -209,10 +210,11 @@ export default function TopToolbar() {
           onBlur={hide}
           onClick={onClick}
           disabled={disabled}
-          className={[
-            "inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200 bg-white/80 text-neutral-800 hover:bg-neutral-100 transition focus:outline-none focus:ring-2 focus:ring-black/10",
-            disabled ? "opacity-40 cursor-not-allowed hover:bg-white/80" : ""
-          ].join(" ")}
+      className={[
+  "inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900/80 text-neutral-200 hover:bg-neutral-800 transition focus:outline-none focus:ring-2 focus:ring-white/10",
+  disabled ? "opacity-40 cursor-not-allowed hover:bg-neutral-900/80" : ""
+].join(" ")}
+
         >
           <Icon className="h-4 w-4" />
         </button>
@@ -314,11 +316,9 @@ function go(t: any) {
 
   return (
     <div
-      className="flex h-10 items-center justify-between gap-2 px-2 overflow-x-auto overscroll-x-contain scrollbar-thin scrollbar-thumb-transparent scrollbar-track-transparent"
-      style={{
-        WebkitMaskImage: 'linear-gradient(90deg, transparent 0px, black 16px, black calc(100% - 16px), transparent 100%)',
-        maskImage:       'linear-gradient(90deg, transparent 0px, black 16px, black calc(100% - 16px), transparent 100%)',
-      }}
+      className="flex h-10 items-center justify-between gap-2 px-2 overflow-x-auto overscroll-x-contain scrollbar-thin scrollbar-thumb-transparent scrollbar-track-transparent bg-neutral-800/90 text-white "
+
+    
     >
       {/* SX: sequenza unica — Auswählen + icone 1–6 + controlli moduli */}
       <div className=" flex min-w-0 items-center gap-2">
@@ -385,7 +385,7 @@ function go(t: any) {
 />
 
 
-        <div className="mx-1 h-6 w-px bg-neutral-200" />
+        <div className="mx-1 h-6 w-px bg-neutral-600" />
 
         {/* 6) Schneefang (linea) — placeholder */}
         <ActionBtn
@@ -470,7 +470,7 @@ function go(t: any) {
         />
       </div>
 
-      <div className="mx-1 h-6 w-px bg-neutral-200" />
+      <div className="mx-1 h-6 w-px bg-neutral-600" />
 
       {/* DX: Undo/Redo (icon-only) */}
       <div className="flex shrink-0 items-center gap-2 pl-2">
@@ -490,7 +490,7 @@ function go(t: any) {
           tooltipKeys={isMac ? ['⇧', '⌘', 'Z'] : ['Ctrl', 'Y']}
           disabled={!canRedo}
         />
-      <div className="mx-1 h-6 w-px bg-neutral-200" />
+      <div className="mx-1 h-6 w-px bg-neutral-600" />
 
         <ProjectStatsBar />
       </div>

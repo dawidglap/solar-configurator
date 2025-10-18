@@ -15,10 +15,11 @@ import { overlapsReservedRect } from '../zones/utils';
 type Pt = { x: number; y: number };
 
 const inputBase =
-  'w-full h-8 rounded-xl border border-neutral-200 bg-neutral-50/90 px-2 text-[11px] leading-none outline-none ' +
+  'w-full h-8 rounded-xl border border-neutral-900 bg-neutral-900/90 px-2 text-[11px] leading-none outline-none ' +
   'focus:ring-1 focus:ring-neutral-400 focus:border-neutral-300 transition';
 
-const labelSm = 'block text-[10px] font-medium uppercase tracking-wide text-neutral-600';
+const labelSm = 'block text-[10px] font-medium uppercase tracking-wide text-neutral-400';
+
 
 export default function ModulesPanel() {
   // --- Layers / selezione tetto ---
@@ -169,26 +170,29 @@ const roofAreaM2Corrected = React.useCallback((pts: Pt[] | undefined, mpp?: numb
 
 
   return (
-    <div className="w-full max-w-[240px] space-y-4 p-2">
+    <div className="w-full max-w-[240px] space-y-4 p-2 bg-neutral-800 text-white border-l border-neutral-800">
+
       {/* === EBENEN (tabella compatta) === */}
       <div className="px-0">
-        <div className={`${labelSm} mb-2 text-neutral-600`}>
+        <div className={`${labelSm} mb-2`}>
           Ebenen{layers.length ? ` (${layers.length})` : ''}
         </div>
 
         {detected?.length > 0 && (
           <div className="mb-2">
-            <div className="mb-1 text-[10px] font-medium text-neutral-700">Erkannte Dächer</div>
+            <div className="mb-1 text-[10px] font-medium text-neutral-400">Erkannte Dächer</div>
             <DetectedRoofsImport />
           </div>
         )}
 
         {layers.length === 0 ? (
-          <p className="px-1 py-1 text-[11px] text-neutral-600">Noch keine Ebenen.</p>
+          <p className="px-1 py-1 text-[11px] text-neutral-400">Noch keine Ebenen.</p>
+
         ) : (
           <div className="text-[10px]">
 {/* Header (7 colonne, griglia aggiornata) */}
-<div className="grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-6 text-[10px] text-neutral-500">
+<div className="grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-6 text-[10px] text-neutral-400">
+
   <div className="font-medium">D</div>
   <div className="flex items-center justify-center"><MdViewModule className="h-3 w-3" /></div>
   <div className="text-right font-medium">m²</div>
@@ -200,7 +204,8 @@ const roofAreaM2Corrected = React.useCallback((pts: Pt[] | undefined, mpp?: numb
 
 
 {/* Righe (monolinea) */}
-<ul className="divide-y divide-neutral-200">
+<ul className="divide-y divide-neutral-800">
+
   {layers.map((l, i) => {
     const roofId = l.id;
     const active = selectedId === roofId;
@@ -238,12 +243,13 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
     return (
       
       <li key={roofId}>
-        <div
+<div
   className={[
     'grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-6',
-    active ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50 text-neutral-900'
+    active ? 'bg-neutral-800 text-white' : 'hover:bg-neutral-900/60 text-neutral-100'
   ].join(' ')}
 >
+
           {/* D1/D2 */}
           <button
             onClick={() => select(roofId)}
@@ -361,7 +367,8 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
               <span
                 className={[
                   'inline-flex  h-[14px] min-w-[14px] items-center justify-center rounded-sm px-[4px] text-[9px]',
-                  active ? 'bg-blue-800 text-white' : 'bg-neutral-200 text-neutral-700'
+                  active ? 'bg-blue-800 text-white' : 'bg-neutral-800 text-neutral-300'
+
                 ].join(' ')}
                 title={srcBadge === 'S' ? 'Sonnendach' : 'Manuell'}
               >
@@ -372,11 +379,12 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
               onClick={() => delLayer(roofId)}
               title="Löschen"
               aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
-              className={[
-                'text-[12px] leading-none',
-                active ? 'opacity-90 hover:opacity-100'
-                       : 'opacity-50 hover:opacity-100 hover:text-red-600'
-              ].join(' ')}
+            className={[
+  'text-[12px] leading-none',
+  active ? 'opacity-90 hover:opacity-100'
+         : 'opacity-60 hover:opacity-100 hover:text-red-400'
+].join(' ')}
+
             >
               ✕
             </button>
@@ -408,7 +416,7 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
               aria-label="Randabstand (m)"
             />
           </div>
-          <span className="pb-1 text-[10px] text-neutral-500">m</span>
+          <span className="pb-1 text-[10px] text-neutral-400">m</span>
         </div>
         {/* Abstand tra pannelli rimane 0,02 interno/non visibile */}
       </section>
@@ -434,7 +442,7 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
       {/* === BLINDMODULE (disabled) === */}
       <section className="space-y-1">
         <label className={labelSm}>Blindmodule</label>
-        <select disabled className={`${inputBase} cursor-not-allowed bg-neutral-50 text-neutral-400`}>
+        <select disabled className={`${inputBase} cursor-not-allowed bg-neutral-900 text-neutral-500 border-neutral-800`}>
           <option>Auswählen</option>
         </select>
       </section>
@@ -442,7 +450,7 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
       {/* === UNTERKONSTRUKTION (disabled) === */}
       <section className="space-y-1">
         <label className={labelSm}>Unterkonstruktion</label>
-        <select disabled className={`${inputBase} cursor-not-allowed bg-neutral-50 text-neutral-400`}>
+        <select disabled className={`${inputBase} cursor-not-allowed bg-neutral-900 text-neutral-500 border-neutral-800`}>
           <option>System auswählen</option>
         </select>
       </section>
@@ -469,17 +477,17 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
             step={1}
             value={0}
             disabled
-            className={`${inputBase} cursor-not-allowed bg-neutral-50 text-neutral-400`}
+           className={`${inputBase} cursor-not-allowed bg-neutral-900 text-neutral-500 border-neutral-800`}
             aria-label="Modulneigung (%)"
           />
-          <span className="pb-1 text-[10px] text-neutral-500">%</span>
+          <span className="pb-1 text-[10px] text-neutral-400">%</span>
         </div>
       </section>
 
       {/* === WECHSELRICHTER (disabled) === */}
       <section className="space-y-1">
         <label className={labelSm}>Wechselrichter</label>
-        <select disabled className={`${inputBase} cursor-not-allowed bg-neutral-50 text-neutral-400`}>
+        <select disabled className={`${inputBase} cursor-not-allowed bg-neutral-900 text-neutral-500 border-neutral-800`}>
           <option>Auswählen</option>
         </select>
       </section>

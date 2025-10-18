@@ -65,7 +65,7 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
   const [portalNode] = useState(() => {
     if (typeof document !== 'undefined') {
       const el = document.createElement('div');
-      el.className = 'osm-dropdown-portal-root';
+      el.className = 'osm-dropdown-portal-root ';
       return el;
     }
     return null;
@@ -283,7 +283,7 @@ return () => clearTimeout(t);
     const dropdown = (
       <div
         ref={dropdownRef}
-        className="osm-dropdown shadow-lg rounded-xl border border-neutral-200 bg-white"
+        className="osm-dropdown shadow-lg rounded-xl border  border-black bg-neutral-900"
         role="listbox"
         aria-label="OSM suggestions"
       >
@@ -307,8 +307,8 @@ return () => clearTimeout(t);
               }}
               onMouseEnter={() => setActive(i)}
               className={[
-                'cursor-pointer px-3 py-2 text-sm select-none',
-                i === active ? 'bg-neutral-100' : 'hover:bg-neutral-50',
+                'cursor-pointer px-3 py-2 text-sm select-none text-neutral-400',
+                i === active ? 'bg-neutral-700' : 'hover:bg-neutral-600',
               ].join(' ')}
             >
               <div className="truncate" title={r.label}>
@@ -333,9 +333,9 @@ return () => clearTimeout(t);
           placeholder={placeholder}
           onFocus={() => setOpen(results.length > 0)}
           onKeyDown={onKeyDown}
-          className="h-7 w-full bg-transparent border-0 outline-none text-sm placeholder:text-neutral-400"
+          className="h-5 w-full bg-transparent border-0 outline-none  placeholder:text-neutral-400"
           aria-autocomplete="list"
-          aria-expanded={open ? 'true' : 'false'}
+          
           aria-controls="osm-suggestions"
         />
       </div>

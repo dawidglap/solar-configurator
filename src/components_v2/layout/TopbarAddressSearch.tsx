@@ -137,23 +137,25 @@ export default function TopbarAddressSearch() {
     <>
       {/* wrapper con classe "planner-topbar" per forzare z-index dei menu suggerimenti */}
       <div
-        className={`
-          planner-topbar
-          relative z-[1000000]
-          flex min-w-[348px] max-w-[64vw] items-center gap-2
-          h-9 rounded-full border border-neutral-300 bg-white pl-2 pr-2
-          focus-within:ring-1 focus-within:ring-neutral-400
-          overflow-visible
-        `}
+       className={`
+  planner-topbar
+  relative z-[1000000]
+  flex min-w-[260px] max-w-[260px] items-center gap-2
+  h-9 rounded-full border border-neutral-800 bg-neutral-900/90 pl-2 pr-2 text-white
+  focus-within:ring-1 focus-within:ring-white/10
+  overflow-visible text-xs
+`}
+
         aria-busy={loading ? 'true' : 'false'}
       >
-        <Search className="h-4 w-4 text-neutral-500 shrink-0" />
+        <Search className="h-3 w-3 text-neutral-500 shrink-0" />
 
         <div className="relative flex-1">
           {loading && <div className="absolute inset-0 z-10 cursor-wait rounded-full bg-transparent" />}
           <div className="[&_input]:h-7 [&_input]:w-full [&_input]:bg-transparent [&_input]:border-0 [&_input]:outline-none [&_input]:text-sm [&_input]:placeholder:text-neutral-400">
             <AddressSearchOSM
               placeholder="Adresse suchen…"
+              
               onPick={(r) => startFromAddress(r.lat, r.lon)}
             />
           </div>
