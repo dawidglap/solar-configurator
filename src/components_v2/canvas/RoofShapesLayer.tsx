@@ -120,6 +120,19 @@ function iconToPaths(IconComp: any): {
   };
 }
 
+// === SNAP UTILS ===
+function stagePxToImgPx(toImg: (x:number,y:number)=>{x:number;y:number}, n=1) {
+  const a = toImg(0,0);
+  const bx = toImg(n,0);
+  const by = toImg(0,n);
+  const sx = Math.hypot(bx.x - a.x, bx.y - a.y);
+  const sy = Math.hypot(by.x - a.x, by.y - a.y);
+  return Math.max(sx, sy); // fattore "px stage -> px immagine"
+}
+type SnapTarget = { roofId: string; index: number; x: number; y: number };
+
+
+
 export default function RoofShapesLayer({
   layers,
   selectedId,
@@ -281,6 +294,21 @@ const ROT_ICON = useMemo(() => iconToPaths(FaRotate), []);
 const ROT_KNOB_OFFSET = 46;
 const HANDLE_SZ = 16;
 
+
+// --- SNAP CONFIG (riusato da tutti) ---
+const SNAP_RADIUS_STAGE = 6; // px stage
+const snapRadiusImg = useMemo(() => SNAP_RADIUS_STAGE * stagePxToImgPx(toImg, 1), [toImg]);
+
+// --- Costruisci i candidati una sola volta per render ---
+const getSnapTargets = useMemo(() => {
+  const all: SnapTarget[] = [];
+  for (const L of layers) {
+    L.points.forEach((p, i) => {
+      all.push({ roofId: L.id, index: i, x: p.x, y: p.y });
+    });
+  }
+  return () => all; // funzione senza argomenti per evitare ricostruzioni nel child
+}, [layers]);
 
 // subito prima del return
 const topHandles: React.ReactElement[] = [];
@@ -810,17 +838,21 @@ onMouseDown={(e) => {
          
 
             {/* Maniglie TRAPEZIO */}
-            {sel && shapeMode === 'trapezio' && (
-              <RoofHandlesKonva
-                points={r.points}
-                imgW={imgW}
-                imgH={imgH}
-                toImg={toImg}
-                onDragStart={onHandlesDragStart}
-                onDragEnd={onHandlesDragEnd}
-                onChange={(next) => updateRoof(r.id, { points: next })}
-              />
-            )}
+        {sel && shapeMode === 'trapezio' && (
+  <RoofHandlesKonva
+    roofId={r.id}
+    points={r.points}
+    imgW={imgW}
+    imgH={imgH}
+    toImg={toImg}
+    getSnapTargets={getSnapTargets}
+    snapRadiusImg={snapRadiusImg}
+    onDragStart={onHandlesDragStart}
+    onDragEnd={onHandlesDragEnd}
+    onChange={(next) => updateRoof(r.id, { points: next })}
+  />
+)}
+
           </KonvaGroup>
         );
       })}
