@@ -36,6 +36,157 @@ function polygonCentroid(pts: Pt[]) {
 const toFlat = (pts: Pt[]) => pts.flatMap((p) => [p.x, p.y]);
 const deg2rad = (d: number) => (d * Math.PI) / 180;
 
+type Guide = { a: Pt; b: Pt };
+type SnapResult = { pt: Pt; guides: Guide[]; mode?: string | null };
+
+// —— soglie “soft”
+const SNAP_BASE_TOL = 6;        // px: acquisizione base
+const SNAP_RELEASE_RATIO = 1.15; // isteresi: rilascio = tol * 1.15
+const SNAP_MIN_SEG_NO_SNAP = 14; // px: sotto questa lunghezza niente snap
+const SNAP_FULL_STRENGTH_LEN = 80; // px: oltre questo, tol non cresce più
+
+function computeSmartSnap(opts: {
+  pts: Pt[];
+  mouse: Pt;
+  screenBaseDeg: number;   // = -canvasRotateDeg
+  tolPx?: number;          // opzionale; default SNAP_BASE_TOL
+  stickMode?: string|null;
+}): SnapResult {
+  const { pts, mouse, screenBaseDeg, tolPx = SNAP_BASE_TOL, stickMode } = opts;
+  const guides: Guide[] = [];
+  const first = pts[0];
+  const last  = pts[pts.length - 1];
+  const hasPrev = pts.length >= 2;
+
+  // ——— 0) niente snap su segmenti molto corti (micro-movimenti precisi)
+  if (hasPrev) {
+    const segLen = Math.hypot(mouse.x - last.x, mouse.y - last.y);
+    if (segLen < SNAP_MIN_SEG_NO_SNAP) {
+      return { pt: mouse, guides, mode: null };
+    }
+  }
+
+  // ——— 1) tolleranza dinamica in base alla lunghezza del segmento corrente
+  let dynTol = tolPx;
+  if (hasPrev) {
+    const segLen = Math.hypot(mouse.x - last.x, mouse.y - last.y);
+    const k = Math.min(1, Math.max(0.4, segLen / SNAP_FULL_STRENGTH_LEN)); // 0.4…1.0
+    dynTol = tolPx * k;
+  }
+
+  // helpers assi schermo (espressi in spazio immagine)
+  const th = deg2rad(screenBaseDeg);
+  const ax = Math.cos(th), ay = Math.sin(th); // orizzonte schermo (in immagine)
+  const bx = -ay,          by = ax;           // verticale schermo
+
+  const cands: { mode: string; pt: Pt; err: number; guide?: Guide; weight?: number }[] = [];
+
+  // helper comuni
+  const pushProj = (mode: string, o: Pt, ux: number, uy: number) => {
+    const vx = mouse.x - o.x, vy = mouse.y - o.y;
+    const t = vx * ux + vy * uy;
+    const p = { x: o.x + t * ux, y: o.y + t * uy };
+    const err = Math.abs(vx * (-uy) + vy * ux);
+    cands.push({ mode, pt: p, err, guide: { a: o, b: p } });
+  };
+  const infiniteGuideThrough = (o: Pt, ux: number, uy: number): Guide => {
+    const L = 1e6; return { a: { x: o.x - ux * L, y: o.y - uy * L }, b: { x: o.x + ux * L, y: o.y + uy * L } };
+  };
+  const projectOnAxisThrough = (p: Pt, o: Pt, ux: number, uy: number): Pt => {
+    const vx = p.x - o.x, vy = p.y - o.y; const t = vx * ux + vy * uy; return { x: o.x + t * ux, y: o.y + t * uy };
+  };
+  const distanceToAxis = (p: Pt, o: Pt, ux: number, uy: number): number => {
+    const vx = p.x - o.x, vy = p.y - o.y; return Math.abs(vx * (-uy) + vy * ux);
+  };
+
+  // ——— 2) PRIORITÀ AL SEGMENTO PRECEDENTE
+  if (hasPrev) {
+    const prev = pts[pts.length - 2];
+    const dx = last.x - prev.x, dy = last.y - prev.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len,  uy = dy / len;     // dir prev
+    const px = -uy,       py = ux;           // perpendicolare
+    pushProj('parallel-prev', last, ux, uy);
+    pushProj('perp-prev',     last, px, py);
+  }
+
+  // ——— 3) ASSI SCHERMO (più “leggeri”)
+  {
+    const ref = hasPrev ? last : (first ?? mouse);
+    pushProj('parallel-screen', ref, ax, ay);
+    pushProj('perp-screen',     ref, bx, by);
+  }
+
+  // ——— 4) ALLINEAMENTO A PRIMO PUNTO (orizz/vert di schermo)
+  if (first) {
+    const pH = projectOnAxisThrough(mouse, first, ax, ay);
+    const eH = distanceToAxis(mouse, first, ax, ay);
+    cands.push({ mode: 'h-first', pt: pH, err: eH, guide: infiniteGuideThrough(first, ax, ay) });
+
+    const pV = projectOnAxisThrough(mouse, first, bx, by);
+    const eV = distanceToAxis(mouse, first, bx, by);
+    cands.push({ mode: 'v-first', pt: pV, err: eV, guide: infiniteGuideThrough(first, bx, by) });
+  }
+
+  // ——— 5) ALLINEAMENTO A QUALSIASI PUNTO (più “leggero” ancora)
+  for (const p of pts) {
+    const pH = projectOnAxisThrough(mouse, p, ax, ay);
+    const eH = distanceToAxis(mouse, p, ax, ay);
+    cands.push({ mode: 'h-any', pt: pH, err: eH, guide: infiniteGuideThrough(p, ax, ay) });
+
+    const pV = projectOnAxisThrough(mouse, p, bx, by);
+    const eV = distanceToAxis(mouse, p, bx, by);
+    cands.push({ mode: 'v-any', pt: pV, err: eV, guide: infiniteGuideThrough(p, bx, by) });
+  }
+
+  // ——— 6) piccola penalità a candidati “meno importanti”
+  for (const c of cands) {
+    let w = 1;
+    if (c.mode.includes('screen')) w *= 1.15;   // assi schermo: meno aggressivi
+    if (c.mode.endsWith('any'))   w *= 1.20;    // allineamento a punti qualsiasi: ancora meno
+    c.err *= w;
+  }
+
+  // ordina per errore
+  cands.sort((a, b) => a.err - b.err);
+  const best = cands[0];
+
+  // ——— 7) ISTERESI più morbida
+  if (stickMode) {
+    const same = cands.find(c => c.mode === stickMode);
+    if (same && same.err <= dynTol * SNAP_RELEASE_RATIO) {
+      if (same.guide) guides.push(same.guide);
+      return { pt: same.pt, guides, mode: stickMode };
+    }
+  }
+
+  // ——— 8) Accetta solo se dentro tolleranza dinamica
+  if (best && best.err <= dynTol) {
+    if (best.guide) guides.push(best.guide);
+    return { pt: best.pt, guides, mode: best.mode };
+  }
+
+  // nessuno snap
+  return { pt: mouse, guides, mode: null };
+}
+
+
+// —— helpers geometrici per gli assi arbitrari (ax,ay)
+function projectOnAxisThrough(p: Pt, o: Pt, ax: number, ay: number): Pt {
+  const vx = p.x - o.x, vy = p.y - o.y;
+  const t = vx * ax + vy * ay;
+  return { x: o.x + t * ax, y: o.y + t * ay };
+}
+function distanceToAxis(p: Pt, o: Pt, ax: number, ay: number): number {
+  const vx = p.x - o.x, vy = p.y - o.y;
+  // distanza ortogonale alla retta con dir (ax,ay)
+  return Math.abs(vx * (-ay) + vy * ax);
+}
+function infiniteGuideThrough(o: Pt, ax: number, ay: number): Guide {
+  const L = 1e6;
+  return { a: { x: o.x - ax * L, y: o.y - ay * L }, b: { x: o.x + ax * L, y: o.y + ay * L } };
+}
+
 export default function DrawingOverlays({
   tool,
   drawingPoly,
@@ -44,8 +195,10 @@ export default function DrawingOverlays({
   stroke,
   areaLabel,
   mpp,
-  /** ⬇️ nuovo: angolo base del tetto in COORDINATE CANVAS (come baseGridDeg) */
+  /** angolo base tetto (resta usato per draw-roof) */
   roofSnapDeg,
+  /** ⬅️ NUOVO: angolo di rotazione attuale del contentGroup (Rotation HUD) */
+  canvasRotateDeg = 0,
 }: {
   tool: string;
   drawingPoly: Pt[] | null;
@@ -54,22 +207,16 @@ export default function DrawingOverlays({
   stroke: string;
   areaLabel: (pts: Pt[]) => string | null;
   mpp?: number;
-  roofSnapDeg?: number; // ⬅️ nuovo
+  roofSnapDeg?: number;
+  canvasRotateDeg?: number;
 }) {
-  // palette UI
+  // palette UI essenziale
   const PREVIEW = '#7c3aed';
   const ACCEPT  = '#16a34a';
-  const GUIDE   = 'rgba(255,255,255,0.50)';
-  const HANDLE_BG = '#ffffff';
-
-  const DANGER    = '#ef4444';
-  const DANGER_OK = '#dc2626';
+  const GUIDE   = 'rgba(255,255,255,0.75)';
 
   const SNAP_TOL_DEG = 4;
   const CLOSE_RADIUS = 4;
-
-  const guideAxisColor = 'rgba(255,255,255,0.50)'; // rosso tenue per assi guida
-  const guideAxisW = 0.75;
 
   // —— DRAW-ROOF (immutato)
   const renderDrawRoof = () => {
@@ -138,60 +285,11 @@ export default function DrawingOverlays({
             points={[last.x, last.y, target.x, target.y]}
             stroke={PREVIEW}
             strokeWidth={0.5}
-            // dash={[6, 6]}
             lineJoin="round"
             lineCap="round"
             listening={false}
           />
         )}
-
-        {mouseImg && (() => {
-          const mx0 = (last.x + target.x) / 2;
-          const my0 = (last.y + target.y) / 2;
-          const dx = target.x - last.x;
-          const dy = target.y - last.y;
-          const len = Math.hypot(dx, dy) || 1;
-          const nx = -dy / len;
-          const ny =  dx / len;
-
-          const OFF = 12;
-          const mx = mx0 + nx * OFF;
-          const my = my0 + ny * OFF;
-
-          const SCALE = 0.3;
-          const W  = 70 * SCALE;
-          const H  = 18 * SCALE;
-          const FS = 10 * SCALE;
-          const CR = 9  * SCALE;
-
-          return (
-            <KonvaGroup x={mx} y={my} listening={false}>
-              <KonvaRect
-                x={-W / 2}
-                y={-H / 2}
-                width={W}
-                height={H}
-                cornerRadius={CR}
-                fill="#ffffff"
-                shadowColor="rgba(0,0,0,0.25)"
-                shadowBlur={2 * SCALE}
-                shadowOpacity={0.8}
-              />
-              <KonvaText
-                text={`${len >= 1 ? (mpp ? (len*mpp >= 2 ? `${(Math.round((len*mpp) * 10) / 10).toFixed(1)} m` : `${Math.round(len*mpp*100)} cm`) : `${Math.round(len)} px`) : ''}  •  ${angleDeg}°`}
-                fontSize={FS}
-                fill="#111827"
-                width={W}
-                height={H}
-                offsetX={W / 2}
-                offsetY={H / 2}
-                align="center"
-                verticalAlign="middle"
-                listening={false}
-              />
-            </KonvaGroup>
-          );
-        })()}
 
         {pts.map((p, i) => (
           <KonvaCircle
@@ -210,10 +308,10 @@ export default function DrawingOverlays({
           <KonvaCircle
             x={pts[0].x}
             y={pts[0].y}
-            radius={closeToFirst ? 5 : 3.2}
+            radius={3.2}
             fill="#ffffff"
-            stroke={closeToFirst ? '#16a34a' : '#9ca3af'}
-            strokeWidth={closeToFirst ? 1.5 : 1}
+            stroke={'#9ca3af'}
+            strokeWidth={1}
             shadowColor="rgba(0,0,0,0.25)"
             shadowBlur={2}
             shadowOpacity={0.8}
@@ -304,91 +402,72 @@ export default function DrawingOverlays({
     );
   };
 
-  // ——— DRAW-RESERVED con assi guida dal primo punto
+  // ——— DRAW-RESERVED con smart snap allineato allo SCHERMO (Rotation HUD)
   const renderDrawReserved = () => {
     if (!drawingPoly || drawingPoly.length === 0) return null;
 
     const pts = drawingPoly;
     const last = pts[pts.length - 1];
 
-    // 1) asse del tetto (se disponibile)
-    const baseDir =
-      typeof roofSnapDeg === 'number'
-        ? { x: Math.cos(deg2rad(roofSnapDeg)), y: Math.sin(deg2rad(roofSnapDeg)) }
-        : undefined;
+    // Orizzontale schermo espresso nello spazio immagine:
+    // se il gruppo è ruotato di +canvasRotateDeg, allora l’orizzontale schermo = -canvasRotateDeg.
+    const screenBaseDeg = - (canvasRotateDeg || 0);
 
-    // 2) refDir: se ho già due punti uso il segmento precedente,
-    //            altrimenti uso l’asse tetto per mostrare subito snap parallelo/perpendicolare
-    const refDir =
-      pts.length >= 2
-        ? { x: last.x - pts[pts.length - 2].x, y: last.y - pts[pts.length - 2].y }
-        : baseDir;
+    // 1) calcolo punto “snapped” + guide
+    let snapped = mouseImg ?? last;
+    let guides: Guide[] = [];
+let stickModeRef = (renderDrawReserved as any)._stickMode as string | null | undefined;
 
-    let target = mouseImg ?? last;
-    let snapGuide: { a: Pt; b: Pt } | undefined;
+if (mouseImg) {
+  const res = computeSmartSnap({
+    pts,
+    mouse: mouseImg,
+    screenBaseDeg,
+    tolPx: SNAP_BASE_TOL, // 6px base; il compute farà il resto
+    stickMode: stickModeRef ?? null,
+  });
+  snapped = res.pt;
+  guides  = res.guides;
+  (renderDrawReserved as any)._stickMode = res.mode || null;
+} else {
+  (renderDrawReserved as any)._stickMode = null;
+}
 
-    const closeToFirst =
-      mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS);
 
-    if (mouseImg && closeToFirst) {
-      target = pts[0];
-    } else if (mouseImg) {
-      const { pt, guide } = snapParallelPerp(last, mouseImg, refDir, SNAP_TOL_DEG);
-      target = pt;
-      if (guide) snapGuide = guide;
+    // 2) aggiungo SEMPRE le due guide infinite per il primo punto (orizz/vert di schermo)
+    if (pts.length >= 1) {
+      const p0 = pts[0];
+      const th = deg2rad(screenBaseDeg);
+      const ax = Math.cos(th), ay = Math.sin(th);     // orizz schermo
+      const bx = -ay,          by = ax;               // vert  schermo
+      guides.push(infiniteGuideThrough(p0, ax, ay));
+      guides.push(infiniteGuideThrough(p0, bx, by));
     }
 
-    // stile
-    const STROKE      = '#FF2D2D';
-    const STROKE_OK   = '#DC2626';
-    const STROKE_W    = 0.5;
-    const FILL_PRE    = 'rgba(255,45,45,0.08)';
-
-    // maniglie quadrate mini
-    const HANDLE_SIZE     = 3;
-    const HALF            = HANDLE_SIZE / 2;
-    const HANDLE_FILL     = 'rgba(255,255,255,0.65)';
-    const HANDLE_STROKE   = 'rgba(0,0,0,0.4)';
-    const HANDLE_STROKE_W = 0.5;
-
-    // 3) assi guida visuali già dal primo punto (se ho roofSnapDeg)
-    const AXIS_LEN = 200;
-    const axisLines = (() => {
-      if (!(baseDir && pts.length === 1)) return null;
-      const p = last;
-      const d = baseDir;
-      const perp = { x: -d.y, y: d.x };
-      const a1 = [p.x - d.x * AXIS_LEN, p.y - d.y * AXIS_LEN, p.x + d.x * AXIS_LEN, p.y + d.y * AXIS_LEN];
-      const a2 = [p.x - perp.x * AXIS_LEN, p.y - perp.y * AXIS_LEN, p.x + perp.x * AXIS_LEN, p.y + perp.y * AXIS_LEN];
-      return (
-        <>
-          <KonvaLine points={a1} stroke={guideAxisColor} dash={[2, 2]} strokeWidth={guideAxisW} listening={false} />
-          <KonvaLine points={a2} stroke={guideAxisColor} dash={[2, 2]} strokeWidth={guideAxisW} listening={false} />
-        </>
-      );
-    })();
+    // stile minimal
+    const STROKE_CONF = '#22c55e';    // segmenti confermati
+    const STROKE_ACT  = '#ef4444';    // segmento attivo
+    const STROKE_W    = 1;
 
     return (
       <>
-        {/* assi guida dal primo punto */}
-        {axisLines}
-
-        {/* guida snap dinamica */}
-        {snapGuide && (
+        {/* guide (tratteggiate bianche) */}
+        {guides.map((g, i) => (
           <KonvaLine
-            points={[snapGuide.a.x, snapGuide.a.y, snapGuide.b.x, snapGuide.b.y]}
-            stroke={guideAxisColor}
-            dash={[2, 2]}
-            strokeWidth={1}
+            key={'g'+i}
+            points={[g.a.x, g.a.y, g.b.x, g.b.y]}
+            stroke={GUIDE}
+            dash={[3, 3]}
+            strokeWidth={0.75}
             listening={false}
           />
-        )}
+        ))}
 
-        {/* segmenti confermati */}
+        {/* segmenti già confermati */}
         {pts.length >= 2 && (
           <KonvaLine
             points={toFlat(pts)}
-            stroke={STROKE_OK}
+            stroke={STROKE_CONF}
             strokeWidth={STROKE_W}
             lineJoin="round"
             lineCap="round"
@@ -399,8 +478,8 @@ export default function DrawingOverlays({
         {/* segmento attivo */}
         {mouseImg && (
           <KonvaLine
-            points={[last.x, last.y, target.x, target.y]}
-            stroke={STROKE}
+            points={[last.x, last.y, snapped.x, snapped.y]}
+            stroke={STROKE_ACT}
             strokeWidth={STROKE_W}
             lineJoin="round"
             lineCap="round"
@@ -408,47 +487,32 @@ export default function DrawingOverlays({
           />
         )}
 
-        {/* fill live */}
-        {pts.length >= 3 && (
+        {/* fill live essenziale (poligono chiuso se già 2+ segmenti) */}
+        {pts.length >= 2 && mouseImg && (
           <KonvaLine
-            points={toFlat(pts)}
+            points={toFlat([...pts, snapped])}
             closed
             stroke="transparent"
-            fill={FILL_PRE}
+            fill="rgba(239,68,68,0.10)" // rosso tenue 10%
             listening={false}
           />
         )}
 
-        {/* maniglie quadrate */}
+        {/* piccoli marker sui vertici */}
         {pts.map((p, i) => (
           <KonvaRect
             key={i}
-            x={p.x - HALF}
-            y={p.y - HALF}
-            width={HANDLE_SIZE}
-            height={HANDLE_SIZE}
+            x={p.x - 3}
+            y={p.y - 3}
+            width={6}
+            height={6}
             cornerRadius={2}
-            fill={HANDLE_FILL}
-            stroke={HANDLE_STROKE}
-            strokeWidth={HANDLE_STROKE_W}
+            fill="#ffffff"
+            stroke="rgba(0,0,0,0.35)"
+            strokeWidth={0.5}
             listening={false}
           />
         ))}
-
-        {/* hint chiusura sul primo punto */}
-        {pts.length >= 1 && (
-          <KonvaRect
-            x={pts[0].x - (closeToFirst ? 4.5 : HALF)}
-            y={pts[0].y - (closeToFirst ? 4.5 : HALF)}
-            width={closeToFirst ? 9 : HANDLE_SIZE}
-            height={closeToFirst ? 9 : HANDLE_SIZE}
-            cornerRadius={2}
-            fill="#ffffff"
-            stroke={closeToFirst ? STROKE_OK : 'rgba(156,163,175,1)'}
-            strokeWidth={closeToFirst ? 1.5 : 1}
-            listening={false}
-          />
-        )}
       </>
     );
   };

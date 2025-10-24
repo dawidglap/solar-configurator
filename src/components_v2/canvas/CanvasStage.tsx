@@ -645,16 +645,18 @@ onClick={(evt: any) => {
 
     {/* …tutto il resto che avevi (preview riservata, fill-area preview, PanelsLayer, DrawingOverlays ecc.) */}
     {step === 'building' && (
-      <DrawingOverlays
-        tool={tool}
-        drawingPoly={drawingPoly}
-        rectDraft={rectDraft}
-        mouseImg={mouseImg}
-        stroke={stroke}
-        areaLabel={areaLabel}
-        mpp={snap.mppImage}
-        roofSnapDeg={baseGridDeg}
-      />
+   <DrawingOverlays
+  tool={tool}
+  drawingPoly={drawingPoly}
+  rectDraft={rectDraft}
+  mouseImg={mouseImg}
+  stroke={stroke}
+  areaLabel={areaLabel}
+  mpp={snap.mppImage}
+  roofSnapDeg={baseGridDeg}
+  canvasRotateDeg={rotateDeg}   // ⬅️ nuovo: snap allineati allo schermo
+/>
+
     )}
   </Group>
 </Layer>
