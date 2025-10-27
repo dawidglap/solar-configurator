@@ -139,89 +139,117 @@ export default function TopToolbar() {
     return () => { void unsub(); };
   }, []);
 
-  /* Bottoni icona+testo con tooltip (portal) */
-  function ActionBtn({
-    active, onClick, Icon, label, disabled, tooltipLabel, tooltipKeys,
-  }: {
-    active?: boolean;
-    onClick: () => void;
-    Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-    label: string;
-    disabled?: boolean;
-    tooltipLabel?: string;
-    tooltipKeys?: (string | React.ReactNode)[];
-  }) {
-    const ref = useRef<HTMLButtonElement>(null);
-    const { visible, pos, show, hide } = useBottomTooltip(ref);
+/* ───────────────── Bottoni icona+tooltip (portal) ───────────────── */
+function ActionBtn({
+  active, onClick, Icon, label, disabled, tooltipLabel, tooltipKeys,
+}: {
+  active?: boolean;
+  onClick: () => void;
+  Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  label?: string; // non usato (icon-only)
+  disabled?: boolean;
+  tooltipLabel?: string;
+  tooltipKeys?: (string | React.ReactNode)[];
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const { visible, pos, show, hide } = useBottomTooltip(ref);
 
-const base = 'inline-flex items-center gap-0 rounded-full h-8 px-3 text-[10px] uppercase tracking-wide font-medium transition border';
-const inactive = 'border-neutral-800 bg-neutral-900/80 text-neutral-200 hover:bg-neutral-800';
-const activeCls = 'border-neutral-600 bg-neutral-700 text-white hover:bg-neutral-600';
-const disabledCls = 'opacity-40 cursor-not-allowed hover:bg-inherit';
+  // Base: solo icona, nessun cerchio visibile
+  const base =
+    "inline-flex h-8 w-8 items-center justify-center rounded-full " +
+    "transition ring-0 border border-transparent " +
+    "focus:outline-none focus:ring-2 focus:ring-white/10";
 
+  // Inattivo cliccabile: icona bianca; il cerchio appare SOLO su hover
+  const clickable =
+    "text-white hover:bg-neutral-800/70 hover:border-neutral-700";
 
-    return (
-      <>
-        <button
-          ref={ref}
-          type="button"
-          onMouseEnter={tooltipLabel ? show : undefined}
-          onMouseLeave={tooltipLabel ? hide : undefined}
-          onFocus={tooltipLabel ? show : undefined}
-          onBlur={tooltipLabel ? hide : undefined}
-          onClick={onClick}
-          aria-pressed={!!active}
-          disabled={disabled}
-          className={[base, disabled ? disabledCls : active ? activeCls : inactive].join(' ')}
-        >
-          <Icon className="h-4 w-4" />
-          <span>{label}</span>
-        </button>
+  // Attivo: “icona accesa dentro un cerchio”
+  const activeCls =
+    "bg-white text-neutral-900 border-white shadow " +
+    "hover:bg-white hover:border-white";
 
-        {tooltipLabel && tooltipKeys && (
-          <PortalTooltip visible={visible} pos={pos} label={tooltipLabel} keys={tooltipKeys} />
-        )}
-      </>
-    );
-  }
+  // Disabled: grigio, niente hover
+  const disabledCls =
+    "text-neutral-500 opacity-60 cursor-not-allowed";
 
-  /* Bottoni icon-only (Undo/Redo) con tooltip (portal) */
-  function IconOnlyBtn({
-    onClick, Icon, ariaLabel, tooltipLabel, tooltipKeys, disabled,
-  }: {
-    onClick: () => void;
-    Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-    ariaLabel: string;
-    tooltipLabel: string;
-    tooltipKeys: (string | React.ReactNode)[];
-    disabled?: boolean;
-  }) {
-    const ref = useRef<HTMLButtonElement>(null);
-    const { visible, pos, show, hide } = useBottomTooltip(ref);
-    return (
-      <>
-        <button
-          ref={ref}
-          type="button"
-          aria-label={ariaLabel}
-          onMouseEnter={show}
-          onMouseLeave={hide}
-          onFocus={show}
-          onBlur={hide}
-          onClick={onClick}
-          disabled={disabled}
-      className={[
-  "inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900/80 text-neutral-200 hover:bg-neutral-800 transition focus:outline-none focus:ring-2 focus:ring-white/10",
-  disabled ? "opacity-40 cursor-not-allowed hover:bg-neutral-900/80" : ""
-].join(" ")}
+  const cls = [
+    base,
+    disabled ? disabledCls : active ? activeCls : clickable,
+  ].join(" ");
 
-        >
-          <Icon className="h-4 w-4" />
-        </button>
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        onMouseEnter={tooltipLabel ? show : undefined}
+        onMouseLeave={tooltipLabel ? hide : undefined}
+        onFocus={tooltipLabel ? show : undefined}
+        onBlur={tooltipLabel ? hide : undefined}
+        onClick={onClick}
+        aria-pressed={!!active}
+        disabled={disabled}
+        className={cls}
+      >
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </button>
+
+      {tooltipLabel && tooltipKeys && (
         <PortalTooltip visible={visible} pos={pos} label={tooltipLabel} keys={tooltipKeys} />
-      </>
-    );
-  }
+      )}
+    </>
+  );
+}
+
+/* ─────────── Bottoni icon-only (Undo/Redo) con stesso stile ─────────── */
+function IconOnlyBtn({
+  onClick, Icon, ariaLabel, tooltipLabel, tooltipKeys, disabled,
+}: {
+  onClick: () => void;
+  Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  ariaLabel: string;
+  tooltipLabel: string;
+  tooltipKeys: (string | React.ReactNode)[];
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const { visible, pos, show, hide } = useBottomTooltip(ref);
+
+  const base =
+    "inline-flex h-8 w-8 items-center justify-center rounded-full " +
+    "transition ring-0 border border-transparent " +
+    "focus:outline-none focus:ring-2 focus:ring-white/10";
+
+  const clickable =
+    "text-white hover:bg-neutral-800/70 hover:border-neutral-700";
+
+  const disabledCls =
+    "text-neutral-500 opacity-60 cursor-not-allowed";
+
+  const cls = [base, disabled ? disabledCls : clickable].join(" ");
+
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        aria-label={ariaLabel}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        onClick={onClick}
+        disabled={disabled}
+        className={cls}
+      >
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <PortalTooltip visible={visible} pos={pos} label={tooltipLabel} keys={tooltipKeys} />
+    </>
+  );
+}
+
 
   /* UI unificata: tutti i tool sempre visibili (attivi logici via step auto-switch) */
  /* Tool attivi solo nello step corrente */
