@@ -138,14 +138,16 @@ function angleBetweenDeg(u:Pt, v:Pt) {
   return Math.acos(cos) * (180 / Math.PI); // 0..180
 }
 
-function nearestRef(deg:number){
-  let best = DEG_REFS[0], bd = Infinity;
+function nearestRef(deg: number) {
+  let best: number = DEG_REFS[0]; // ← allarga a number
+  let bd = Infinity;
   for (const r of DEG_REFS) {
     const d = Math.abs(deg - r);
     if (d < bd) { bd = d; best = r; }
   }
   return { ref: best, diff: bd };
 }
+
 
 /** Restituisce per ogni vertice: { x, y, deg, ref, diff } */
 function vertexAngles(pts: Pt[]) {
