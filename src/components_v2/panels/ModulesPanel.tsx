@@ -65,6 +65,15 @@ const [editing, setEditing] = React.useState<{ id: string; field: 'tilt'|'az' } 
 const [tempVal, setTempVal] = React.useState<string>('');
 const relayoutRef = React.useRef<null | ((next?: 'portrait'|'landscape') => void)>(null);
 
+// blocca i global hotkeys (anche in capture) quando digiti negli input inline
+const stopHotkeysCapture = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  e.stopPropagation();
+  // prova a bloccare eventuali native listeners in capture
+  // @ts-ignore
+  if (e.nativeEvent?.stopImmediatePropagation) e.nativeEvent.stopImmediatePropagation();
+};
+
+
 
 const commitInline = React.useCallback((roofId: string, field: 'tilt'|'az') => {
   const raw = Number(tempVal);
@@ -320,22 +329,36 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
   }}
 >
   {(editing?.id === roofId && editing.field === 'tilt') ? (
-    <input
-      autoFocus
-      type="number"
-      min={0}
-      max={60}
-      step={1}
-      value={tempVal}
-      onChange={e => setTempVal(e.target.value)}
-      onBlur={() => commitInline(roofId, 'tilt')}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') commitInline(roofId, 'tilt');
-        if (e.key === 'Escape') setEditing(null);
-      }}
-      className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
-      style={{ padding: 0 }}
-    />
+ <input
+  autoFocus
+  type="number"
+  min={0}
+  max={60}
+  step={1}
+  value={tempVal}
+  onChange={e => setTempVal(e.target.value)}
+  onBlur={() => commitInline(roofId, 'tilt')}
+  data-stop-hotkeys="true"
+
+  onKeyDownCapture={stopHotkeysCapture}            // ⬅️ blocca i listener globali
+  onKeyDown={(e) => {
+    // gestiamo noi i tasti principali
+    if (e.key === 'Enter') { commitInline(roofId, 'tilt'); return; }
+    if (e.key === 'Escape') { setEditing(null); return; }
+    // Delete / Backspace: svuota il campo ma NON propagare
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      e.stopPropagation();
+      // @ts-ignore
+      if (e.nativeEvent?.stopImmediatePropagation) e.nativeEvent.stopImmediatePropagation();
+      setTempVal('');
+      return;
+    }
+  }}
+  className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
+  style={{ padding: 0 }}
+/>
+
   ) : (
     <span>{tiltShort != null ? `${tiltShort}°` : '—'}</span>
   )}
@@ -352,22 +375,34 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
   }}
 >
   {(editing?.id === roofId && editing.field === 'az') ? (
-    <input
-      autoFocus
-      type="number"
-      min={0}
-      max={359}
-      step={1}
-      value={tempVal}
-      onChange={e => setTempVal(e.target.value)}
-      onBlur={() => commitInline(roofId, 'az')}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') commitInline(roofId, 'az');
-        if (e.key === 'Escape') setEditing(null);
-      }}
-      className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
-      style={{ padding: 0 }}
-    />
+<input
+  autoFocus
+  type="number"
+  min={0}
+  max={359}
+  step={1}
+  value={tempVal}
+  onChange={e => setTempVal(e.target.value)}
+  onBlur={() => commitInline(roofId, 'az')}
+  data-stop-hotkeys="true"
+
+  onKeyDownCapture={stopHotkeysCapture}            // ⬅️ blocca i listener globali
+  onKeyDown={(e) => {
+    if (e.key === 'Enter') { commitInline(roofId, 'az'); return; }
+    if (e.key === 'Escape') { setEditing(null); return; }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      e.stopPropagation();
+      // @ts-ignore
+      if (e.nativeEvent?.stopImmediatePropagation) e.nativeEvent.stopImmediatePropagation();
+      setTempVal('');
+      return;
+    }
+  }}
+  className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
+  style={{ padding: 0 }}
+/>
+
   ) : (
     
 <span>

@@ -151,16 +151,29 @@ const contentGroupRef = useRef<any>(null);
 
 // Hotkeys: [ e ] per ±1°, Shift+[ / Shift+] per ±10°
 useEffect(() => {
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === '[' || e.key === ']') {
-      e.preventDefault();
-      const step = e.shiftKey ? 10 : 1;
-      setRotateDeg((d) => d + (e.key === ']' ? step : -step));
+  const onKey = (ev: KeyboardEvent) => {
+    // ignora se stai scrivendo
+    const isTyping = (el: HTMLElement | null) => {
+      if (!el) return false;
+      const tag = el.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return true;
+      if ((el as any).isContentEditable) return true;
+      if (el.closest?.('input,textarea,[contenteditable="true"],[data-stop-hotkeys="true"]')) return true;
+      return false;
+    };
+    if (isTyping(ev.target as HTMLElement | null) ||
+        isTyping(document.activeElement as HTMLElement | null)) return;
+
+    if (ev.key === '[' || ev.key === ']') {
+      ev.preventDefault();
+      const step = ev.shiftKey ? 10 : 1;
+      setRotateDeg(d => d + (ev.key === ']' ? step : -step));
     }
   };
-  window.addEventListener('keydown', onKey);
-  return () => window.removeEventListener('keydown', onKey);
+  window.addEventListener('keydown', onKey, { capture: true });
+  return () => window.removeEventListener('keydown', onKey, { capture: true } as any);
 }, []);
+
 
 
   // inside CanvasStage, near other useCallbacks
@@ -217,76 +230,82 @@ useEffect(() => {
 useEffect(() => {
   type KbEvt = KeyboardEvent & { stopImmediatePropagation?: () => void };
 
-  const onKey = (ev: KeyboardEvent) => {
-    const e = ev as KbEvt;
-    const st = usePlannerV2Store.getState();
-    const key = e.key;
+  const onKey = (ev: KbEvt) => {
+    // ⛔️ NON reagire se il focus è su un campo di input / editor
+    const isTyping = (el: HTMLElement | null) => {
+      if (!el) return false;
+      const tag = el.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return true;
+      if ((el as any).isContentEditable) return true;
+      if (el.closest?.('input,textarea,[contenteditable="true"],[data-stop-hotkeys="true"]')) return true;
+      return false;
+    };
+    if (isTyping(ev.target as HTMLElement | null) ||
+        isTyping(document.activeElement as HTMLElement | null)) {
+      return;
+    }
+
+    const st  = usePlannerV2Store.getState();
+    const key = ev.key;
 
     // ---------- DELETE con PRIORITÀ ----------
     if (key === 'Delete' || key === 'Backspace') {
-      
-// 1) ZONA selezionata → elimina SOLO la zona
-// 1) ZONA selezionata → elimina SOLO la zona (con guardie)
-if (st.selectedZoneId) {
-  const zoneId = st.selectedZoneId;
-  const z = (st as any).zones?.find?.((zz: any) => zz.id === zoneId);
-  const roofId = z?.roofId as string | undefined;
 
-  // ⬇️ prima di tutto, "disinnesca" gli altri hotkey handler:
-  // - svuota selezione pannelli
-  st.setSelectedPanels?.([]);
-  st.clearPanelSelection?.();
+      // 1) ZONA selezionata → elimina SOLO la zona (con guardie)
+      if (st.selectedZoneId) {
+        const zoneId = st.selectedZoneId;
+        const z = (st as any).zones?.find?.((zz: any) => zz.id === zoneId);
+        const roofId = z?.roofId as string | undefined;
 
-  // - rimuovi temporaneamente la selezione della falda
-  //   (così eventuali handler roof-delete non vedono selectedId)
-  st.select?.(undefined);
+        // disinnesca altri handler
+        st.setSelectedPanels?.([]);
+        st.clearPanelSelection?.();
+        st.select?.(undefined); // rimuovi temporaneamente la selezione falda
 
-  plannerHistory.push('delete zone');
-  st.removeZone?.(zoneId);
-  st.selectZone?.(undefined);
+        plannerHistory.push('delete zone');
+        st.removeZone?.(zoneId);
+        st.selectZone?.(undefined);
 
-  // blocca completamente la propagazione
-  e.preventDefault();
-  e.stopPropagation();
-  (e as any).stopImmediatePropagation?.();
+        // blocca completamente la propagazione
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation?.();
 
-  // ripristina la selezione della falda (se esiste) NEL TICK SUCCESSIVO
-  if (roofId) {
-    setTimeout(() => {
-      const S = usePlannerV2Store.getState();
-      S.select?.(roofId);
-    }, 0);
-  }
-  return;
-}
+        // ripristina selezione falda nel tick successivo
+        if (roofId) {
+          setTimeout(() => {
+            const S = usePlannerV2Store.getState();
+            S.select?.(roofId);
+          }, 0);
+        }
+        return;
+      }
 
-
-
-      // 2) Pannelli selezionati? → elimina SOLO i pannelli
+      // 2) PANNELLI selezionati → elimina SOLO i pannelli
       if (Array.isArray(st.selectedPanelIds) && st.selectedPanelIds.length > 0) {
         plannerHistory.push('delete panels');
         if (st.deletePanelsBulk) st.deletePanelsBulk(st.selectedPanelIds);
         else st.selectedPanelIds.forEach((id: string) => st.deletePanel?.(id));
         st.setSelectedPanels?.([]);
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation?.();
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation?.();
         return;
       }
 
-      // 3) Falda selezionata? → elimina la falda
+      // 3) FALDA selezionata → elimina la falda
       if (st.selectedId) {
         plannerHistory.push('delete roof');
         const del =
-  (st as any).deleteRoof      // legacy name in some branches
-  ?? st.removeRoof            // current LayersSlice name (likely)
-  ?? st.deleteLayer;          // fallback
+          (st as any).deleteRoof   // legacy
+          ?? st.removeRoof         // current
+          ?? st.deleteLayer;       // fallback
 
-del?.(st.selectedId);
+        del?.(st.selectedId);
         st.select?.(undefined);
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation?.();
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation?.();
         return;
       }
     }
@@ -295,32 +314,33 @@ del?.(st.selectedId);
     if (key === 'Escape') {
       if (st.selectedZoneId) {
         st.setSelectedZone?.(undefined);
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation?.();
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation?.();
         return;
       }
       if (st.clearPanelSelection) {
         st.clearPanelSelection();
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation?.();
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation?.();
         return;
       }
       if (st.selectedId) {
         st.select?.(undefined);
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation?.();
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation?.();
         return;
       }
     }
   };
 
-  // capture:true → questo handler corre PRIMA di altri (es. PanelHotkeys)
+  // capture:true → la guardia corre PRIMA degli altri listener
   window.addEventListener('keydown', onKey, { capture: true });
   return () => window.removeEventListener('keydown', onKey, { capture: true } as any);
 }, []);
+
 
 
 // CanvasStage.tsx – subito dopo la definizione di stageRef
