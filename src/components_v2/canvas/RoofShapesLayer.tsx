@@ -216,6 +216,8 @@ export default function RoofShapesLayer({
   const updateRoof  = usePlannerV2Store(s => s.updateRoof);
   const removeRoof  = usePlannerV2Store(s => s.removeRoof);
   const step = usePlannerV2Store(s => s.step);
+  const roofsLocked = step === 'modules';
+
 
 
   // stato UI rotazione/pivot
@@ -413,7 +415,7 @@ const HANDLE_SZ       = toImgPx(HANDLE_SIZE_S);
           : null;
 
         // maniglie lato (solo selezione singola + shape normale)
-        if (isSel && !multi && shapeMode === 'normal') {
+        if (!roofsLocked && isSel && !multi && shapeMode === 'normal') {
           edgeMeta(pts, { minLenPx: 12, nearVertexPx: 10 }).forEach((e, k) => {
             topHandles.push(
               <KonvaGroup
@@ -496,6 +498,7 @@ const HANDLE_SZ       = toImgPx(HANDLE_SIZE_S);
               lineCap="round"
               fill={fill}
               onClick={(e) => {
+                if (roofsLocked) return;  
                 const withShift = !!(e.evt && e.evt.shiftKey);
                 if (withShift) {
                   setGroupSel((prev) => {
@@ -519,6 +522,7 @@ const HANDLE_SZ       = toImgPx(HANDLE_SIZE_S);
               shadowBlur={isSel || highlightAll ? 8 : 0}
               hitStrokeWidth={12}
               onMouseEnter={(e) => {
+                  if (roofsLocked) return; 
                 const c = e.target.getStage()?.container();
                 if (isCanvaGroupDrag) {
                   setHoverAll(true);
@@ -533,6 +537,10 @@ const HANDLE_SZ       = toImgPx(HANDLE_SIZE_S);
                 if (isSel || isCanvaGroupDrag) c?.style.removeProperty('cursor');
               }}
               onMouseDown={(e) => {
+                 if (roofsLocked) {                          // ⬅️ blocca ogni tipo di drag in modules
+    e.cancelBubble = true;
+    return;
+  }
                 e.cancelBubble = true;
                 const st = e.target.getStage(); if (!st) return;
                 plannerHistory.push('offset edge');
@@ -692,7 +700,7 @@ const corners = vertexAngles(pts);
             )}
 
             {/* ROTAZIONE (knob fuori, pivot al centro bbox) */}
-            {isSel && !multi && rotPivot && shapeMode !== 'trapezio' && rotHandlePos && (
+            {!roofsLocked && isSel && !multi && rotPivot && shapeMode !== 'trapezio' && rotHandlePos && (
               <>
                <KonvaGroup
   x={rotHandlePos.x}
@@ -794,7 +802,7 @@ const corners = vertexAngles(pts);
             )}
 
             {/* Maniglie TRAPEZIO */}
-            {sel && shapeMode === 'trapezio' && (
+            {!roofsLocked && sel && shapeMode === 'trapezio' && (
               <RoofHandlesKonva
                 roofId={r.id}
                 points={r.points}
