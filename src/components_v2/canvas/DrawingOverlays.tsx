@@ -139,6 +139,31 @@ function computeSmartSnap(opts: {
     cands.push({ mode: 'v-any', pt: pV, err: eV, guide: infiniteGuideThrough(p, bx, by) });
   }
 
+  
+   // ——— 5b) HINT: direzione dal LAST verso ciascun vertice esistente
+  if (hasPrev) {
+    for (const p of pts) {
+      if (p === last) continue;
+      const dx = p.x - last.x, dy = p.y - last.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len,  uy = dy / len;
+
+      const vx = mouse.x - last.x, vy = mouse.y - last.y;
+      const t  = vx * ux + vy * uy;
+      const proj = { x: last.x + t * ux, y: last.y + t * uy };
+      const err = Math.abs(vx * (-uy) + vy * ux);
+
+      cands.push({
+        mode: 'towards-vertex',
+        pt: proj,
+        err,
+        guide: { a: last, b: p }
+      });
+    }
+  }
+
+
+
   // ——— 6) piccola penalità a candidati “meno importanti”
   for (const c of cands) {
     let w = 1;
@@ -219,188 +244,277 @@ export default function DrawingOverlays({
   const CLOSE_RADIUS = 4;
 
   // —— DRAW-ROOF (immutato)
-  const renderDrawRoof = () => {
-    if (!drawingPoly || drawingPoly.length === 0) return null;
+ // —— DRAW-ROOF (con guide orizz/vert dal primo punto, allineate allo schermo)
+const renderDrawRoof = () => {
+  if (!drawingPoly || drawingPoly.length === 0) return null;
 
-    const pts = drawingPoly;
-    const last = pts[pts.length - 1];
-    const prev = pts.length >= 2 ? pts[pts.length - 2] : null;
-    const refDir = prev ? { x: last.x - prev.x, y: last.y - prev.y } : undefined;
+  const pts = drawingPoly;
+  const last = pts[pts.length - 1];
+  const prev = pts.length >= 2 ? pts[pts.length - 2] : null;
+  const refDir = prev ? { x: last.x - prev.x, y: last.y - prev.y } : undefined;
 
-    let target = mouseImg ?? last;
-    let snapGuide: { a: Pt; b: Pt } | undefined;
+  let target = mouseImg ?? last;
+  let guidesAgg: Guide[] = [];
+  let stickModeRef = (renderDrawRoof as any)._stickMode as string | null | undefined;
 
-    if (mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS)) {
-      target = pts[0];
-    } else if (mouseImg) {
-      const { pt, guide } = snapParallelPerp(last, mouseImg, refDir, SNAP_TOL_DEG);
-      target = pt;
-      if (guide) snapGuide = guide;
+  if (mouseImg) {
+    const res = computeSmartSnap({
+      pts,
+      mouse: mouseImg,
+      screenBaseDeg: -(canvasRotateDeg || 0),
+      tolPx: 5, // snap leggero
+      stickMode: stickModeRef ?? null,
+    });
+    target = res.pt;
+    guidesAgg = res.guides;
+    (renderDrawRoof as any)._stickMode = res.mode || null;
+  } else {
+    (renderDrawRoof as any)._stickMode = null;
+  }
+
+
+
+  // ⬇️ NUOVO: guide orizz/vert passanti dal PRIMO punto (assi dello schermo)
+  const extraGuides: Guide[] = [];
+  if (pts.length >= 1) {
+    const p0 = pts[0];
+    const th = deg2rad(-(canvasRotateDeg || 0)); // orizzonte schermo in spazio immagine
+    const ax = Math.cos(th), ay = Math.sin(th);   // asse orizzontale
+    const bx = -ay,          by = ax;             // asse verticale
+    extraGuides.push(infiniteGuideThrough(p0, ax, ay));
+    extraGuides.push(infiniteGuideThrough(p0, bx, by));
+  }
+
+  let angleDeg = 0;
+  let lenPx = 0;
+  if (mouseImg) {
+    const dx = target.x - last.x;
+    const dy = target.y - last.y;
+    angleDeg = Math.round(((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360);
+    lenPx = Math.hypot(dx, dy);
+  }
+  const lenLabel = (() => {
+    if (!mouseImg) return '';
+    if (mpp) {
+      const m = lenPx * mpp;
+      return m >= 2 ? `${(Math.round(m * 10) / 10).toFixed(1)} m` : `${Math.round(m * 100)} cm`;
     }
+    return `${Math.round(lenPx)} px`;
+  })();
 
-    let angleDeg = 0;
-    let lenPx = 0;
-    if (mouseImg) {
-      const dx = target.x - last.x;
-      const dy = target.y - last.y;
-      angleDeg = Math.round(((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360);
-      lenPx = Math.hypot(dx, dy);
-    }
-    const lenLabel = (() => {
-      if (!mouseImg) return '';
-      if (mpp) {
-        const m = lenPx * mpp;
-        return m >= 2 ? `${(Math.round(m * 10) / 10).toFixed(1)} m` : `${Math.round(m * 100)} cm`;
-      }
-      return `${Math.round(lenPx)} px`;
-    })();
+  return (
+    <>
+      {/* NUOVO: guide schermo dal primo punto */}
+      {extraGuides.map((g, i) => (
+        <KonvaLine
+          key={'roof-g'+i}
+          points={[g.a.x, g.a.y, g.b.x, g.b.y]}
+          stroke={GUIDE}
+          strokeWidth={0.75}
+          dash={[3, 3]}
+          listening={false}
+        />
+      ))}
 
-    const closeToFirst = mouseImg && pts.length >= 3 && isNear(mouseImg, pts[0], CLOSE_RADIUS);
+  {guidesAgg.map((g, i) => (
+    <KonvaLine
+      key={'roof-g'+i}
+      points={[g.a.x, g.a.y, g.b.x, g.b.y]}
+      stroke={GUIDE}
+      strokeWidth={0.75}
+      dash={[3, 3]}
+      listening={false}
+    />
+  ))}
 
-    return (
-      <>
-        {snapGuide && (
-          <KonvaLine
-            points={[snapGuide.a.x, snapGuide.a.y, snapGuide.b.x, snapGuide.b.y]}
-            stroke={GUIDE}
-            strokeWidth={1}
-            dash={[2, 2]}
-            listening={false}
-          />
-        )}
 
-        {pts.length >= 2 && (
-          <KonvaLine
-            points={toFlat(pts)}
-            stroke={ACCEPT}
-            strokeWidth={1}
-            lineJoin="round"
-            lineCap="round"
-            listening={false}
-          />
-        )}
 
-        {mouseImg && (
-          <KonvaLine
-            points={[last.x, last.y, target.x, target.y]}
-            stroke={PREVIEW}
-            strokeWidth={0.5}
-            lineJoin="round"
-            lineCap="round"
-            listening={false}
-          />
-        )}
+      {pts.length >= 2 && (
+        <KonvaLine
+          points={toFlat(pts)}
+          stroke={ACCEPT}
+          strokeWidth={1}
+          lineJoin="round"
+          lineCap="round"
+          listening={false}
+        />
+      )}
 
-        {pts.map((p, i) => (
-          <KonvaCircle
-            key={i}
-            x={p.x}
-            y={p.y}
-            radius={1.6}
-            fill="#ffffff"
-            stroke={ACCEPT}
-            strokeWidth={1.0}
-            listening={false}
-          />
-        ))}
+      {mouseImg && (
+        <KonvaLine
+          points={[last.x, last.y, target.x, target.y]}
+          stroke={PREVIEW}
+          strokeWidth={0.5}
+          lineJoin="round"
+          lineCap="round"
+          listening={false}
+        />
+      )}
 
-        {pts.length >= 1 && (
-          <KonvaCircle
-            x={pts[0].x}
-            y={pts[0].y}
-            radius={3.2}
-            fill="#ffffff"
-            stroke={'#9ca3af'}
-            strokeWidth={1}
-            shadowColor="rgba(0,0,0,0.25)"
-            shadowBlur={2}
-            shadowOpacity={0.8}
-            listening={false}
-          />
-        )}
+      {pts.map((p, i) => (
+        <KonvaCircle
+          key={i}
+          x={p.x}
+          y={p.y}
+          radius={1.6}
+          fill="#ffffff"
+          stroke={ACCEPT}
+          strokeWidth={1.0}
+          listening={false}
+        />
+      ))}
 
-        {pts.length >= 3 && (
-          <KonvaText
-            x={polygonCentroid(pts).x}
-            y={polygonCentroid(pts).y}
-            text={areaLabel(pts) ?? ''}
-            fontSize={6}
-            fill="#fff"
-            offsetX={18}
-            offsetY={-6}
-            listening={false}
-            // @ts-ignore
-            shadowColor="white"
-            shadowBlur={2}
-            shadowOpacity={0.9}
-          />
-        )}
-      </>
-    );
-  };
+      {pts.length >= 1 && (
+        <KonvaCircle
+          x={pts[0].x}
+          y={pts[0].y}
+          radius={3.2}
+          fill="#ffffff"
+          stroke={'#9ca3af'}
+          strokeWidth={1}
+          shadowColor="rgba(0,0,0,0.25)"
+          shadowBlur={2}
+          shadowOpacity={0.8}
+          listening={false}
+        />
+      )}
+
+      {pts.length >= 3 && (
+        <KonvaText
+          x={polygonCentroid(pts).x}
+          y={polygonCentroid(pts).y}
+          text={areaLabel(pts) ?? ''}
+          fontSize={6}
+          fill="#fff"
+          offsetX={18}
+          offsetY={-6}
+          listening={false}
+          // @ts-ignore
+          shadowColor="white"
+          shadowBlur={2}
+          shadowOpacity={0.9}
+        />
+      )}
+    </>
+  );
+};
+
 
   // —— DRAW-RECT (immutato)
-  const renderDrawRect = () => {
-    if (!rectDraft || rectDraft.length === 0) return null;
+ // —— DRAW-RECT (con guide orizz/vert dal primo punto)
+const renderDrawRect = () => {
+  if (!rectDraft || rectDraft.length === 0) return null;
 
-    return (
-      <>
-        {rectDraft.length === 1 && (
-          <KonvaCircle
-            x={rectDraft[0].x}
-            y={rectDraft[0].y}
-            radius={3.2}
-            fill="#fff"
+  // ⬇️ NUOVO: guide schermo dal primo punto (rectDraft[0])
+  const rectGuides: Guide[] = [];
+  if (rectDraft.length >= 1) {
+    const p0 = rectDraft[0];
+    const th = deg2rad(-(canvasRotateDeg || 0));
+    const ax = Math.cos(th), ay = Math.sin(th);
+    const bx = -ay,          by = ax;
+    rectGuides.push(infiniteGuideThrough(p0, ax, ay));
+    rectGuides.push(infiniteGuideThrough(p0, bx, by));
+  }
+
+  return (
+    <>
+      {/* NUOVO: guide schermo dal primo punto */}
+      {rectGuides.map((g, i) => (
+        <KonvaLine
+          key={'rect-g'+i}
+          points={[g.a.x, g.a.y, g.b.x, g.b.y]}
+          stroke={GUIDE}
+          strokeWidth={0.75}
+          dash={[3, 3]}
+          listening={false}
+        />
+      ))}
+
+      {rectDraft.length === 1 && (
+        <KonvaCircle
+          x={rectDraft[0].x}
+          y={rectDraft[0].y}
+          radius={3.2}
+          fill="#fff"
+          stroke={stroke}
+          strokeWidth={1.2}
+        />
+      )}
+
+      {rectDraft.length === 2 && (
+        <>
+          <KonvaLine
+            points={toFlat(rectDraft)}
             stroke={stroke}
-            strokeWidth={1.2}
+            strokeWidth={1.5}
+            dash={[6, 6]}
+            lineJoin="round"
+            lineCap="round"
           />
-        )}
+{mouseImg && (() => {
+  let guides: Guide[] = [];
+  let C = mouseImg;
 
-        {rectDraft.length === 2 && (
-          <>
-            <KonvaLine
-              points={toFlat(rectDraft)}
-              stroke={stroke}
-              strokeWidth={1.5}
-              dash={[6, 6]}
-              lineJoin="round"
-              lineCap="round"
-            />
-            {mouseImg && (() => {
-              const preview = rectFrom3(rectDraft[0], rectDraft[1], mouseImg);
-              return (
-                <>
-                  <KonvaLine
-                    points={toFlat(preview)}
-                    closed
-                    stroke={stroke}
-                    strokeWidth={1.5}
-                    lineJoin="round"
-                    lineCap="round"
-                    dash={[6, 6]}
-                  />
-                  <KonvaText
-                    x={polygonCentroid(preview).x}
-                    y={polygonCentroid(preview).y}
-                    text={areaLabel(preview) ?? ''}
-                    fontSize={12}
-                    fill="#fff"
-                    offsetX={18}
-                    offsetY={-6}
-                    listening={false}
-                    // @ts-ignore
-                    shadowColor="white"
-                    shadowBlur={2}
-                    shadowOpacity={0.9}
-                  />
-                </>
-              );
-            })()}
-          </>
-        )}
-      </>
-    );
-  };
+  let stickModeRef = (renderDrawRect as any)._stickMode as string | null | undefined;
+  const res = computeSmartSnap({
+    pts: rectDraft,
+    mouse: mouseImg,
+    screenBaseDeg: -(canvasRotateDeg || 0),
+    tolPx: 5,
+    stickMode: stickModeRef ?? null,
+  });
+  C = res.pt;
+  guides = res.guides;
+  (renderDrawRect as any)._stickMode = res.mode || null;
+
+  const preview = rectFrom3(rectDraft[0], rectDraft[1], C);
+
+  return (
+    <>
+      {guides.map((g, i) => (
+        <KonvaLine
+          key={'rect-g'+i}
+          points={[g.a.x, g.a.y, g.b.x, g.b.y]}
+          stroke={GUIDE}
+          strokeWidth={0.75}
+          dash={[3, 3]}
+          listening={false}
+        />
+      ))}
+      <KonvaLine
+        points={toFlat(preview)}
+        closed
+        stroke={stroke}
+        strokeWidth={1.5}
+        lineJoin="round"
+        lineCap="round"
+        dash={[6, 6]}
+      />
+      <KonvaText
+        x={polygonCentroid(preview).x}
+        y={polygonCentroid(preview).y}
+        text={areaLabel(preview) ?? ''}
+        fontSize={12}
+        fill="#fff"
+        offsetX={18}
+        offsetY={-6}
+        listening={false}
+        // @ts-ignore
+        shadowColor="white"
+        shadowBlur={2}
+        shadowOpacity={0.9}
+      />
+    </>
+  );
+})()}
+
+
+        </>
+      )}
+    </>
+  );
+};
+
 
   // ——— DRAW-RESERVED con smart snap allineato allo SCHERMO (Rotation HUD)
   const renderDrawReserved = () => {
