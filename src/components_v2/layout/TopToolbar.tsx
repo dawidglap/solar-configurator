@@ -95,6 +95,8 @@ export default function TopToolbar() {
   const catalogPanels    = usePlannerV2Store(s => s.catalogPanels);
   const selectedPanelId  = usePlannerV2Store(s => s.selectedPanelId);
   const setSelectedPanel = usePlannerV2Store(s => s.setSelectedPanel);
+  const clearPanelsForRoof = usePlannerV2Store(s => s.clearPanelsForRoof);
+
 
   // dati necessari per "In Module umwandeln"
   const layers              = usePlannerV2Store(s => s.layers);
@@ -256,6 +258,8 @@ function IconOnlyBtn({
 const canUseBuildingTools = step === 'building';
 const canUseModulesTools  = step === 'modules';
 
+
+
 /* ── Nessun auto-switch: il tool cambia solo se lo step corrente lo consente ── */
 function go(t: any) {
   setTool(t);
@@ -349,6 +353,11 @@ function ensureModulesPrereqsForF(): boolean {
       orientation: modules.orientation,
       panelId: selSpec.id,
     }));
+
+    // sostituisci i moduli esistenti della falda selezionata
+clearPanelsForRoof(selectedId);
+addPanelsForRoof(selectedId, instances);
+
 
     addPanelsForRoof(selectedId, instances);
 

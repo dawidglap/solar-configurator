@@ -170,8 +170,14 @@ export function computeAutoLayoutRects(args: {
 
     // locale ruotato
     const polyLocal = polygon.map(p => worldToLocal(p, O, theta));
-    const clipLocal = insetConvexPolygon(polyLocal, marginPx) ?? polyLocal;
 
+    // prova a insettare; se fallisce, useremo la bbox con shrink
+    const insetLocal = insetConvexPolygon(polyLocal, marginPx);
+    const useInset = !!insetLocal;                    // true se inset riuscito
+    const clipLocal = insetLocal ?? polyLocal;
+
+
+    // bbox locale
     // bbox locale
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of clipLocal) {
@@ -181,6 +187,16 @@ export function computeAutoLayoutRects(args: {
         if (p.y > maxY) maxY = p.y;
     }
     if (!isFinite(minX)) return [];
+
+    // ⬇️ FALLBACK: se l'inset non è riuscito, applichiamo il margine alla bbox
+    if (!useInset && marginPx > 0) {
+        minX += marginPx;
+        minY += marginPx;
+        maxX -= marginPx;
+        maxY -= marginPx;
+        if (maxX <= minX || maxY <= minY) return [];
+    }
+
 
     const cellW = wPx + gap;
     const cellH = hPx + gap;
