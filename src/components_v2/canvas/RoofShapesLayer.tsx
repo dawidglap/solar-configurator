@@ -215,6 +215,8 @@ export default function RoofShapesLayer({
   // store actions
   const updateRoof  = usePlannerV2Store(s => s.updateRoof);
   const removeRoof  = usePlannerV2Store(s => s.removeRoof);
+  const step = usePlannerV2Store(s => s.step);
+
 
   // stato UI rotazione/pivot
   const { rotDeg, pivotPx } = usePlannerV2Store(s => s.roofAlign ?? { rotDeg: 0, pivotPx: undefined });
@@ -293,16 +295,20 @@ export default function RoofShapesLayer({
         onSelect(undefined);
       }
 
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        const ids = groupSel.length ? groupSel : (selectedId ? [selectedId] : []);
-        if (!ids.length) return;
-        e.preventDefault();
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+  // ⛔️ in modules non eliminiamo falde
+  if (step === 'modules') return;
 
-        plannerHistory.push('delete roof');
-        ids.forEach((id) => removeRoof(id));
-        setGroupSel([]);
-        onSelect(undefined);
-      }
+  const ids = groupSel.length ? groupSel : (selectedId ? [selectedId] : []);
+  if (!ids.length) return;
+  e.preventDefault();
+
+  plannerHistory.push('delete roof');
+  ids.forEach((id) => removeRoof(id));
+  setGroupSel([]);
+  onSelect(undefined);
+}
+
     };
 
     window.addEventListener('keydown', onKey);

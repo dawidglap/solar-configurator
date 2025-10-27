@@ -293,21 +293,32 @@ useEffect(() => {
         return;
       }
 
-      // 3) FALDA selezionata → elimina la falda
-      if (st.selectedId) {
-        plannerHistory.push('delete roof');
-        const del =
-          (st as any).deleteRoof   // legacy
-          ?? st.removeRoof         // current
-          ?? st.deleteLayer;       // fallback
+      
+ // 3) FALDA selezionata → elimina la falda
+if (st.selectedId) {
 
-        del?.(st.selectedId);
-        st.select?.(undefined);
-        ev.preventDefault();
-        ev.stopPropagation();
-        ev.stopImmediatePropagation?.();
-        return;
-      }
+  // ⛔️ Blocco: in modalità "modules" non si possono eliminare falde
+  if (st.step === 'modules') {
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.stopImmediatePropagation?.();
+    return;
+  }
+
+  plannerHistory.push('delete roof');
+  const del =
+    (st as any).deleteRoof   // legacy
+    ?? st.removeRoof         // current
+    ?? st.deleteLayer;       // fallback
+
+  del?.(st.selectedId);
+  st.select?.(undefined);
+  ev.preventDefault();
+  ev.stopPropagation();
+  ev.stopImmediatePropagation?.();
+  return;
+}
+
     }
 
     // ---------- ESC con PRIORITÀ ----------

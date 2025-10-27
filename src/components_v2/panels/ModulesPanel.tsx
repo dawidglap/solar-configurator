@@ -44,6 +44,8 @@ export default function ModulesPanel() {
   const delLayer     = usePlannerV2Store(s => s.deleteLayer);
   const mpp          = usePlannerV2Store(s => s.snapshot.mppImage);
   const detected     = usePlannerV2Store(s => s.detectedRoofs);
+  const step = usePlannerV2Store(s => s.step);
+
 
   // --- Moduli / pannelli ---
   const panels             = usePlannerV2Store(s => s.panels);
@@ -430,19 +432,25 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
                 {srcBadge}
               </span>
             )}
-            <button
-              onClick={() => delLayer(roofId)}
-              title="Löschen"
-              aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
-            className={[
-  'text-[12px] leading-none',
-  active ? 'opacity-90 hover:opacity-100'
-         : 'opacity-60 hover:opacity-100 hover:text-red-400'
-].join(' ')}
+     <button
+  disabled={step === 'modules'}
+  onClick={() => {
+    if (step === 'modules') return; // ⛔️ blocco in UI
+    delLayer(roofId);
+  }}
+  title={step === 'modules' ? 'Löschen nur im Schritt „Gebäude“' : 'Löschen'}
+  aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
+  className={[
+    'text-[12px] leading-none',
+    step === 'modules'
+      ? 'opacity-30 cursor-not-allowed'
+      : (active ? 'opacity-90 hover:opacity-100'
+                : 'opacity-60 hover:opacity-100 hover:text-red-400')
+  ].join(' ')}
+>
+  ✕
+</button>
 
-            >
-              ✕
-            </button>
           </div>
         </div>
       </li>
