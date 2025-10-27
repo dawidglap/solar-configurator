@@ -34,6 +34,8 @@ import FillAreaController from '../modules/fill/FillAreaController';
 import ToolHotkeys from '../layout/ToolHotkeys';
 import { history as plannerHistory } from '../state/history';
 import ProjectStatsBar from '../ui/ProjectStatsBar';
+import CanvasHotkeys from './CanvasHotekeys';
+import ModuleSprite from '../modules/ModuleSprite';
 
 
 
@@ -553,6 +555,9 @@ onMouseEnter={tool === 'fill-area' ? () => {
 } : undefined}
 
 onClick={(evt: any) => {
+  // ⬅️ NEW: in fill-area NON deselezionare nulla
+  if (tool === 'fill-area') return;
+
   if (drawingEnabled) {
     onStageClick?.(evt);
     return;
@@ -564,18 +569,17 @@ onClick={(evt: any) => {
 
   const store = usePlannerV2Store.getState();
 
-  // 1) se NON ho cliccato su un nodo "interactive", deseleziono zona + pannelli
   const clickedInteractive = targetName?.includes('interactive');
   if (!clickedInteractive) {
     store.selectZone?.(undefined);
     store.clearPanelSelection?.();
   }
 
-  // 2) se ho cliccato il vuoto (Stage) o il background catcher, deseleziono anche la falda
   if (target === st || targetName === 'bg-catcher') {
     store.select?.(undefined);
   }
 }}
+
 
 
 
@@ -599,22 +603,23 @@ onClick={(evt: any) => {
       listening={false}
     />
 
-    {/* background click-catcher */}
-    <Rect
-      x={0}
-      y={0}
-      width={img.naturalWidth}
-      height={img.naturalHeight}
-      fill="rgba(0,0,0,0.001)"
-      listening
-      name="bg-catcher"
-      onClick={() => {
-        const st = usePlannerV2Store.getState();
-        st.setSelectedZone?.(undefined);
-        st.clearPanelSelection?.();
-        st.select?.(undefined);
-      }}
-    />
+<Rect
+  x={0}
+  y={0}
+  width={img.naturalWidth}
+  height={img.naturalHeight}
+  fill="rgba(0,0,0,0.001)"
+  listening={tool !== 'fill-area'}          // ⬅️ qui
+  name="bg-catcher"
+  onClick={() => {
+    if (tool === 'fill-area') return;       // safety in più
+    const st = usePlannerV2Store.getState();
+    st.setSelectedZone?.(undefined);
+    st.clearPanelSelection?.();
+    st.select?.(undefined);
+  }}
+/>
+
 
     {/* --- TUTTO IL RESTO (ModulesPreview, SonnendachOverlayKonva, RoofShapesLayer, ZonesLayer, pannelli, anteprime, ecc.) RIMANE QUI DENTRO --- */}
     {step === 'modules' &&
@@ -641,38 +646,92 @@ onClick={(evt: any) => {
         />
       )}
 
-    <SonnendachOverlayKonva />
+<SonnendachOverlayKonva />
 
-    <RoofShapesLayer
-      layers={layers}
-      selectedId={selectedId}
-      onSelect={tool === 'fill-area' ? ignoreSelect : select}
-      showAreaLabels={SHOW_AREA_LABELS}
-      stroke={stroke}
-      strokeSelected={strokeSelected}
-      fill={fill}
-      strokeWidthNormal={strokeWidthNormal}
-      strokeWidthSelected={strokeWidthSelected}
+{/* ⬇️ In fill-area disattivo l’ascolto eventi di tetti + zone */}
+<Group listening={tool !== 'fill-area'}>
+  <RoofShapesLayer
+    layers={layers}
+    selectedId={selectedId}
+    onSelect={tool === 'fill-area' ? ignoreSelect : select}
+    showAreaLabels={SHOW_AREA_LABELS}
+    stroke={stroke}
+    strokeSelected={strokeSelected}
+    fill={fill}
+    strokeWidthNormal={strokeWidthNormal}
+    strokeWidthSelected={strokeWidthSelected}
+    shapeMode={shapeMode}
+    toImg={toImgCoords}
+    imgW={snap.width ?? img?.naturalWidth ?? 0}
+    imgH={snap.height ?? img?.naturalHeight ?? 0}
+    onHandlesDragStart={() => setDraggingVertex(true)}
+    onHandlesDragEnd={() => setDraggingVertex(false)}
+    areaLabel={areaLabel}
+  />
+
+  {layers.map((l) => (
+    <ZonesLayer
+      key={l.id}
+      roofId={l.id}
+      interactive={l.id === selectedId && tool !== 'fill-area'}
       shapeMode={shapeMode}
       toImg={toImgCoords}
       imgW={snap.width ?? img?.naturalWidth ?? 0}
       imgH={snap.height ?? img?.naturalHeight ?? 0}
-      onHandlesDragStart={() => setDraggingVertex(true)}
-      onHandlesDragEnd={() => setDraggingVertex(false)}
-      areaLabel={areaLabel}
     />
+  ))}
+</Group>
 
-    {layers.map((l) => (
-      <ZonesLayer
-        key={l.id}
-        roofId={l.id}
-        interactive={l.id === selectedId && tool !== 'fill-area'}
-        shapeMode={shapeMode}
-        toImg={toImgCoords}
-        imgW={snap.width ?? img?.naturalWidth ?? 0}
-        imgH={snap.height ?? img?.naturalHeight ?? 0}
+{/* Draft visivo per fill-area */}
+{tool === 'fill-area' && fillDraft && (
+  <Group listening={false}>
+    {/* opzionale: contorno dell’area che stai riempiendo */}
+    {fillDraft.poly?.length >= 3 && (
+      <Line
+        points={fillDraft.poly.flatMap(p => [p.x, p.y])}
+        closed
+        stroke="rgba(255,255,255,0.9)"
+        strokeWidth={0.8}
+        dash={[6, 4]}
+        opacity={0.6}
+        listening={false}
       />
-    ))}
+    )}
+
+    {/* preview con i moduli REALI al 50% */}
+    <Group opacity={0.5} listening={false}>
+      {fillDraft.rects.map((r, i) => (
+        <ModuleSprite
+          key={i}
+          x={r.cx}
+          y={r.cy}
+          w={r.wPx}
+          h={r.hPx}
+          rotationDeg={r.angleDeg}
+          textureUrl="/images/panel.webp"  // o il tuo textureUrl
+        />
+      ))}
+    </Group>
+  </Group>
+)}
+
+
+
+
+    {step === 'modules' && (
+  <PanelsLayer
+    layers={layers}
+    textureUrl="/images/panel.webp"
+    selectedPanelId={usePlannerV2Store.getState().selectedPanelId}
+    onSelect={(id?: string) => {
+      const S = usePlannerV2Store.getState();
+      // selezione singola: aggiorna l'array di selezione (se presente nello store)
+      if (S.setSelectedPanels) S.setSelectedPanels(id ? [id] : []);
+    }}
+    stageToImg={toImgCoords}
+  />
+)}
+
 
     {/* …tutto il resto che avevi (preview riservata, fill-area preview, PanelsLayer, DrawingOverlays ecc.) */}
     {step === 'building' && (
@@ -719,6 +778,7 @@ onClick={(evt: any) => {
     if (nid) setSelectedPanelInstId(nid);
   }}
 />
+<CanvasHotkeys />
 
 
       {/* <OrientationHUD /> */}

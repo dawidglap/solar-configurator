@@ -262,6 +262,23 @@ function go(t: any) {
 }
 
 
+function ensureModulesPrereqsForU(): boolean {
+  const st = usePlannerV2Store.getState();
+  if (st.step !== 'modules') { alert('Du musst dich im Schritt „Module“ befinden.'); return false; }
+  if (!st.selectedId)        { alert('Wähle zuerst eine Dachfläche (Roof) aus, bevor du U verwendest.'); return false; }
+  if (!st.getSelectedPanel()) { alert('Wähle ein Solarmodell aus dem Katalog aus.'); return false; }
+  if (!st.snapshot?.mppImage) { alert('mppImage fehlt im Snapshot (Maße können nicht berechnet werden).'); return false; }
+  return true;
+}
+
+function ensureModulesPrereqsForF(): boolean {
+  const st = usePlannerV2Store.getState();
+  if (st.step !== 'modules') { alert('Du musst dich im Schritt „Module“ befinden.'); return false; }
+  if (!st.selectedId)        { alert('Wähle zuerst eine Dachfläche (Roof) aus, bevor du eine Fläche füllst.'); return false; }
+  return true;
+}
+
+
 
   /* ── Handler: In Module umwandeln (icona #3) ─────────────────────── */
   function handleConvertToModules() {
@@ -394,7 +411,7 @@ function go(t: any) {
 
 {/* Module-only */}
 <ActionBtn
-  onClick={handleConvertToModules}
+  onClick={() => { if (ensureModulesPrereqsForU()) handleConvertToModules(); }}
   Icon={MdViewModule}
   label=""
   disabled={!canUseModulesTools}
@@ -402,9 +419,10 @@ function go(t: any) {
   tooltipKeys={['U']}
 />
 
+
 <ActionBtn
   active={tool === 'fill-area'}
-  onClick={() => go('fill-area' as any)}
+  onClick={() => { if (ensureModulesPrereqsForF()) setTool('fill-area' as any); }}
   Icon={MdBorderStyle}
   label=""
   disabled={!canUseModulesTools}
