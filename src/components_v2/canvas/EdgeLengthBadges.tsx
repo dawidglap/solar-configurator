@@ -51,7 +51,7 @@ export default function EdgeLengthBadges({
   rotateDeg = 0,          // ← rotazione applicata al Group Konva
   color = '#3b82f6',
   fontSize = 9,
-  edgeOffsetPx = 10,
+  edgeOffsetPx = 18,
   // opzionali per correzione inclinazione
   tiltDeg,
   eavesAzimuthDeg,

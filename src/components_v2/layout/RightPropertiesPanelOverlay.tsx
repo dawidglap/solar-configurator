@@ -6,9 +6,9 @@ import ModulesPanel from '../panels/ModulesPanel';
 
 export default function RightPropertiesPanelOverlay() {
   return (
-    <div className="w-[var(--propW,264px)] max-w-[92vw] h-full min-h-0 bg-neutral-800 border border-neutral-950 shadow-xl flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-black backdrop-blur">
-        <h3 className="text-xs font-medium ps-1 text-white">Eigenschaften</h3>
+    <div className="w-[var(--propW,264px)] max-w-[92vw] h-full min-h-0 bg-neutral-800 border-l border-black shadow-xl flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-3 pt-2 backdrop-blur">
+        <h3 className="text-xs font-medium ps-1 text-white">EBENEN</h3>
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 text-sm">

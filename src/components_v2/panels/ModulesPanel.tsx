@@ -7,6 +7,8 @@ import RoofAreaInfo from '../ui/RoofAreaInfo';
 import DetectedRoofsImport from '../panels/DetectedRoofsImport';
 import { MdViewModule } from 'react-icons/md';
 import OrientationToggle from '../layout/TopToolbar/OrientationToggle';
+import { LuCompass } from 'react-icons/lu';
+
 
 // ⬇️ funzioni esistenti per autolayout e filtri ostacoli
 import { computeAutoLayoutRects } from '../modules/layout';
@@ -19,6 +21,19 @@ const inputBase =
   'focus:ring-1 focus:ring-neutral-400 focus:border-neutral-300 transition';
 
 const labelSm = 'block text-[10px] font-medium uppercase tracking-wide text-neutral-400';
+
+
+// Piccola icona "tilt": triangolo + arco di angolo
+function IconTilt(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
+      {/* triangolo (stroke corrente) */}
+      <path d="M4 18 L18 18 L18 4 Z" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      {/* arco dell’angolo in basso a sinistra */}
+      <path d="M6 18 A2 2 0 0 1 8 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 
 export default function ModulesPanel() {
@@ -175,7 +190,7 @@ const roofAreaM2Corrected = React.useCallback((pts: Pt[] | undefined, mpp?: numb
       {/* === EBENEN (tabella compatta) === */}
       <div className="px-0">
         <div className={`${labelSm} mb-2`}>
-          Ebenen{layers.length ? ` (${layers.length})` : ''}
+          Mg.{layers.length ? ` (${layers.length})` : ''}
         </div>
 
         {detected?.length > 0 && (
@@ -197,8 +212,13 @@ const roofAreaM2Corrected = React.useCallback((pts: Pt[] | undefined, mpp?: numb
   <div className="flex items-center justify-center"><MdViewModule className="h-3 w-3" /></div>
   <div className="text-right font-medium">m²</div>
   <div className="text-right font-medium">kWp</div>
-  <div className="text-center font-medium" title="Neigung (°)">∠</div>
-  <div className="text-center font-medium" title="Ausrichtung (° vs N)">N</div>
+<div className="flex items-center justify-center" title="Neigung (°)">
+  <IconTilt className="h-3.5 w-3.5 opacity-90" />
+</div>
+<div className="flex items-center justify-center" title="Ausrichtung (° vs N)">
+  <LuCompass className="h-4 w-4 opacity-90" />
+</div>
+
   <div />
 </div>
 
