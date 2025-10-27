@@ -3,6 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Line, Rect , Group} from 'react-konva';
 import { computeAutoLayoutRects } from '../modules/layout';
 import { isInReservedZone } from '../zones/utils';
+import { RotateCcw } from 'lucide-react';
+
+
 
 import { Pt, polygonAreaPx2, rectFrom3WithAz } from '../canvas/geom';
 import { usePlannerV2Store } from '../state/plannerV2Store';
@@ -147,6 +150,7 @@ const setToolForHook = useCallback((t: string) => {
   const [selectedPanelInstId, setSelectedPanelInstId] = useState<string | undefined>(undefined);
   const deletePanel = usePlannerV2Store((s) => s.deletePanel);
   const SHOW_AREA_LABELS = false;
+  
 
   const [showUiGrid, setShowUiGrid] = useState(true);
 
@@ -399,6 +403,12 @@ const wrapDeg = (d: number) => {
 
 const [rotateDeg, setRotateDeg] = useState(0);        // se non l'hai già
 const [rotInput, setRotInput] = useState<string>('0');
+
+// calcolo progress per lo slider (0–100)
+const sliderPct = useMemo(() => {
+  return Math.min(100, Math.max(0, ((rotateDeg + 180) / 360) * 100));
+}, [rotateDeg]);
+
 
 // mantieni l'input sincronizzato quando ruoti da bottoni/hotkeys/altro
 useEffect(() => {
@@ -822,63 +832,99 @@ onClick={(evt: any) => {
   imgH={img?.naturalHeight ?? 0}
   rotateDeg={rotateDeg}
 />
-{/* ROTATION HUD */}
-<div className="fixed right-3 bottom-3 z-[500] bg-neutral-800/90 text-neutral-400 rounded-md shadow px-3 py-2 flex items-center gap-2"
-     style={{ backdropFilter: 'blur(3px)' }}>
-  <button
-    className="px-2 py-1 rounded border hover:bg-neutral-700"
-    onClick={() => bumpRotation(-10)}
-    title="Ruota -10°"
-  >−10°</button>
+{/* ORIENTATION HUD — STEALTH (improved) */}
+<div className="fixed right-3 bottom-6 z-[600] group pointer-events-none">
+  <div
+    className="pointer-events-auto relative rounded-lg border border-neutral-700/60 bg-neutral-900/70 text-neutral-300 shadow
+               backdrop-blur px-1.5 py-1 flex items-center gap-1.5 transition-all duration-150
+               scale-90 opacity-70 group-hover:scale-100 group-hover:opacity-100"
+    style={{ WebkitBackdropFilter: 'blur(6px)' }}
+  >
+    {/* -10 */}
+    <button
+      className="h-6 min-w-6 rounded-md border border-neutral-700/60 hover:bg-neutral-800 text-[11px] px-1"
+      onClick={() => bumpRotation(-10)}
+      title="Drehen -10° (Shift+[)"
+    >−10</button>
 
-  <button
-    className="px-2 py-1 rounded border hover:bg-neutral-700"
-    onClick={() => bumpRotation(-1)}
-    title="Ruota -1°"
-  >−1°</button>
+    {/* -1 */}
+    <button
+      className="h-6 min-w-6 rounded-md border border-neutral-700/60 hover:bg-neutral-800 text-[11px] px-1"
+      onClick={() => bumpRotation(-1)}
+      title="Drehen -1° ([)"
+    >−1</button>
 
-  <input
-    type="range"
-    min={-180}
-    max={180}
-    step={1}
-    value={rotateDeg}
-    onChange={(e) => setRotateDeg(wrapDeg(parseInt(e.target.value, 10)))}
-    className="w-44"
-  />
-
-  <button
-    className="px-2 py-1 rounded border hover:bg-neutral-700"
-    onClick={() => bumpRotation(+1)}
-    title="Ruota +1°"
-  >+1°</button>
-
-  <button
-    className="px-2 py-1 rounded border hover:bg-neutral-700"
-    onClick={() => bumpRotation(+10)}
-    title="Ruota +10°"
-  >+10°</button>
-
-  <div className="flex items-center gap-1">
+    {/* slider: più lungo, più fine, track visibile con parte riempita */}
     <input
-      type="text"
-      inputMode="decimal"
-      className="w-16 px-2 py-1 rounded border text-right"
-      value={rotInput}
-      onChange={(e) => setRotInput(e.target.value)}
-      onBlur={applyRotationFromInput}
-      onKeyDown={(e) => { if (e.key === 'Enter') applyRotationFromInput(); }}
-      title="Inserisci gradi e premi Invio"
+      type="range"
+      min={-180}
+      max={180}
+      step={0.5}
+      value={rotateDeg}
+      onChange={(e) => setRotateDeg(wrapDeg(parseFloat(e.target.value)))}
+      className="w-36 h-1.5 mx-1 accent-neutral-200"
+      style={{
+        WebkitAppearance: 'none',
+        appearance: 'none',
+        borderRadius: 9999,
+        // track: base scura + progress chiaro fino a sliderPct
+        background: `linear-gradient(to right, #a3a3a3 ${sliderPct}%, #3f3f46 ${sliderPct}%)`,
+      }}
+      title="Ziehe, um zu drehen"
     />
-    <span className="text-sm text-gray-600">°</span>
-  </div>
 
-  <button
-    className="px-2 py-1 rounded border hover:bg-neutral-700"
-    onClick={() => setRotateDeg(0)}
-    title="Reset 0°"
-  >Reset</button>
+    {/* +1 */}
+    <button
+      className="h-6 min-w-6 rounded-md border border-neutral-700/60 hover:bg-neutral-800 text-[11px] px-1"
+      onClick={() => bumpRotation(+1)}
+      title="Drehen +1° (])"
+    >+1</button>
+
+    {/* +10 */}
+    <button
+      className="h-6 min-w-6 rounded-md border border-neutral-700/60 hover:bg-neutral-800 text-[11px] px-1"
+      onClick={() => bumpRotation(+10)}
+      title="Drehen +10° (Shift+])"
+    >+10</button>
+
+    {/* input inline: ruota LIVE mentre digiti */}
+    <div className="flex items-center gap-1 pl-1">
+      <input
+        type="text"
+        inputMode="decimal"
+        className="w-11 h-6 px-1 rounded-md border border-neutral-700/60 bg-neutral-900/60 text-right text-[11px]"
+        value={rotInput}
+        onChange={(e) => {
+          const v = e.target.value.replace(',', '.');
+          setRotInput(v);
+          const n = parseFloat(v);
+          if (Number.isFinite(n)) setRotateDeg(wrapDeg(n));
+        }}
+        title="Grad (dreht in Echtzeit)"
+      />
+      <span className="text-[10px] text-neutral-500">°</span>
+
+      {/* Reset */}
+      <button
+        className="h-6 w-6 rounded-md border border-neutral-700/60 hover:bg-neutral-800 grid place-items-center"
+        onClick={() => { setRotateDeg(0); setRotInput('0'); }}
+        title="Zurücksetzen auf 0°"
+      >
+        <RotateCcw className="w-3.5 h-3.5" />
+      </button>
+    </div>
+
+    {/* PILL hint (DE) sotto all'HUD */}
+    <div className="absolute right-0 translate-y-full mt-1 pointer-events-none">
+      <span className="px-2 py-0.5 rounded-full text-[10px] bg-neutral-800/80 border border-neutral-700/60 text-neutral-400">
+        Raster ein-/ausblenden: <strong>G</strong>
+      </span>
+    </div>
+  </div>
 </div>
+
+
+
 
 
     </div>
