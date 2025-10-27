@@ -321,10 +321,24 @@ export default function RoofShapesLayer({
     setGroupSel(prev => prev.filter(id => existing.has(id)));
   }, [layers]);
 
-  // icona e knob
-  const ROT_ICON = useMemo(() => iconToPaths(FaRotate), []);
-  const ROT_KNOB_OFFSET = 46;
-  const HANDLE_SZ = 16;
+// icona e knob
+const ROT_ICON = useMemo(() => iconToPaths(FaRotate), []);
+
+// converte pixel schermo -> pixel immagine (varia con lo zoom)
+const toImgPx = useMemo(
+  () => (pxScreen: number) => stagePxToImgPx(toImg, pxScreen),
+  [toImg]
+);
+
+// valori in PX SCHERMO
+const KNOB_OFFSET_S = 8;   // distanza dal bordo
+const HANDLE_SIZE_S = 28;   // diametro del cerchio
+
+// conversione in PX IMMAGINE
+const ROT_KNOB_OFFSET = toImgPx(KNOB_OFFSET_S);
+const HANDLE_SZ       = toImgPx(HANDLE_SIZE_S);
+
+
 
   // SNAP CONFIG
   const SNAP_RADIUS_STAGE = 6;
@@ -680,97 +694,102 @@ const corners = vertexAngles(pts);
             {/* ROTAZIONE (knob fuori, pivot al centro bbox) */}
             {isSel && !multi && rotPivot && shapeMode !== 'trapezio' && rotHandlePos && (
               <>
-                <KonvaGroup
-                  x={rotHandlePos.x}
-                  y={rotHandlePos.y}
-                  listening
-                  onMouseEnter={(e) => {
-                    e.target.getStage()?.container()?.style.setProperty('cursor','grab');
-                    const circle = (e.currentTarget as any).findOne('.rotKnob') as Konva.Circle;
-                    if (circle) { circle.fill('#ffffff'); circle.stroke('#fdfdfd'); circle.getLayer()?.batchDraw(); }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.getStage()?.container()?.style.removeProperty('cursor');
-                    const circle = (e.currentTarget as any).findOne('.rotKnob') as Konva.Circle;
-                    if (circle) { circle.fill('#ffffff'); circle.stroke('#ffffff'); circle.getLayer()?.batchDraw(); }
-                  }}
-                  onMouseDown={(e) => {
-                    e.cancelBubble = true;
-                    const st = e.target.getStage(); if (!st) return;
-                    const ns = '.roof-rotate';
-                    st.off(ns);
+               <KonvaGroup
+  x={rotHandlePos.x}
+  y={rotHandlePos.y}
+  listening
+  onMouseEnter={(e) => {
+    e.target.getStage()?.container()?.style.setProperty('cursor','grab');
+  }}
+  onMouseLeave={(e) => {
+    e.target.getStage()?.container()?.style.removeProperty('cursor');
+  }}
+  onMouseDown={(e) => {
+    e.cancelBubble = true;
+    const st = e.target.getStage(); if (!st) return;
+    const ns = '.roof-rotate';
+    st.off(ns);
 
-                    // snapshot iniziale
-                    startPtsRef.current   = r.points.map(p => ({ ...p }));
-                    startPivotRef.current = rotPivot;
-                    startAzimuthRef.current = r.azimuthDeg ?? 0;
+    // snapshot iniziale (usa le refs già dichiarate nel file)
+    startPtsRef.current       = r.points.map(p => ({ ...p }));
+    startPivotRef.current     = rotPivot!;
+    startAzimuthRef.current   = r.azimuthDeg ?? 0;
 
-                    const pos = st.getPointerPosition(); if (!pos) return;
-                    const pImg = toImg(pos.x, pos.y);
-                    dragStartAngleRef.current = Math.atan2(pImg.y - rotPivot.y, pImg.x - rotPivot.x);
-                    dragStartDegRef.current   = rotDeg || 0;
+    const pos = st.getPointerPosition(); if (!pos) return;
+    const pImg = toImg(pos.x, pos.y);
+    dragStartAngleRef.current = Math.atan2(pImg.y - rotPivot!.y, pImg.x - rotPivot!.x);
+    dragStartDegRef.current   = rotDeg || 0;
 
-                    st.on('mousemove' + ns + ' touchmove' + ns, (ev: any) => {
-                      const cur = st.getPointerPosition();
-                      if (!cur || !startPtsRef.current || !startPivotRef.current) return;
-                      const qImg = toImg(cur.x, cur.y);
-                      const a = Math.atan2(qImg.y - startPivotRef.current.y, qImg.x - startPivotRef.current.x);
-                      let deltaDeg = (a - dragStartAngleRef.current) * (180 / Math.PI);
+    st.on('mousemove' + ns + ' touchmove' + ns, (ev: any) => {
+      const cur = st.getPointerPosition();
+      if (!cur || !startPtsRef.current || !startPivotRef.current) return;
 
-                      if (ev?.evt?.altKey) deltaDeg *= 0.2; // rotazione fine
+      const qImg = toImg(cur.x, cur.y);
+      const a = Math.atan2(qImg.y - startPivotRef.current.y, qImg.x - startPivotRef.current.x);
 
-                      const raw = dragStartDegRef.current + deltaDeg;
-                      const nextDeg = ev?.evt?.shiftKey ? Math.round(raw / 15) * 15 : raw;
+      let deltaDeg = (a - dragStartAngleRef.current) * (180 / Math.PI);
+      if (ev?.evt?.altKey) deltaDeg *= 0.2;          // rotazione fine
 
-                      lastNextDegRef.current = nextDeg;
-                      setRoofRotDeg(nextDeg);
+      const raw = dragStartDegRef.current + deltaDeg;
+      const nextDeg = ev?.evt?.shiftKey ? Math.round(raw / 15) * 15 : raw;
 
-                      const rotated = rotatePolygon(startPtsRef.current, startPivotRef.current, nextDeg);
-                      updateRoof(r.id, { points: rotated });
-                    });
+      lastNextDegRef.current = nextDeg;
+      setRoofRotDeg(nextDeg);
 
-                    const end = () => {
-                      st.off(ns);
-                      const delta = lastNextDegRef.current - (dragStartDegRef.current || 0);
-                      const rawAz = startAzimuthRef.current + delta;
-                      const newAz = ((rawAz % 360) + 360) % 360;
-                      updateRoof(r.id, { azimuthDeg: newAz });
-                      setRoofRotDeg(0);
-                    };
-                    st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
-                  }}
-                >
-                  <KonvaCircle
-                    name="rotKnob"
-                    radius={HANDLE_SZ / 2}
-                    fill="#dbd9d9"
-                    stroke="#565656"
-                    strokeWidth={1}
-                    shadowColor="rgba(0,0,0,0.25)"
-                    shadowBlur={4}
-                    shadowOpacity={0.9}
-                    listening
-                  />
-                  {(() => {
-                    const scale = (HANDLE_SZ * 0.60) / ROT_ICON.vbW / 18;
-                    return (
-                      <KonvaGroup
-                        name="rotIcon"
-                        x={-5.5}
-                        y={-5.5}
-                        scaleX={scale}
-                        scaleY={scale}
-                        offsetX={ROT_ICON.vbW / 2}
-                        offsetY={ROT_ICON.vbH / 2}
-                        listening={false}
-                      >
-                        {ROT_ICON.paths.map((d, i) => (
-                          <KonvaPath key={i} data={d} fill="#545454" />
-                        ))}
-                      </KonvaGroup>
-                    );
-                  })()}
-                </KonvaGroup>
+      const rotated = rotatePolygon(startPtsRef.current, startPivotRef.current, nextDeg);
+      updateRoof(r.id, { points: rotated });
+    });
+
+    const end = () => {
+      st.off(ns);
+      const delta = lastNextDegRef.current - (dragStartDegRef.current || 0);
+      const rawAz = startAzimuthRef.current + delta;
+      const newAz = ((rawAz % 360) + 360) % 360;
+      updateRoof(r.id, { azimuthDeg: newAz });
+      setRoofRotDeg(0);
+    };
+    st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns + ' mouseleave' + ns, end);
+  }}
+>
+  {/* Cerchio bianco contenitore (dimensione costante visivamente grazie a HANDLE_SZ calcolato con toImgPx) */}
+  <KonvaCircle
+    name="rotKnob"
+    radius={HANDLE_SZ / 2}
+    fill="#ffffff"
+    stroke="#565656"
+    strokeWidth={0.5}
+    shadowColor="rgba(0,0,0,0.25)"
+    shadowBlur={4}
+    shadowOpacity={0.9}
+    listening
+  />
+
+{(() => {
+  // scala di "fit": l'icona occupa ~70% del diametro del cerchio
+  const FIT = 0.03; // prova 0.68–0.78 per ritocchi
+  const sx = (HANDLE_SZ * FIT) / ROT_ICON.vbW;
+  const sy = (HANDLE_SZ * FIT) / ROT_ICON.vbH;
+  const scale = Math.min(sx, sy);
+
+  return (
+    <KonvaGroup
+      name="rotIcon"
+      // niente x/y magici: centrata sul cerchio
+      scaleX={scale}
+      scaleY={scale}
+      offsetX={250}
+      offsetY={250}
+      listening={false}
+    >
+      {ROT_ICON.paths.map((d, i) => (
+        <KonvaPath key={i} data={d} fill="#545454" strokeEnabled={false} />
+      ))}
+    </KonvaGroup>
+  );
+})()}
+
+</KonvaGroup>
+
               </>
             )}
 
