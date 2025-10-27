@@ -67,7 +67,7 @@ export default function OverlayProgressStepper() {
   return (
     <div
       ref={barRef}
-      className="planner-topbar fixed left-0 right-0 top-0 z-40 border-b border-neutral-200 bg-white shadow-sm"
+      className="z-[200] planner-topbar fixed left-0 right-0 top-0  border-b border-neutral-200 bg-white shadow-sm"
       style={{ paddingLeft: 'var(--sb, 64px)' }}
     >
       <div className="flex h-12 w-full items-center gap-3 px-3">

@@ -36,6 +36,7 @@ import { history as plannerHistory } from '../state/history';
 import ProjectStatsBar from '../ui/ProjectStatsBar';
 import CanvasHotkeys from './CanvasHotekeys';
 import ModuleSprite from '../modules/ModuleSprite';
+import ScreenGrid from './ScreenGrid';
 
 
 
@@ -146,6 +147,21 @@ const setToolForHook = useCallback((t: string) => {
   const [selectedPanelInstId, setSelectedPanelInstId] = useState<string | undefined>(undefined);
   const deletePanel = usePlannerV2Store((s) => s.deletePanel);
   const SHOW_AREA_LABELS = false;
+
+  const [showUiGrid, setShowUiGrid] = useState(true);
+
+useEffect(() => {
+  const onKey = (e: KeyboardEvent) => {
+    if ((e.key === 'g' || e.key === 'G') &&
+        !(document.activeElement instanceof HTMLInputElement) &&
+        !(document.activeElement instanceof HTMLTextAreaElement)) {
+      setShowUiGrid(v => !v);
+    }
+  };
+  window.addEventListener('keydown', onKey, { capture: true });
+  return () => window.removeEventListener('keydown', onKey as any, { capture: true } as any);
+}, []);
+
 
   // --- ROTAZIONE MANUALE ---
 // const [rotateDeg, setRotateDeg] = useState(0);
@@ -520,8 +536,8 @@ const {
 
       
       
-
-      {img && size.w > 0 && size.h > 0 && (
+{img && size.w > 0 && size.h > 0 && (
+  <div className="relative" style={{ width: size.w, height: size.h }}>
         <Stage
           ref={stageRef}
           width={size.w}
@@ -752,6 +768,18 @@ onClick={(evt: any) => {
 </Layer>
 
         </Stage>
+<ScreenGrid
+  visible={showUiGrid}   // o true
+  step={36}
+  alpha={0.35}
+  rgb="38,38,38"
+  zIndex={100}
+  dashed
+  dash="2 4"            // oppure [6, 6]
+  strokeWidth={1}
+/>
+
+        </div>
       )}
 
       {/* Controller che emette il draft del rettangolo */}

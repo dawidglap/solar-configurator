@@ -25,7 +25,7 @@ import TopbarAddressSearch from './TopbarAddressSearch';
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-[6px] border border-neutral-700/70 bg-neutral-800 px-1 text-[10px] font-medium leading-none text-white/90 shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_1px_6px_rgba(0,0,0,0.4)]">
+    <span className="inline-flex h-5 min-w-[20px] z-[101] items-center justify-center rounded-[6px] border border-neutral-700/70 bg-neutral-800 px-1 text-[10px] font-medium leading-none text-white/90 shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_1px_6px_rgba(0,0,0,0.4)]">
       {children}
     </span>
   );
