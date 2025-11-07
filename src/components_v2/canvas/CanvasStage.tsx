@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer, Image as KonvaImage, Line, Rect , Group} from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Line, Rect , Group, Text} from 'react-konva';
 import { computeAutoLayoutRects } from '../modules/layout';
 import { isInReservedZone } from '../zones/utils';
 import { RotateCcw } from 'lucide-react';
@@ -753,23 +753,40 @@ onClick={(evt: any) => {
 
 
 {/* linee protezione neve */}
+{/* linee protezione neve + label lunghezza */}
 {snowGuards.map((sg) => {
+  const midX = (sg.p1.x + sg.p2.x) / 2;
+  const midY = (sg.p1.y + sg.p2.y) / 2;
   const isSel = sg.id === selectedSnowGuardId;
   return (
-    <Line
-      key={sg.id}
-      points={[sg.p1.x, sg.p1.y, sg.p2.x, sg.p2.y]}
-      stroke={isSel ? '#60a5fa' : '#38bdf8'}
-      strokeWidth={isSel ? 2 : 1}
-      lineCap="round"
-      lineJoin="round"
-      onClick={(e) => {
-        e.cancelBubble = true;            // non far passare il click al bg
-        setSelectedSnowGuard(sg.id);
-      }}
-    />
+    <>
+      <Line
+        key={sg.id}
+        points={[sg.p1.x, sg.p1.y, sg.p2.x, sg.p2.y]}
+        stroke={isSel ? '#60a5fa' : '#38bdf8'}
+        strokeWidth={isSel ? 2 : 1}
+        lineCap="round"
+        lineJoin="round"
+        onClick={(e) => {
+          e.cancelBubble = true;
+          setSelectedSnowGuard(sg.id);
+        }}
+      />
+      <Text
+        key={`${sg.id}-label`}
+        x={midX}
+        y={midY}
+        text={`${sg.lengthM?.toFixed(1)} m`}
+        fontSize={2}
+        fill="#fff"
+        offsetX={6}
+        offsetY={-2}
+        listening={false}
+      />
+    </>
   );
 })}
+
 
 
 {/* preview linea neve mentre disegni */}

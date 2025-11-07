@@ -10,7 +10,6 @@ type Props = {
   selectedPanelId?: string;
   onDelete?: (id: string) => void;
   onDuplicate?: (id: string) => void;
-  
 };
 
 /** Clipboard interna (ids dei pannelli copiati) */
@@ -20,6 +19,8 @@ let PANEL_CLIPBOARD: string[] = [];
  * Registra hotkeys per pannelli.
  * - Senza props: usa la selezione dallo store (multi-select).
  * - Con props: gestisce Delete / Duplica / Copy/Paste sul singolo `selectedPanelId`.
+ *
+ * In più: qui intercettiamo anche la S per il tool “snow guard” quando siamo nello step building.
  */
 export default function PanelHotkeys(props: Props) {
   // ====== Store (fallback / multi-select) ======
@@ -33,9 +34,10 @@ export default function PanelHotkeys(props: Props) {
   const deletePanelsBulk = usePlannerV2Store((s) => s.deletePanelsBulk);
   const duplicatePanelInStore = usePlannerV2Store((s) => s.duplicatePanel);
 
-  // guard su step/tool
+  // step/tool globali
   const step = usePlannerV2Store((s) => (s as any).step ?? (s as any).ui?.step);
   const tool = usePlannerV2Store((s) => (s as any).tool ?? (s as any).ui?.tool);
+  const setTool = usePlannerV2Store((s) => s.setTool);
 
   // mappa id -> panel (utile per verificare esistenza e roof)
   const panelById = useMemo(() => {
@@ -53,12 +55,24 @@ export default function PanelHotkeys(props: Props) {
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      // Limita alle condizioni operative (come prima)
-      if (step && step !== 'modules') return;
-      if (tool && tool !== 'select') return;
+      // 0) se stai scrivendo, esci
       if (isTextTarget(e.target)) return;
       if (props.disabled) return;
 
+      // 1) HOTKEY TOOL: S → snow guard (solo building)
+      if ((e.key === 's' || e.key === 'S') && step === 'building') {
+        e.preventDefault();
+        e.stopPropagation();
+        setTool('draw-snow-guard' as any);
+        return;
+      }
+
+      // da qui in poi è la logica pannelli che già avevi
+
+      // Limita alle condizioni operative della parte “pannelli”
+      // (la gestione pannelli la lasciamo solo in modules + tool select)
+      if (step && step !== 'modules') return;
+      if (tool && tool !== 'select') return;
 
       // ===== Modalità CONTROLLATA (singolo pannello via props) =====
       if (useControlled) {
@@ -71,10 +85,9 @@ export default function PanelHotkeys(props: Props) {
           return;
         }
 
-        // Paste → duplica il corrente (o quello copiato)
+        // Paste → duplica il corrente
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') {
           e.preventDefault();
-          // in modalità controllata non gestiamo multi-paste: duplichiamo il corrente
           props.onDuplicate!(id);
           return;
         }
@@ -86,7 +99,7 @@ export default function PanelHotkeys(props: Props) {
           return;
         }
 
-        // (opzionale) Cmd/Ctrl+D come alias di paste/duplicate
+        // Cmd/Ctrl+D → duplica
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
           e.preventDefault();
           props.onDuplicate!(id);
@@ -107,7 +120,7 @@ export default function PanelHotkeys(props: Props) {
         return;
       }
 
-      // Cmd/Ctrl + A → select all (stessa falda del primo selezionato; fallback: tutti)
+      // Cmd/Ctrl + A → select all
       if ((e.key === 'a' || e.key === 'A') && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
 
@@ -125,7 +138,7 @@ export default function PanelHotkeys(props: Props) {
         return;
       }
 
-      // Cmd/Ctrl + C → copia selezione corrente nella clipboard
+      // Cmd/Ctrl + C → copia
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
         if (!selectedIds?.length) return;
         e.preventDefault();
@@ -133,12 +146,11 @@ export default function PanelHotkeys(props: Props) {
         return;
       }
 
-      // Cmd/Ctrl + V → incolla = duplica elementi in clipboard con offset a cascata
+      // Cmd/Ctrl + V → incolla / duplica
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') {
         e.preventDefault();
         const toPaste = (PANEL_CLIPBOARD ?? []).filter((id) => panelById.has(id));
         if (!toPaste.length && selectedIds.length) {
-          // fallback: se non c'è nulla copiato, duplica la selezione corrente
           toPaste.push(...selectedIds);
         }
         if (!toPaste.length) return;
@@ -146,7 +158,6 @@ export default function PanelHotkeys(props: Props) {
         const newIds: string[] = [];
         let k = 0;
         for (const id of toPaste) {
-          // offset progressivo: 18px, 36px, 54px...
           const nid = duplicatePanelInStore(id, 18 * (k + 1));
           if (nid) newIds.push(nid);
           k++;
@@ -155,7 +166,7 @@ export default function PanelHotkeys(props: Props) {
         return;
       }
 
-      // DELETE / BACKSPACE → elimina selezione (multi o singolo)
+      // DELETE / BACKSPACE → elimina selezione
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (!selectedIds?.length) return;
         e.preventDefault();
@@ -170,7 +181,7 @@ export default function PanelHotkeys(props: Props) {
         return;
       }
 
-      // (opzionale) Cmd/Ctrl + D → duplica selezione (alias di incolla/duplica)
+      // Cmd/Ctrl + D → duplica selezione
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
         if (!selectedIds?.length) return;
         e.preventDefault();
@@ -189,16 +200,18 @@ export default function PanelHotkeys(props: Props) {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
-    // props (modalità controllata)
+    // props
+    props.disabled,
     useControlled,
     props.selectedPanelId,
     props.onDelete,
     props.onDuplicate,
-    // store (modalità multi-select)
+    // store
     panels,
     selectedIds,
     step,
     tool,
+    setTool,
     panelById,
     clearPanelSelection,
     setSelectedPanels,

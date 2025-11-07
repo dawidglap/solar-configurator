@@ -392,7 +392,7 @@ clearPanelsForRoof(selectedId);
 addPanelsForRoof(selectedId, instances);
 
 
-    addPanelsForRoof(selectedId, instances);
+    
 
     // spegni il raster dopo la conversione (come da brief)
     if (modules.showGrid) setModules({ showGrid: false });
