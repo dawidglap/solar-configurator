@@ -4,7 +4,9 @@ import { useEffect, useRef } from 'react';
 import { nanoid } from 'nanoid';
 import { usePlannerV2Store } from '@/components_v2/state/plannerV2Store';
 import type { Pt, PanelInstance } from '@/types/planner';
-import { overlapsReservedRect } from '../../zones/utils';
+
+import { overlapsReservedRect, overlapsSnowGuard } from '../../zones/utils';
+
 
 type ModRect = { cx: number; cy: number; wPx: number; hPx: number; angleDeg: number };
 
@@ -187,14 +189,31 @@ function rectsForSelection(poly: Pt[], basics: ReturnType<typeof gridBasics>): M
 
       const Cw = localToWorld({ x: cxL, y: cyL }, O, theta);
 
-      // Hindernisse
-      if (overlapsReservedRect(
-        { cx: Cw.x, cy: Cw.y, w: panelW, h: panelH, angleDeg },
-        roof.id,
-        1
-      )) continue;
+       // 1) Hindernisse / zone riservate
+      if (
+        overlapsReservedRect(
+          { cx: Cw.x, cy: Cw.y, w: panelW, h: panelH, angleDeg },
+          roof.id,
+          1
+        )
+      ) {
+        continue;
+      }
 
+      // 2) Schneefang / linea neve
+      if (
+        overlapsSnowGuard(
+          { cx: Cw.x, cy: Cw.y, wPx: panelW, hPx: panelH, angleDeg },
+          roof.id,
+          1      // spessore virtuale della linea neve in px
+        )
+      ) {
+        continue;
+      }
+
+      // se passa entrambi i filtri → lo teniamo
       res.push({ cx: Cw.x, cy: Cw.y, wPx: panelW, hPx: panelH, angleDeg });
+
     }
   }
   return res;

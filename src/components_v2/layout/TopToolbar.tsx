@@ -18,7 +18,9 @@ import { IoIosSave } from 'react-icons/io';
 
 // ⬇️ IMPORT FUNZIONI DALLA LOGICA ESISTENTE (ADEGUA PATH SE SERVE)
 import { computeAutoLayoutRects } from '../modules/layout';
-import { overlapsReservedRect } from '../zones/utils';
+
+import { overlapsReservedRect, overlapsSnowGuard } from '../zones/utils';
+
 import ProjectStatsBar from '../ui/ProjectStatsBar';
 import TopbarAddressSearch from './TopbarAddressSearch';
 
@@ -333,13 +335,44 @@ function ensureModulesPrereqsForF(): boolean {
     });
 
     // === filtro Hindernisse
-    const rects = rectsAll.filter(r =>
-      !overlapsReservedRect(
-        { cx: r.cx, cy: r.cy, w: r.wPx, h: r.hPx, angleDeg: r.angleDeg },
-        selectedId,
-        1 // epsilon px
-      )
-    );
+
+// === filtro: prima reserved, poi linee neve
+
+const rects = rectsAll.filter((r) => {
+  // formato per le zone riservate
+  const rectForReserved = {
+    cx: r.cx,
+    cy: r.cy,
+    w: r.wPx,
+    h: r.hPx,
+    angleDeg: r.angleDeg,
+  };
+
+  // formato per le linee neve
+  const rectForSnow = {
+    cx: r.cx,
+    cy: r.cy,
+    wPx: r.wPx,
+    hPx: r.hPx,
+    angleDeg: r.angleDeg,
+  };
+
+  // 1) se tocca una zona riservata → scarta
+  if (overlapsReservedRect(rectForReserved, selectedId, 1)) {
+    return false;
+  }
+
+  // 2) se tocca una linea neve → scarta
+  if (overlapsSnowGuard(rectForSnow, selectedId, 1)) {
+    return false;
+  }
+
+  return true;
+});
+
+
+
+
     if (!rects.length) return;
 
     // === crea pannelli reali
@@ -443,14 +476,21 @@ addPanelsForRoof(selectedId, instances);
         <div className="mx-1 h-6 w-px bg-neutral-600" />
 
         {/* 6) Schneefang (linea) — placeholder */}
-        <ActionBtn
-          onClick={() => {}}
-          Icon={LuSnowflake}
-          label=""
-          disabled
-          tooltipLabel="Schneefang (in arrivo)"
-          tooltipKeys={[]}
-        />
+     {/* Schneefang / Protezione neve */}
+<ActionBtn
+  active={tool === 'draw-snow-guard'}
+  onClick={() => {
+    if (canUseBuildingTools) {
+      setTool('draw-snow-guard' as any);
+    }
+  }}
+  Icon={LuSnowflake}
+  label=""
+  disabled={!canUseBuildingTools}
+  tooltipLabel="Schneefang / Protezione neve"
+  tooltipKeys={['S']}
+/>
+
 
         {/* Controls specifici moduli (sempre visibili; clic portarli in 'modules') */}
         {/* <div className="mx-1 h-6 w-px bg-neutral-200" />

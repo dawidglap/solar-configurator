@@ -3,11 +3,12 @@ import type { PlannerStep, Tool } from '@/types/planner';
 
 /** Matrice delle capacità: quali tool sono permessi in ogni step */
 export const ALLOWED_TOOLS: Record<PlannerStep, Readonly<Tool[]>> = {
-    building: ['select', 'draw-roof', 'draw-rect', 'draw-reserved'],
+    building: ['select', 'draw-roof', 'draw-rect', 'draw-reserved', 'draw-snow-guard'],
     modules: ['select', 'fill-area'],
     strings: ['select'],
     parts: ['select'],
 } as const;
+
 
 /** Tool di default per ogni step (quando entri nello step o devi resettare) */
 export const DEFAULT_TOOL: Record<PlannerStep, Tool> = {

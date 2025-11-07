@@ -5,7 +5,8 @@ import { usePlannerV2Store } from '../state/plannerV2Store';
 
 const EPS = 1e-9;
 
-// punto P sul segmento AB (con tolleranza)
+// ─────────────────────────────────────────────
+// helper punto-su-segmento
 function pointOnSegment(p: Pt, a: Pt, b: Pt, eps = EPS): boolean {
     const cross = (p.y - a.y) * (b.x - a.x) - (p.x - a.x) * (b.y - a.y);
     if (Math.abs(cross) > eps) return false;
@@ -16,19 +17,18 @@ function pointOnSegment(p: Pt, a: Pt, b: Pt, eps = EPS): boolean {
     return true;
 }
 
-// Ray casting inclusivo: true anche se pt sta su un lato/vertice
+// ray casting inclusivo
 export function pointInPolygon(pt: Pt, poly: Pt[]): boolean {
     let inside = false;
     const n = poly.length;
     if (n < 3) return false;
 
-    // 1) bordo/vertice = inside
+    // bordo = inside
     for (let i = 0, j = n - 1; i < n; j = i++) {
         const a = poly[j], b = poly[i];
         if (pointOnSegment(pt, a, b)) return true;
     }
 
-    // 2) odd-even ray casting
     for (let i = 0, j = n - 1; i < n; j = i++) {
         const xi = poly[i].x, yi = poly[i].y;
         const xj = poly[j].x, yj = poly[j].y;
@@ -50,7 +50,8 @@ export function isInReservedZone(pt: Pt, roofId: string): boolean {
     return false;
 }
 
-// --- NEW: geometria rettangolo ruotato ↔ poligoni riservati -----------------
+// ─────────────────────────────────────────────
+// rettangolo ruotato & intersezioni
 export type RotRect = { cx: number; cy: number; w: number; h: number; angleDeg: number };
 
 const D2R = Math.PI / 180;
@@ -77,7 +78,12 @@ function polyAABB(poly: Pt[]) {
 }
 
 function aabbOverlap(a: ReturnType<typeof polyAABB>, b: ReturnType<typeof polyAABB>, eps = 0) {
-    return !(a.maxX < b.minX - eps || a.minX > b.maxX + eps || a.maxY < b.minY - eps || a.minY > b.maxY + eps);
+    return !(
+        a.maxX < b.minX - eps ||
+        a.minX > b.maxX + eps ||
+        a.maxY < b.minY - eps ||
+        a.minY > b.maxY + eps
+    );
 }
 
 function segsIntersect(a1: Pt, a2: Pt, b1: Pt, b2: Pt) {
@@ -85,14 +91,17 @@ function segsIntersect(a1: Pt, a2: Pt, b1: Pt, b2: Pt) {
     const o1 = d(a1, a2, b1), o2 = d(a1, a2, b2), o3 = d(b1, b2, a1), o4 = d(b1, b2, a2);
     if ((o1 > 0 && o2 < 0 || o1 < 0 && o2 > 0) && (o3 > 0 && o4 < 0 || o3 < 0 && o4 > 0)) return true;
     // collinear touching
-    return pointOnSegment(b1, a1, a2) || pointOnSegment(b2, a1, a2) || pointOnSegment(a1, b1, b2) || pointOnSegment(a2, b1, b2);
+    return (
+        pointOnSegment(b1, a1, a2) ||
+        pointOnSegment(b2, a1, a2) ||
+        pointOnSegment(a1, b1, b2) ||
+        pointOnSegment(a2, b1, b2)
+    );
 }
 
 function polyIntersectsPoly(A: Pt[], B: Pt[]): boolean {
-    // 1) un vertice dentro all’altro
     if (A.some(p => pointInPolygon(p, B))) return true;
     if (B.some(p => pointInPolygon(p, A))) return true;
-    // 2) intersezione fra lati
     for (let i = 0; i < A.length; i++) {
         const a1 = A[i], a2 = A[(i + 1) % A.length];
         for (let j = 0; j < B.length; j++) {
@@ -107,22 +116,78 @@ function polyIntersectsPoly(A: Pt[], B: Pt[]): boolean {
 export function overlapsReservedRect(
     rect: RotRect,
     roofId: string,
-    epsilonPx: number = 1 // piccolo “buffer” per evitare falsi tangenti
+    epsilonPx: number = 1
 ): boolean {
     const zones = usePlannerV2Store.getState().zones;
     const zonesForRoof = zones.filter(z => z.roofId === roofId && z.type === 'riservata');
     if (!zonesForRoof.length) return false;
 
-    // rettangolo (leggermente “gonfiato”)
     const rr: RotRect = { ...rect, w: rect.w + epsilonPx * 2, h: rect.h + epsilonPx * 2 };
     const R = rectToPoly(rr);
     const aabbR = polyAABB(R);
 
     for (const z of zonesForRoof) {
         const aabbZ = polyAABB(z.points);
-        if (!aabbOverlap(aabbR, aabbZ, 0)) continue;          // quick reject
-        if (polyIntersectsPoly(R, z.points)) return true;     // test accurato
+        if (!aabbOverlap(aabbR, aabbZ, 0)) continue;
+        if (polyIntersectsPoly(R, z.points)) return true;
     }
+    return false;
+}
+
+/**
+ * come sopra ma con le barre neve.
+ * Accetta sia {w,h} che {wPx,hPx} (così va con TopToolbar).
+ */
+export function overlapsSnowGuard(
+    rect: { cx: number; cy: number; w?: number; h?: number; wPx?: number; hPx?: number; angleDeg: number },
+    roofId: string,
+    padPx = 6
+): boolean {
+    const { snowGuards } = usePlannerV2Store.getState();
+    const guards = snowGuards.filter(g => g.roofId === roofId);
+
+    console.log('[snowguard-check]', {
+        roofId,
+        guards: guards.map(g => ({ id: g.id, p1: g.p1, p2: g.p2 })),
+        rect,
+        padPx,
+    });
+
+    if (!guards.length) return false;
+
+    // normalizza w/h
+    const w = (rect.w ?? rect.wPx ?? 0) + padPx * 2;
+    const h = (rect.h ?? rect.hPx ?? 0) + padPx * 2;
+
+    const poly = rectToPoly({
+        cx: rect.cx,
+        cy: rect.cy,
+        w,
+        h,
+        angleDeg: rect.angleDeg,
+    });
+
+    // lati del pannello
+    const edges: [Pt, Pt][] = [
+        [poly[0], poly[1]],
+        [poly[1], poly[2]],
+        [poly[2], poly[3]],
+        [poly[3], poly[0]],
+    ];
+
+    for (const sg of guards) {
+        // 1) un estremo dentro al pannello → collisione
+        if (pointInPolygon(sg.p1, poly) || pointInPolygon(sg.p2, poly)) {
+            return true;
+        }
+        // 2) la linea taglia uno dei lati del pannello → collisione
+        for (const [a, b] of edges) {
+            if (segsIntersect(a, b, sg.p1, sg.p2)) {
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 
@@ -135,14 +200,11 @@ export function filterRectsOutsideZonesByGeometry(
     return rects.filter(r => !overlapsReservedRect({ cx: r.cx, cy: r.cy, w: r.w, h: r.h, angleDeg: r.angleDeg }, roofId, epsilonPx));
 }
 
-
-/* ──────────────────────────────
-   Helpers per “trasforma in moduli”
-   ────────────────────────────── */
+/** versione centro-based vecchia (se mai ti serve) */
+// export function filterRectsOutsideZones(rects: RectWorld[], roofId: string): RectWorld[] { ... }
 
 export type RectWorld = { cx: number; cy: number; w: number; h: number };
 
-/** Rimuove i moduli il cui centro cade in una zona riservata della falda. */
 export function filterRectsOutsideZones(rects: RectWorld[], roofId: string): RectWorld[] {
     return rects.filter(r => !isInReservedZone({ x: r.cx, y: r.cy }, roofId));
 }

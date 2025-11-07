@@ -25,6 +25,17 @@ export type {
     PanelSpec, ModulesConfig, PanelInstance
 } from '@/types/planner';
 
+// protezioni neve (linee)
+export type SnowGuard = {
+    id: string;
+    roofId: string;
+    p1: { x: number; y: number };
+    p2: { x: number; y: number };
+    lengthM?: number;
+    pricePerM?: number;
+};
+
+
 // ───────────────────────────────────────────────────────────
 // SLICES
 // ───────────────────────────────────────────────────────────
@@ -78,7 +89,6 @@ type PlannerV2State = {
 
     // Sonnendach rilevati
     detectedRoofs: DetectedRoof[];
-
     setDetectedRoofs: (arr: DetectedRoof[], meta?: { mppImage?: number; width?: number; height?: number }) => void;
     clearDetectedRoofs: () => void;
 
@@ -86,7 +96,16 @@ type PlannerV2State = {
     setRoofRotDeg: (deg: number) => void;
     setRoofPivotPx: (p?: { x: number; y: number }) => void;
     resetRoofAlign: () => void;
+
+    // 👇👇👇 AGGIUNGI QUESTO
+    snowGuards: SnowGuard[];
+    addSnowGuard: (sg: SnowGuard) => void;
+    updateSnowGuard: (id: string, patch: Partial<SnowGuard>) => void;
+    deleteSnowGuard: (id: string) => void;
+    selectedSnowGuardId?: string;
+    setSelectedSnowGuard: (id?: string) => void;
 } & UISlice & LayersSlice & PanelsSlice & ZonesSlice;
+
 
 export const usePlannerV2Store = create<PlannerV2State>()(
     persist(
@@ -125,6 +144,10 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                     zones: [],
                     panels: [],
                     detectedRoofs: [],
+
+                    // 👇 aggiungi questi
+                    snowGuards: [],
+                    selectedSnowGuardId: undefined,
 
                     // (opzionale) reset leggeri della griglia
                     modules: {
@@ -217,6 +240,46 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             resetRoofAlign: () =>
                 set(() => ({ roofAlign: { rotDeg: 0, pivotPx: undefined } })),
 
+            // ── Snow guards (protezioni neve)
+            snowGuards: [],
+
+            addSnowGuard: (sg: SnowGuard) =>
+                set((state) => {
+                    const next = {
+                        ...state,
+                        snowGuards: [...state.snowGuards, sg],
+                    };
+                    history.push(next);
+                    return next;
+                }),
+
+            updateSnowGuard: (id: string, patch: Partial<SnowGuard>) =>
+                set((state) => {
+                    const next = {
+                        ...state,
+                        snowGuards: state.snowGuards.map((s) =>
+                            s.id === id ? { ...s, ...patch } : s
+                        ),
+                    };
+                    history.push(next);
+                    return next;
+                }),
+
+            deleteSnowGuard: (id: string) =>
+                set((state) => {
+                    const next = {
+                        ...state,
+                        snowGuards: state.snowGuards.filter((s) => s.id !== id),
+                    };
+                    history.push(next);
+                    return next;
+                }),
+
+            selectedSnowGuardId: undefined,
+            setSelectedSnowGuard: (id) => set({ selectedSnowGuardId: id }),
+
+
+
 
             // ── UI slice
             ...createUiSlice(set, get, api),
@@ -252,6 +315,9 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 selectedZoneId: s.selectedZoneId, // <- ZonesSlice
                 // s.ui non persistito
                 roofAlign: s.roofAlign,
+                snowGuards: s.snowGuards,
+                selectedSnowGuardId: s.selectedSnowGuardId,
+
 
             }),
 
@@ -266,6 +332,12 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                     const exists = persisted.zones.some((z: any) => z.id === persisted.selectedZoneId);
                     if (!exists) persisted.selectedZoneId = undefined;
                 }
+
+                // ensure snowGuards
+                if (!Array.isArray(persisted.snowGuards)) {
+                    persisted.snowGuards = [];
+                }
+
 
                 if (!persisted) return persisted;
 

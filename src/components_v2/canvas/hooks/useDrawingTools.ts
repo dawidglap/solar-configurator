@@ -39,13 +39,13 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     select: (id?: string) => void;
     toImgCoords: (stageX: number, stageY: number) => Pt;
     onZoneCommit?: (poly4: Pt[]) => void; // per Hindernis
+    onSnowGuardCommit?: (p1: Pt, p2: Pt) => void; // 👈 aggiungi questa
     snap?: SnapOptions;
-    // per tornare allo strumento di selezione al commit
     setTool: (t: Tool) => void;
 }) {
     const {
         tool, layers, addRoof, select, toImgCoords,
-        onZoneCommit, snap, setTool
+        onZoneCommit, onSnowGuardCommit, snap, setTool
     } = args;
 
     // opzioni snap
@@ -56,6 +56,8 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     const [drawingPoly, setDrawingPoly] = React.useState<Pt[] | null>(null);
     const [rectDraft, setRectDraft] = React.useState<Pt[] | null>(null); // [A,B] poi C al commit
     const [mouseImg, setMouseImg] = React.useState<Pt | null>(null);
+    const [snowDraft, setSnowDraft] = React.useState<Pt[] | null>(null);
+
 
     // ——— stack redo locali (solo durante il disegno) ———
     const polyRedoRef = React.useRef<Pt[]>([]);
@@ -177,6 +179,26 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         if (!pos) return;
         const p = toImgCoords(pos.x, pos.y);
 
+        // ── Protezione neve: 2 click → linea
+        if (tool === 'draw-snow-guard') {
+            // primo click
+            if (!snowDraft || snowDraft.length === 0) {
+                setSnowDraft([p]);
+                return;
+            }
+
+            // secondo click → commit
+            if (snowDraft.length === 1) {
+                const p1 = snowDraft[0];
+                const p2 = p;
+                onSnowGuardCommit?.(p1, p2);
+                setSnowDraft(null);
+                setTool('select'); // come gli altri tool di disegno
+                return;
+            }
+        }
+
+
         // ── Poligono tetto libero (con SNAP al click)
         if (tool === 'draw-roof') {
             if (!drawingPoly || drawingPoly.length === 0) {
@@ -254,6 +276,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         toImgCoords,
         drawingPoly,
         rectDraft,
+        snowDraft,
         layers,
         addRoof,
         select,
@@ -263,6 +286,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         SNAP_TOL_DEG,
         addDraftPoint,
         setTool,
+        onSnowGuardCommit,
     ]);
 
     // —— DOPPIO click → chiusura poligono
@@ -350,5 +374,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         onStageMouseMove,
         onStageClick,
         onStageDblClick,
+        snowDraft,
     };
 }

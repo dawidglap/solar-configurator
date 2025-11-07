@@ -13,7 +13,9 @@ export type Tool =
     | 'draw-roof'
     | 'draw-reserved'
     | 'draw-rect'
-    | 'fill-area'; // ⬅️ NEW
+    | 'fill-area' // ⬅️ NEW
+    | 'draw-snow-guard';
+
 
 
 export type Pt = { x: number; y: number };

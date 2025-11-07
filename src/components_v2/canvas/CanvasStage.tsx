@@ -110,6 +110,14 @@ export default function CanvasStage() {
   const modules = usePlannerV2Store((s) => s.modules);
   const duplicatePanel = usePlannerV2Store((s) => s.duplicatePanel);
   const addZone = usePlannerV2Store((s) => s.addZone);
+  const addSnowGuard = usePlannerV2Store((s) => s.addSnowGuard);
+  const snowGuards = usePlannerV2Store(s => s.snowGuards);
+const selectedSnowGuardId = usePlannerV2Store(s => s.selectedSnowGuardId);
+const setSelectedSnowGuard = usePlannerV2Store(s => s.setSelectedSnowGuard);
+const deleteSnowGuard = usePlannerV2Store(s => s.deleteSnowGuard);
+
+
+
   const step = usePlannerV2Store((s) => s.step);
   const selPanel = usePlannerV2Store((s) => s.getSelectedPanel());
   const gridMods = usePlannerV2Store((s) => s.modules);
@@ -272,6 +280,19 @@ useEffect(() => {
 
     // ---------- DELETE con PRIORITÀ ----------
     if (key === 'Delete' || key === 'Backspace') {
+
+          // 0) snow guard selezionata → elimina
+    if (st.selectedSnowGuardId) {
+      const id = st.selectedSnowGuardId;
+      plannerHistory.push('delete snow guard');
+      st.deleteSnowGuard?.(id);
+      st.setSelectedSnowGuard?.(undefined);
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation?.();
+      return;
+    }
+
 
       // 1) ZONA selezionata → elimina SOLO la zona (con guardie)
       if (st.selectedZoneId) {
@@ -451,9 +472,10 @@ const toImgCoords = useCallback(
 
 
   // abilita i tool di disegno solo in building
-  const drawingEnabled =
-    step === 'building' &&
-    (tool === 'draw-roof' || tool === 'draw-rect' || tool === 'draw-reserved');
+ const drawingEnabled =
+  step === 'building' &&
+  (tool === 'draw-roof' || tool === 'draw-rect' || tool === 'draw-reserved' || tool === 'draw-snow-guard');
+
 
   // hook disegno tetto/zone (solo building)
 const {
@@ -463,24 +485,45 @@ const {
   onStageMouseMove,
   onStageClick,
   onStageDblClick,
+  snowDraft,
 } = useDrawingTools({
   tool: drawingEnabled ? tool : 'select',
   layers,
   addRoof,
   select,
   toImgCoords,
-    onZoneCommit: (poly4: Pt[]) => {
-      if (!selectedId) return;
-      plannerHistory.push('add reserved zone'); 
-      addZone({ id: nanoid(), roofId: selectedId, type: 'riservata', points: poly4 });
-      selectZone(undefined); 
-    },
-     snap: tool === 'draw-reserved'
-    ? { tolDeg: 3, closeRadius: 4 }   // was { tolDeg: 12, closeRadius: 12 }
-    : { tolDeg: 5, closeRadius: 5 }, // also milder for roofs/rects
-  setTool: setToolForHook,
+  onZoneCommit: (poly4: Pt[]) => {
+    if (!selectedId) return;
+    plannerHistory.push('add reserved zone'); 
+    addZone({ id: nanoid(), roofId: selectedId, type: 'riservata', points: poly4 });
+    selectZone(undefined); 
+  },
+  // 👇👇👇 NUOVO
+  onSnowGuardCommit: (p1: Pt, p2: Pt) => {
+    if (!selectedId) return;
+    const mpp = snap.mppImage;
+    if (!mpp) return;
 
-  });
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const lenPx = Math.hypot(dx, dy);
+    const lenM = lenPx * mpp;
+
+    addSnowGuard({
+      id: nanoid(),
+      roofId: selectedId,
+      p1,
+      p2,
+      lengthM: Number(lenM.toFixed(2)),
+      pricePerM: 10,
+    });
+  },
+  snap: tool === 'draw-reserved'
+    ? { tolDeg: 3, closeRadius: 4 }
+    : { tolDeg: 5, closeRadius: 5 },
+  setTool: setToolForHook,
+});
+
 
   // stile tetti
   const stroke = '#fff';
@@ -707,6 +750,41 @@ onClick={(evt: any) => {
     />
   ))}
 </Group>
+
+
+{/* linee protezione neve */}
+{snowGuards.map((sg) => {
+  const isSel = sg.id === selectedSnowGuardId;
+  return (
+    <Line
+      key={sg.id}
+      points={[sg.p1.x, sg.p1.y, sg.p2.x, sg.p2.y]}
+      stroke={isSel ? '#60a5fa' : '#38bdf8'}
+      strokeWidth={isSel ? 2 : 1}
+      lineCap="round"
+      lineJoin="round"
+      onClick={(e) => {
+        e.cancelBubble = true;            // non far passare il click al bg
+        setSelectedSnowGuard(sg.id);
+      }}
+    />
+  );
+})}
+
+
+{/* preview linea neve mentre disegni */}
+{tool === 'draw-snow-guard' && snowDraft && snowDraft.length === 1 && mouseImg && (
+  <Line
+    points={[snowDraft[0].x, snowDraft[0].y, mouseImg.x, mouseImg.y]}
+    stroke="#38bdf8"
+    strokeWidth={1}
+    lineCap="round"
+    listening={false}
+    dash={[4, 4]}
+  />
+)}
+
+
 
 {/* Draft visivo per fill-area */}
 {tool === 'fill-area' && fillDraft && (
