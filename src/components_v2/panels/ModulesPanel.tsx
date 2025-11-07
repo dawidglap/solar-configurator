@@ -235,7 +235,7 @@ const roofAreaM2Corrected = React.useCallback((pts: Pt[] | undefined, mpp?: numb
 
 
 {/* Righe (monolinea) */}
-<ul className="divide-y divide-neutral-800">
+<ul className="divide-y divide-neutral-500">
 
   {layers.map((l, i) => {
     const roofId = l.id;
@@ -276,8 +276,8 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
       <li key={roofId}>
 <div
   className={[
-    'grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-6',
-    active ? 'bg-neutral-800 text-white' : 'hover:bg-neutral-900/60 text-neutral-100'
+    'grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-8',
+    active ? 'bg-slate-900 text-white' : 'hover:bg-neutral-900/60 text-neutral-100'
   ].join(' ')}
 >
 
@@ -286,7 +286,7 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
             onClick={() => select(roofId)}
             title={l.name ?? `D${i + 1}`}
             aria-label={`Ebene auswählen: ${l.name ?? `D${i + 1}`}`}
-            className="text-left font-semibold"
+            className="text-left font-semibold cursor-pointer"
           >
             {`D${i + 1}`}
           </button>
