@@ -940,6 +940,7 @@ onClick={(evt: any) => {
   imgW={img?.naturalWidth ?? 0}
   imgH={img?.naturalHeight ?? 0}
   rotateDeg={rotateDeg}
+      canToggleShape={step !== 'modules'}
 />
 {/* ORIENTATION HUD — STEALTH (improved) */}
 <div className="fixed right-3 bottom-6 z-[600] group pointer-events-none">

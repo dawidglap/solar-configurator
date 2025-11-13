@@ -14,10 +14,11 @@ export default function RoofHudOverlay({
   onToggleShape,
   mpp,
   edgeColor,
-  // ⬇️ nuovi: dimensioni immagine e rotazione del contenuto Konva
+  // ⬇️ dimensioni immagine e rotazione del contenuto Konva
   imgW,
   imgH,
   rotateDeg = 0,
+  canToggleShape = true,
 }: {
   selectedRoof: Roof;
   view: { scale?: number; fitScale?: number; offsetX?: number; offsetY?: number };
@@ -28,6 +29,7 @@ export default function RoofHudOverlay({
   imgW: number;
   imgH: number;
   rotateDeg?: number;
+  canToggleShape?: boolean;
 }) {
   if (!selectedRoof) return null;
 
@@ -51,14 +53,16 @@ export default function RoofHudOverlay({
   return (
     <>
       {/* Toggle modalità forma */}
-      <button
-        onClick={onToggleShape}
-        className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-200 bg-white/90 px-2 py-0.5 text-[11px] shadow hover:bg-white"
-        style={{ left, top }}
-        title="Formmodus umschalten"
-      >
-        {shapeMode === 'normal' ? 'Normal' : 'Trapez'}
-      </button>
+      {canToggleShape && (
+        <button
+          onClick={onToggleShape}
+          className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-200 bg-white/90 px-2 py-0.5 text-[11px] shadow hover:bg-white"
+          style={{ left, top }}
+          title="Formmodus umschalten"
+        >
+          {shapeMode === 'normal' ? 'Normal' : 'Trapez'}
+        </button>
+      )}
 
       {/* Etichette lunghezze lati (corrette per inclinazione e allineate alla rotazione) */}
       {mpp && imgW > 0 && imgH > 0 && (
