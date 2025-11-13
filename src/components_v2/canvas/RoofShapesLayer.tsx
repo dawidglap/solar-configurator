@@ -217,6 +217,9 @@ export default function RoofShapesLayer({
   const removeRoof  = usePlannerV2Store(s => s.removeRoof);
   const step = usePlannerV2Store(s => s.step);
   const roofsLocked = step === 'modules';
+    const tool = usePlannerV2Store(s => s.tool);
+  const setTool = usePlannerV2Store(s => s.setTool);
+
 
 
 
@@ -236,12 +239,12 @@ export default function RoofShapesLayer({
   const moveStartPtrImgRef = useRef<Pt | null>(null);
   const moveStartPtsRef    = useRef<Pt[] | null>(null);
 
-  // === Multi-selezione
   const [groupSel, setGroupSel] = useState<string[]>([]);
 
   // modalità "Canva": drag di gruppo quando nessuna falda è selezionata
-  const tool = usePlannerV2Store(s => s.tool);
+  
   const [hoverAll, setHoverAll] = useState(false);
+
 
   const hasPrimarySelection = useMemo(
     () => !!selectedId && layers.some(l => l.id === selectedId),
@@ -368,12 +371,15 @@ const HANDLE_SZ       = toImgPx(HANDLE_SIZE_S);
         height={imgH}
         fill="rgba(0,0,0,0)"
         listening
-        onClick={() => {
-          if (tool !== 'select') return;
+               onClick={() => {
+          // ogni click fuori dalle falde → torna allo strumento "select" / "Auswählen"
+          setTool('select' as any);
           setGroupSel([]);
           onSelect(undefined);
           setHoverAll(false);
         }}
+
+
       />
 
       {layers.map(r => {

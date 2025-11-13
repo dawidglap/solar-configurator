@@ -409,9 +409,10 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
     
 <span>
   {azShort != null
-    ? `${toCard8((180 - azShort + 360) % 360)} ${azShort}°`
+    ? `${toCard8(azShort)} ${azShort}°`
     : '—'}
 </span>
+
 
   )}
 </div>
