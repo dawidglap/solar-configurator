@@ -497,24 +497,31 @@ const HANDLE_SZ       = toImgPx(HANDLE_SIZE_S);
               lineJoin="round"
               lineCap="round"
               fill={fill}
-              onClick={(e) => {
-                if (roofsLocked) return;  
-                const withShift = !!(e.evt && e.evt.shiftKey);
-                if (withShift) {
-                  setGroupSel((prev) => {
-                    let base = prev;
-                    if (prev.length === 0) {
-                      if (selectedId && selectedId !== r.id) base = [selectedId];
-                      else base = [];
-                    }
-                    if (base.includes(r.id)) return base.filter((x) => x !== r.id);
-                    return [...base, r.id];
-                  });
-                  return;
-                }
-                setGroupSel([]);
-                onSelect(r.id);
-              }}
+             onClick={(e) => {
+  // in modalità modules: NIENTE multi-select, ma devo comunque poter selezionare la falda
+  if (roofsLocked) {
+    setGroupSel([]);
+    onSelect(r.id);
+    return;
+  }
+
+  const withShift = !!(e.evt && e.evt.shiftKey);
+  if (withShift) {
+    setGroupSel((prev) => {
+      let base = prev;
+      if (prev.length === 0) {
+        if (selectedId && selectedId !== r.id) base = [selectedId];
+        else base = [];
+      }
+      if (base.includes(r.id)) return base.filter((x) => x !== r.id);
+      return [...base, r.id];
+    });
+    return;
+  }
+  setGroupSel([]);
+  onSelect(r.id);
+}}
+
               stroke={strokeColor}
               strokeWidth={strokeW}
               shadowOpacity={shadowOp}

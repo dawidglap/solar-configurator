@@ -1,16 +1,11 @@
 // src/components_v2/modules/layout.ts
+
 export type Pt = { x: number; y: number };
 
-const EPS = 0.5; // tolleranza in px per considerare "sul bordo" come dentro
+const EPS = 0.5;
 const deg2rad = (d: number) => (d * Math.PI) / 180;
 
-function signedArea(poly: Pt[]) {
-    let a = 0;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-        a += (poly[j].x + poly[i].x) * (poly[j].y - poly[i].y);
-    }
-    return a / 2;
-}
+/* ------------------ utility base ------------------ */
 function centroid(poly: Pt[]) {
     let x = 0, y = 0;
     for (const p of poly) { x += p.x; y += p.y; }
@@ -25,40 +20,26 @@ function rot(p: Pt, theta: number): Pt {
 }
 function worldToLocal(p: Pt, O: Pt, theta: number): Pt { return rot(sub(p, O), -theta); }
 function localToWorld(p: Pt, O: Pt, theta: number): Pt { return add(rot(p, theta), O); }
-function cross(a: Pt, b: Pt) { return a.x * b.y - a.y * b.x; }
 
-function pointInPoly(p: Pt, poly: Pt[]) {
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-        const xi = poly[i].x, yi = poly[i].y;
-        const xj = poly[j].x, yj = poly[j].y;
-        const inter = yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi + 1e-9) + xi;
-        if (inter) inside = !inside;
-    }
-    return inside;
-}
-
-// ── Inclusivo con tolleranza (bordo = dentro)
-function pointOnSegment(p: Pt, a: Pt, b: Pt, eps = EPS): boolean {
-    const crossV = (p.y - a.y) * (b.x - a.x) - (p.x - a.x) * (b.y - a.y);
-    if (Math.abs(crossV) > eps) return false;
-    const dot = (p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y);
-    if (dot < -eps) return false;
-    const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
-    if (dot - len2 > eps) return false;
-    return true;
-}
+/* ------------------ point in poly inclusivo ------------------ */
 function pointInPolyInclusive(pt: Pt, poly: Pt[]): boolean {
     const n = poly.length;
     if (n < 3) return false;
 
-    // bordo/vertice = inside
+    // bordo
     for (let i = 0, j = n - 1; i < n; j = i++) {
         const a = poly[j], b = poly[i];
-        if (pointOnSegment(pt, a, b)) return true;
+        const crossV = (pt.y - a.y) * (b.x - a.x) - (pt.x - a.x) * (b.y - a.y);
+        if (Math.abs(crossV) < EPS) {
+            const dot = (pt.x - a.x) * (b.x - a.x) + (pt.y - a.y) * (b.y - a.y);
+            if (dot >= -EPS) {
+                const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+                if (dot <= len2 + EPS) return true;
+            }
+        }
     }
 
-    // odd-even classico con piccola tolleranza
+    // ray casting
     let inside = false;
     for (let i = 0, j = n - 1; i < n; j = i++) {
         const xi = poly[i].x, yi = poly[i].y;
@@ -72,86 +53,67 @@ function pointInPolyInclusive(pt: Pt, poly: Pt[]): boolean {
     return inside;
 }
 
-/** Offset interno per poligoni **convessi**. Se degenerato → null. */
-function insetConvexPolygon(poly: Pt[], inset: number): Pt[] | null {
-    const n = poly.length;
-    if (n < 3 || inset <= 0) return poly.slice();
-
-    const area = signedArea(poly);
-    const inwardRight = area > 0;
-
-    const shiftedP: Pt[] = new Array(n);
-    const dir: Pt[] = new Array(n);
-
-    for (let i = 0; i < n; i++) {
-        const p0 = poly[i];
-        const p1 = poly[(i + 1) % n];
-        const d = { x: p1.x - p0.x, y: p1.y - p0.y };
-        const L = Math.hypot(d.x, d.y) || 1;
-        const nx = inwardRight ? d.y / L : -d.y / L;
-        const ny = inwardRight ? -d.x / L : d.x / L;
-        dir[i] = d;
-        shiftedP[i] = { x: p0.x + nx * inset, y: p0.y + ny * inset };
+/* ------------------ trova segmenti orizzontali a quota y ------------------ */
+/** Ritorna una lista di [minX,maxX] (in locale) ordinata per minX. */
+function horizontalSegments(polyLocal: Pt[], y: number): Array<{ minX: number; maxX: number }> {
+    const xs: number[] = [];
+    const n = polyLocal.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+        const a = polyLocal[j], b = polyLocal[i];
+        // consideriamo solo gli edge che attraversano y
+        const minY = Math.min(a.y, b.y);
+        const maxY = Math.max(a.y, b.y);
+        if (y < minY - 1e-6 || y > maxY + 1e-6) continue;
+        if (Math.abs(a.y - b.y) < 1e-6) continue; // edge orizzontale → lo saltiamo per semplicità
+        const t = (y - a.y) / (b.y - a.y);
+        const x = a.x + t * (b.x - a.x);
+        xs.push(x);
     }
-
-    const out: Pt[] = [];
-    for (let i = 0; i < n; i++) {
-        const j = (i + 1) % n;
-        const p = shiftedP[i], r = dir[i];
-        const q = shiftedP[j], s = dir[j];
-        const rxs = cross(r, s);
-        if (Math.abs(rxs) < 1e-6) return null;
-        const t = cross({ x: q.x - p.x, y: q.y - p.y }, s) / rxs;
-        out.push({ x: p.x + r.x * t, y: p.y + r.y * t });
+    xs.sort((a, b) => a - b);
+    const segs: Array<{ minX: number; maxX: number }> = [];
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+        segs.push({ minX: xs[i], maxX: xs[i + 1] });
     }
-    return out;
+    return segs;
 }
 
-/** Angolo dell’edge più lungo (rad) nel mondo. */
-function longestEdgeAngle(poly: Pt[]) {
-    let bestLen = -1, bestTheta = 0;
-    for (let i = 0; i < poly.length; i++) {
-        const a = poly[i], b = poly[(i + 1) % poly.length];
-        const vx = b.x - a.x, vy = b.y - a.y;
-        const len = Math.hypot(vx, vy);
-        if (len > bestLen) { bestLen = len; bestTheta = Math.atan2(vy, vx); }
-    }
-    return bestTheta;
-}
-
+/* ------------------ tipi export ------------------ */
 export type AutoRect = { cx: number; cy: number; wPx: number; hPx: number; angleDeg: number };
-
+type Anchor = 'start' | 'center' | 'end';
 const normPhase = (p: number) => {
     if (!isFinite(p)) return 0;
     let r = p % 1;
     if (r < 0) r += 1;
     return r;
 };
-type Anchor = 'start' | 'center' | 'end';
 
-
-
-/** Calcola i rettangoli modulo “auto-layout” (centro+size in px, angolo in °). */
+/* ------------------ funzione principale ------------------ */
 export function computeAutoLayoutRects(args: {
     polygon: Pt[];
     mppImage: number;
-    azimuthDeg?: number;                       // se assente → usa edge più lungo
+    azimuthDeg?: number;                       // se assente → usa edge più lungo / più dritto
     orientation: 'portrait' | 'landscape';
     panelSizeM: { w: number; h: number };
     spacingM: number;
     marginM: number;
-    /** Fase come frazione della cella (0..1). */
     phaseX?: number;
     phaseY?: number;
-    /** Ancoraggio griglia rispetto alla bbox del clip: default 'start' (bordo min). */
-    anchorX?: Anchor; // 'start' | 'center' | 'end'
-    anchorY?: Anchor; // 'start' | 'center' | 'end'
-    /** FRAZIONE di copertura lungo Y (righe): 0<..<=1  es. 0.5=mezzo tetto */
-    coverageRatio?: number;                 // 👈👈 NUOVO (default 1)
+    anchorX?: Anchor;
+    anchorY?: Anchor;
+    coverageRatio?: number;
 }): AutoRect[] {
     const {
-        polygon, mppImage, azimuthDeg, orientation, panelSizeM, spacingM, marginM,
-        phaseX = 0, phaseY = 0, anchorX = 'start', anchorY = 'start',
+        polygon,
+        mppImage,
+        azimuthDeg,
+        orientation,
+        panelSizeM,
+        spacingM,
+        marginM,
+        phaseX = 0,
+        phaseY = 0,
+        anchorX = 'start',
+        anchorY = 'start',
         coverageRatio = 1,
     } = args;
 
@@ -159,97 +121,174 @@ export function computeAutoLayoutRects(args: {
 
     // m → px
     const px = (m: number) => m / mppImage;
-    const wPx = px(orientation === 'portrait' ? panelSizeM.w : panelSizeM.h);
-    const hPx = px(orientation === 'portrait' ? panelSizeM.h : panelSizeM.w);
+    const panelW = px(orientation === 'portrait' ? panelSizeM.w : panelSizeM.h);
+    const panelH = px(orientation === 'portrait' ? panelSizeM.h : panelSizeM.w);
     const gap = px(spacingM);
-    const marginPx = Math.max(0, px(marginM));
+    const marginPx = Math.max(0, px(marginM));      // randabstand in px
 
-    const theta = typeof azimuthDeg === 'number' ? deg2rad(azimuthDeg) : longestEdgeAngle(polygon);
+    /* ---------- orientamento della falda (versione "intelligente") ---------- */
+    let theta: number;
+    if (typeof azimuthDeg === 'number') {
+        theta = deg2rad(azimuthDeg);
+    } else {
+        // raccogli i lati significativi
+        type EdgeInfo = { len: number; angle: number };
+        const edges: EdgeInfo[] = [];
+        for (let i = 0; i < polygon.length; i++) {
+            const a = polygon[i];
+            const b = polygon[(i + 1) % polygon.length];
+            const vx = b.x - a.x;
+            const vy = b.y - a.y;
+            const len = Math.hypot(vx, vy);
+            if (len < 2) continue; // scarta segmenti molto piccoli
+            const ang = Math.atan2(vy, vx); // rad
+            edges.push({ len, angle: ang });
+        }
+
+        if (!edges.length) {
+            theta = 0;
+        } else {
+            // lato più lungo in assoluto
+            const longest = edges.reduce((acc, e) => (e.len > acc.len ? e : acc), edges[0]);
+            const longestLen = longest.len;
+
+            // cerchiamo lati quasi orizzontali o quasi verticali
+            const AXIS_TOL = 10 * Math.PI / 180; // ±10°
+            const axisCandidates = edges.filter((e) => {
+                const angAbs = Math.abs(e.angle);
+                const ang90 = Math.abs(Math.PI / 2 - angAbs);
+                const isHoriz = angAbs < AXIS_TOL || Math.abs(Math.PI - angAbs) < AXIS_TOL;
+                const isVert = ang90 < AXIS_TOL;
+                return isHoriz || isVert;
+            });
+
+            const MIN_RATIO = 0.75; // almeno il 75% del più lungo
+            let chosen: EdgeInfo | null = null;
+            if (axisCandidates.length) {
+                const bestAxis = axisCandidates.reduce(
+                    (acc, e) => (e.len > acc.len ? e : acc),
+                    axisCandidates[0]
+                );
+                if (bestAxis.len >= longestLen * MIN_RATIO) {
+                    chosen = bestAxis;
+                }
+            }
+
+            theta = (chosen ?? longest).angle;
+            // normalizza a [0, π)
+            if (theta < 0) theta += Math.PI;
+        }
+    }
     const angleDeg = (theta * 180) / Math.PI;
     const O = centroid(polygon);
 
-    // locale ruotato
-    const polyLocal = polygon.map(p => worldToLocal(p, O, theta));
+    // poligono in locale
+    const polyLocal = polygon.map((p) => worldToLocal(p, O, theta));
 
-    // prova a insettare; se fallisce, useremo la bbox con shrink
-    const insetLocal = insetConvexPolygon(polyLocal, marginPx);
-    const useInset = !!insetLocal;                    // true se inset riuscito
-    const clipLocal = insetLocal ?? polyLocal;
-
-
-    // bbox locale
-    // bbox locale
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of clipLocal) {
-        if (p.x < minX) minX = p.x;
+    // bbox locale (serve solo per Y)
+    let minY = Infinity, maxY = -Infinity;
+    for (const p of polyLocal) {
         if (p.y < minY) minY = p.y;
-        if (p.x > maxX) maxX = p.x;
         if (p.y > maxY) maxY = p.y;
     }
-    if (!isFinite(minX)) return [];
+    if (!isFinite(minY)) return [];
 
-    // ⬇️ FALLBACK: se l'inset non è riuscito, applichiamo il margine alla bbox
-    if (!useInset && marginPx > 0) {
-        minX += marginPx;
-        minY += marginPx;
-        maxX -= marginPx;
-        maxY -= marginPx;
-        if (maxX <= minX || maxY <= minY) return [];
+    // calcolo delle righe possibili (in alto → in basso)
+    const cellW = panelW + gap;
+    const cellH = panelH + gap;
+
+    // partiamo da minY + marginPx e finiamo a maxY - marginPx
+    const rowsY: number[] = [];
+    for (let y = minY + marginPx; y + panelH <= maxY - marginPx + 1e-6; y += cellH) {
+        rowsY.push(y);
     }
 
-
-    const cellW = wPx + gap;
-    const cellH = hPx + gap;
-    const spanX = maxX - minX;
-    const spanY = maxY - minY;
-
-    // stima max colonne/righe per anchor
-    const maxCols = Math.max(0, Math.floor((spanX - wPx + 1e-6) / cellW) + 1);
-    const maxRows = Math.max(0, Math.floor((spanY - hPx + 1e-6) / cellH) + 1);
-
-    // spazio residuo
-    const usedW = maxCols > 0 ? (maxCols * wPx + (maxCols - 1) * gap) : 0;
-    const usedH = maxRows > 0 ? (maxRows * hPx + (maxRows - 1) * gap) : 0;
-    const remX = Math.max(0, spanX - usedW);
-    const remY = Math.max(0, spanY - usedH);
-
-    // ancoraggio
-    const anchorOffsetX = anchorX === 'end' ? remX : anchorX === 'center' ? remX / 2 : 0;
-    const anchorOffsetY = anchorY === 'end' ? remY : anchorY === 'center' ? remY / 2 : 0;
-
-    // fase
-    const phx = normPhase(phaseX);
-    const phy = normPhase(phaseY);
-    const startX = minX + anchorOffsetX + phx * cellW;
-    const startY = minY + anchorOffsetY + phy * cellH;
-
-    // 👇 numero massimo di righe da posare in funzione della copertura richiesta
-    const rowsAllowed = Math.max(
+    // applichiamo coverageRatio (es. 0.5 = metà delle righe)
+    const maxRows = rowsY.length;
+    const rowsToUse = Math.max(
         1,
         Math.min(maxRows, Math.round(maxRows * Math.max(0.01, Math.min(1, coverageRatio))))
     );
+    const usedRows = rowsY.slice(0, rowsToUse); // sempre dall’alto verso il basso
 
     const out: AutoRect[] = [];
-    let rowIndex = 0;
 
-    for (let y = startY; y + hPx <= maxY + 1e-6; y += cellH) {
-        if (rowIndex >= rowsAllowed) break;   // 👈 rispetta coverageRatio (½, ¾, 1)
-        for (let x = startX; x + wPx <= maxX + 1e-6; x += cellW) {
-            const corners: Pt[] = [
-                { x, y },
-                { x: x + wPx, y },
-                { x: x + wPx, y: y + hPx },
-                { x, y: y + hPx },
-            ];
-            if (corners.every(c => pointInPolyInclusive(c, clipLocal))) {
-                const cx = x + wPx / 2, cy = y + hPx / 2;
-                const Cw = localToWorld({ x: cx, y: cy }, O, theta);
-                out.push({ cx: Cw.x, cy: Cw.y, wPx, hPx, angleDeg });
+    for (let rowIdx = 0; rowIdx < usedRows.length; rowIdx++) {
+        const y = usedRows[rowIdx];
+
+        // trova tutti i segmenti orizzontali del tetto a quota y e a quota y+panelH
+        // (controlliamo entrambe le quote e prendiamo l'intersezione per evitare tagli)
+        const segsTop = horizontalSegments(polyLocal, y);
+        const segsBottom = horizontalSegments(polyLocal, y + panelH);
+
+        if (!segsTop.length || !segsBottom.length) continue;
+
+        // per ogni segmento in alto cerchiamo un segmento in basso che si sovrappone
+        // e prendiamo il più lungo di tutti
+        let bestSeg: { minX: number; maxX: number } | null = null;
+        let bestLen = -1;
+
+        for (const sTop of segsTop) {
+            for (const sBot of segsBottom) {
+                const minX = Math.max(sTop.minX, sBot.minX);
+                const maxX = Math.min(sTop.maxX, sBot.maxX);
+                if (maxX - minX >= panelW - 1e-6) {
+                    const len = maxX - minX;
+                    if (len > bestLen) {
+                        bestLen = len;
+                        bestSeg = { minX, maxX };
+                    }
+                }
             }
         }
-        rowIndex++;
+
+        if (!bestSeg) continue;
+
+        // applica il margine orizzontale ai bordi del segmento
+        let segMinX = bestSeg.minX + marginPx;
+        let segMaxX = bestSeg.maxX - marginPx;
+        if (segMaxX - segMinX < panelW) continue;
+
+        // eventuale ancoraggio + fase sulla X del segmento
+        const spanX = segMaxX - segMinX;
+        const maxCols = Math.max(0, Math.floor((spanX - panelW + 1e-6) / cellW) + 1);
+        const usedW = maxCols > 0 ? maxCols * panelW + (maxCols - 1) * gap : 0;
+        const remX = Math.max(0, spanX - usedW);
+
+        const anchorOffsetX =
+            anchorX === 'end' ? remX : anchorX === 'center' ? remX / 2 : 0;
+
+        const phx = normPhase(phaseX);
+        let startX = segMinX + anchorOffsetX + phx * cellW;
+
+        // ora posiamo i pannelli in questa riga
+        for (let x = startX; x + panelW <= segMaxX + 1e-6; x += cellW) {
+            // corner locali del pannello
+            const cornersLocal: Pt[] = [
+                { x, y },
+                { x: x + panelW, y },
+                { x: x + panelW, y: y + panelH },
+                { x, y: y + panelH },
+            ];
+
+            // sicurezza aggiuntiva: tutti i corner devono essere dentro al tetto locale
+            const ok = cornersLocal.every((c) => pointInPolyInclusive(c, polyLocal));
+            if (!ok) continue;
+
+            // centro in world
+            const cx = x + panelW / 2;
+            const cy = y + panelH / 2;
+            const Cw = localToWorld({ x: cx, y: cy }, O, theta);
+
+            out.push({
+                cx: Cw.x,
+                cy: Cw.y,
+                wPx: panelW,
+                hPx: panelH,
+                angleDeg,
+            });
+        }
     }
+
     return out;
-
-
 }

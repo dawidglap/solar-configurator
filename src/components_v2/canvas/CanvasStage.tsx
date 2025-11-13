@@ -43,6 +43,8 @@ import ScreenGrid from './ScreenGrid';
 
 
 
+
+
 // ——— ANGLES HELPERS ———
 function radToDeg(r: number) { return (r * 180) / Math.PI; }
 function normDeg(d: number) { const x = d % 360; return x < 0 ? x + 360 : x; }
@@ -220,16 +222,26 @@ const ignoreSelect = useCallback((_: string | undefined) => {}, []);
     [layers, selectedId]
   );
 
-  // angolo base griglia in COORDINATE CANVAS (come PanelsKonva)
+// angolo base griglia in COORDINATE CANVAS (come PanelsKonva)
 const baseGridDeg = useMemo(() => {
   if (!selectedRoof) return 0;
-  const eavesCanvasDeg = - (selectedRoof.azimuthDeg ?? 0) + 90; // azimut → canvas
+  const eavesCanvasDeg = -(selectedRoof.azimuthDeg ?? 0) + 90; // azimut → canvas
   const polyDeg = longestEdgeAngleDeg(selectedRoof.points);
+  // sceglie fra “lato tetto” e “azimut tetto”, come prima
   return angleDiffDeg(eavesCanvasDeg, polyDeg) > 5 ? polyDeg : eavesCanvasDeg;
 }, [selectedRoof?.azimuthDeg, selectedRoof?.points]);
 
-// arrotonda per coerenza con i pannelli reali
-const gridDeg = baseGridDeg + (gridMods.gridAngleDeg || 0);
+// 👇 override per-falda letto dallo store
+const perRoofAngles = modules.perRoofAngles || {};
+const roofOverrideDeg =
+  selectedRoof ? perRoofAngles[selectedRoof.id] : undefined;
+
+// angolo finale che useremo per ModulesPreview
+const gridDeg =
+  typeof roofOverrideDeg === 'number'
+    ? roofOverrideDeg
+    : baseGridDeg + (gridMods.gridAngleDeg || 0);
+
 
 
 // applica offset utente
@@ -583,6 +595,7 @@ const {
     width: 'var(--propW, 280px)',
   }}
 >
+   
   <RightPropertiesPanelOverlay />
 </div>
 
@@ -701,7 +714,8 @@ onClick={(evt: any) => {
           roofId={selectedRoof.id}
           polygon={selectedRoof.points}
           mppImage={snap.mppImage}
-          azimuthDeg={gridDeg}
+          azimuthDeg={gridDeg} 
+          
           orientation={modules.orientation}
           panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
           spacingM={modules.spacingM}

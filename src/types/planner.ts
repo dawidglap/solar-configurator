@@ -90,6 +90,8 @@ export type ModulesConfig = {
 
     /** 0.5 = metà tetto, 0.75 = 3/4, 1 = tutto */
     coverageRatio?: number;
+    perRoofAngles?: Record<string, number>;
+
 };
 
 // ── Istanze di pannello materializzate

@@ -156,6 +156,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                         gridPhaseX: 0,
                         gridPhaseY: 0,
                         coverageRatio: 1,
+                        perRoofAngles: {},
                     },
                 }));
                 // niente “undo” verso il progetto precedente
@@ -207,10 +208,35 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 gridAnchorX: 'start',      // 👈 nuovo: 'start' | 'center' | 'end'
                 gridAnchorY: 'start',      // 👈 nuovo
                 coverageRatio: 1,
+                perRoofAngles: {},
             },
-
             setModules: (patch) =>
-                set((s) => ({ modules: { ...s.modules, ...patch } })),
+                set((s) => {
+                    const prev = s.modules || {};
+                    const prevAngles = { ...(prev.perRoofAngles || {}) };
+
+                    // merge speciale per perRoofAngles
+                    let nextPerRoof = prevAngles;
+                    if (patch.perRoofAngles) {
+                        for (const [roofId, val] of Object.entries(patch.perRoofAngles)) {
+                            if (val === undefined) {
+                                delete nextPerRoof[roofId];
+                            } else {
+                                nextPerRoof[roofId] = val;
+                            }
+                        }
+                    }
+
+                    return {
+                        modules: {
+                            ...prev,
+                            ...patch,
+                            ...(patch.perRoofAngles ? { perRoofAngles: nextPerRoof } : {}),
+                        },
+                    };
+                }),
+
+
 
             // ── Sonnendach rilevati
             detectedRoofs: [],
@@ -369,6 +395,10 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                         placingSingle: false,
                     };
                 }
+                if (!persisted.modules.perRoofAngles) {
+                    persisted.modules.perRoofAngles = {};
+                }
+
                 if (typeof persisted.modules.gridAngleDeg !== 'number') {
                     persisted.modules.gridAngleDeg = 0;
                 }
