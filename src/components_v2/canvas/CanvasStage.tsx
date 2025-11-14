@@ -911,20 +911,29 @@ onClick={(evt: any) => {
       )}
       <ToolHotkeys />
 
-    <PanelHotkeys
+<PanelHotkeys
   selectedPanelId={selectedPanelInstId}
   disabled={tool !== 'select'}
+  nudgeFromScreenDelta={(sx, sy) => {
+    // usiamo il centro dello stage come punto di riferimento
+    const cx = size.w / 2;
+    const cy = size.h / 2;
+    const p0 = toImgCoords(cx, cy);
+    const p1 = toImgCoords(cx + sx, cy + sy);
+    return { dx: p1.x - p0.x, dy: p1.y - p0.y };
+  }}
   onDelete={(id) => {
-    plannerHistory.push('delete panel');        // 👈 snapshot
+    plannerHistory.push('delete panel');
     deletePanel(id);
     setSelectedPanelInstId(undefined);
   }}
   onDuplicate={(id) => {
-    plannerHistory.push('duplicate panel');     // 👈 snapshot
+    plannerHistory.push('duplicate panel');
     const nid = duplicatePanel(id);
     if (nid) setSelectedPanelInstId(nid);
   }}
 />
+
 <CanvasHotkeys />
 
 
