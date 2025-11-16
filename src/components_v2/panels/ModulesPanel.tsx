@@ -13,6 +13,7 @@ import { LuCompass } from 'react-icons/lu';
 // ⬇️ funzioni esistenti per autolayout e filtri ostacoli
 import { computeAutoLayoutRects } from '../modules/layout';
 import { overlapsReservedRect } from '../zones/utils';
+import GridRotationControl from '../modules/GridRotationControl';
 
 type Pt = { x: number; y: number };
 
@@ -528,6 +529,10 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
             relayoutSelectedRoof(next);
           }}
         />
+      </section>
+
+         <section className="space-y-2">
+        <GridRotationControl />
       </section>
 
       {/* === MODULNEIGUNG (placeholder, disabled) === */}

@@ -1,148 +1,209 @@
 // src/components_v2/modules/GridRotationControl.tsx
 'use client';
 
+import React from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 
 const MIN_ANGLE = -90;
 const MAX_ANGLE = 90;
 
 function clampAngle(v: number) {
+  if (!Number.isFinite(v)) return 0;
   return Math.max(MIN_ANGLE, Math.min(MAX_ANGLE, Math.round(v)));
 }
 
 export default function GridRotationControl() {
-  const selectedId = usePlannerV2Store((s) => s.selectedId);
-  const modules = usePlannerV2Store((s) => s.modules);
-  const setModules = usePlannerV2Store((s) => s.setModules);
+  const panels = usePlannerV2Store((s) => s.panels);
+  const selectedIds = usePlannerV2Store(
+    (s) => (s.selectedPanelIds as string[] | undefined) || []
+  );
+  const updatePanel = usePlannerV2Store((s) => s.updatePanel);
 
-  // globale (fallback)
-  const globalAngle = modules?.gridAngleDeg ?? 0;
+  const hasSelection = selectedIds.length > 0;
 
-  // mappa override per falda
-  const perRoofAngles: Record<string, number> = modules?.perRoofAngles ?? {};
+  const selectedPanels = React.useMemo(
+    () => panels.filter((p) => selectedIds.includes(p.id)),
+    [panels, selectedIds]
+  );
 
-  // angolo effettivo da mostrare
-  const effectiveAngle =
-    selectedId && perRoofAngles[selectedId] !== undefined
-      ? perRoofAngles[selectedId]!
-      : globalAngle;
+  // angolo "medio" (in pratica quello del primo pannello selezionato)
+  const effectiveAngle = React.useMemo(() => {
+    if (!selectedPanels.length) return 0;
+    const first = selectedPanels[0];
+    const a = typeof first.angleDeg === 'number' ? first.angleDeg : 0;
+    return clampAngle(a);
+  }, [selectedPanels]);
 
-  const hasRoofOverride = !!(selectedId && perRoofAngles[selectedId] !== undefined);
-
-  // cambia angolo globale
-  const setGlobalAngle = (v: number) => {
-    const ang = clampAngle(v);
-    setModules({ gridAngleDeg: ang });
-  };
-
-  // cambia/crea override solo per la falda selezionata
-  const setRoofAngle = (v: number) => {
-    if (!selectedId) return;
-    const ang = clampAngle(v);
-    setModules({
-      perRoofAngles: {
-        [selectedId]: ang,
-      },
-    });
-  };
-
-  // resetta l'override della falda selezionata → torna al globale
-  const clearRoofAngle = () => {
-    if (!selectedId) return;
-    // mandiamo undefined per questa falda: nello store lo togliamo
-    setModules({
-      perRoofAngles: {
-        [selectedId]: undefined as unknown as number,
-      },
-    });
-  };
-
-  // handler unico: se c’è una falda selezionata con override → aggiorna lei,
-  // altrimenti aggiorna il globale
-  const setAngle = (v: number) => {
-    if (selectedId) {
-      // se c'è una falda selezionata, lavoriamo su di lei
-      setRoofAngle(v);
-    } else {
-      setGlobalAngle(v);
+  // centro del gruppo (bbox dei pannelli selezionati)
+  const groupCenter = React.useMemo(() => {
+    if (!selectedPanels.length) return { cx: 0, cy: 0, valid: false };
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (const p of selectedPanels) {
+      const cx = p.cx;
+      const cy = p.cy;
+      if (cx < minX) minX = cx;
+      if (cy < minY) minY = cy;
+      if (cx > maxX) maxX = cx;
+      if (cy > maxY) maxY = cy;
     }
+    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+      return { cx: 0, cy: 0, valid: false };
+    }
+    return {
+      cx: (minX + maxX) / 2,
+      cy: (minY + maxY) / 2,
+      valid: true,
+    };
+  }, [selectedPanels]);
+
+  // stato locale dello slider (per calcolare il delta)
+  const [sliderAngle, setSliderAngle] = React.useState<number>(0);
+  const selectionKeyRef = React.useRef<string>('');
+
+  // ogni volta che cambia la selezione, resync lo slider all'angolo attuale
+  React.useEffect(() => {
+    const key = selectedIds.slice().sort().join(',');
+    if (key !== selectionKeyRef.current) {
+      selectionKeyRef.current = key;
+      setSliderAngle(effectiveAngle);
+    }
+  }, [selectedIds, effectiveAngle]);
+
+  const applyAngle = (nextAngle: number) => {
+    if (!hasSelection || !groupCenter.valid) return;
+
+    const next = clampAngle(nextAngle);
+    const delta = next - sliderAngle;
+    if (delta === 0) {
+      setSliderAngle(next);
+      return;
+    }
+
+    const rad = (delta * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const gcx = groupCenter.cx;
+    const gcy = groupCenter.cy;
+
+    for (const p of selectedPanels) {
+      const oldAngle = typeof p.angleDeg === 'number' ? p.angleDeg : 0;
+      const newAngle = clampAngle(oldAngle + delta);
+
+      const dx = p.cx - gcx;
+      const dy = p.cy - gcy;
+      const nx = gcx + dx * cos - dy * sin;
+      const ny = gcy + dx * sin + dy * cos;
+
+      updatePanel(p.id, { angleDeg: newAngle, cx: nx, cy: ny } as any);
+    }
+
+    setSliderAngle(next);
   };
+
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!hasSelection) return;
+    applyAngle(Number(e.target.value));
+  };
+
+  const stepMinus = () => applyAngle(sliderAngle - 1);
+  const stepPlus = () => applyAngle(sliderAngle + 1);
+  const resetZero = () => applyAngle(0);
 
   return (
-    <fieldset className="space-y-1.5">
-      <label className="block text-[10px] font-medium uppercase tracking-wide text-neutral-600">
-        Raster-Drehung
-      </label>
+ <fieldset className="space-y-1.5">
+  {/* titolo + valore attuale */}
+  <div className="flex items-center justify-between">
+    <label className="block text-[10px] font-medium uppercase tracking-wide text-neutral-400">
+      Modulrotation (Auswahl)
+    </label>
+    <span className="text-[10px] text-neutral-300 tabular-nums">
+      {hasSelection ? `${sliderAngle}°` : '—'}
+    </span>
+  </div>
 
-      <div className="flex items-center gap-2">
-        <button
-          className="h-6 px-1.5 rounded-full border border-neutral-200 text-[10px] leading-none"
-          onClick={() => setAngle(effectiveAngle - 1)}
-          title="-1°"
-          aria-label="Raster um minus 1 Grad drehen"
-        >
-          –°
-        </button>
+  {/* box controlli */}
+  <div className="rounded-xl border border-neutral-800 bg-neutral-900/70 px-2.5 py-2 space-y-1.5">
+    <div className="flex items-center gap-2">
+      {/* -1° */}
+      <button
+        type="button"
+        disabled={!hasSelection}
+        className={`h-7 px-2 rounded-full text-[10px] leading-none border transition ${
+          hasSelection
+            ? 'border-neutral-700 text-neutral-100 hover:bg-neutral-800'
+            : 'border-neutral-800 text-neutral-600 cursor-not-allowed'
+        }`}
+        onClick={stepMinus}
+        title="-1°"
+        aria-label="Ausgewählte Module um -1° drehen"
+      >
+        −°
+      </button>
 
+      {/* slider + etichette min/0/max */}
+      <div className="flex-1 flex flex-col gap-1">
         <input
           type="range"
           min={MIN_ANGLE}
           max={MAX_ANGLE}
           step={1}
-          value={effectiveAngle}
-          onChange={(e) => setAngle(Number(e.target.value))}
-          className="flex-1"
-          aria-label="Rasterwinkel (°)"
+          value={hasSelection ? sliderAngle : 0}
+          onChange={handleSliderChange}
+          className="w-full accent-neutral-200 disabled:opacity-40"
+          aria-label="Rotationswinkel der ausgewählten Module (°)"
+          disabled={!hasSelection}
         />
-
-        <button
-          className="h-6 px-1.5 rounded-full border border-neutral-200 text-[10px] leading-none"
-          onClick={() => setAngle(effectiveAngle + 1)}
-          title="+1°"
-          aria-label="Raster um plus 1 Grad drehen"
-        >
-          +°
-        </button>
-      </div>
-
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-neutral-600 tabular-nums">
-          {effectiveAngle}°
-          {selectedId && hasRoofOverride ? ' (falda)' : ''}
-        </span>
-
-        <div className="flex gap-2">
-          {/* reset globale */}
-          <button
-            className="h-6 px-2 rounded-full border border-neutral-200 text-[10px] leading-none"
-            onClick={() => setGlobalAngle(0)}
-            title="Winkel global auf 0° zurücksetzen"
-          >
-            Global 0°
-          </button>
-
-          {/* se c'è una falda selezionata, mostra i bottoni per lei */}
-          {selectedId ? (
-            hasRoofOverride ? (
-              <button
-                className="h-6 px-2 rounded-full border border-neutral-200 text-[10px] leading-none"
-                onClick={clearRoofAngle}
-                title="Override per falda entfernen"
-              >
-                Falda ↩︎ globale
-              </button>
-            ) : (
-              <button
-                className="h-6 px-2 rounded-full border border-neutral-200 text-[10px] leading-none"
-                onClick={() => setRoofAngle(globalAngle)}
-                title="Override per falda erstellen"
-              >
-                Falda = globale
-              </button>
-            )
-          ) : null}
+        <div className="flex justify-between text-[9px] text-neutral-500 tabular-nums">
+          <span>-90°</span>
+          <span>0°</span>
+          <span>+90°</span>
         </div>
       </div>
-    </fieldset>
+
+      {/* +1° */}
+      <button
+        type="button"
+        disabled={!hasSelection}
+        className={`h-7 px-2 rounded-full text-[10px] leading-none border transition ${
+          hasSelection
+            ? 'border-neutral-700 text-neutral-100 hover:bg-neutral-800'
+            : 'border-neutral-800 text-neutral-600 cursor-not-allowed'
+        }`}
+        onClick={stepPlus}
+        title="+1°"
+        aria-label="Ausgewählte Module um +1° drehen"
+      >
+        +°
+      </button>
+    </div>
+
+    {/* helper text + reset */}
+    <div className="flex items-center justify-between gap-2 text-[9px] text-neutral-400">
+      <span className="leading-snug">
+        {hasSelection
+          ? 'Dreht alle ausgewählten Module um einen gemeinsamen Mittelpunkt.'
+          : 'Wähle ein oder mehrere Module aus, um sie gemeinsam zu drehen.'}
+      </span>
+
+      <button
+        type="button"
+        disabled={!hasSelection}
+        className={
+          hasSelection
+            ? 'h-6 px-2 rounded-full border border-neutral-700 text-[9px] leading-none text-neutral-100 hover:bg-neutral-800'
+            : 'h-6 px-2 rounded-full border border-neutral-800 text-[9px] leading-none text-neutral-600 cursor-not-allowed'
+        }
+        onClick={resetZero}
+        title="Rotation der ausgewählten Module auf 0° zurücksetzen"
+      >
+        Auf 0°
+      </button>
+    </div>
+  </div>
+</fieldset>
+
   );
 }
