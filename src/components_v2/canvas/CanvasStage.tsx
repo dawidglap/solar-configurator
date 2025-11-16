@@ -40,6 +40,7 @@ import ProjectStatsBar from '../ui/ProjectStatsBar';
 import CanvasHotkeys from './CanvasHotekeys';
 import ModuleSprite from '../modules/ModuleSprite';
 import ScreenGrid from './ScreenGrid';
+import CompassHUD from '../compassHUD';
 
 
 
@@ -963,10 +964,12 @@ onClick={(evt: any) => {
   }}
 />
 
+<CompassHUD rotateDeg={rotateDeg} />
+
 <CanvasHotkeys />
 
 
-      {/* <OrientationHUD /> */}
+      
 
   <RoofHudOverlay
   selectedRoof={selectedRoof}
