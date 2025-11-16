@@ -477,7 +477,7 @@ const m2Slope = roofAreaM2Corrected(l.points as Pt[], mpp, tilt);
               value={modules.marginM}
               onChange={e => setModules({ marginM: Number(e.target.value) })}
               className={inputBase}
-              placeholder="0,30"
+              placeholder="0,20"
               aria-label="Randabstand (m)"
             />
           </div>
