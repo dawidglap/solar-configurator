@@ -43,12 +43,12 @@ export default function CompassHUD({ rotateDeg }: Props) {
       <div
         className="
           pointer-events-auto flex flex-col items-center gap-1.5
-          rounded-2xl border border-neutral-700/70 bg-black/80 text-neutral-100
+          rounded-2xl border border-neutral-700/70 bg-[#262626] opacity-80 text-neutral-100
           px-3 py-2 shadow-lg backdrop-blur-sm
         "
       >
         {/* Kompass-Kreis */}
-        <div className="relative w-28 h-28 rounded-full border border-neutral-600 bg-neutral-900">
+        <div className="relative w-28 h-28 rounded-full border border-neutral-600  bg-neutral-900">
           {/* Striche */}
           {TICKS.map((deg) => {
             const isCardinal = deg % 90 === 0;
