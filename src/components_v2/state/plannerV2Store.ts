@@ -275,9 +275,10 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                         ...state,
                         snowGuards: [...state.snowGuards, sg],
                     };
-                    history.push(next);
+                    history.push(JSON.stringify(next)); // ✅ ora è una stringa
                     return next;
                 }),
+
 
             updateSnowGuard: (id: string, patch: Partial<SnowGuard>) =>
                 set((state) => {
@@ -287,7 +288,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                             s.id === id ? { ...s, ...patch } : s
                         ),
                     };
-                    history.push(next);
+                    history.push(JSON.stringify(next)); // ✅ string
                     return next;
                 }),
 
@@ -297,9 +298,10 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                         ...state,
                         snowGuards: state.snowGuards.filter((s) => s.id !== id),
                     };
-                    history.push(next);
+                    history.push(JSON.stringify(next)); // ✅ string
                     return next;
                 }),
+
 
             selectedSnowGuardId: undefined,
             setSelectedSnowGuard: (id) => set({ selectedSnowGuardId: id }),
