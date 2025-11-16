@@ -19,6 +19,8 @@ const HANDLE_GAP_STAGE_PX = 12;     // distanza sotto al gruppo (px schermo)
 
 type PanelInst = HookPanel & { panelId: string };
 
+
+
 export default function PanelsKonva(props: {
   roofId: string;
   roofPolygon: Pt[];
@@ -42,11 +44,12 @@ export default function PanelsKonva(props: {
 
   // --- store
   const allPanels = usePlannerV2Store((s) => s.panels) as PanelInst[];
-  const updatePanel = usePlannerV2Store((s) => s.updatePanel);
+  const rawUpdatePanel = usePlannerV2Store((s) => s.updatePanel);
   const panels = React.useMemo(
     () => allPanels.filter((p) => p.roofId === roofId),
     [allPanels, roofId]
   );
+
 
   // multiselezione
   const selectedIds = usePlannerV2Store((s) => s.selectedPanelIds || []);
@@ -115,6 +118,59 @@ export default function PanelsKonva(props: {
     return { minU, maxU, minV, maxV };
   }, [roofPolygon, theta]);
 
+    const updatePanel = React.useCallback(
+    (id: string, patch: Partial<PanelInst>) => {
+      const panel = allPanels.find((p) => p.id === id);
+      if (!panel) {
+        // fallback: se per qualche motivo non troviamo il pannello
+        rawUpdatePanel(id, patch as any);
+        return;
+      }
+
+      // centro proposto
+      let nextCx = patch.cx ?? panel.cx;
+      let nextCy = patch.cy ?? panel.cy;
+
+      if (typeof nextCx === 'number' && typeof nextCy === 'number') {
+        const uv = project({ x: nextCx, y: nextCy });
+
+        const hw = panel.wPx / 2;
+        const hh = panel.hPx / 2;
+        const m = edgeMarginPx;
+
+        // limiti in UV considerando:
+        // - bordo falda
+        // - randabstand (m)
+        // - metà dimensione pannello
+        let u = uv.u;
+        let v = uv.v;
+
+        const minU = uvBounds.minU + m + hw;
+        const maxU = uvBounds.maxU - m - hw;
+        const minV = uvBounds.minV + m + hh;
+        const maxV = uvBounds.maxV - m - hh;
+
+        if (u < minU) u = minU;
+        if (u > maxU) u = maxU;
+        if (v < minV) v = minV;
+        if (v > maxV) v = maxV;
+
+        const corrected = fromUV(u, v);
+        nextCx = corrected.x;
+        nextCy = corrected.y;
+
+        // se dopo la correzione il centro cade in una zona riservata → non aggiornare
+        if (isInReservedZone({ x: nextCx, y: nextCy }, roofId)) {
+          return;
+        }
+      }
+
+      rawUpdatePanel(id, { ...patch, cx: nextCx, cy: nextCy } as any);
+    },
+    [allPanels, rawUpdatePanel, project, fromUV, uvBounds, edgeMarginPx, roofId]
+  );
+
+
 
   // ⬇️ PRIMA del `return ( ... )`
 const roofBBox = React.useMemo(() => {
@@ -148,6 +204,7 @@ const roofBBox = React.useMemo(() => {
     reservedGuard: (cx, cy) => !isInReservedZone({ x: cx, y: cy }, roofId),
   });
 
+
   // selected panels (incl. compat singola)
   const useLegacySingle =
     (!selectedIds || selectedIds.length === 0) && typeof selectedPanelId === 'string';
@@ -180,14 +237,26 @@ const roofBBox = React.useMemo(() => {
   }, [selectedPanels, defaultAngleDeg]);
 
   // helpers
-  const isInsideBounds = React.useCallback((p: PanelInst, cx: number, cy: number) => {
-    const m = edgeMarginPx;
-    const uv = project({ x: cx, y: cy });
-    if (uv.u < uvBounds.minU + m || uv.u > uvBounds.maxU - m) return false;
-    if (uv.v < uvBounds.minV + m || uv.v > uvBounds.maxV - m) return false;
-    if (isInReservedZone({ x: cx, y: cy }, roofId)) return false;
-    return true;
-  }, [edgeMarginPx, project, uvBounds, roofId]);
+  const isInsideBounds = React.useCallback(
+    (p: PanelInst, cx: number, cy: number) => {
+      const uv = project({ x: cx, y: cy });
+      const hw = p.wPx / 2;
+      const hh = p.hPx / 2;
+      const m = edgeMarginPx;
+
+      const minU = uvBounds.minU + m + hw;
+      const maxU = uvBounds.maxU - m - hw;
+      const minV = uvBounds.minV + m + hh;
+      const maxV = uvBounds.maxV - m - hh;
+
+      if (uv.u < minU || uv.u > maxU) return false;
+      if (uv.v < minV || uv.v > maxV) return false;
+      if (isInReservedZone({ x: cx, y: cy }, roofId)) return false;
+      return true;
+    },
+    [edgeMarginPx, project, uvBounds, roofId]
+  );
+
 
   const anyOverlapWithNonSelected = React.useCallback((cand: { id: string; cx: number; cy: number }[]) => {
     // controlla overlap rettangoli paralleli su U/V con gap

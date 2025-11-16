@@ -3,6 +3,14 @@
 
 import { useEffect, useMemo } from 'react';
 import { usePlannerV2Store } from '../../state/plannerV2Store';
+// ⬇️ NUOVO: helpers per orientamento falda + zone riservate
+import { longestEdgeAngle, angleDiffDeg } from './math';
+import { isInReservedZone } from '../../zones/utils';
+
+type Pt = { x: number; y: number };
+
+const deg2rad = (d: number) => (d * Math.PI) / 180;
+
 
 type Props = {
   disabled: any;
@@ -20,6 +28,219 @@ type Props = {
 
 /** Clipboard interna (ids dei pannelli copiati) */
 let PANEL_CLIPBOARD: string[] = [];
+
+// ⬇️ NUOVO: geometria falda + vincoli Randabstand / overlap
+
+type RoofGeom = {
+  roofId: string;
+  poly: Pt[];
+  defaultAngleDeg: number;
+  project: (p: Pt) => { u: number; v: number };
+  uvBounds: { minU: number; maxU: number; minV: number; maxV: number };
+  edgeMarginPx: number;
+  gapPx: number;
+};
+
+function buildRoofGeom(roofId: string, st: any): RoofGeom | null {
+  const layers = st.layers as any[];
+  const roof = layers.find((l) => l.id === roofId);
+  if (!roof || !Array.isArray(roof.points) || roof.points.length < 3) return null;
+
+  const poly: Pt[] = roof.points;
+
+  // orientamento come in PanelsKonva
+  const polyAngleDeg = (longestEdgeAngle(poly) * 180) / Math.PI;
+  const roofAz: number | undefined = roof.azimuthDeg;
+  let defaultAngleDeg = polyAngleDeg;
+  if (typeof roofAz === 'number') {
+    const eavesCanvasDeg = -roofAz + 90;
+    if (angleDiffDeg(eavesCanvasDeg, polyAngleDeg) <= 5) {
+      defaultAngleDeg = eavesCanvasDeg;
+    }
+  }
+
+  const theta = deg2rad(defaultAngleDeg);
+  const ex = { x: Math.cos(theta), y: Math.sin(theta) };   // u axis
+  const ey = { x: -Math.sin(theta), y: Math.cos(theta) };  // v axis
+
+  const project = (pt: Pt) => ({
+    u: pt.x * ex.x + pt.y * ex.y,
+    v: pt.x * ey.x + pt.y * ey.y,
+  });
+
+  // bounds UV falda
+  let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+  for (const p of poly) {
+    const uv = project(p);
+    if (uv.u < minU) minU = uv.u;
+    if (uv.u > maxU) maxU = uv.u;
+    if (uv.v < minV) minV = uv.v;
+    if (uv.v > maxV) maxV = uv.v;
+  }
+
+  const mpp = st.snapshot?.mppImage ?? 1;
+  const marginM = st.modules?.marginM ?? 0;
+  const spacingM = st.modules?.spacingM ?? 0;
+
+  const edgeMarginPx = mpp ? marginM / mpp : 0;
+  const gapPx = mpp ? spacingM / mpp : 0;
+
+  return {
+    roofId,
+    poly,
+    defaultAngleDeg,
+    project,
+    uvBounds: { minU, maxU, minV, maxV },
+    edgeMarginPx,
+    gapPx,
+  };
+}
+
+function isInsideBoundsWithZones(
+  cx: number,
+  cy: number,
+  geom: RoofGeom
+): boolean {
+  const { uvBounds, project, edgeMarginPx, roofId } = geom;
+  const uv = project({ x: cx, y: cy });
+
+  if (uv.u < uvBounds.minU + edgeMarginPx) return false;
+  if (uv.u > uvBounds.maxU - edgeMarginPx) return false;
+  if (uv.v < uvBounds.minV + edgeMarginPx) return false;
+  if (uv.v > uvBounds.maxV - edgeMarginPx) return false;
+
+  if (isInReservedZone({ x: cx, y: cy }, roofId)) return false;
+
+  return true;
+}
+
+function overlapsOtherPanels(
+  meId: string,
+  cx: number,
+  cy: number,
+  geom: RoofGeom,
+  st: any,
+  ignoreIds: Set<string> = new Set()
+): boolean {
+  const panels = st.panels as any[];
+  const me = panels.find((p) => p.id === meId);
+  if (!me) return false;
+
+  const meUV = geom.project({ x: cx, y: cy });
+  const meHW = me.wPx / 2;
+  const meHH = me.hPx / 2;
+  const meAngle = typeof me.angleDeg === 'number' ? me.angleDeg : geom.defaultAngleDeg;
+
+  const others = panels.filter(
+    (p) => p.roofId === geom.roofId && p.id !== meId && !ignoreIds.has(p.id)
+  );
+
+  for (const t of others) {
+    const tAngle = typeof t.angleDeg === 'number' ? t.angleDeg : geom.defaultAngleDeg;
+    const diff = Math.min(
+      angleDiffDeg(tAngle, meAngle),
+      Math.abs(angleDiffDeg(tAngle, meAngle) - 180)
+    );
+    // considera solo pannelli (quasi) paralleli
+    if (diff > 5) continue;
+
+    const tUV = geom.project({ x: t.cx, y: t.cy });
+    const thw = t.wPx / 2;
+    const thh = t.hPx / 2;
+
+    const minUdist = meHW + thw + geom.gapPx;
+    const minVdist = meHH + thh + geom.gapPx;
+
+    const du = Math.abs(meUV.u - tUV.u);
+    const dv = Math.abs(meUV.v - tUV.v);
+
+    if (du < minUdist && dv < minVdist) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/** Nudge di UN pannello (branch controllato) con vincoli */
+function tryNudgeSinglePanel(panelId: string, dx: number, dy: number) {
+  const st = usePlannerV2Store.getState();
+  const panels = st.panels as any[];
+  const panel = panels.find((p) => p.id === panelId);
+  if (!panel) return;
+
+  const roofId: string | undefined = panel.roofId;
+  if (!roofId) return;
+
+  const geom = buildRoofGeom(roofId, st);
+  if (!geom) return;
+
+  const newCx = (panel.cx ?? 0) + dx;
+  const newCy = (panel.cy ?? 0) + dy;
+
+  if (!isInsideBoundsWithZones(newCx, newCy, geom)) return;
+  if (overlapsOtherPanels(panelId, newCx, newCy, geom, st)) return;
+
+  st.updatePanel?.(panelId, { cx: newCx, cy: newCy });
+}
+
+/** Nudge MULTI-selezione con vincoli (usa stesso dx,dy per tutti) */
+function tryNudgeMultiPanels(ids: string[], dx: number, dy: number) {
+  if (!ids.length) return;
+  const st = usePlannerV2Store.getState();
+  const panels = st.panels as any[];
+
+  // cache geometrie falde per questa mossa
+  const geomCache = new Map<string, RoofGeom>();
+
+  const getGeom = (roofId: string): RoofGeom | null => {
+    if (geomCache.has(roofId)) return geomCache.get(roofId)!;
+    const g = buildRoofGeom(roofId, st);
+    if (g) geomCache.set(roofId, g);
+    return g;
+  };
+
+  type Cand = { id: string; roofId: string; cx: number; cy: number };
+  const candidates: Cand[] = [];
+
+  for (const id of ids) {
+    const p = panels.find((pp) => pp.id === id);
+    if (!p) continue;
+    if (!p.roofId) continue;
+    const newCx = (p.cx ?? 0) + dx;
+    const newCy = (p.cy ?? 0) + dy;
+    candidates.push({ id, roofId: p.roofId, cx: newCx, cy: newCy });
+  }
+
+  if (!candidates.length) return;
+
+  const ignoreSet = new Set(ids);
+
+  // 1) validità bounds + zone
+  for (const c of candidates) {
+    const geom = getGeom(c.roofId);
+    if (!geom) return;
+
+    if (!isInsideBoundsWithZones(c.cx, c.cy, geom)) {
+      return; // blocca l'intero movimento
+    }
+  }
+
+  // 2) overlap con pannelli non selezionati
+  for (const c of candidates) {
+    const geom = getGeom(c.roofId);
+    if (!geom) return;
+    if (overlapsOtherPanels(c.id, c.cx, c.cy, geom, st, ignoreSet)) {
+      return; // blocca tutto se uno collide
+    }
+  }
+
+  // 3) applica spostamento
+  for (const c of candidates) {
+    st.updatePanel?.(c.id, { cx: c.cx, cy: c.cy });
+  }
+}
+
 
 /**
  * Registra hotkeys per pannelli.
@@ -172,19 +393,19 @@ export default function PanelHotkeys(props: Props) {
           return;
         }
 
-        // 🔁 NUDGE CON FRECCE (singolo pannello, rispetto allo schermo)
-        if (isArrowKey) {
-          e.preventDefault();
+      
+      // 🔁 NUDGE CON FRECCE (singolo pannello, rispetto allo schermo)
+if (isArrowKey) {
+  e.preventDefault();
 
-          const stepImg = e.shiftKey ? 5 : 1; // px immagine
-          const { dx, dy } = computeDeltaImg(key, stepImg);
-          if (!dx && !dy) return;
+  const stepImg = e.shiftKey ? 5 : 1; // px immagine
+  const { dx, dy } = computeDeltaImg(key, stepImg);
+  if (!dx && !dy) return;
 
-          const nextCx = (panel.cx ?? 0) + dx;
-          const nextCy = (panel.cy ?? 0) + dy;
+  // ⬇️ NUOVO: applica vincoli Randabstand + no-overlap
+  tryNudgeSinglePanel(id, dx, dy);
+}
 
-          updatePanel(id, { cx: nextCx, cy: nextCy });
-        }
 
         return;
       }
@@ -192,24 +413,21 @@ export default function PanelHotkeys(props: Props) {
       // ===== Modalità STORE (multi-select) =====
 
       // 🔁 NUDGE CON FRECCE (multi-selezione, rispetto allo schermo)
-      if (isArrowKey) {
-        if (!selectedIds?.length) return;
-        e.preventDefault();
+   // 🔁 NUDGE CON FRECCE (multi-selezione, rispetto allo schermo)
+if (isArrowKey) {
+  if (!selectedIds?.length) return;
+  e.preventDefault();
 
-        const stepImg = e.shiftKey ? 5 : 0.5; // px immagine
-        const { dx, dy } = computeDeltaImg(key, stepImg);
-        if (!dx && !dy) return;
+  const stepImg = e.shiftKey ? 5 : 0.5; // px immagine
+  const { dx, dy } = computeDeltaImg(key, stepImg);
+  if (!dx && !dy) return;
 
-        for (const id of selectedIds) {
-          const p = panelById.get(id);
-          if (!p) continue;
-          const nextCx = (p.cx ?? 0) + dx;
-          const nextCy = (p.cy ?? 0) + dy;
-          updatePanel(id, { cx: nextCx, cy: nextCy });
-        }
+  // ⬇️ NUOVO: prova a spostare TUTTI i pannelli selezionati rispettando i vincoli
+  tryNudgeMultiPanels(selectedIds, dx, dy);
 
-        return;
-      }
+  return;
+}
+
 
       // ESC → clear
       if (key === 'Escape') {

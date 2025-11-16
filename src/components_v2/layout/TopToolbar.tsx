@@ -286,20 +286,19 @@ function ensureModulesPrereqsForF(): boolean {
 
 
 
+  
   /* ── Handler: In Module umwandeln (icona #3) ─────────────────────── */
   function handleConvertToModules() {
-    // Porta l'interfaccia in "modules" (coerente con comportamiento atteso)
+    // Porta l'interfaccia in "modules"
     if (step !== 'modules') setStep('modules' as any);
 
-    if (!selectedId || !selSpec || !snapshot?.mppImage) {
-      // nessun tetto selezionato o modulo selezionato o mpp mancante
-      return;
-    }
+    // prerequisiti base
+    if (!selectedId || !selSpec || !snapshot?.mppImage) return;
 
     const roof = layers.find(l => l.id === selectedId);
     if (!roof?.points?.length) return;
 
-    // === angolo canvas (come ModulesPanel) ===
+    // === angolo canvas (come ModulesPreview / PanelsKonva) ===
     const eavesCanvasDeg = -(roof.azimuthDeg ?? 0) + 90;
 
     // angolo del lato più lungo del poligono
@@ -334,44 +333,32 @@ function ensureModulesPrereqsForF(): boolean {
       coverageRatio: modules.coverageRatio ?? 1,
     });
 
-    // === filtro Hindernisse
+    // === filtro: hindernis + schneefang
+    const rects = rectsAll.filter((r) => {
+      const rectForReserved = {
+        cx: r.cx,
+        cy: r.cy,
+        w: r.wPx,
+        h: r.hPx,
+        angleDeg: r.angleDeg,
+      };
 
-// === filtro: prima reserved, poi linee neve
+      const rectForSnow = {
+        cx: r.cx,
+        cy: r.cy,
+        wPx: r.wPx,
+        hPx: r.hPx,
+        angleDeg: r.angleDeg,
+      };
 
-const rects = rectsAll.filter((r) => {
-  // formato per le zone riservate
-  const rectForReserved = {
-    cx: r.cx,
-    cy: r.cy,
-    w: r.wPx,
-    h: r.hPx,
-    angleDeg: r.angleDeg,
-  };
+      // 1) se tocca una zona riservata → scarta
+      if (overlapsReservedRect(rectForReserved, selectedId, 1)) return false;
 
-  // formato per le linee neve
-  const rectForSnow = {
-    cx: r.cx,
-    cy: r.cy,
-    wPx: r.wPx,
-    hPx: r.hPx,
-    angleDeg: r.angleDeg,
-  };
+      // 2) se tocca una linea neve → scarta
+      if (overlapsSnowGuard(rectForSnow, selectedId, 1)) return false;
 
-  // 1) se tocca una zona riservata → scarta
-  if (overlapsReservedRect(rectForReserved, selectedId, 1)) {
-    return false;
-  }
-
-  // 2) se tocca una linea neve → scarta
-  if (overlapsSnowGuard(rectForSnow, selectedId, 1)) {
-    return false;
-  }
-
-  return true;
-});
-
-
-
+      return true;
+    });
 
     if (!rects.length) return;
 
@@ -380,26 +367,28 @@ const rects = rectsAll.filter((r) => {
     const instances = rects.map((r, idx) => ({
       id: `${selectedId}_p_${now}_${idx}`,
       roofId: selectedId,
-      cx: r.cx, cy: r.cy,
-      wPx: r.wPx, hPx: r.hPx,
+      cx: r.cx,
+      cy: r.cy,
+      wPx: r.wPx,
+      hPx: r.hPx,
       angleDeg: r.angleDeg,
       orientation: modules.orientation,
       panelId: selSpec.id,
     }));
 
-    // sostituisci i moduli esistenti della falda selezionata
-clearPanelsForRoof(selectedId);
-addPanelsForRoof(selectedId, instances);
-
-
-    
+    // 💣 PASSO CHIAVE:
+    // prima puliamo TUTTI i pannelli esistenti di questa falda,
+    // poi aggiungiamo solo gli autolayout → impossibile avere duplicati
+    clearPanelsForRoof(selectedId);
+    addPanelsForRoof(selectedId, instances);
 
     // spegni il raster dopo la conversione (come da brief)
     if (modules.showGrid) setModules({ showGrid: false });
 
-    // attiva lo strumento di selezione dopo il commit (facoltativo)
+    // torna allo strumento selezione
     setTool('select' as any);
   }
+
 
   return (
     <div
