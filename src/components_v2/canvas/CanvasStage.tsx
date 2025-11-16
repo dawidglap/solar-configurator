@@ -77,6 +77,16 @@ function pointInPoly(p: Pt, poly: Pt[]): boolean {
 }
 
 
+function isInsideAnyRoof(p: Pt, roofs: { id: string; points: Pt[] }[]): boolean {
+  for (const r of roofs) {
+    if (r.points?.length >= 3 && pointInPoly(p, r.points)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+
 const deg2rad = (d: number) => (d * Math.PI) / 180;
 function centroid(pts: Pt[]) {
   let x = 0, y = 0;
@@ -637,15 +647,33 @@ onMouseEnter={tool === 'fill-area' ? () => {
 } : undefined}
 
 onClick={(evt: any) => {
-  // ⬅️ NEW: in fill-area NON deselezionare nulla
-  if (tool === 'fill-area') return;
+  const st = stageRef.current?.getStage?.();
+  const pos = st?.getPointerPosition?.();
 
+  // 🔒 Regola speciale per FLÄCHE FÜLLEN
+  if (tool === 'fill-area') {
+    if (!pos) return;
+    const imgPt = toImgCoords(pos.x, pos.y);
+
+    const inside = isInsideAnyRoof(imgPt, layers);
+    if (!inside) {
+      // click fuori da ogni falda:
+      // - dimentichiamo qualsiasi anteprima
+      // - torniamo subito ad "Auswählen"
+      setFillDraft(null);
+      setTool('select');
+    }
+    // in ogni caso, non facciamo nient'altro qui
+    return;
+  }
+
+  // —— building tools (draw roof/rect/reserved) ----
   if (drawingEnabled) {
     onStageClick?.(evt);
     return;
   }
 
-  const st = stageRef.current?.getStage?.();
+  // —— comportamento normale di selezione (come prima) ----
   const target = evt.target;
   const targetName = typeof target?.name === 'function' ? target.name() : '';
 
@@ -661,6 +689,7 @@ onClick={(evt: any) => {
     store.select?.(undefined);
   }
 }}
+
 
 
 
