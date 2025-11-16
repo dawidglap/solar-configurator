@@ -32,6 +32,34 @@ type KeyboardEventMaybeImmediate = KeyboardEvent & {
     stopImmediatePropagation?: () => void;
 };
 
+/** Point-in-polygon (ray casting) per verificare se il punto è dentro una falda */
+function isPointInPolygon(p: Pt, poly: Pt[]): boolean {
+    let inside = false;
+    const n = poly.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+        const xi = poly[i].x, yi = poly[i].y;
+        const xj = poly[j].x, yj = poly[j].y;
+
+        const intersect =
+            yi > p.y !== yj > p.y &&
+            p.x <
+            ((xj - xi) * (p.y - yi)) / ((yj - yi) || 1e-9) +
+            xi;
+
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+/** true se il punto è dentro **almeno una** falda */
+function isInsideAnyRoof(p: Pt, layers: Layer[]): boolean {
+    for (const l of layers) {
+        if (!l.points || l.points.length < 3) continue;
+        if (isPointInPolygon(p, l.points)) return true;
+    }
+    return false;
+}
+
 export function useDrawingTools<T extends RoofAreaLike>(args: {
     tool: Tool;
     layers: Layer[];
@@ -39,7 +67,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     select: (id?: string) => void;
     toImgCoords: (stageX: number, stageY: number) => Pt;
     onZoneCommit?: (poly4: Pt[]) => void; // per Hindernis
-    onSnowGuardCommit?: (p1: Pt, p2: Pt) => void; // 👈 aggiungi questa
+    onSnowGuardCommit?: (p1: Pt, p2: Pt) => void; // Schneefang
     snap?: SnapOptions;
     setTool: (t: Tool) => void;
 }) {
@@ -57,7 +85,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     const [rectDraft, setRectDraft] = React.useState<Pt[] | null>(null); // [A,B] poi C al commit
     const [mouseImg, setMouseImg] = React.useState<Pt | null>(null);
     const [snowDraft, setSnowDraft] = React.useState<Pt[] | null>(null);
-
 
     // ——— stack redo locali (solo durante il disegno) ———
     const polyRedoRef = React.useRef<Pt[]>([]);
@@ -179,6 +206,21 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         if (!pos) return;
         const p = toImgCoords(pos.x, pos.y);
 
+        // 🚧 GUARD: Hindernis & Schneefang SOLO dentro una falda
+        if ((tool === 'draw-reserved' || tool === 'draw-snow-guard')) {
+            const insideRoof = isInsideAnyRoof(p, layers);
+            if (!insideRoof) {
+                // reset di qualunque draft parziale
+                setDrawingPoly(null);
+                setRectDraft(null);
+                setSnowDraft(null);
+                polyRedoRef.current = [];
+                rectRedoRef.current = [];
+                setTool('select');
+                return;
+            }
+        }
+
         // ── Protezione neve: 2 click → linea
         if (tool === 'draw-snow-guard') {
             // primo click
@@ -197,7 +239,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
                 return;
             }
         }
-
 
         // ── Poligono tetto libero (con SNAP al click)
         if (tool === 'draw-roof') {
