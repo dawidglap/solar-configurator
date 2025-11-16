@@ -40,7 +40,10 @@ function highlightMatches(label: string, query: string): React.ReactNode {
       const s = m.index, e = s + m[0].length;
       if (s > last) parts.push(label.slice(last, s));
       parts.push(
-        <mark key={`${s}-${e}`} className="rounded-[2px] px-0.5 bg-emerald-400/80 ring-1 ring-emerald-400/30">
+        <mark
+          key={`${s}-${e}`}
+          className="rounded-[2px] px-0.5 bg-emerald-400/80 ring-1 ring-emerald-400/30"
+        >
           {label.slice(s, e)}
         </mark>
       );
@@ -76,11 +79,30 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
     return null;
   });
 
+  // ----------- pick centrale: aggiorna input + chiude dropdown + chiama onPick ----------
+  const handlePick = useCallback(
+    (r: Suggest) => {
+      // mostra l’indirizzo completo nella barra
+      setQ(r.label);
+
+      // callback verso il padre (TopbarAddressSearch)
+      onPick(r);
+
+      // chiudi lista & reset
+      setOpen(false);
+      setResults([]);
+      setActive(-1);
+    },
+    [onPick]
+  );
+
   useEffect(() => {
     if (!portalNode || typeof document === 'undefined') return;
     document.body.appendChild(portalNode);
     return () => {
-      try { document.body.removeChild(portalNode); } catch {}
+      try {
+        document.body.removeChild(portalNode);
+      } catch {}
     };
   }, [portalNode]);
 
@@ -89,7 +111,9 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
     setErr(null);
     const qTrim = q.trim();
     if (qTrim.length < 3) {
-      setResults([]); setOpen(false); setActive(-1);
+      setResults([]);
+      setOpen(false);
+      setActive(-1);
       return;
     }
 
@@ -115,9 +139,9 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
 
             // estrazioni dal testo pulito
             const mPost = label.match(/\b(\d{4})\b/);
-            const mNum  = label.match(/\b(\d{1,3}(?:[a-z]|(?:\.\d+)?)?)\b/);
+            const mNum = label.match(/\b(\d{1,3}(?:[a-z]|(?:\.\d+)?)?)\b/);
             const postcode = mPost ? mPost[1] : undefined;
-            const number   = mNum  ? mNum[1]  : undefined;
+            const number = mNum ? mNum[1] : undefined;
 
             return Number.isFinite(lat) && Number.isFinite(lon) && label
               ? { label, lat, lon, postcode, number }
@@ -136,7 +160,10 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
         // civico: prima occorrenza “6”, “6a”, “6.1” (max 4-5 char), ignorando CAP
         let houseInQuery: string | null = null;
         for (const tkn of tokens) {
-          if (/^\d{1,3}[a-z]?$/.test(tkn) || /^\d{1,3}\.\d+$/.test(tkn)) { houseInQuery = tkn; break; }
+          if (/^\d{1,3}[a-z]?$/.test(tkn) || /^\d{1,3}\.\d+$/.test(tkn)) {
+            houseInQuery = tkn;
+            break;
+          }
         }
         if (houseInQuery && capPrefix && houseInQuery === capPrefix) houseInQuery = null;
 
@@ -153,16 +180,27 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
 
         // Ordinamento: CAP più specifico > begins-with > occorrenza > label corta
         const sorted = filtered.sort((a, b) => {
-          const al = a.label.toLowerCase(), bl = b.label.toLowerCase();
+          const al = a.label.toLowerCase(),
+            bl = b.label.toLowerCase();
 
-          const specA = capPrefix ? (a.postcode?.startsWith(capPrefix) ? (a.postcode?.length ?? 0) : 0) : 0;
-          const specB = capPrefix ? (b.postcode?.startsWith(capPrefix) ? (b.postcode?.length ?? 0) : 0) : 0;
+          const specA = capPrefix
+            ? a.postcode?.startsWith(capPrefix)
+              ? a.postcode?.length ?? 0
+              : 0
+            : 0;
+          const specB = capPrefix
+            ? b.postcode?.startsWith(capPrefix)
+              ? b.postcode?.length ?? 0
+              : 0
+            : 0;
           if (specA !== specB) return specB - specA;
 
-          const aStarts = Number(al.startsWith(ql)), bStarts = Number(bl.startsWith(ql));
+          const aStarts = Number(al.startsWith(ql)),
+            bStarts = Number(bl.startsWith(ql));
           if (aStarts !== bStarts) return bStarts - aStarts;
 
-          const ai = al.indexOf(ql), bi = bl.indexOf(ql);
+          const ai = al.indexOf(ql),
+            bi = bl.indexOf(ql);
           if (ai !== bi) return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
 
           return a.label.length - b.label.length;
@@ -173,7 +211,9 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
         setActive(sorted.length ? 0 : -1);
       } catch (e: any) {
         setErr(e?.message ?? 'Search error');
-        setResults([]); setOpen(false); setActive(-1);
+        setResults([]);
+        setOpen(false);
+        setActive(-1);
       } finally {
         setLoading(false);
       }
@@ -244,15 +284,14 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
         const pickIdx = active >= 0 ? active : 0;
         const sel = results[pickIdx];
         if (sel) {
-          onPick(sel);
-          setOpen(false);
+          handlePick(sel);
         }
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setOpen(false);
       }
     },
-    [open, results, active, onPick]
+    [open, results, active, handlePick]
   );
 
   const renderDropdown = useMemo(() => {
@@ -279,8 +318,7 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
               aria-selected={i === active}
               onMouseDown={(e) => {
                 e.preventDefault(); // evita blur prima del pick
-                onPick(r);
-                setOpen(false);
+                handlePick(r);
               }}
               onMouseEnter={() => setActive(i)}
               className={[
@@ -298,7 +336,7 @@ export default function AddressSearchOSM({ onPick, placeholder = 'Adresse suchen
     );
 
     return ReactDOM.createPortal(dropdown, portalNode);
-  }, [portalNode, open, results, active, loading, onPick, q]);
+  }, [portalNode, open, results, active, loading, handlePick, q]);
 
   return (
     <div className="relative w-full">
