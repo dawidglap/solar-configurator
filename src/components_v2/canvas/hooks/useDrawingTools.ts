@@ -408,6 +408,23 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         return () => window.removeEventListener('keydown', onKey, { capture: true } as any);
     }, [popLastPoint, pushRedoPoint, finishPolygon, finishZone]);
 
+    // Preview per draw-rect: linea tra il primo punto e il mouse
+    const rectPreview = React.useMemo<Pt[] | null>(() => {
+        // usiamo questa preview solo quando il tool è draw-rect
+        if (tool !== 'draw-rect') return null;
+        if (!rectDraft) return null;
+        if (!mouseImg) return null;
+
+        // se ho solo il primo punto (A), mostra A → mouse
+        if (rectDraft.length === 1) {
+            return [rectDraft[0], mouseImg];
+        }
+
+        // per ora, nessuna preview negli altri casi
+        return null;
+    }, [tool, rectDraft, mouseImg]);
+
+
     return {
         drawingPoly,
         rectDraft,
@@ -416,5 +433,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         onStageClick,
         onStageDblClick,
         snowDraft,
+        rectPreview,
     };
 }

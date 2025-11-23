@@ -509,6 +509,7 @@ const {
   onStageClick,
   onStageDblClick,
   snowDraft,
+  rectPreview, 
 } = useDrawingTools({
   tool: drawingEnabled ? tool : 'select',
   layers,
@@ -844,6 +845,22 @@ onClick={(evt: any) => {
     dash={[4, 4]}
   />
 )}
+
+{/* preview per draw-rect: linea A → mouse dopo il primo click */}
+{tool === 'draw-rect' && rectPreview && rectPreview.length === 2 && (
+  <Line
+    points={[
+      rectPreview[0].x, rectPreview[0].y,
+      rectPreview[1].x, rectPreview[1].y,
+    ]}
+    stroke="#38bdf8"
+    strokeWidth={1}
+    lineCap="round"
+    listening={false}
+    dash={[4, 4]}
+  />
+)}
+
 
 
 
