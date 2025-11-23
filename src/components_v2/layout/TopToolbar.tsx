@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import { history } from '../state/history';
 import OrientationToggle from './TopToolbar/OrientationToggle';
+import toast from 'react-hot-toast';
+
 
 import { MousePointer, RotateCcw, RotateCw } from 'lucide-react';
 
@@ -270,19 +272,49 @@ function go(t: any) {
 
 function ensureModulesPrereqsForU(): boolean {
   const st = usePlannerV2Store.getState();
-  if (st.step !== 'modules') { alert('Du musst dich im Schritt „Module“ befinden.'); return false; }
-  if (!st.selectedId)        { alert('Wähle zuerst eine Dachfläche (Roof) aus, bevor du U verwendest.'); return false; }
-  if (!st.getSelectedPanel()) { alert('Wähle ein Solarmodell aus dem Katalog aus.'); return false; }
-  if (!st.snapshot?.mppImage) { alert('mppImage fehlt im Snapshot (Maße können nicht berechnet werden).'); return false; }
+
+  if (st.step !== 'modules') {
+    toast.error('Du musst dich im Schritt „Module“ befinden.');
+    return false;
+  }
+
+  // se vuoi, puoi riattivare il controllo roof selezionato come toast:
+  if (!st.selectedId) {
+    toast.error('Wähle zuerst eine Dachfläche aus, bevor du U verwendest.');
+    return false;
+  }
+
+  if (!st.getSelectedPanel()) {
+    toast.error('Wähle ein Solarmodell aus dem Katalog aus.');
+    return false;
+  }
+
+  if (!st.snapshot?.mppImage) {
+    toast.error('Maßstab fehlt (mppImage im Snapshot).');
+    return false;
+  }
+
   return true;
 }
 
+
 function ensureModulesPrereqsForF(): boolean {
   const st = usePlannerV2Store.getState();
-  if (st.step !== 'modules') { alert('Du musst dich im Schritt „Module“ befinden.'); return false; }
-  if (!st.selectedId)        { alert('Wähle zuerst eine Dachfläche (Roof) aus, bevor du eine Fläche füllst.'); return false; }
+
+  if (st.step !== 'modules') {
+    toast.error('Du musst dich im Schritt „Module“ befinden.');
+    return false;
+  }
+
+  // se un domani vuoi forzare la selezione di una falda:
+  if (!st.selectedId) {
+    toast.error('Wähle zuerst eine Dachfläche aus, bevor du eine Fläche füllst.');
+    return false;
+  }
+
   return true;
 }
+
 
 
 

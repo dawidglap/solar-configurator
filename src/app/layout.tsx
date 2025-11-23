@@ -3,6 +3,8 @@ import { Montserrat } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 
+// ⬇️ AGGIUNTO
+import { Toaster } from "react-hot-toast";
 
 const montserrat = Montserrat({
   subsets: ["latin"],
@@ -29,12 +31,20 @@ export default function RootLayout({
 
         {/* Contenuto a destra della sidebar */}
         <div className="flex flex-col flex-1 overflow-hidden">
-          {/* Navbar fissa in alto */}
+          {/* Navbar (se vuoi riattivarla) */}
           {/* <Navbar /> */}
 
-          {/* Contenuto scrollabile sotto la navbar */}
+          {/* Contenuto scrollabile */}
           <main className="flex-1 overflow-auto relative">{children}</main>
         </div>
+
+        {/* ⬇️ AGGIUNTO: TOASTER GLOBALE */}
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            duration: 2000,
+          }}
+        />
       </body>
     </html>
   );
