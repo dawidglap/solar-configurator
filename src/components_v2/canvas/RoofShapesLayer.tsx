@@ -364,23 +364,24 @@ const HANDLE_SZ       = toImgPx(HANDLE_SIZE_S);
   return (
     <>
       {/* Clic sullo sfondo: deseleziona */}
-      <KonvaRect
-        x={0}
-        y={0}
-        width={imgW}
-        height={imgH}
-        fill="rgba(0,0,0,0)"
-        listening
-               onClick={() => {
-          // ogni click fuori dalle falde → torna allo strumento "select" / "Auswählen"
-          setTool('select' as any);
-          setGroupSel([]);
-          onSelect(undefined);
-          setHoverAll(false);
-        }}
+  <KonvaRect
+  x={0}
+  y={0}
+  width={imgW}
+  height={imgH}
+  fill="rgba(0,0,0,0)"
+  listening
+  onClick={() => {
+    // solo quando siamo GIÀ in modalità selezione
+    if (tool !== 'select') return;
 
+    // niente più cambio tool (è già select)
+    setGroupSel([]);
+    onSelect(undefined);
+    setHoverAll(false);
+  }}
+/>
 
-      />
 
       {layers.map(r => {
         const sel = r.id === selectedId;
