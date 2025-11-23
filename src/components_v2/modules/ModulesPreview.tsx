@@ -4,7 +4,7 @@
 import React, { useMemo } from 'react';
 import { Group, Rect, Line, Image as KonvaImage } from 'react-konva';
 import { computeAutoLayoutRects } from './layout';      // ← stessa cartella
-import { overlapsReservedRect } from '../zones/utils'
+import { overlapsReservedRect, overlapsSnowGuard } from '../zones/utils';
 
 type Pt = { x: number; y: number };
 type Anchor = 'start' | 'center' | 'end';
@@ -129,25 +129,43 @@ export default function ModulesPreview({
       phaseY,
       anchorX,
       anchorY,
-      coverageRatio, // ← aggiunto: la preview rispetta 1/2, 3/4, 1/1
+      coverageRatio, // ← preview rispetta 1/2, 3/4, 1/1
     });
   }, [
     polygon, mppImage, azimuthDeg, orientation, panelSizeM,
     spacingM, marginM, phaseX, phaseY, anchorX, anchorY, coverageRatio,
   ]);
 
-  // 2) Filtro zone riservate (coerente col commit)
- const rects = useMemo(
-   () =>
-     rectsAll.filter(r =>
-       !overlapsReservedRect(
-         { cx: r.cx, cy: r.cy, w: r.wPx, h: r.hPx, angleDeg: r.angleDeg },
-         roofId,
-         1 // epsilon px
-       )
-     ),
-   [rectsAll, roofId]
- );
+  // 2) Filtro zone riservate + schneefang (coerente con FillAreaController + U)
+  const rects = useMemo(
+    () =>
+      rectsAll.filter((r) => {
+        const rectForReserved = {
+          cx: r.cx,
+          cy: r.cy,
+          w: r.wPx,
+          h: r.hPx,
+          angleDeg: r.angleDeg,
+        };
+
+        const rectForSnow = {
+          cx: r.cx,
+          cy: r.cy,
+          wPx: r.wPx,
+          hPx: r.hPx,
+          angleDeg: r.angleDeg,
+        };
+
+        // se entra in una hindernis → scarta
+        if (overlapsReservedRect(rectForReserved, roofId, 1)) return false;
+
+        // se interseca una linea neve → scarta
+        if (overlapsSnowGuard(rectForSnow, roofId, 1)) return false;
+
+        return true;
+      }),
+    [rectsAll, roofId]
+  );
 
   // 3) Griglia visiva (linee) — calcolata con la stessa logica di anchor/phase
   const gridLinesWorld = useMemo(() => {
@@ -203,7 +221,7 @@ export default function ModulesPreview({
 
     const lines: { points: number[] }[] = [];
 
-    // verticali: estendi sia verso dx che verso sx per coprire tutta la bbox
+    // verticali
     for (let x = startX; x <= maxX + 0.5; x += cellW) {
       const a = localToWorld({ x, y: minY }, O, theta);
       const b = localToWorld({ x, y: maxY }, O, theta);
@@ -230,7 +248,7 @@ export default function ModulesPreview({
     return lines;
   }, [
     showGrid, polygon, mppImage, azimuthDeg, orientation,
-    panelSizeM, spacingM, marginM, phaseX, phaseY, anchorX, anchorY
+    panelSizeM, spacingM, marginM, phaseX, phaseY, anchorX, anchorY,
   ]);
 
   // 4) texture opzionale
@@ -268,7 +286,7 @@ export default function ModulesPreview({
         />
       ))}
 
-      {/* moduli (preview = commit) */}
+      {/* moduli (preview = commit, ma filtrati da hindernis + snow-guard) */}
       {rects.map((r, i) =>
         img ? (
           <KonvaImage
@@ -280,7 +298,7 @@ export default function ModulesPreview({
             height={r.hPx}
             offsetX={r.wPx / 2}
             offsetY={r.hPx / 2}
-            rotation={r.angleDeg}        // ← usa l’angolo della funzione ufficiale
+            rotation={r.angleDeg}
             listening={false}
             opacity={0.85}
           />
@@ -293,7 +311,7 @@ export default function ModulesPreview({
             height={r.hPx}
             offsetX={r.wPx / 2}
             offsetY={r.hPx / 2}
-            rotation={r.angleDeg}        // ← idem
+            rotation={r.angleDeg}
             fill="#2b4b7c"
             opacity={0.85}
             listening={false}
