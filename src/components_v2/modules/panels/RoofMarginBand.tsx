@@ -8,7 +8,7 @@ type Pt = { x: number; y: number };
 export function RoofMarginBand({
   polygon,
   marginPx,
-  color = 'rgba(138, 0, 0, 0.65)', // rosso tenue
+  color = 'rgba(220, 38, 39, 0.65)', // rosso tenue
 }: {
   polygon: Pt[];
   marginPx: number;            // in px immagine
