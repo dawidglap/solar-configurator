@@ -453,6 +453,16 @@ function ensureModulesPrereqsForF(): boolean {
 />
 
 <ActionBtn
+  active={tool === 'draw-rect'}
+  onClick={() => go('draw-rect' as any)}
+  Icon={AiOutlineBorderHorizontal}
+  label=""
+  disabled={!canUseBuildingTools}
+  tooltipLabel="Rechteck zeichnen"
+  tooltipKeys={['R']}
+/>
+
+<ActionBtn
   active={tool === 'draw-reserved'}
   onClick={() => go('draw-reserved' as any)}
   Icon={MdOutlineTexture}
@@ -462,15 +472,7 @@ function ensureModulesPrereqsForF(): boolean {
   tooltipKeys={['H']}
 />
 
-<ActionBtn
-  active={tool === 'draw-rect'}
-  onClick={() => go('draw-rect' as any)}
-  Icon={AiOutlineBorderHorizontal}
-  label=""
-  disabled={!canUseBuildingTools}
-  tooltipLabel="Rechteck zeichnen"
-  tooltipKeys={['R']}
-/>
+
 
 {/* Module-only */}
 <ActionBtn
