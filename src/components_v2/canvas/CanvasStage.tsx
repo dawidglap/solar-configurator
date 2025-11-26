@@ -550,7 +550,7 @@ const {
 
 
   // stile tetti
-  const stroke = '#fff';
+  const stroke = '#60a5fa';
   const strokeSelected = '#60a5fa';
   const fill = 'rgba(246, 240, 255, 0.12)';
   const strokeWidthNormal = 0.5;

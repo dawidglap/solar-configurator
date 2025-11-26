@@ -445,9 +445,10 @@ const renderDrawRect = () => {
         <>
           <KonvaLine
             points={toFlat(rectDraft)}
-            stroke={stroke}
+            stroke="#39BDF8"
+
             strokeWidth={1.5}
-            dash={[6, 6]}
+            dash={[3, 3]}
             lineJoin="round"
             lineCap="round"
           />
@@ -485,10 +486,10 @@ const renderDrawRect = () => {
         points={toFlat(preview)}
         closed
         stroke={stroke}
-        strokeWidth={1.5}
+        strokeWidth={1}
         lineJoin="round"
         lineCap="round"
-        dash={[6, 6]}
+        dash={[3, 3]}
       />
       <KonvaText
         x={polygonCentroid(preview).x}
