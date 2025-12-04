@@ -5,6 +5,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 // ⬇️ NEW
 import { isToolAllowed, defaultToolFor } from './capabilities';
 import { ALLOWED_TOOLS, DEFAULT_TOOL } from '../../constants/stepTools';
+import { nanoid } from 'nanoid';
 
 import { history } from './history';
 
@@ -96,6 +97,8 @@ type PlannerV2State = {
     setRoofRotDeg: (deg: number) => void;
     setRoofPivotPx: (p?: { x: number; y: number }) => void;
     resetRoofAlign: () => void;
+        duplicateRoof: (id: string) => string | undefined;
+
 
     // 👇👇👇 AGGIUNGI QUESTO
     snowGuards: SnowGuard[];
@@ -263,11 +266,50 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             setRoofPivotPx: (p) =>
                 set((s) => ({ roofAlign: { ...s.roofAlign, pivotPx: p } })),
 
-            resetRoofAlign: () =>
+                     resetRoofAlign: () =>
                 set(() => ({ roofAlign: { rotDeg: 0, pivotPx: undefined } })),
+
+            // ── Duplica falda tetto
+            duplicateRoof: (id: string) => {
+                let newId: string | undefined;
+
+                set((state) => {
+                    const roof = state.layers.find((l: any) => l.id === id);
+                    if (!roof) return state;
+
+                    const OFFSET = 20; // piccolo offset per non sovrapporlo esattamente
+                    const newPoints = (roof.points ?? []).map((p: any) => ({
+                        x: p.x + OFFSET,
+                        y: p.y + OFFSET,
+                    }));
+
+                    newId = nanoid();
+
+                    const copy = {
+                        ...roof,
+                        id: newId,
+                        name: roof.name ? `${roof.name} (Kopie)` : 'Dach (Kopie)',
+                        points: newPoints,
+                    };
+
+                    const next = {
+                        ...state,
+                        layers: [...state.layers, copy],
+                    };
+
+                    // aggiungiamo allo storico per l'undo
+                    history.push(JSON.stringify(next));
+                    return next;
+                });
+
+                return newId;
+            },
 
             // ── Snow guards (protezioni neve)
             snowGuards: [],
+
+
+    
 
             addSnowGuard: (sg: SnowGuard) =>
                 set((state) => {
