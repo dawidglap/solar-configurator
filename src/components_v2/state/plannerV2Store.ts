@@ -6,6 +6,9 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { isToolAllowed, defaultToolFor } from './capabilities';
 import { ALLOWED_TOOLS, DEFAULT_TOOL } from '../../constants/stepTools';
 import { nanoid } from 'nanoid';
+import type { ProfileSlice } from './slices/profileSlice';
+import { createProfileSlice, defaultProfile } from './slices/profileSlice';
+
 
 import { history } from './history';
 
@@ -107,21 +110,31 @@ type PlannerV2State = {
     deleteSnowGuard: (id: string) => void;
     selectedSnowGuardId?: string;
     setSelectedSnowGuard: (id?: string) => void;
-} & UISlice & LayersSlice & PanelsSlice & ZonesSlice;
+} & UISlice & LayersSlice & PanelsSlice & ZonesSlice & ProfileSlice;
 
 
 export const usePlannerV2Store = create<PlannerV2State>()(
     persist(
         (set, get, api) => ({
             // ── Step
-            step: 'building',
+            step: 'profile',
 
-            setStep: (s) =>
-                set((st) => {
-                    const allowed = ALLOWED_TOOLS[s];
-                    const nextTool = allowed.includes(st.tool) ? st.tool : DEFAULT_TOOL[s];
-                    return { step: s, tool: nextTool };
-                }),
+        setStep: (s) =>
+  set((st) => {
+    // solo per gli step che hanno tools definiti
+    const allowed = ALLOWED_TOOLS[s as keyof typeof ALLOWED_TOOLS];
+
+    if (!allowed) {
+      // profile / ist / report / offer → non tocchiamo il tool
+      return { step: s };
+    }
+
+    const nextTool = allowed.includes(st.tool)
+      ? st.tool
+      : DEFAULT_TOOL[s as keyof typeof DEFAULT_TOOL];
+
+    return { step: s, tool: nextTool };
+  }),
 
             // ── Snapshot (non persistito)
             snapshot: {},
@@ -362,10 +375,14 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             // ── Zones slice
             ...createZonesSlice(set, get, api),
 
+            // ── Profile slice
+...createProfileSlice(set, get, api),
+
+
         }),
         {
             name: 'planner-v2',
-            version: 10,
+            version: 12,
 
             storage: createJSONStorage(() => localStorage),
 
@@ -387,12 +404,39 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 roofAlign: s.roofAlign,
                 snowGuards: s.snowGuards,
                 selectedSnowGuardId: s.selectedSnowGuardId,
+                 profile: s.profile,  
 
 
             }),
 
 
-            migrate: (persisted: any) => {
+migrate: (persisted: any, fromVersion?: number) => {
+  if (!persisted) return persisted;
+
+  // 🔹 default profile se assente
+  if (!persisted.profile) {
+    persisted.profile = defaultProfile;
+  }
+
+  // 🔹 per tutte le versioni precedenti alla 12, partiamo da 'profile'
+  if ((fromVersion ?? 0) < 12) {
+    persisted.step = 'profile';
+  }
+
+  const validSteps: PlannerStep[] = [
+    'profile',
+    'ist',
+    'building',
+    'modules',
+    'strings',
+    'parts',
+    'report',
+    'offer',
+  ];
+
+  if (!validSteps.includes(persisted.step)) {
+    persisted.step = 'profile';
+  }
 
                 // ensure zones slice
                 if (!Array.isArray(persisted.zones)) {
@@ -407,9 +451,6 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 if (!Array.isArray(persisted.snowGuards)) {
                     persisted.snowGuards = [];
                 }
-
-
-                if (!persisted) return persisted;
 
                 // safety: rimuoviamo vecchio snapshot persistito se presente
                 delete persisted?.snapshot;
@@ -480,10 +521,9 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                     }
                 }
 
-
-
                 return persisted;
             },
+
         }
     )
 );

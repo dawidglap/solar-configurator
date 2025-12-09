@@ -48,6 +48,8 @@ import ModuleSprite from "../modules/ModuleSprite";
 import ScreenGrid from "./ScreenGrid";
 import CompassHUD from "../compassHUD";
 import RoofHotkeys from "../RoofHotkeys";
+import ProfileStep from "../steps/ProfileStep";
+import IstSituationStep from "../steps/IstSituationStep";
 
 // ——— ANGLES HELPERS ———
 function radToDeg(r: number) {
@@ -138,7 +140,10 @@ export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
 
+  const step = usePlannerV2Store((s) => s.step);
   // store
+  const isFormStep = step === "profile" || step === "ist";
+
   const snap = usePlannerV2Store((s) => s.snapshot);
   const view = usePlannerV2Store((s) => s.view);
   const setView = usePlannerV2Store((s) => s.setView);
@@ -157,7 +162,6 @@ export default function CanvasStage() {
   const setSelectedSnowGuard = usePlannerV2Store((s) => s.setSelectedSnowGuard);
   const deleteSnowGuard = usePlannerV2Store((s) => s.deleteSnowGuard);
 
-  const step = usePlannerV2Store((s) => s.step);
   const selPanel = usePlannerV2Store((s) => s.getSelectedPanel());
   const gridMods = usePlannerV2Store((s) => s.modules);
   const roofAlign = usePlannerV2Store((s) => s.roofAlign);
@@ -645,6 +649,29 @@ export default function CanvasStage() {
 
   const layerScale = view.scale || view.fitScale || 1;
 
+  if (isFormStep) {
+    return (
+      <div
+        ref={containerRef}
+        className="relative h-full w-full overflow-hidden "
+      >
+        <OverlayProgressStepper />
+        <OverlayTopToolbar />
+
+        <div
+          className="absolute inset-0 flex items-start"
+          style={{
+            paddingTop: "calc(var(--tb, 48px) + 16px)",
+          }}
+        >
+          <div className="w-full  h-full">
+            {step === "profile" ? <ProfileStep /> : <IstSituationStep />}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -654,6 +681,7 @@ export default function CanvasStage() {
     >
       <OverlayProgressStepper />
       <OverlayTopToolbar />
+
       <ScaleIndicator />
 
       {/* {!snap.url && <CenterAddressSearchOverlay />} */}

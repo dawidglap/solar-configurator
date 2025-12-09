@@ -1,5 +1,17 @@
 // src/types/planner.ts
-export type PlannerStep = 'building' | 'modules' | 'strings' | 'parts';
+
+// ───────────────────────────────────────────
+// STEP DEL PLANNER
+// ───────────────────────────────────────────
+export type PlannerStep =
+  | 'profile'     // Step 1 – Profil
+  | 'ist'         // Step 2 – IST-Situation
+  | 'building'    // Step 3 – Gebäudeplanung
+  | 'modules'     // Step 4 – Modulplanung
+  | 'strings'
+  | 'parts'
+  | 'report'
+  | 'offer';
 
 export type UIState = {
     stepperOpen: boolean;
@@ -15,8 +27,6 @@ export type Tool =
     | 'draw-rect'
     | 'fill-area' // ⬅️ NEW
     | 'draw-snow-guard';
-
-
 
 export type Pt = { x: number; y: number };
 
@@ -82,7 +92,6 @@ export type ModulesConfig = {
     showGrid: boolean;
     placingSingle: boolean;
 
-
     gridPhaseX?: number;
     gridPhaseY?: number;
     gridAnchorX?: 'start' | 'center' | 'end';
@@ -91,7 +100,6 @@ export type ModulesConfig = {
     /** 0.5 = metà tetto, 0.75 = 3/4, 1 = tutto */
     coverageRatio?: number;
     perRoofAngles?: Record<string, number>;
-
 };
 
 // ── Istanze di pannello materializzate
@@ -106,4 +114,48 @@ export type PanelInstance = {
     orientation: 'portrait' | 'landscape';
     panelId: string;     // riferimento al catalogo
     locked?: boolean;
+};
+
+// src/types/planner.ts
+
+// ...
+
+export type ProfileData = {
+  // Cliente
+  customerStatus: 'new' | 'existing';      // Neuer / Bestandes Kunde
+  customerType: 'private' | 'company';     // Privat / Firma
+  legalForm: string;                       // Rechtsform (libero per ora)
+  source: string;                          // Quelle (canale lead)
+
+  // Persona di contatto
+  contactSalutation?: 'herr' | 'frau' | 'divers' | null;
+  contactFirstName: string;
+  contactLastName: string;
+  contactMobile: string;
+  contactEmail: string;
+
+  // Indirizzo fatturazione
+  billingStreet: string;
+  billingStreetNo: string;
+  billingCity: string;
+  billingZip: string;
+
+  // Indirizzo edificio
+  buildingStreet: string;
+  buildingStreetNo: string;
+  buildingCity: string;
+  buildingZip: string;
+
+  // Dati attività (Geschäft)
+  businessName: string;
+  businessStreet: string;
+  businessStreetNo: string;
+  businessCity: string;
+  businessZip: string;
+  businessPhone: string;
+  businessEmail: string;
+  businessWebsite: string;
+
+  // Lead
+  leadLabel: string; // es. "#117" o free text
 };
