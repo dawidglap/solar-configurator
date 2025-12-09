@@ -83,14 +83,14 @@ const UI_STEPS: UiStep[] = [
     label: "Profil",
     short: "Profil",
     Icon: User,
-    clickable: true, // 👈 PRIMA era false
+    clickable: true,
   },
   {
     key: "ist",
     label: "IST-Situation",
     short: "IST",
     Icon: Map,
-    clickable: true, // 👈 PRIMA era false
+    clickable: true,
   },
   {
     key: "building",
@@ -163,7 +163,7 @@ export default function OverlayProgressStepper() {
   return (
     <div
       ref={barRef}
-      className="z-[200] planner-topbar fixed left-0 right-0 top-0 border-b border-neutral-200 bg-white shadow-sm"
+      className="z-[200] planner-topbar fixed left-0 right-0 top-0 border-b border-white/10  backdrop-blur-sm shadow-lg shadow-black/30"
       style={{ paddingLeft: "var(--sb, 64px)" }}
     >
       <div className="flex h-12 w-full items-center gap-3 px-3">
@@ -179,15 +179,15 @@ export default function OverlayProgressStepper() {
               const btnBase =
                 "group flex items-center gap-1.5 rounded-full px-2 py-1 transition";
               const btnCls = isActive
-                ? "bg-neutral-900/5"
-                : "hover:bg-neutral-900/5";
+                ? "bg-white/15 border border-white/30"
+                : "bg-white/5 hover:bg-white/10 border border-white/10";
               const dot =
                 "flex h-5 w-5 items-center justify-center rounded-full border text-[9px] leading-none tabular-nums";
               const dotCls = isActive
-                ? "bg-black text-white border-black"
+                ? "bg-emerald-500  border-emerald-400"
                 : isCompleted
-                ? "bg-emerald-600 text-white border-emerald-700"
-                : "bg-white text-neutral-700 border-neutral-300";
+                ? "bg-emerald-600  border-emerald-500"
+                : "bg-white/10  border-white/30";
 
               const content = (
                 <>
@@ -196,7 +196,7 @@ export default function OverlayProgressStepper() {
                   </span>
                   <span
                     className={`hidden sm:inline text-[10px] ${
-                      isActive ? "text-neutral-900" : "text-neutral-700"
+                      isActive ? "" : ""
                     }`}
                   >
                     {s.short}
@@ -223,7 +223,7 @@ export default function OverlayProgressStepper() {
                     </button>
                   ) : (
                     <div
-                      className={`${btnBase} opacity-70 cursor-default select-none`}
+                      className={`${btnBase} bg-white/5 border border-white/5 opacity-70 cursor-default select-none`}
                     >
                       {content}
                     </div>
@@ -232,7 +232,7 @@ export default function OverlayProgressStepper() {
                     <span
                       aria-hidden
                       className={`h-px w-5 rounded-full ${
-                        i < activeIndex ? "bg-emerald-600" : "bg-neutral-200"
+                        i < activeIndex ? "bg-emerald-500" : "bg-white/20"
                       }`}
                     />
                   )}
