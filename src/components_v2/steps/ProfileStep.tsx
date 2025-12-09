@@ -8,6 +8,7 @@ import { usePlannerV2Store } from "../state/plannerV2Store";
 export default function ProfileStep() {
   const profile = usePlannerV2Store((s) => s.profile);
   const setProfile = usePlannerV2Store((s) => s.setProfile);
+  const setStep = usePlannerV2Store((s) => s.setStep);
 
   const update =
     (field: keyof typeof profile) =>
@@ -16,7 +17,11 @@ export default function ProfileStep() {
     };
 
   const handleSave = () => {
+    // qui in futuro chiameremo il backend (POST)
     console.log("PROFILE DATA (ready for API):", profile);
+
+    // vai allo step successivo: IST-Situation
+    setStep("ist");
   };
 
   return (

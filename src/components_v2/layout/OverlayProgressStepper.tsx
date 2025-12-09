@@ -15,8 +15,14 @@ import {
   FileText,
 } from "lucide-react";
 
-// Non tocchiamo lo store
-type StoreKey = "building" | "modules" | "strings" | "parts";
+// 🔹 Ora includiamo anche 'profile' e 'ist'
+type StoreKey =
+  | "profile"
+  | "ist"
+  | "building"
+  | "modules"
+  | "strings"
+  | "parts";
 
 // Step UI separati
 type UiStep =
@@ -25,21 +31,51 @@ type UiStep =
       label: string;
       short: string;
       Icon: any;
-      clickable: false;
+      clickable: boolean;
     }
-  | { key: "ist"; label: string; short: string; Icon: any; clickable: false }
+  | {
+      key: "ist";
+      label: string;
+      short: string;
+      Icon: any;
+      clickable: boolean;
+    }
   | {
       key: "building";
       label: string;
       short: string;
       Icon: any;
-      clickable: true;
+      clickable: boolean;
     }
-  | { key: "modules"; label: string; short: string; Icon: any; clickable: true }
-  // | { key: 'strings';      label: string; short: string; Icon: any; clickable: false }
-  | { key: "parts"; label: string; short: string; Icon: any; clickable: false }
-  | { key: "report"; label: string; short: string; Icon: any; clickable: false }
-  | { key: "offer"; label: string; short: string; Icon: any; clickable: false };
+  | {
+      key: "modules";
+      label: string;
+      short: string;
+      Icon: any;
+      clickable: boolean;
+    }
+  // | { key: 'strings';      label: string; short: string; Icon: any; clickable: boolean }
+  | {
+      key: "parts";
+      label: string;
+      short: string;
+      Icon: any;
+      clickable: boolean;
+    }
+  | {
+      key: "report";
+      label: string;
+      short: string;
+      Icon: any;
+      clickable: boolean;
+    }
+  | {
+      key: "offer";
+      label: string;
+      short: string;
+      Icon: any;
+      clickable: boolean;
+    };
 
 const UI_STEPS: UiStep[] = [
   {
@@ -47,14 +83,14 @@ const UI_STEPS: UiStep[] = [
     label: "Profil",
     short: "Profil",
     Icon: User,
-    clickable: false,
+    clickable: true, // 👈 PRIMA era false
   },
   {
     key: "ist",
     label: "IST-Situation",
     short: "IST",
     Icon: Map,
-    clickable: false,
+    clickable: true, // 👈 PRIMA era false
   },
   {
     key: "building",
@@ -127,7 +163,7 @@ export default function OverlayProgressStepper() {
   return (
     <div
       ref={barRef}
-      className="z-[200] planner-topbar fixed left-0 right-0 top-0  border-b border-neutral-200 bg-white shadow-sm"
+      className="z-[200] planner-topbar fixed left-0 right-0 top-0 border-b border-neutral-200 bg-white shadow-sm"
       style={{ paddingLeft: "var(--sb, 64px)" }}
     >
       <div className="flex h-12 w-full items-center gap-3 px-3">
