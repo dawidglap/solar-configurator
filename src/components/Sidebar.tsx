@@ -1,4 +1,3 @@
-// src/components/Sidebar.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -23,6 +22,11 @@ const W_EXPANDED = 56; // px (w-14) — solo icone
 export default function Sidebar() {
   const pathname = usePathname();
   const isPlannerV2 = pathname?.startsWith("/planner-v2") ?? false;
+
+  // 🔹 Nascondi completamente la sidebar sulla pagina di login
+  if (pathname === "/login") {
+    return null;
+  }
 
   const [collapsed, setCollapsed] = useState<boolean>(isPlannerV2);
   useEffect(() => {
@@ -71,10 +75,9 @@ export default function Sidebar() {
           }}
           className="fixed z-[999360]
                flex h-10 w-10 items-center justify-center rounded-full
-               border border-white/25 bg-neutral-900/80 text-white
-               shadow-[0_8px_30px_rgba(0,0,0,0.65)]
-               backdrop-blur-sm
-               hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-white/30
+               border border-white/20 bg-neutral-900/80 text-white
+               shadow-lg shadow-black/40 backdrop-blur-md
+               hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-white/20
                transition"
         >
           {collapsed ? (
@@ -88,9 +91,8 @@ export default function Sidebar() {
       <aside
         className={[
           "fixed left-0 top-0 z-50 flex h-dvh flex-col justify-between",
-          // 🔹 glassmorphism
-          "border-r border-white/15 bg-neutral-900/35",
-          "backdrop-blur-sm shadow-[0_0_35px_rgba(0,0,0,0.70)]",
+          // glassmorphism
+          "border-r border-white/10 bg-white/5 backdrop-blur-lg shadow-[0_0_25px_rgba(0,0,0,0.6)]",
           "transition-[width] duration-300 overflow-hidden",
           collapsed ? "w-0" : "w-14",
         ].join(" ")}
@@ -99,7 +101,7 @@ export default function Sidebar() {
         <nav className="px-2 pt-4">
           {/* Logo compatto: solo iniziale */}
           <div className="mb-6 select-none font-black tracking-tight flex items-center justify-center">
-            <span className="text-xl leading-none text-white">S</span>
+            <span className="text-xl leading-none text-white/90">S</span>
           </div>
 
           {/* Menu: solo icone */}
@@ -119,9 +121,9 @@ export default function Sidebar() {
         {/* Profilo in basso: solo icona */}
         <div className="px-2 pb-4">
           <div
-            className="flex items-center justify-center rounded-full p-2 text-sm 
-                       text-white/80 select-none border border-white/15 bg-white/5
-                       shadow-[0_4px_18px_rgba(0,0,0,0.45)] backdrop-blur-sm"
+            className="flex items-center justify-center rounded-full p-2 text-sm
+                       text-white/80 select-none bg-white/5 border border-white/10
+                       shadow-[0_0_10px_rgba(0,0,0,0.4)]"
           >
             <FiUser className="text-xl" />
           </div>
@@ -147,13 +149,15 @@ function SidebarLink({
       href={href}
       className={[
         "group relative flex items-center justify-center rounded-full p-2 text-sm transition-colors",
-        isActive ? "text-white" : "text-white/70 hover:text-emerald-200",
+        isActive
+          ? "font-semibold text-white"
+          : "text-white/70 hover:text-emerald-300",
       ].join(" ")}
     >
       {isActive && (
         <span
-          className="absolute inset-0 -z-10 rounded-full border border-white/35
-                     bg-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]
+          className="absolute inset-0 -z-10 rounded-full border border-emerald-300/70
+                     bg-emerald-400/30 shadow-[inset_1px_1px_1px_rgba(255,255,255,0.5)]
                      backdrop-blur-sm"
         />
       )}

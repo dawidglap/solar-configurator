@@ -1,10 +1,11 @@
+// src/app/layout.tsx
 import type { Metadata } from "next";
 import { Montserrat } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 
-// ⬇️ AGGIUNTO
 import { Toaster } from "react-hot-toast";
+import { headers } from "next/headers";
 
 const montserrat = Montserrat({
   subsets: ["latin"],
@@ -16,29 +17,31 @@ export const metadata: Metadata = {
   description: "Solarplanung App",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // 🔹 headers() è async in Next 15
+  const h = await headers();
+
+  // Proviamo prima x-pathname, poi x-invoke-path, altrimenti '/'
+  const pathname = h.get("x-pathname") || h.get("x-invoke-path") || "/";
+
+  const isLoginPage = pathname.startsWith("/login");
+
   return (
     <html lang="de">
       <body
         className={`${montserrat.className} flex h-screen overflow-hidden bg-white text-black`}
       >
-        {/* Sidebar fissa a sinistra */}
-        <Sidebar />
+        {/* Sidebar visibile ovunque tranne /login */}
+        {!isLoginPage && <Sidebar />}
 
-        {/* Contenuto a destra della sidebar */}
         <div className="flex flex-col flex-1 overflow-hidden">
-          {/* Navbar (se vuoi riattivarla) */}
-          {/* <Navbar /> */}
-
-          {/* Contenuto scrollabile */}
           <main className="flex-1 overflow-auto relative">{children}</main>
         </div>
 
-        {/* ⬇️ AGGIUNTO: TOASTER GLOBALE */}
         <Toaster
           position="bottom-right"
           toastOptions={{
