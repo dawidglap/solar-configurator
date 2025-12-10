@@ -159,14 +159,22 @@ export default function OverlayProgressStepper() {
       document.body.style.removeProperty("--tb");
     };
   }, []);
-
   return (
     <div
       ref={barRef}
-      className="z-[200] planner-topbar fixed left-0 right-0 top-0 border-b border-white/10  backdrop-blur-sm shadow-lg shadow-black/30"
+      className="
+      z-[200] planner-topbar fixed left-0 right-0 top-0
+      border-b border-white/20
+      bg-neutral-900/35
+      backdrsm-blur-2xl
+      shadow-[0_0_35px_rgba(0,0,0,0.70)]
+      text-white
+      transition
+    "
       style={{ paddingLeft: "var(--sb, 64px)" }}
     >
       <div className="flex h-12 w-full items-center gap-3 px-3">
+        {/* Spacer */}
         <div className="flex-1" />
 
         <nav aria-label="Wizard progress" className="mr-1">
@@ -177,26 +185,32 @@ export default function OverlayProgressStepper() {
               const Icon = s.Icon;
 
               const btnBase =
-                "group flex items-center gap-1.5 rounded-full px-2 py-1 transition";
+                "group flex items-center gap-1.5 rounded-full px-2 py-1 transition backdrop-blur-sm";
+
               const btnCls = isActive
-                ? "bg-white/15 border border-white/30"
-                : "bg-white/5 hover:bg-white/10 border border-white/10";
-              const dot =
-                "flex h-5 w-5 items-center justify-center rounded-full border text-[9px] leading-none tabular-nums";
-              const dotCls = isActive
-                ? "bg-emerald-500  border-emerald-400"
+                ? "bg-white/20 border border-white/40 shadow-[0_4px_14px_rgba(0,0,0,0.35)]"
                 : isCompleted
-                ? "bg-emerald-600  border-emerald-500"
-                : "bg-white/10  border-white/30";
+                ? "bg-emerald-500/20 border border-emerald-400/40 shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
+                : "bg-white/10 border border-white/20 hover:bg-white/20";
+
+              const dot =
+                "flex h-5 w-5 items-center justify-center rounded-full border text-[9px] leading-none";
+
+              const dotCls = isActive
+                ? "bg-emerald-500 text-white border-emerald-400"
+                : isCompleted
+                ? "bg-emerald-600 text-white border-emerald-500"
+                : "bg-white/10 text-white border-white/30";
 
               const content = (
                 <>
                   <span className={`${dot} ${dotCls}`}>
                     {isCompleted ? <Check className="h-3 w-3" /> : i + 1}
                   </span>
+
                   <span
                     className={`hidden sm:inline text-[10px] ${
-                      isActive ? "" : ""
+                      isActive ? "text-white" : "text-white/70"
                     }`}
                   >
                     {s.short}
@@ -223,16 +237,17 @@ export default function OverlayProgressStepper() {
                     </button>
                   ) : (
                     <div
-                      className={`${btnBase} bg-white/5 border border-white/5 opacity-70 cursor-default select-none`}
+                      className={`${btnBase} bg-white/5 border border-white/10 opacity-60 cursor-default select-none`}
                     >
                       {content}
                     </div>
                   )}
+
                   {i < UI_STEPS.length - 1 && (
                     <span
                       aria-hidden
-                      className={`h-px w-5 rounded-full ${
-                        i < activeIndex ? "bg-emerald-500" : "bg-white/20"
+                      className={`h-px w-5 rounded-full transition ${
+                        i < activeIndex ? "bg-emerald-500" : "bg-white/25"
                       }`}
                     />
                   )}
