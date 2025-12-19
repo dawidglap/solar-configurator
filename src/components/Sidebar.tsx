@@ -108,32 +108,31 @@ export default function Sidebar() {
           </ul>
 
           {/* Toggle: subito sotto l'ultima icona, SEMPRE A SX */}
-          {isPlannerV2 && (
-            <div className="mt-2 ">
-              <button
-                aria-label={
-                  collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"
-                }
-                title={
-                  collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"
-                }
-                onClick={() => setCollapsed((s) => !s)}
-                className={[
-                  "flex h-10 w-10 items-center justify-center rounded-full",
-                  "border border-white/20 bg-neutral-900/80 text-white",
-                  "shadow-lg shadow-black/40 backdrop-blur-md",
-                  "hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-white/20",
-                  "transition",
-                ].join(" ")}
-              >
-                {collapsed ? (
-                  <FiChevronRight className="text-white/95" />
-                ) : (
-                  <FiChevronLeft className="text-white/95" />
-                )}
-              </button>
-            </div>
-          )}
+
+          <div className="mt-2 ">
+            <button
+              aria-label={
+                collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"
+              }
+              title={
+                collapsed ? "Seitenleiste öffnen" : "Seitenleiste schließen"
+              }
+              onClick={() => setCollapsed((s) => !s)}
+              className={[
+                "flex h-10 w-10 items-center justify-center rounded-full",
+                "border border-white/20 bg-neutral-900/80 text-white",
+                "shadow-lg shadow-black/40 backdrop-blur-md",
+                "hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-white/20",
+                "transition",
+              ].join(" ")}
+            >
+              {collapsed ? (
+                <FiChevronRight className="text-white/95" />
+              ) : (
+                <FiChevronLeft className="text-white/95" />
+              )}
+            </button>
+          </div>
         </nav>
       </div>
 

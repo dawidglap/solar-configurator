@@ -22,19 +22,34 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // 🔹 headers() è async in Next 15
   const h = await headers();
-
-  // Proviamo prima x-pathname, poi x-invoke-path, altrimenti '/'
   const pathname = h.get("x-pathname") || h.get("x-invoke-path") || "/";
-
   const isLoginPage = pathname.startsWith("/login");
 
   return (
     <html lang="de">
       <body
-        className={`${montserrat.className} flex h-screen overflow-hidden bg-white text-black`}
+        className={[
+          montserrat.className,
+          "flex h-screen overflow-hidden",
+          // niente bg-white: il bg lo gestiamo noi con hero.webp
+          "text-white",
+        ].join(" ")}
       >
+        {/* Background globale: hero.webp + blur + overlay */}
+        {!isLoginPage && (
+          <div className="pointer-events-none fixed inset-0 -z-10">
+            <div
+              className="absolute inset-0 bg-center bg-cover"
+              style={{ backgroundImage: "url(/images/hero.webp)" }}
+            />
+            {/* blur leggero */}
+            <div className="absolute inset-0 backdrop-blur-xs" />
+            {/* overlay per contrasto */}
+            <div className="absolute inset-0 bg-black/35" />
+          </div>
+        )}
+
         {/* Sidebar visibile ovunque tranne /login */}
         {!isLoginPage && <Sidebar />}
 
