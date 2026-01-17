@@ -75,6 +75,8 @@ type PlannerV2State = {
 
     resetForNewAddress: (snap: Partial<Snapshot>) => void;
 
+    
+
     // view & tools
     snapshotScale: 1 | 2 | 3;
     setSnapshotScale: (n: 1 | 2 | 3) => void;
@@ -110,7 +112,12 @@ type PlannerV2State = {
     deleteSnowGuard: (id: string) => void;
     selectedSnowGuardId?: string;
     setSelectedSnowGuard: (id?: string) => void;
+    exportState: () => any;
+importState: (saved: any) => void;
 } & UISlice & LayersSlice & PanelsSlice & ZonesSlice & ProfileSlice;
+
+
+
 
 
 export const usePlannerV2Store = create<PlannerV2State>()(
@@ -178,6 +185,55 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 // niente “undo” verso il progetto precedente
                 history.clear();
             },
+
+            exportState: () => {
+  const s = get();
+  return {
+    step: s.step,
+    view: s.view,
+    tool: s.tool,
+    snapshotScale: s.snapshotScale,
+
+    layers: s.layers,
+    zones: s.zones,
+    panels: s.panels,
+
+    modules: s.modules,
+    roofAlign: s.roofAlign,
+
+    snowGuards: s.snowGuards,
+    selectedPanelId: s.selectedPanelId,
+
+    profile: s.profile,
+  };
+},
+
+importState: (saved: any) => {
+  if (!saved || typeof saved !== "object") return;
+
+  set((s) => ({
+    ...s,
+    step: saved.step ?? s.step,
+    view: saved.view ?? s.view,
+    tool: saved.tool ?? s.tool,
+    snapshotScale: saved.snapshotScale ?? s.snapshotScale,
+
+    layers: Array.isArray(saved.layers) ? saved.layers : s.layers,
+    zones: Array.isArray(saved.zones) ? saved.zones : s.zones,
+    panels: Array.isArray(saved.panels) ? saved.panels : s.panels,
+
+    modules: saved.modules ?? s.modules,
+    roofAlign: saved.roofAlign ?? s.roofAlign,
+
+    snowGuards: Array.isArray(saved.snowGuards) ? saved.snowGuards : s.snowGuards,
+    selectedPanelId: saved.selectedPanelId ?? s.selectedPanelId,
+
+    profile: saved.profile ?? s.profile,
+  }));
+
+  history.clear();
+},
+
 
 
             // ── Snapshot scale
