@@ -3,18 +3,48 @@
 import Image from "next/image";
 import { Search, ChevronRight } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
+import { useRouter } from "next/navigation";
 
 type Props = {
   onStartNew: () => void;
 };
 
 export default function PlannerWelcomeScreen({ onStartNew }: Props) {
+  const router = useRouter();
+
   const resetForNewAddress = usePlannerV2Store((s) => s.resetForNewAddress);
   const setStep = usePlannerV2Store((s) => s.setStep);
 
-  const handleStartNew = () => {
+  const handleStartNew = async () => {
+    // 1) reset UI / store
     resetForNewAddress({});
     setStep("profile");
+
+    // 2) crea planning nel DB
+    const res = await fetch("/api/plannings", {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (res.status === 401) {
+      router.push("/login");
+      return;
+    }
+
+    const json = await res.json().catch(() => null);
+
+    if (!json?.ok || !json?.planningId) {
+      console.error("Create planning failed:", json);
+      alert("Errore: non sono riuscito a creare una nuova planning.");
+      return;
+    }
+
+    const planningId = json.planningId as string;
+
+    // 3) apri il planner con planningId nell’URL
+    router.push(`/planner-v2?planningId=${planningId}`);
+
+    // 4) chiudi la welcome (mostra PlannerShell)
     onStartNew();
   };
 
@@ -51,7 +81,6 @@ export default function PlannerWelcomeScreen({ onStartNew }: Props) {
               Bestehende Planung öffnen
             </span>
 
-            {/* Circle icon */}
             <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/10 group-hover:bg-white/20 transition">
               <Search className="h-4 w-4" />
             </span>
@@ -67,7 +96,6 @@ export default function PlannerWelcomeScreen({ onStartNew }: Props) {
               Neue Planung starten
             </span>
 
-            {/* Circle icon */}
             <span className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-300/80 bg-emerald-400/40 group-hover:bg-emerald-300/70 transition">
               <ChevronRight className="h-4 w-4 text-emerald-900" />
             </span>

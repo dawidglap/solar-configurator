@@ -94,7 +94,22 @@ export function usePlanningLoad() {
       const data = planning?.data ?? {};
 
       // ✅ apriamo SEMPRE da step 1 (poi miglioriamo usando currentStep)
-      setStep("profile");
+      const stepFromDb = planning?.currentStep;
+if (
+  stepFromDb === "profile" ||
+  stepFromDb === "ist" ||
+  stepFromDb === "building" ||
+  stepFromDb === "modules" ||
+  stepFromDb === "strings" ||
+  stepFromDb === "parts" ||
+  stepFromDb === "report" ||
+  stepFromDb === "offer"
+) {
+  setStep(stepFromDb);
+} else {
+  setStep("profile");
+}
+
 
       // ✅ PROFILE: se è già store-shape → setProfile diretto
       if (data.profile && typeof data.profile === "object") {
