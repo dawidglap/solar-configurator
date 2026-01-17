@@ -4,50 +4,44 @@ import { useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { usePlannerV2Store } from "./plannerV2Store";
 
-/** normalizza stringhe tipo "Herr"/"Frau" -> "herr"/"frau" */
-function mapSalutation(v: any): "herr" | "frau" | "" {
+/** normalizza "Herr"/"Frau" -> "herr"/"frau" */
+function mapSalutation(v: any): "herr" | "frau" | null {
   const s = String(v ?? "").toLowerCase();
   if (s.includes("herr")) return "herr";
   if (s.includes("frau")) return "frau";
-  return "";
+  return null;
 }
 
-/** API profile -> Store profile (quello che usa ProfileStep) */
-function mapApiProfileToStore(api: any) {
-  const customerType = String(api?.customerKind ?? "").toLowerCase(); // "privat" | "firma"
-  const customerStatus = String(api?.customerType ?? "").toLowerCase(); // "new" | "existing"
+/** ✅ fallback: vecchia shape API -> nuova shape store */
+function mapLegacyApiProfileToStore(api: any) {
+  const customerType = String(api?.customerKind ?? "").toLowerCase();
+  const customerStatus = String(api?.customerType ?? "").toLowerCase();
 
   return {
-    // top
     customerStatus: customerStatus === "existing" ? "existing" : "new",
-    customerType: customerType === "firma" || customerType === "company" ? "company" : "private",
+    customerType:
+      customerType === "firma" || customerType === "company" ? "company" : "private",
     source: api?.source ?? "",
-
     legalForm: api?.legalForm ?? "",
 
-    // contact
     contactSalutation: mapSalutation(api?.contact?.salutation),
     contactFirstName: api?.contact?.firstName ?? "",
     contactLastName: api?.contact?.lastName ?? "",
     contactMobile: api?.contact?.mobile ?? api?.contact?.phone ?? "",
     contactEmail: api?.contact?.email ?? "",
 
-    // building address
     buildingStreet: api?.buildingAddress?.street ?? api?.building?.street ?? "",
     buildingStreetNo: api?.buildingAddress?.streetNo ?? api?.building?.streetNo ?? "",
     buildingCity: api?.buildingAddress?.city ?? api?.building?.city ?? "",
     buildingZip: api?.buildingAddress?.zip ?? api?.building?.zip ?? "",
 
-    // billing address
     billingStreet: api?.billingAddress?.street ?? "",
     billingStreetNo: api?.billingAddress?.streetNo ?? "",
     billingCity: api?.billingAddress?.city ?? "",
     billingZip: api?.billingAddress?.zip ?? "",
 
-    // lead
     leadLabel: api?.leadLabel ?? "",
 
-    // business
     businessName: api?.business?.name ?? "",
     businessStreet: api?.business?.street ?? "",
     businessStreetNo: api?.business?.streetNo ?? "",
@@ -59,26 +53,26 @@ function mapApiProfileToStore(api: any) {
   };
 }
 
-/** (opzionale) API ist -> store ist (se hai già ist nello store) */
-function mapApiIstToStore(api: any) {
-  // tienilo minimale: salva quello che hai già nel backend
-  return {
-    roofType: api?.roofType ?? "",
-    coverage: api?.coverage ?? "",
-    notes: api?.notes ?? "",
-    photos: Array.isArray(api?.photos) ? api.photos : [],
-  };
+/** ✅ capiamo se il profile è già in “store shape” */
+function looksLikeStoreProfile(p: any) {
+  if (!p || typeof p !== "object") return false;
+  // uno o due campi “firma” che nel tuo store esistono di sicuro
+  return (
+    "contactFirstName" in p ||
+    "contactLastName" in p ||
+    "customerStatus" in p ||
+    "customerType" in p
+  );
 }
 
 export function usePlanningLoad() {
   const sp = useSearchParams();
   const router = useRouter();
-
-  // ⚠️ nel tuo URL è planningId (non planningID ecc.)
   const planningId = sp.get("planningId");
 
-  const importState = usePlannerV2Store((s) => s.importState);
   const setStep = usePlannerV2Store((s) => s.setStep);
+  const setProfile = usePlannerV2Store((s) => s.setProfile);
+  const importState = usePlannerV2Store((s) => s.importState); // lo useremo dopo
 
   useEffect(() => {
     if (!planningId) return;
@@ -99,36 +93,30 @@ export function usePlanningLoad() {
       const planning = json.planning;
       const data = planning?.data ?? {};
 
-      // ✅ apriamo SEMPRE da step 1
+      // ✅ apriamo SEMPRE da step 1 (poi miglioriamo usando currentStep)
       setStep("profile");
 
-      // ✅ 1) PROFILE: map API -> store shape (quella del tuo ProfileStep)
+      // ✅ PROFILE: se è già store-shape → setProfile diretto
       if (data.profile && typeof data.profile === "object") {
-        const mapped = mapApiProfileToStore(data.profile);
-        usePlannerV2Store.setState({ profile: mapped } as any);
+        const profileToStore = looksLikeStoreProfile(data.profile)
+          ? data.profile
+          : mapLegacyApiProfileToStore(data.profile);
+
+        // setProfile fa merge: se gli passi l’oggetto intero, riempi tutto quello che c’è
+        setProfile(profileToStore);
       }
 
-      // ✅ 2) IST: se nello store hai "ist" e un setter, popolalo qui
-      if (data.ist && typeof data.ist === "object") {
-        // se hai nello store: setIst(patch)
-        const st: any = usePlannerV2Store.getState();
-        if (typeof st.setIst === "function") {
-          st.setIst(mapApiIstToStore(data.ist));
-        } else {
-          // fallback: se nello store esiste "ist" direttamente
-          if ("ist" in st) usePlannerV2Store.setState({ ist: mapApiIstToStore(data.ist) } as any);
-        }
-      }
+      // ✅ IST: (solo se hai già ist nello store — qui per ora lasciamo stare)
 
-      // ✅ 3) PLANNER: il tuo DB ha planner nel formato "version/roof/modules",
-      // NON nello store format (layers/panels/zones).
-      // Quindi per ora NON lo importiamo nello store, altrimenti non serve a nulla.
-      // Quando vuoi, faremo un mapper anche per quello.
-      // const savedPlanner = data.planner;
+      // ✅ PLANNER: quando vuoi, qui importeremo il planner nello store
+      // if (data.planner) importState(data.planner);
 
-      // ✅ pulisci undo/redo
-      const h: any = (await import("./history")).history;
-      h?.clear?.();
+      // ✅ pulisci undo/redo (se vuoi)
+      try {
+        const h: any = (await import("./history")).history;
+        h?.clear?.();
+      } catch {}
+
     })();
-  }, [planningId, importState, setStep, router]);
+  }, [planningId, router, setProfile, setStep, importState]);
 }

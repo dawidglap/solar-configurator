@@ -1,5 +1,6 @@
 import { MongoClient } from "mongodb";
 import crypto from "crypto";
+import { defaultStoreData } from "@/components_v2/state/defaultStoreData"; // ✅ NEW
 
 function sign(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
@@ -27,8 +28,10 @@ export async function POST(req: Request) {
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
-  if (!uri) return Response.json({ ok: false, error: "Missing MONGODB_URI" }, { status: 500 });
-  if (!secret) return Response.json({ ok: false, error: "Missing SESSION_SECRET" }, { status: 500 });
+  if (!uri)
+    return Response.json({ ok: false, error: "Missing MONGODB_URI" }, { status: 500 });
+  if (!secret)
+    return Response.json({ ok: false, error: "Missing SESSION_SECRET" }, { status: 500 });
 
   const session = readSession(req, secret);
   if (!session) return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
@@ -41,13 +44,16 @@ export async function POST(req: Request) {
     const plannings = db.collection("plannings");
 
     const now = new Date();
+
     const doc = {
       companyId: session.activeCompanyId,
       createdByUserId: session.userId,
       status: "draft",
       currentStep: "profile",
-      // qui metteremo i dati dei form step-by-step
-      data: {},
+
+      // ✅ QUI LA DIFFERENZA: invece di {}, mettiamo la shape completa
+      data: defaultStoreData(),
+
       createdAt: now,
       updatedAt: now,
     };

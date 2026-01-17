@@ -2,10 +2,15 @@
 "use client";
 
 import type React from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Pencil, Save } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 
 export default function ProfileStep() {
+  const sp = useSearchParams();
+  const router = useRouter();
+  const planningId = sp.get("planningId");
+
   const profile = usePlannerV2Store((s) => s.profile);
   const setProfile = usePlannerV2Store((s) => s.setProfile);
   const setStep = usePlannerV2Store((s) => s.setStep);
@@ -16,12 +21,45 @@ export default function ProfileStep() {
       setProfile({ [field]: e.target.value } as any);
     };
 
-  const handleSave = () => {
-    // qui in futuro chiameremo il backend (POST)
-    console.log("PROFILE DATA (ready for API):", profile);
+  const handleSave = async () => {
+    // 1) se manca planningId, non possiamo salvare nel DB
+    if (!planningId) {
+      console.warn(
+        "Missing planningId in URL. Example: /planner-v2?planningId=XXXX",
+      );
+      // ti lascio comunque andare avanti, ma non salva nel DB
+      setStep("ist");
+      return;
+    }
 
-    // vai allo step successivo: IST-Situation
-    setStep("ist");
+    try {
+      const res = await fetch(`/api/plannings/${planningId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ profile }),
+      });
+
+      // se non loggato -> login
+      if (res.status === 401) {
+        router.push(
+          `/login?next=${encodeURIComponent(`/planner-v2?planningId=${planningId}`)}`,
+        );
+        return;
+      }
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok || !json?.ok) {
+        console.error("SAVE PROFILE FAILED:", json);
+        return;
+      }
+
+      // ✅ salvato nel DB, vai allo step successivo
+      setStep("ist");
+    } catch (err) {
+      console.error("SAVE PROFILE ERROR:", err);
+    }
   };
 
   return (
@@ -187,12 +225,11 @@ export default function ProfileStep() {
             />
           </div>
 
-          {/* Gebäudeadresse sotto alla Kontaktperson */}
+          {/* Gebäudeadresse */}
           <h4 className="mt-4 text-[11px] font-semibold text-neutral-200">
             Gebäudeadresse
           </h4>
           <div className="space-y-1.5 text-[11px]">
-            {/* Adresse + Nr. sulla stessa riga */}
             <div className="flex gap-2">
               <InputField
                 label="Adresse"
@@ -230,7 +267,6 @@ export default function ProfileStep() {
           </h3>
 
           <div className="space-y-1.5 text-[11px]">
-            {/* Adresse + Nr. stessa riga */}
             <div className="flex gap-2">
               <InputField
                 label="Adresse"
@@ -261,7 +297,7 @@ export default function ProfileStep() {
             />
           </div>
 
-          {/* Lead sotto la Rechnungsadresse */}
+          {/* Lead */}
           <div className="mt-4 space-y-1 text-[11px]">
             <span className="block text-[10px] font-semibold text-neutral-200">
               Lead
@@ -289,7 +325,6 @@ export default function ProfileStep() {
               onChange={update("businessName")}
             />
 
-            {/* Adresse + Nr. stessa riga */}
             <div className="flex gap-2">
               <InputField
                 label="Adresse"
@@ -335,7 +370,7 @@ export default function ProfileStep() {
             />
           </div>
 
-          {/* fallback Save button visibile su schermi piccoli */}
+          {/* fallback Save button mobile */}
           <div className="mt-4 flex justify-end xl:hidden">
             <button
               type="button"
@@ -348,7 +383,6 @@ export default function ProfileStep() {
           </div>
         </div>
 
-        {/* SPACER COLUMN per allineare con la colonna icone sopra */}
         <div className="hidden xl:block" />
       </div>
     </div>
