@@ -1,15 +1,7 @@
 "use client";
 
-import Image from "next/image";
-import { Search, ChevronRight } from "lucide-react";
-import { usePlannerV2Store } from "../state/plannerV2Store";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-
-type Props = {
-  onStartNew: () => void;
-};
+import { useEffect, useMemo, useState } from "react";
 
 const MESSAGES = [
   {
@@ -18,7 +10,7 @@ const MESSAGES = [
   },
   {
     title: "Profil wird initialisiert",
-    desc: "Defaults, Formulare und Validierung werden geladen.",
+    desc: "Formulare, Defaults und Validierung werden geladen.",
   },
   {
     title: "Projektstruktur wird erstellt",
@@ -34,15 +26,16 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
-function PlanningCreateOverlay({
+export default function PlanningCreateOverlay({
   open,
   startedAt,
 }: {
   open: boolean;
-  startedAt: number | null;
+  startedAt: number | null; // Date.now() quando parte
 }) {
   const [idx, setIdx] = useState(0);
 
+  // rotazione testi
   useEffect(() => {
     if (!open) return;
     setIdx(0);
@@ -52,14 +45,15 @@ function PlanningCreateOverlay({
     return () => clearInterval(t);
   }, [open]);
 
+  // barra “pseudo-progress” (non finta al 100%: si ferma al 92% finché non navighi)
   const progress = useMemo(() => {
     if (!open || !startedAt) return 0;
     const elapsed = Date.now() - startedAt;
 
-    // curva morbida -> si stabilizza verso 92% finché non navighi
+    // curva morbida → si stabilizza verso 0.92
     const p = 1 - Math.exp(-elapsed / 1200);
     return clamp(p * 0.92, 0.06, 0.92);
-  }, [open, startedAt, idx]);
+  }, [open, startedAt, idx]); // idx per rerender regolare
 
   const msg = MESSAGES[idx];
 
@@ -73,7 +67,7 @@ function PlanningCreateOverlay({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
         >
-          {/* Backdrop */}
+          {/* Backdrop “premium” */}
           <div className="absolute inset-0 bg-black/55" />
           <div className="absolute inset-0 backdrop-blur-[10px]" />
 
@@ -90,6 +84,7 @@ function PlanningCreateOverlay({
             exit={{ y: 8, scale: 0.98, opacity: 0 }}
             transition={{ type: "spring", stiffness: 220, damping: 22 }}
           >
+            {/* Header */}
             <div className="flex items-start gap-4">
               {/* Orb spinner */}
               <div className="relative mt-0.5 h-12 w-12 shrink-0">
@@ -151,7 +146,7 @@ function PlanningCreateOverlay({
               </div>
             </div>
 
-            {/* Progress */}
+            {/* Progress bar */}
             <div className="mt-5">
               <div className="flex items-center justify-between text-[11px] text-white/55">
                 <span>SOLA Planner</span>
@@ -163,12 +158,13 @@ function PlanningCreateOverlay({
               <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
                 <motion.div
                   className="h-full rounded-full bg-white/70"
+                  style={{ width: `${Math.round(progress * 100)}%` }}
                   animate={{ width: `${Math.round(progress * 100)}%` }}
                   transition={{ duration: 0.25, ease: "easeOut" }}
-                  style={{ width: `${Math.round(progress * 100)}%` }}
                 />
               </div>
 
+              {/* Micro hint */}
               <motion.div
                 className="mt-3 text-[11px] text-white/45"
                 animate={{ opacity: [0.5, 0.9, 0.5] }}
@@ -186,122 +182,5 @@ function PlanningCreateOverlay({
         </motion.div>
       )}
     </AnimatePresence>
-  );
-}
-
-export default function PlannerWelcomeScreen({ onStartNew }: Props) {
-  const router = useRouter();
-
-  const resetForNewAddress = usePlannerV2Store((s) => s.resetForNewAddress);
-  const setStep = usePlannerV2Store((s) => s.setStep);
-
-  const [creating, setCreating] = useState(false);
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-
-  const handleStartNew = async () => {
-    if (creating) return;
-
-    setCreating(true);
-    setStartedAt(Date.now());
-
-    try {
-      // 1) reset UI / store
-      resetForNewAddress({});
-      setStep("profile");
-
-      // 2) crea planning nel DB
-      const res = await fetch("/api/plannings", {
-        method: "POST",
-        credentials: "include",
-      });
-
-      if (res.status === 401) {
-        router.push("/login");
-        return;
-      }
-
-      const json = await res.json().catch(() => null);
-
-      if (!json?.ok || !json?.planningId) {
-        console.error("Create planning failed:", json);
-        alert("Fehler: Neue Planung konnte nicht erstellt werden.");
-        return;
-      }
-
-      const planningId = json.planningId as string;
-
-      // 3) apri il planner con planningId nell’URL
-      router.push(`/planner-v2?planningId=${planningId}`);
-
-      // 4) chiudi la welcome (mostra PlannerShell)
-      onStartNew();
-    } finally {
-      // se c'è un errore e resti nella welcome, chiudiamo overlay
-      setCreating(false);
-      setStartedAt(null);
-    }
-  };
-
-  return (
-    <>
-      <PlanningCreateOverlay open={creating} startedAt={startedAt} />
-
-      <div
-        className="relative flex h-screen w-full items-center justify-center px-4 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: `url("/images/hero.webp")` }}
-      >
-        {/* Overlay */}
-        <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
-
-        {/* Contenuto */}
-        <div className="relative z-10 flex flex-col items-center gap-10 md:gap-14">
-          {/* LOGO */}
-          <div className="flex flex-col items-center gap-3">
-            <Image
-              src="/images/logo.png"
-              width={220}
-              height={220}
-              alt="Sola logo"
-              className="opacity-95 drop-shadow-xl"
-              priority
-            />
-          </div>
-
-          {/* BOTTONI */}
-          <div className="flex flex-col md:flex-row gap-5 md:gap-8 w-full max-w-3xl justify-center">
-            {/* EXISTING PROJECT */}
-            <button
-              type="button"
-              disabled={creating}
-              className="group flex-1 max-w-md mx-auto flex items-center gap-3 rounded-full border border-white/40 bg-white/5 backdrop-blur-md px-6 py-2.5 text-sm md:text-base text-white/90 shadow-[0_0_20px_rgba(0,0,0,0.35)] hover:bg-white/10 transition disabled:opacity-40 disabled:hover:bg-white/5"
-            >
-              <span className="flex-1 text-left whitespace-nowrap">
-                Bestehende Planung öffnen
-              </span>
-
-              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/10 group-hover:bg-white/20 transition">
-                <Search className="h-4 w-4" />
-              </span>
-            </button>
-
-            {/* NEW PROJECT */}
-            <button
-              type="button"
-              onClick={handleStartNew}
-              disabled={creating}
-              className="group flex-1 max-w-md mx-auto flex items-center gap-3 rounded-full border border-emerald-400/80 bg-emerald-500/10 backdrop-blur-md px-6 py-2.5 text-sm md:text-base text-emerald-100 shadow-[0_0_20px_rgba(0,0,0,0.35)] hover:bg-emerald-500/20 transition disabled:opacity-50 disabled:hover:bg-emerald-500/10"
-            >
-              <span className="flex-1 text-left whitespace-nowrap font-medium">
-                {creating ? "Wird erstellt…" : "Neue Planung starten"}
-              </span>
-
-              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-300/80 bg-emerald-400/40 group-hover:bg-emerald-300/70 transition">
-                <ChevronRight className="h-4 w-4 text-emerald-900" />
-              </span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
   );
 }
