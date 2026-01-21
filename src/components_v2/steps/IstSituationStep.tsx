@@ -2,6 +2,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   CheckCircle2,
   Circle,
@@ -21,80 +22,67 @@ import {
 } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 
-type BuildingType = "ein" | "mehr" | "industrie" | "";
-type RoofShape = "satteldach" | "flachdach" | "pultdach" | "";
-type RoofCover =
-  | "tonziegel"
-  | "flachziegel"
-  | "flach_begruent"
-  | "flach_bekiest"
-  | "flacheternit"
-  | "bitumen"
-  | "trapezblech"
-  | "betonziegel"
-  | "";
-
-type HeatingType = "oel" | "gas" | "wp" | "fernwaerme" | "andere" | "";
-type MontageTime = "4" | "6" | "12" | "";
-
 export default function IstSituationStep() {
+  const router = useRouter();
+  const sp = useSearchParams();
+  const planningId = sp.get("planningId");
+
   const setStep = usePlannerV2Store((s) => s.setStep);
 
-  /* ---------- Checklist state ---------- */
-  const [checklist, setChecklist] = useState({
-    inverterPhoto: false,
-    meterPhoto: false,
-    cabinetPhoto: false,
-    lightning: false,
-    internet: false,
-    naProtection: false,
-    evg: false,
-    zev: false,
-  });
-  const [unitsCount, setUnitsCount] = useState("");
+  // ✅ IST dallo store (non più useState locali)
+  const ist = usePlannerV2Store((s) => s.ist);
+  const setIst = usePlannerV2Store((s) => s.setIst);
 
-  /* ---------- Cards state ---------- */
-  const [buildingType, setBuildingType] = useState<BuildingType>("");
-  const [roofShape, setRoofShape] = useState<RoofShape>("");
-  const [roofCover, setRoofCover] = useState<RoofCover>("");
-  const [consumption, setConsumption] = useState("");
-  const [heating, setHeating] = useState<HeatingType>("");
-  const [heatingCombo, setHeatingCombo] = useState(false);
-  const [hakSize, setHakSize] = useState("");
-  const [evTopic, setEvTopic] = useState<"yes" | "no" | "">("");
-  const [evCar, setEvCar] = useState("");
-  const [montageTime, setMontageTime] = useState<MontageTime>("");
-  const [dismantling, setDismantling] = useState("");
-  const [dismantlingNote, setDismantlingNote] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const toggleChecklist = (key: keyof typeof checklist) => {
-    setChecklist((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggleChecklist = (key: keyof typeof ist.checklist) => {
+    setIst({
+      checklist: {
+        ...ist.checklist,
+        [key]: !ist.checklist[key],
+      },
+    });
   };
 
-  const onNext = (e: React.FormEvent) => {
+  const onNext = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const payload = {
-      checklist,
-      unitsCount,
-      buildingType,
-      roofShape,
-      roofCover,
-      consumption,
-      heating,
-      heatingCombo,
-      hakSize,
-      evTopic,
-      evCar,
-      montageTime,
-      dismantling,
-      dismantlingNote,
-    };
+    if (!planningId) {
+      alert("Fehler: planningId fehlt in der URL.");
+      return;
+    }
 
-    // Per ora solo log – in futuro salveremo nello store / backend
-    console.log("IST-SITUATION DATA:", payload);
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/plannings/${planningId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ist: {
+            ...ist,
+            completed: true,
+          },
+        }),
+      });
 
-    setStep("building");
+      if (res.status === 401) {
+        router.push("/login");
+        return;
+      }
+
+      const json = await res.json().catch(() => null);
+      if (!json?.ok) {
+        console.error("IST save failed:", json);
+        alert("Fehler: IST-Situation konnte nicht gespeichert werden.");
+        return;
+      }
+
+      // ✅ dopo IST si passa a building (come nel backend)
+      setStep("building");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const onBack = () => setStep("profile");
@@ -102,9 +90,7 @@ export default function IstSituationStep() {
   return (
     <div className="w-full rounded-2xl bg-neutral-900/55 text-neutral-50 shadow-xl border border-white/10 backdrop-blur-md px-5 py-5 lg:px-7 lg:py-6 space-y-4">
       {/* Header */}
-      {/* ───────── HEADER con titolo + descrizione + pulsante a destra ───────── */}
       <div className="flex items-start justify-between">
-        {/* Testi */}
         <div className="space-y-1">
           <h1 className="text-base lg:text-lg font-semibold tracking-wide">
             IST-Situation
@@ -114,18 +100,6 @@ export default function IstSituationStep() {
             möglichst realistisch wird.
           </p>
         </div>
-
-        {/* Pulsante SAVE */}
-        {/* <button
-          type="button"
-          className="hidden sm:flex items-center mt-4 gap-1.5 rounded-full bg-emerald-500/90 hover:bg-emerald-400 text-[11px] lg:text-xs font-semibold px-4 py-2 shadow-lg shadow-emerald-500/30 transition"
-          onClick={() => {
-            console.log("IST DATA (ready for API):");
-            setStep("building");
-          }}
-        >
-          Weiter
-        </button> */}
       </div>
 
       <form onSubmit={onNext} className="space-y-5">
@@ -169,18 +143,10 @@ export default function IstSituationStep() {
                   label: "NA Schutz?",
                   icon: Shield,
                 },
-                {
-                  key: "evg" as const,
-                  label: "EVG?",
-                  icon: Battery,
-                },
-                {
-                  key: "zev" as const,
-                  label: "ZEV?",
-                  icon: FileText,
-                },
+                { key: "evg" as const, label: "EVG?", icon: Battery },
+                { key: "zev" as const, label: "ZEV?", icon: FileText },
               ].map(({ key, label, icon: Icon }) => {
-                const active = checklist[key];
+                const active = ist.checklist[key];
                 return (
                   <button
                     key={key}
@@ -210,8 +176,8 @@ export default function IstSituationStep() {
                   type="number"
                   min={0}
                   className="w-20 rounded-full bg-white/5 border border-white/20 px-3 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
-                  value={unitsCount}
-                  onChange={(e) => setUnitsCount(e.target.value)}
+                  value={ist.unitsCount}
+                  onChange={(e) => setIst({ unitsCount: e.target.value })}
                 />
               </div>
             </div>
@@ -224,27 +190,27 @@ export default function IstSituationStep() {
               <div className="grid grid-cols-3 gap-3">
                 {[
                   {
-                    value: "ein" as BuildingType,
+                    value: "ein" as const,
                     label: "Einfamilienhaus",
                     icon: Home,
                   },
                   {
-                    value: "mehr" as BuildingType,
+                    value: "mehr" as const,
                     label: "Mehrfamilienhaus",
                     icon: Building2,
                   },
                   {
-                    value: "industrie" as BuildingType,
+                    value: "industrie" as const,
                     label: "Industrie",
                     icon: Factory,
                   },
                 ].map(({ value, label, icon: Icon }) => {
-                  const active = buildingType === value;
+                  const active = ist.buildingType === value;
                   return (
                     <button
                       key={value}
                       type="button"
-                      onClick={() => setBuildingType(value)}
+                      onClick={() => setIst({ buildingType: value })}
                       className={`flex flex-col items-center gap-2 rounded-xl border px-2 py-3 transition ${
                         active
                           ? "border-emerald-400/80 bg-emerald-500/10"
@@ -265,16 +231,16 @@ export default function IstSituationStep() {
             <Card number={2} title="Ihr Dachform wählen.">
               <div className="flex gap-3">
                 {[
-                  { value: "satteldach" as RoofShape, label: "Satteldach" },
-                  { value: "flachdach" as RoofShape, label: "Flachdach" },
-                  { value: "pultdach" as RoofShape, label: "Pultdach" },
+                  { value: "satteldach" as const, label: "Satteldach" },
+                  { value: "flachdach" as const, label: "Flachdach" },
+                  { value: "pultdach" as const, label: "Pultdach" },
                 ].map(({ value, label }) => {
-                  const active = roofShape === value;
+                  const active = ist.roofShape === value;
                   return (
                     <button
                       key={value}
                       type="button"
-                      onClick={() => setRoofShape(value)}
+                      onClick={() => setIst({ roofShape: value })}
                       className={`flex-1 rounded-full border px-3 py-1.5 transition ${
                         active
                           ? "border-emerald-400/80 bg-emerald-500/10"
@@ -301,12 +267,12 @@ export default function IstSituationStep() {
                   { value: "trapezblech", label: "Trapezblech" },
                   { value: "betonziegel", label: "Betondachziegel" },
                 ].map(({ value, label }) => {
-                  const active = roofCover === value;
+                  const active = ist.roofCover === value;
                   return (
                     <button
                       key={value}
                       type="button"
-                      onClick={() => setRoofCover(value as RoofCover)}
+                      onClick={() => setIst({ roofCover: value as any })}
                       className={`flex items-center gap-2 rounded-full border px-3 py-1.5 transition ${
                         active
                           ? "border-emerald-400/80 bg-emerald-500/10"
@@ -336,8 +302,8 @@ export default function IstSituationStep() {
                     <input
                       type="text"
                       className="flex-1 rounded-full bg-white/5 border border-white/20 px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
-                      value={consumption}
-                      onChange={(e) => setConsumption(e.target.value)}
+                      value={ist.consumption}
+                      onChange={(e) => setIst({ consumption: e.target.value })}
                       placeholder="z.B. 8'500"
                     />
                     <span className="text-[10px] uppercase tracking-wide text-neutral-300">
@@ -358,8 +324,8 @@ export default function IstSituationStep() {
                 <div className="flex-1 space-y-2">
                   <select
                     className="w-full rounded-full bg-white/5 border border-white/20 px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
-                    value={heating}
-                    onChange={(e) => setHeating(e.target.value as HeatingType)}
+                    value={ist.heating}
+                    onChange={(e) => setIst({ heating: e.target.value as any })}
                   >
                     <option value="">Auswählen</option>
                     <option value="oel">Ölheizung</option>
@@ -371,9 +337,9 @@ export default function IstSituationStep() {
 
                   <button
                     type="button"
-                    onClick={() => setHeatingCombo((v) => !v)}
+                    onClick={() => setIst({ heatingCombo: !ist.heatingCombo })}
                     className={`w-full rounded-full border px-3 py-1.5 text-left text-[11px] transition ${
-                      heatingCombo
+                      ist.heatingCombo
                         ? "border-emerald-400/80 bg-emerald-500/10"
                         : "border-white/15 hover:bg-white/5"
                     }`}
@@ -392,8 +358,8 @@ export default function IstSituationStep() {
                   <input
                     type="text"
                     className="flex-1 rounded-full bg-white/5 border border-white/20 px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
-                    value={hakSize}
-                    onChange={(e) => setHakSize(e.target.value)}
+                    value={ist.hakSize}
+                    onChange={(e) => setIst({ hakSize: e.target.value })}
                     placeholder="z.B. 40"
                   />
                   <span className="text-[10px] uppercase tracking-wide text-neutral-300">
@@ -412,9 +378,9 @@ export default function IstSituationStep() {
                     <span className="text-[11px]">Ja</span>
                     <button
                       type="button"
-                      onClick={() => setEvTopic("yes")}
+                      onClick={() => setIst({ evTopic: "yes" })}
                       className={`w-3.5 h-3.5 rounded-full border ${
-                        evTopic === "yes"
+                        ist.evTopic === "yes"
                           ? "border-emerald-400 bg-emerald-400"
                           : "border-neutral-400"
                       }`}
@@ -422,9 +388,9 @@ export default function IstSituationStep() {
                     <span className="ml-4 text-[11px]">Nein</span>
                     <button
                       type="button"
-                      onClick={() => setEvTopic("no")}
+                      onClick={() => setIst({ evTopic: "no" })}
                       className={`w-3.5 h-3.5 rounded-full border ${
-                        evTopic === "no"
+                        ist.evTopic === "no"
                           ? "border-emerald-400 bg-emerald-400"
                           : "border-neutral-400"
                       }`}
@@ -438,8 +404,8 @@ export default function IstSituationStep() {
                     <input
                       type="text"
                       className="w-full rounded-full bg-white/5 border border-white/20 px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
-                      value={evCar}
-                      onChange={(e) => setEvCar(e.target.value)}
+                      value={ist.evCar}
+                      onChange={(e) => setIst({ evCar: e.target.value })}
                       placeholder="z.B. Tesla Model 3"
                     />
                   </div>
@@ -451,16 +417,16 @@ export default function IstSituationStep() {
             <Card number={8} title="Wann soll die Montage erfolgen?">
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { value: "4" as MontageTime, label: "4 Monate" },
-                  { value: "6" as MontageTime, label: "6 Monate" },
-                  { value: "12" as MontageTime, label: "12 Monate" },
+                  { value: "4" as const, label: "4 Monate" },
+                  { value: "6" as const, label: "6 Monate" },
+                  { value: "12" as const, label: "12 Monate" },
                 ].map(({ value, label }) => {
-                  const active = montageTime === value;
+                  const active = ist.montageTime === value;
                   return (
                     <button
                       key={value}
                       type="button"
-                      onClick={() => setMontageTime(value)}
+                      onClick={() => setIst({ montageTime: value })}
                       className={`flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-[10px] transition ${
                         active
                           ? "border-emerald-400/80 bg-emerald-500/10"
@@ -481,14 +447,14 @@ export default function IstSituationStep() {
                 <input
                   type="text"
                   className="w-full rounded-full bg-white/5 border border-white/20 px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
-                  value={dismantling}
-                  onChange={(e) => setDismantling(e.target.value)}
+                  value={ist.dismantling}
+                  onChange={(e) => setIst({ dismantling: e.target.value })}
                   placeholder="Demontage bestehender Anlage / Dach?"
                 />
                 <textarea
                   className="w-full min-h-[48px] rounded-2xl bg-white/5 border border-white/20 px-3 py-1.5 text-[11px] resize-none focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
-                  value={dismantlingNote}
-                  onChange={(e) => setDismantlingNote(e.target.value)}
+                  value={ist.dismantlingNote}
+                  onChange={(e) => setIst({ dismantlingNote: e.target.value })}
                   placeholder="Notiz"
                 />
               </div>
@@ -501,16 +467,18 @@ export default function IstSituationStep() {
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex items-center rounded-full border border-white/20 text-[11px] lg:text-xs px-4 py-2 text-neutral-100 hover:bg-white/5 transition"
+            disabled={saving}
+            className="inline-flex items-center rounded-full border border-white/20 text-[11px] lg:text-xs px-4 py-2 text-neutral-100 hover:bg-white/5 transition disabled:opacity-60"
           >
             Zurück zum Profil
           </button>
 
           <button
             type="submit"
-            className="inline-flex items-center rounded-full bg-emerald-500/90 hover:bg-emerald-400 text-[11px] lg:text-xs px-4 py-2 text-white shadow-lg shadow-emerald-500/30 transition"
+            disabled={saving}
+            className="inline-flex items-center rounded-full bg-emerald-500/90 hover:bg-emerald-400 text-[11px] lg:text-xs px-4 py-2 text-white shadow-lg shadow-emerald-500/30 transition disabled:opacity-60"
           >
-            Weiter zur Gebäudeplanung
+            {saving ? "Speichern…" : "Weiter zur Gebäudeplanung"}
           </button>
         </div>
       </form>

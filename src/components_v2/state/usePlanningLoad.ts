@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { usePlannerV2Store } from "./plannerV2Store";
+import { defaultIst } from "./slices/istSlice";
 
 /** normalizza "Herr"/"Frau" -> "herr"/"frau" */
 function mapSalutation(v: any): "herr" | "frau" | null {
@@ -20,7 +21,9 @@ function mapLegacyApiProfileToStore(api: any) {
   return {
     customerStatus: customerStatus === "existing" ? "existing" : "new",
     customerType:
-      customerType === "firma" || customerType === "company" ? "company" : "private",
+      customerType === "firma" || customerType === "company"
+        ? "company"
+        : "private",
     source: api?.source ?? "",
     legalForm: api?.legalForm ?? "",
 
@@ -31,7 +34,8 @@ function mapLegacyApiProfileToStore(api: any) {
     contactEmail: api?.contact?.email ?? "",
 
     buildingStreet: api?.buildingAddress?.street ?? api?.building?.street ?? "",
-    buildingStreetNo: api?.buildingAddress?.streetNo ?? api?.building?.streetNo ?? "",
+    buildingStreetNo:
+      api?.buildingAddress?.streetNo ?? api?.building?.streetNo ?? "",
     buildingCity: api?.buildingAddress?.city ?? api?.building?.city ?? "",
     buildingZip: api?.buildingAddress?.zip ?? api?.building?.zip ?? "",
 
@@ -56,7 +60,6 @@ function mapLegacyApiProfileToStore(api: any) {
 /** ✅ capiamo se il profile è già in “store shape” */
 function looksLikeStoreProfile(p: any) {
   if (!p || typeof p !== "object") return false;
-  // uno o due campi “firma” che nel tuo store esistono di sicuro
   return (
     "contactFirstName" in p ||
     "contactLastName" in p ||
@@ -72,6 +75,8 @@ export function usePlanningLoad() {
 
   const setStep = usePlannerV2Store((s) => s.setStep);
   const setProfile = usePlannerV2Store((s) => s.setProfile);
+  const setIstAll = usePlannerV2Store((s) => s.setIstAll);
+
   const importState = usePlannerV2Store((s) => s.importState); // lo useremo dopo
 
   useEffect(() => {
@@ -93,37 +98,39 @@ export function usePlanningLoad() {
       const planning = json.planning;
       const data = planning?.data ?? {};
 
-      // ✅ apriamo SEMPRE da step 1 (poi miglioriamo usando currentStep)
       const stepFromDb = planning?.currentStep;
-if (
-  stepFromDb === "profile" ||
-  stepFromDb === "ist" ||
-  stepFromDb === "building" ||
-  stepFromDb === "modules" ||
-  stepFromDb === "strings" ||
-  stepFromDb === "parts" ||
-  stepFromDb === "report" ||
-  stepFromDb === "offer"
-) {
-  setStep(stepFromDb);
-} else {
-  setStep("profile");
-}
+      if (
+        stepFromDb === "profile" ||
+        stepFromDb === "ist" ||
+        stepFromDb === "building" ||
+        stepFromDb === "modules" ||
+        stepFromDb === "strings" ||
+        stepFromDb === "parts" ||
+        stepFromDb === "report" ||
+        stepFromDb === "offer"
+      ) {
+        setStep(stepFromDb);
+      } else {
+        setStep("profile");
+      }
 
-
-      // ✅ PROFILE: se è già store-shape → setProfile diretto
+      // ✅ PROFILE
       if (data.profile && typeof data.profile === "object") {
         const profileToStore = looksLikeStoreProfile(data.profile)
           ? data.profile
           : mapLegacyApiProfileToStore(data.profile);
 
-        // setProfile fa merge: se gli passi l’oggetto intero, riempi tutto quello che c’è
         setProfile(profileToStore);
       }
 
-      // ✅ IST: (solo se hai già ist nello store — qui per ora lasciamo stare)
+      // ✅ IST
+      if (data.ist && typeof data.ist === "object") {
+        setIstAll(data.ist);
+      } else {
+        setIstAll(defaultIst);
+      }
 
-      // ✅ PLANNER: quando vuoi, qui importeremo il planner nello store
+      // ✅ PLANNER (dopo)
       // if (data.planner) importState(data.planner);
 
       // ✅ pulisci undo/redo (se vuoi)
@@ -131,7 +138,6 @@ if (
         const h: any = (await import("./history")).history;
         h?.clear?.();
       } catch {}
-
     })();
-  }, [planningId, router, setProfile, setStep, importState]);
+  }, [planningId, router, setProfile, setIstAll, setStep, importState]);
 }

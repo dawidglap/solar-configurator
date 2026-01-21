@@ -8,6 +8,9 @@ import { ALLOWED_TOOLS, DEFAULT_TOOL } from '../../constants/stepTools';
 import { nanoid } from 'nanoid';
 import type { ProfileSlice } from './slices/profileSlice';
 import { createProfileSlice, defaultProfile } from './slices/profileSlice';
+import type { IstSlice } from './slices/istSlice';
+import { createIstSlice, defaultIst } from './slices/istSlice';
+
 
 
 import { history } from './history';
@@ -114,7 +117,8 @@ type PlannerV2State = {
     setSelectedSnowGuard: (id?: string) => void;
     exportState: () => any;
 importState: (saved: any) => void;
-} & UISlice & LayersSlice & PanelsSlice & ZonesSlice & ProfileSlice;
+} & UISlice & LayersSlice & PanelsSlice & ZonesSlice & ProfileSlice & IstSlice;
+
 
 
 
@@ -205,6 +209,8 @@ export const usePlannerV2Store = create<PlannerV2State>()(
     selectedPanelId: s.selectedPanelId,
 
     profile: s.profile,
+    ist: s.ist,
+
   };
 },
 
@@ -229,6 +235,8 @@ importState: (saved: any) => {
     selectedPanelId: saved.selectedPanelId ?? s.selectedPanelId,
 
     profile: saved.profile ?? s.profile,
+    ist: saved.ist ?? s.ist,
+
   }));
 
   history.clear();
@@ -434,6 +442,9 @@ importState: (saved: any) => {
             // ── Profile slice
 ...createProfileSlice(set, get, api),
 
+// ── IST slice
+...createIstSlice(set, get, api),
+
 
         }),
         {
@@ -461,6 +472,8 @@ importState: (saved: any) => {
                 snowGuards: s.snowGuards,
                 selectedSnowGuardId: s.selectedSnowGuardId,
                  profile: s.profile,  
+                 ist: s.ist,
+
 
 
             }),
@@ -473,6 +486,11 @@ migrate: (persisted: any, fromVersion?: number) => {
   if (!persisted.profile) {
     persisted.profile = defaultProfile;
   }
+
+  if (!persisted.ist) {
+  persisted.ist = defaultIst;
+}
+
 
   // 🔹 per tutte le versioni precedenti alla 12, partiamo da 'profile'
   if ((fromVersion ?? 0) < 12) {
