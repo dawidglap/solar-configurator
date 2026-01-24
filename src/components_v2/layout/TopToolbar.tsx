@@ -7,6 +7,8 @@ import { history } from "../state/history";
 import OrientationToggle from "./TopToolbar/OrientationToggle";
 import toast from "react-hot-toast";
 import { SnowGuardCostDialog, SnowSegment } from "../SnowGuardCostDialog";
+import { useSearchParams, useRouter } from "next/navigation";
+import { savePlannerToDb } from "../state/planning/savePlanning";
 
 import { MousePointer, RotateCcw, RotateCw } from "lucide-react";
 
@@ -71,7 +73,7 @@ function PortalTooltip({
         ))}
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }
 
@@ -114,6 +116,9 @@ export default function TopToolbar() {
   const setStep = usePlannerV2Store((s) => s.setStep);
   const tool = usePlannerV2Store((s) => s.tool);
   const setTool = usePlannerV2Store((s) => s.setTool);
+  const sp = useSearchParams();
+  const router = useRouter();
+  const planningId = sp.get("planningId");
 
   // catalogo moduli (TopToolbar)
   const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
@@ -135,7 +140,7 @@ export default function TopToolbar() {
     () =>
       typeof navigator !== "undefined" &&
       /Mac|iPhone|iPad|iPod/.test(navigator.platform),
-    []
+    [],
   );
   const mod = isMac ? "⌘" : "Ctrl";
 
@@ -161,10 +166,38 @@ export default function TopToolbar() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isMac]);
 
-  const handleSave = () => {
-    console.log("[Planner] Save");
-    alert("Speichern (kommt später)");
+  const handleSave = async () => {
+    let toastId: string | undefined;
+
+    try {
+      if (!planningId) {
+        toast.error("Fehlende planningId in der URL");
+        return;
+      }
+
+      toastId = toast.loading("Speichern läuft…");
+
+      await savePlannerToDb(planningId);
+
+      toast.success("Gespeichert ✅", { id: toastId });
+    } catch (e: any) {
+      const msg = e?.message ?? "Save failed";
+
+      if (String(msg).includes("401")) {
+        if (toastId) toast.error("Bitte einloggen…", { id: toastId });
+        router.push(
+          `/login?next=${encodeURIComponent(`/planner-v2?planningId=${planningId}`)}`,
+        );
+        return;
+      }
+
+      if (toastId) toast.error("Fehler beim Speichern", { id: toastId });
+      else toast.error("Fehler beim Speichern");
+
+      console.error("[Planner] Save failed:", e);
+    }
   };
+
   const handleUndo = () => {
     history.undo();
   };
@@ -194,11 +227,11 @@ export default function TopToolbar() {
 
   const totalSnowM = useMemo(
     () => snowSegments.reduce((sum, s) => sum + (s.lengthM || 0), 0),
-    [snowSegments]
+    [snowSegments],
   );
   const totalSnowChf = useMemo(
     () => totalSnowM * SNOW_PRICE_PER_M,
-    [totalSnowM]
+    [totalSnowM],
   );
 
   /* ───────────────── Bottoni icona+tooltip (portal) ───────────────── */
@@ -379,7 +412,7 @@ export default function TopToolbar() {
     // se un domani vuoi forzare la selezione di una falda:
     if (!st.selectedId) {
       toast.error(
-        "Wähle zuerst eine Dachfläche aus, bevor du eine Fläche füllst."
+        "Wähle zuerst eine Dachfläche aus, bevor du eine Fläche füllst.",
       );
       return false;
     }
@@ -662,11 +695,11 @@ export default function TopToolbar() {
         />
         {/* 10) Speichern — placeholder */}
         <ActionBtn
-          onClick={() => {}}
+          onClick={handleSave}
           Icon={IoIosSave}
           label=""
-          disabled
-          tooltipLabel="Speichern (in arrivo)"
+          disabled={false}
+          tooltipLabel="Speichern"
           tooltipKeys={[mod, "S"]}
         />
       </div>

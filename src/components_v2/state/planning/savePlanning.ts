@@ -34,6 +34,7 @@ export function buildPlannerPayloadFromStore() {
   return {
     version: 1,
     savedAt: new Date().toISOString(),
+    address: (s as any).address ?? null,
 
     // immagine / scala / riferimento
     snapshot: s.snapshot,

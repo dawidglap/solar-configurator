@@ -1,3 +1,4 @@
+// src/components_v2/state/usePlanningLoad.ts
 "use client";
 
 import { useEffect } from "react";
@@ -74,10 +75,12 @@ export function usePlanningLoad() {
   const planningId = sp.get("planningId");
 
   const setStep = usePlannerV2Store((s) => s.setStep);
+
   const setProfile = usePlannerV2Store((s) => s.setProfile);
   const setIstAll = usePlannerV2Store((s) => s.setIstAll);
 
-  const importState = usePlannerV2Store((s) => s.importState); // lo useremo dopo
+  const importState = usePlannerV2Store((s) => s.importState);
+  const setSnapshot = usePlannerV2Store((s) => s.setSnapshot);
 
   useEffect(() => {
     if (!planningId) return;
@@ -130,8 +133,16 @@ export function usePlanningLoad() {
         setIstAll(defaultIst);
       }
 
-      // ✅ PLANNER (dopo)
-      // if (data.planner) importState(data.planner);
+      // ✅ PLANNER (building + modules)
+      if (data.planner && typeof data.planner === "object") {
+        // 1) importa stato planner (layers/zones/panels/modules/...)
+        importState(data.planner);
+
+        // 2) snapshot (immagine + scala) se presente
+        if (data.planner.snapshot) {
+          setSnapshot(data.planner.snapshot);
+        }
+      }
 
       // ✅ pulisci undo/redo (se vuoi)
       try {
@@ -139,5 +150,13 @@ export function usePlanningLoad() {
         h?.clear?.();
       } catch {}
     })();
-  }, [planningId, router, setProfile, setIstAll, setStep, importState]);
+  }, [
+    planningId,
+    router,
+    setProfile,
+    setIstAll,
+    setStep,
+    importState,
+    setSnapshot,
+  ]);
 }
