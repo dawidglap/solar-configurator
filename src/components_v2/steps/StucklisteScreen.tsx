@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useMemo, useState } from "react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { PANEL_CATALOG } from "@/constants/panels";
-import { Pencil, Plus } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 
 type LineItem = {
   id: string;
@@ -70,6 +70,11 @@ export default function StucklisteScreen() {
       einheit: "Pausch.",
     },
   ]);
+
+  // ✅ NEW: Remove manual item
+  const removeItem = (id: string) => {
+    setItems((prev) => prev.filter((x) => x.id !== id));
+  };
 
   /**
    * ✅ 3) Dropdown Modules: scegli un modello dal catalogo e aggiungi una riga MANUALE.
@@ -312,6 +317,7 @@ export default function StucklisteScreen() {
                   einheit={r.einheit ?? "—"}
                   total={rowTotal(r)}
                   editable
+                  onDelete={() => removeItem(r.id)} // ✅ NEW
                 />
               ))}
             </div>
@@ -386,6 +392,7 @@ function RowCard(props: {
   einheit: string;
   total: number;
   editable?: boolean;
+  onDelete?: () => void; // ✅ NEW
 }) {
   const {
     kategorie,
@@ -396,6 +403,7 @@ function RowCard(props: {
     einheit,
     total,
     editable,
+    onDelete,
   } = props;
 
   return (
@@ -421,13 +429,23 @@ function RowCard(props: {
       </div>
 
       {editable && (
-        <div className="mt-2 flex justify-end">
+        <div className="mt-2 flex justify-end gap-2">
           <button
             type="button"
             className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/70 hover:bg-white/10"
           >
             <Pencil className="h-3.5 w-3.5" />
             Bearbeiten
+          </button>
+
+          {/* ✅ NEW: delete manual row */}
+          <button
+            type="button"
+            onClick={onDelete}
+            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-rose-200 hover:bg-white/10"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Löschen
           </button>
         </div>
       )}

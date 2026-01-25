@@ -51,6 +51,7 @@ import RoofHotkeys from "../RoofHotkeys";
 import ProfileStep from "../steps/ProfileStep";
 import IstSituationStep from "../steps/IstSituationStep";
 import StucklisteScreen from "../steps/StucklisteScreen";
+import ReportScreen from "../steps/ReportScreen";
 
 // ——— ANGLES HELPERS ———
 function radToDeg(r: number) {
@@ -145,6 +146,7 @@ export default function CanvasStage() {
   // store
   const isFormStep = step === "profile" || step === "ist";
   const isPartsStep = step === "parts";
+  const isReportStep = step === "report";
 
   const snap = usePlannerV2Store((s) => s.snapshot);
   const view = usePlannerV2Store((s) => s.view);
@@ -688,6 +690,24 @@ export default function CanvasStage() {
           style={{ paddingTop: "calc(var(--tb, 48px) + 0px)" }}
         >
           <StucklisteScreen />
+        </div>
+      </div>
+    );
+  }
+
+  if (isReportStep) {
+    return (
+      <div
+        ref={containerRef}
+        className="relative h-full w-full overflow-hidden"
+      >
+        <OverlayProgressStepper />
+        <OverlayTopToolbar />
+        <div
+          className="absolute inset-0"
+          style={{ paddingTop: "calc(var(--tb, 48px) + 0px)" }}
+        >
+          <ReportScreen />
         </div>
       </div>
     );

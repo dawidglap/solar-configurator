@@ -119,7 +119,7 @@ const UI_STEPS: UiStep[] = [
     label: "Bericht",
     short: "Bericht",
     Icon: FileText,
-    clickable: false,
+    clickable: true,
   },
   {
     key: "offer",
