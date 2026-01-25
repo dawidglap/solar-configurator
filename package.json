@@ -25,6 +25,7 @@
     "mongodb": "^7.0.0",
     "nanoid": "^5.1.5",
     "next": "15.3.6",
+    "pdf-lib": "^1.17.1",
     "polygon-clipping": "^0.15.7",
     "proj4": "^2.17.0",
     "react": "^19.0.0",

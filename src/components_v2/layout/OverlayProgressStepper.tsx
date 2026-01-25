@@ -126,7 +126,7 @@ const UI_STEPS: UiStep[] = [
     label: "Angebot",
     short: "Angebot",
     Icon: BadgeCheck,
-    clickable: false,
+    clickable: true,
   },
 ];
 

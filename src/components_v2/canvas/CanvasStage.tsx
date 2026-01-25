@@ -52,6 +52,7 @@ import ProfileStep from "../steps/ProfileStep";
 import IstSituationStep from "../steps/IstSituationStep";
 import StucklisteScreen from "../steps/StucklisteScreen";
 import ReportScreen from "../steps/ReportScreen";
+import OfferScreen from "../steps/OfferScreen";
 
 // ——— ANGLES HELPERS ———
 function radToDeg(r: number) {
@@ -147,6 +148,7 @@ export default function CanvasStage() {
   const isFormStep = step === "profile" || step === "ist";
   const isPartsStep = step === "parts";
   const isReportStep = step === "report";
+  const isOfferStep = step === "offer";
 
   const snap = usePlannerV2Store((s) => s.snapshot);
   const view = usePlannerV2Store((s) => s.view);
@@ -708,6 +710,24 @@ export default function CanvasStage() {
           style={{ paddingTop: "calc(var(--tb, 48px) + 0px)" }}
         >
           <ReportScreen />
+        </div>
+      </div>
+    );
+  }
+
+  if (isOfferStep) {
+    return (
+      <div
+        ref={containerRef}
+        className="relative h-full w-full overflow-hidden"
+      >
+        <OverlayProgressStepper />
+        <OverlayTopToolbar />
+        <div
+          className="absolute inset-0"
+          style={{ paddingTop: "calc(var(--tb, 48px) + 0px)" }}
+        >
+          <OfferScreen />
         </div>
       </div>
     );
