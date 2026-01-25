@@ -112,7 +112,7 @@ const UI_STEPS: UiStep[] = [
     label: "Stückliste",
     short: "Stückliste",
     Icon: ListChecks,
-    clickable: false,
+    clickable: true,
   },
   {
     key: "report",
@@ -138,9 +138,9 @@ export default function OverlayProgressStepper() {
     () =>
       Math.max(
         0,
-        UI_STEPS.findIndex((s) => s.key === (step as any))
+        UI_STEPS.findIndex((s) => s.key === (step as any)),
       ),
-    [step]
+    [step],
   );
 
   const barRef = useRef<HTMLDivElement>(null);
@@ -190,8 +190,8 @@ export default function OverlayProgressStepper() {
               const btnCls = isActive
                 ? "bg-white/20 border border-white/40 shadow-[0_4px_14px_rgba(0,0,0,0.35)]"
                 : isCompleted
-                ? "bg-emerald-500/20 border border-emerald-400/40 shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
-                : "bg-white/10 border border-white/20 hover:bg-white/20";
+                  ? "bg-emerald-500/20 border border-emerald-400/40 shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
+                  : "bg-white/10 border border-white/20 hover:bg-white/20";
 
               const dot =
                 "flex h-5 w-5 items-center justify-center rounded-full border text-[9px] leading-none";
@@ -199,8 +199,8 @@ export default function OverlayProgressStepper() {
               const dotCls = isActive
                 ? "bg-emerald-500 text-white border-emerald-400"
                 : isCompleted
-                ? "bg-emerald-600 text-white border-emerald-500"
-                : "bg-white/10 text-white border-white/30";
+                  ? "bg-emerald-600 text-white border-emerald-500"
+                  : "bg-white/10 text-white border-white/30";
 
               const content = (
                 <>

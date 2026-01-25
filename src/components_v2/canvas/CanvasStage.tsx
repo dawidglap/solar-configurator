@@ -50,6 +50,7 @@ import CompassHUD from "../compassHUD";
 import RoofHotkeys from "../RoofHotkeys";
 import ProfileStep from "../steps/ProfileStep";
 import IstSituationStep from "../steps/IstSituationStep";
+import StucklisteScreen from "../steps/StucklisteScreen";
 
 // ——— ANGLES HELPERS ———
 function radToDeg(r: number) {
@@ -97,7 +98,7 @@ function pointInPoly(p: Pt, poly: Pt[]): boolean {
 
 function isInsideAnyRoof(
   p: Pt,
-  roofs: { id: string; points: Pt[] }[]
+  roofs: { id: string; points: Pt[] }[],
 ): boolean {
   for (const r of roofs) {
     if (r.points?.length >= 3 && pointInPoly(p, r.points)) {
@@ -143,6 +144,7 @@ export default function CanvasStage() {
   const step = usePlannerV2Store((s) => s.step);
   // store
   const isFormStep = step === "profile" || step === "ist";
+  const isPartsStep = step === "parts";
 
   const snap = usePlannerV2Store((s) => s.snapshot);
   const view = usePlannerV2Store((s) => s.view);
@@ -177,7 +179,7 @@ export default function CanvasStage() {
       // se hai un tipo Tool a union string, questo cast è sicuro a runtime
       setTool(t as any);
     },
-    [setTool]
+    [setTool],
   );
 
   // size + base image
@@ -186,7 +188,7 @@ export default function CanvasStage() {
     (cover: number, ox: number, oy: number) => {
       setView({ fitScale: cover, scale: cover, offsetX: ox, offsetY: oy });
     },
-    [setView]
+    [setView],
   );
   const { img } = useBaseImage({
     url: snap.url ?? "",
@@ -221,7 +223,7 @@ export default function CanvasStage() {
       window.removeEventListener(
         "keydown",
         onKey as any,
-        { capture: true } as any
+        { capture: true } as any,
       );
   }, []);
 
@@ -240,7 +242,7 @@ export default function CanvasStage() {
         if ((el as any).isContentEditable) return true;
         if (
           el.closest?.(
-            'input,textarea,[contenteditable="true"],[data-stop-hotkeys="true"]'
+            'input,textarea,[contenteditable="true"],[data-stop-hotkeys="true"]',
           )
         )
           return true;
@@ -282,7 +284,7 @@ export default function CanvasStage() {
 
   const selectedRoof = useMemo(
     () => layers.find((l) => l.id === selectedId) ?? null,
-    [layers, selectedId]
+    [layers, selectedId],
   );
 
   // angolo base griglia in COORDINATE CANVAS (come PanelsKonva)
@@ -313,7 +315,7 @@ export default function CanvasStage() {
     () =>
       !!selectedId &&
       usePlannerV2Store.getState().panels.some((p) => p.roofId === selectedId),
-    [selectedId, layers]
+    [selectedId, layers],
   );
 
   // reset shapeMode on selection change
@@ -342,7 +344,7 @@ export default function CanvasStage() {
         if ((el as any).isContentEditable) return true;
         if (
           el.closest?.(
-            'input,textarea,[contenteditable="true"],[data-stop-hotkeys="true"]'
+            'input,textarea,[contenteditable="true"],[data-stop-hotkeys="true"]',
           )
         )
           return true;
@@ -548,7 +550,7 @@ export default function CanvasStage() {
         y: (stageY - (view.offsetY || 0)) / s,
       };
     },
-    [view.scale, view.fitScale, view.offsetX, view.offsetY]
+    [view.scale, view.fitScale, view.offsetX, view.offsetY],
   );
 
   // abilita i tool di disegno solo in building
@@ -632,8 +634,8 @@ export default function CanvasStage() {
     drawingEnabled || (step === "modules" && tool === "fill-area")
       ? "crosshair"
       : canDrag && !draggingVertex
-      ? "grab"
-      : "default";
+        ? "grab"
+        : "default";
 
   useEffect(() => {
     const el = stageRef.current?.getStage?.()?.container?.();
@@ -667,6 +669,25 @@ export default function CanvasStage() {
           <div className="w-full  h-full">
             {step === "profile" ? <ProfileStep /> : <IstSituationStep />}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isPartsStep) {
+    return (
+      <div
+        ref={containerRef}
+        className="relative h-full w-full overflow-hidden"
+      >
+        <OverlayProgressStepper />
+        <OverlayTopToolbar />
+
+        <div
+          className="absolute inset-0"
+          style={{ paddingTop: "calc(var(--tb, 48px) + 0px)" }}
+        >
+          <StucklisteScreen />
         </div>
       </div>
     );
