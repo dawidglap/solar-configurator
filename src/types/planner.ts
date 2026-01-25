@@ -81,6 +81,7 @@ export type PanelSpec = {
     wp: number;      // potenza (W)
     widthM: number;  // lato corto in metri
     heightM: number; // lato lungo in metri
+     priceChf: number;
 };
 
 // ── Configurazione moduli per lo step “modules”
