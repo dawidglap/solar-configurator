@@ -201,10 +201,10 @@ export default function StucklisteScreen() {
       </div>
 
       {/* CONTENUTO sopra al background */}
-      <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 mt-10">
+      <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 pt-10">
         {/* LEFT */}
-        <aside className="col-span-3 border-r border-white/10 bg-neutral-900/35 backdrop-blur-xl">
-          <div className="p-4">
+        <aside className="col-span-3 border-r border-white/10 bg-neutral-900/35 backdrop-blur-xl overflow-y-auto">
+          <div className="p-4 min-h-full">
             <div className="flex items-center gap-2 text-white/80">
               <div className="h-7 w-7 rounded-full border border-white/20 grid place-items-center">
                 <Plus className="h-4 w-4" />
@@ -268,8 +268,8 @@ export default function StucklisteScreen() {
         </aside>
 
         {/* CENTER */}
-        <main className="col-span-6 bg-neutral-900/25 backdrop-blur-xl">
-          <div className="p-4">
+        <main className="col-span-6 bg-neutral-900/25 backdrop-blur-xl overflow-y-auto">
+          <div className="p-4 min-h-full">
             {/* header row */}
             <div className="text-[11px] uppercase tracking-wide text-white/45 grid grid-cols-12 gap-2 pb-2 border-b border-white/10">
               <div className="col-span-2">Kategorie</div>
