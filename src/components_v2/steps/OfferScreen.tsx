@@ -1,3 +1,4 @@
+// src/components_v2/offer/OfferScreen.tsx
 "use client";
 
 import Image from "next/image";
@@ -17,7 +18,6 @@ export default function OfferScreen() {
   const sp = useSearchParams();
   const planningId = sp.get("planningId") ?? "";
 
-  // dati reali: pannelli piazzati + catalogo
   const placedPanels = usePlannerV2Store((s) => s.panels);
 
   const placed = useMemo(() => {
@@ -28,14 +28,13 @@ export default function OfferScreen() {
       : undefined;
 
     const wp = spec?.wp ?? 0;
-    const priceChf = (spec as any)?.priceChf ?? 0; // se PanelSpec già ha priceChf, togli any
+    const priceChf = (spec as any)?.priceChf ?? 0;
     const kWp = (qty * wp) / 1000;
     const total = qty * priceChf;
 
     return { qty, panelId, spec, wp, priceChf, kWp, total };
   }, [placedPanels]);
 
-  // UI: toggle (per ora non cambiano dati; servono al cliente)
   const [sections, setSections] = useState({
     energiefluss: true,
     wirtschaftlichkeit: true,
@@ -43,38 +42,44 @@ export default function OfferScreen() {
     ersparnis: true,
   });
 
-  // preview PDF
-  const [pdfUrl, setPdfUrl] = useState<string>("");
+  const [pdfUrl, setPdfUrl] = useState("");
   const [loadingPdf, setLoadingPdf] = useState(false);
-  const [err, setErr] = useState<string>("");
+  const [err, setErr] = useState("");
 
   const onGenerate = async () => {
     if (!planningId) {
       setErr("Missing planningId in URL.");
       return;
     }
+
     setErr("");
     setLoadingPdf(true);
+
     try {
       const res = await fetch(`/api/plannings/${planningId}/offer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // inviamo solo quello che serve ORA (toggle + dati minimi)
+        credentials: "include",
         body: JSON.stringify({
           sections,
+          summary: {
+            qty: placed.qty,
+            kWp: placed.kWp,
+            panelId: placed.panelId,
+            model: placed.spec
+              ? `${placed.spec.brand} ${placed.spec.model}`
+              : null,
+            priceChf: placed.priceChf,
+            totalChf: placed.total,
+          },
         }),
       });
 
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(t || `HTTP ${res.status}`);
-      }
-
+      if (!res.ok) throw new Error(await res.text());
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      setPdfUrl(url);
+      setPdfUrl(URL.createObjectURL(blob));
     } catch (e: any) {
-      setErr(e?.message ?? "Failed generating PDF");
+      setErr(e?.message ?? "PDF Fehler");
     } finally {
       setLoadingPdf(false);
     }
@@ -90,7 +95,7 @@ export default function OfferScreen() {
 
   return (
     <div className="relative w-full h-full overflow-hidden">
-      {/* background come gli altri screen */}
+      {/* background */}
       <div className="absolute inset-0 z-0">
         <Image
           src="/images/hero.webp"
@@ -99,118 +104,98 @@ export default function OfferScreen() {
           priority
           className="object-cover object-bottom-right"
         />
-        <div className="pointer-events-none absolute inset-0 bg-black/25" />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/35 to-transparent" />
+        <div className="absolute inset-0 bg-black/30" />
       </div>
 
-      <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0">
-        {/* LEFT COLUMN */}
-        <aside className="col-span-3 bg-neutral-900/40 backdrop-blur-xl border-r border-white/10">
-          <div className="p-5 h-full flex flex-col">
+      <div className="relative z-10 w-full h-full grid grid-cols-12">
+        {/* LEFT */}
+        <aside className="col-span-3 bg-neutral-900/45 backdrop-blur-xl border-r border-white/10 flex flex-col h-full">
+          {/* SCROLLABLE CONTENT */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
             <div className="text-white/90 text-lg font-medium">Bericht</div>
 
-            <div className="mt-6 space-y-6">
-              <ToggleRow
-                label="Energiefluss"
-                value={sections.energiefluss}
-                onChange={(v) =>
-                  setSections((s) => ({ ...s, energiefluss: v }))
-                }
-              />
-              <ToggleRow
-                label="Wirtschaftlichkeit"
-                value={sections.wirtschaftlichkeit}
-                onChange={(v) =>
-                  setSections((s) => ({ ...s, wirtschaftlichkeit: v }))
-                }
-              />
-              <ToggleRow
-                label="Produktion"
-                value={sections.produktion}
-                onChange={(v) => setSections((s) => ({ ...s, produktion: v }))}
-              />
-              <ToggleRow
-                label="Ersparnis"
-                value={sections.ersparnis}
-                onChange={(v) => setSections((s) => ({ ...s, ersparnis: v }))}
-              />
-            </div>
+            <ToggleRow
+              label="Energiefluss"
+              value={sections.energiefluss}
+              onChange={(v) => setSections((s) => ({ ...s, energiefluss: v }))}
+            />
+            <ToggleRow
+              label="Wirtschaftlichkeit"
+              value={sections.wirtschaftlichkeit}
+              onChange={(v) =>
+                setSections((s) => ({ ...s, wirtschaftlichkeit: v }))
+              }
+            />
+            <ToggleRow
+              label="Produktion"
+              value={sections.produktion}
+              onChange={(v) => setSections((s) => ({ ...s, produktion: v }))}
+            />
+            <ToggleRow
+              label="Ersparnis"
+              value={sections.ersparnis}
+              onChange={(v) => setSections((s) => ({ ...s, ersparnis: v }))}
+            />
 
-            <div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80">
-              <div className="flex justify-between">
-                <span>Module (geplant)</span>
-                <span className="tabular-nums">{fmt0.format(placed.qty)}</span>
-              </div>
-              <div className="flex justify-between mt-1">
-                <span>Leistung</span>
-                <span className="tabular-nums">
-                  {fmt2.format(placed.kWp)} kWp
-                </span>
-              </div>
-              <div className="flex justify-between mt-1">
-                <span>Modell</span>
-                <span className="tabular-nums">
-                  {placed.spec
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80">
+              <Row label="Module (geplant)" value={fmt0.format(placed.qty)} />
+              <Row label="Leistung" value={`${fmt2.format(placed.kWp)} kWp`} />
+              <Row
+                label="Modell"
+                value={
+                  placed.spec
                     ? `${placed.spec.brand} ${placed.spec.model}`
-                    : "—"}
-                </span>
-              </div>
+                    : "—"
+                }
+              />
             </div>
+          </div>
 
-            <div className="mt-auto pt-6 space-y-3">
-              <button
-                type="button"
-                onClick={onDownload}
-                disabled={!pdfUrl}
-                className="w-12 h-12 rounded-xl border border-white/15 bg-white/5 grid place-items-center text-white/80 disabled:opacity-40"
-                title="Download"
-              >
-                <Download className="w-6 h-6" />
-              </button>
+          {/* STICKY FOOTER */}
+          <div className="sticky bottom-0 border-t border-white/10 bg-neutral-900/80 p-4 space-y-3">
+            <button
+              onClick={onDownload}
+              disabled={!pdfUrl}
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/5 py-2 text-white/80 disabled:opacity-40"
+            >
+              <Download className="w-4 h-4" />
+              Download
+            </button>
 
-              <button
-                type="button"
-                onClick={onGenerate}
-                disabled={loadingPdf}
-                className="w-full rounded-full border border-white/20 bg-white/5 px-4 py-3 text-white/90 hover:bg-white/10 transition disabled:opacity-60"
-              >
-                {loadingPdf ? "Generiere…" : "PDF generieren"}
-              </button>
+            <button
+              onClick={onGenerate}
+              disabled={loadingPdf}
+              className="w-full rounded-full border border-white/30 bg-white/10 py-3 text-white font-medium"
+            >
+              {loadingPdf ? "Generiere…" : "PDF generieren"}
+            </button>
 
-              {err ? (
-                <div className="text-[11px] text-red-200/90 leading-snug">
-                  {err}
-                </div>
-              ) : (
-                <div className="text-[11px] text-white/45 leading-snug">
-                  Hinweis: aktuell verwenden wir nur verfügbare Daten (Module +
-                  Stückliste). Grafiken folgen später.
-                </div>
-              )}
-            </div>
+            {err && <div className="text-[11px] text-red-300">{err}</div>}
           </div>
         </aside>
 
-        {/* MAIN = PDF PREVIEW */}
-        <main className="col-span-9 relative">
-          {/* finta scrollbar/linea come nello screenshot */}
-          <div className="pointer-events-none absolute top-24 bottom-24 right-10 w-[3px] rounded-full bg-white/70 opacity-70" />
-
-          <div className="h-full w-full flex items-center justify-center p-10">
-            <div className="relative w-[720px] max-w-[86%] aspect-[1/1.4142] rounded-sm bg-white shadow-2xl overflow-hidden">
-              {!pdfUrl ? (
-                <PdfSkeleton />
-              ) : (
-                <iframe
-                  title="pdf-preview"
-                  src={pdfUrl}
-                  className="w-full h-full"
-                />
-              )}
-            </div>
+        {/* MAIN */}
+        <main className="col-span-9 flex items-center justify-center p-10">
+          <div className="w-[720px] aspect-[1/1.414] bg-white shadow-2xl">
+            {!pdfUrl ? (
+              <PdfSkeleton />
+            ) : (
+              <iframe src={pdfUrl} className="w-full h-full" />
+            )}
           </div>
         </main>
       </div>
+    </div>
+  );
+}
+
+/* helpers */
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between mt-1">
+      <span>{label}</span>
+      <span className="tabular-nums">{value}</span>
     </div>
   );
 }
@@ -225,13 +210,11 @@ function ToggleRow({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="space-y-3">
-      <div className="text-white/85">{label}</div>
+    <div>
+      <div className="text-white/85 mb-2">{label}</div>
       <button
-        type="button"
         onClick={() => onChange(!value)}
         className="w-[86px] h-[34px] rounded-full border border-white/30 bg-white/5 relative"
-        aria-pressed={value}
       >
         <span
           className={`absolute top-[3px] h-[26px] w-[26px] rounded-full bg-white transition-all ${
@@ -244,17 +227,5 @@ function ToggleRow({
 }
 
 function PdfSkeleton() {
-  return (
-    <div className="w-full h-full p-8">
-      <div className="h-24 w-full rounded bg-neutral-200 animate-pulse" />
-      <div className="mt-6 h-6 w-2/3 rounded bg-neutral-200 animate-pulse" />
-      <div className="mt-3 h-4 w-1/2 rounded bg-neutral-200 animate-pulse" />
-      <div className="mt-10 space-y-3">
-        <div className="h-4 w-full rounded bg-neutral-200 animate-pulse" />
-        <div className="h-4 w-full rounded bg-neutral-200 animate-pulse" />
-        <div className="h-4 w-5/6 rounded bg-neutral-200 animate-pulse" />
-      </div>
-      <div className="mt-10 h-56 w-full rounded bg-neutral-200 animate-pulse" />
-    </div>
-  );
+  return <div className="w-full h-full p-8 bg-neutral-100 animate-pulse" />;
 }
