@@ -211,10 +211,14 @@ function drawLabelValue(
 
 /* --------------------------------- Route -------------------------------- */
 
+export const runtime = "nodejs";
+
 export async function POST(
-  req: Request,
-  ctx: { params: { planningId: string } },
+   req: Request,
+  { params }: { params: Promise<{ planningId: string }> },
 ) {
+  const { planningId } = await params;
+
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
@@ -227,7 +231,6 @@ export async function POST(
   if (!session)
     return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
 
-  const planningId = ctx?.params?.planningId;
   if (!planningId)
     return Response.json({ ok: false, error: "Missing planningId param" }, { status: 400 });
 
