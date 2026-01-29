@@ -2,6 +2,10 @@
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 
+export const runtime = "nodejs"; // mongodb + crypto + Buffer => Node runtime
+
+/* ----------------------------- Session helpers ---------------------------- */
+
 function sign(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
 }
@@ -28,7 +32,14 @@ function readSession(req: Request, secret: string) {
   }
 }
 
-export async function PATCH(req: Request, ctx: { params: { planningId: string } }) {
+/* --------------------------------- PATCH -------------------------------- */
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ planningId: string }> },
+) {
+  const { planningId } = await params;
+
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
@@ -38,20 +49,20 @@ export async function PATCH(req: Request, ctx: { params: { planningId: string } 
     return Response.json({ ok: false, error: "Missing SESSION_SECRET" }, { status: 500 });
 
   const session = readSession(req, secret);
-  if (!session) return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
+  if (!session)
+    return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
 
-  const planningId = ctx?.params?.planningId;
   if (!planningId) {
     return Response.json(
       { ok: false, error: "Route params missing. Check folder name is [planningId]." },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
-  const body = await req.json().catch(() => ({}));
-  const profile = body.profile;
-  const ist = body.ist;
-  const planner = body.planner;
+  const body = await req.json().catch(() => ({} as any));
+  const profile = body?.profile;
+  const ist = body?.ist;
+  const planner = body?.planner;
 
   if (
     (!profile || typeof profile !== "object") &&
@@ -60,7 +71,7 @@ export async function PATCH(req: Request, ctx: { params: { planningId: string } 
   ) {
     return Response.json(
       { ok: false, error: "Send { profile }, { ist } or { planner }" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -93,7 +104,7 @@ export async function PATCH(req: Request, ctx: { params: { planningId: string } 
 
     const res = await plannings.updateOne(
       { _id: new ObjectId(planningId), companyId: session.activeCompanyId },
-      { $set: setObj }
+      { $set: setObj },
     );
 
     if (res.matchedCount === 0) {
@@ -103,13 +114,23 @@ export async function PATCH(req: Request, ctx: { params: { planningId: string } 
     return Response.json({ ok: true });
   } catch (e: any) {
     console.error("UPDATE PLANNING ERROR:", e);
-    return Response.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
+    return Response.json(
+      { ok: false, error: e?.message ?? "Unknown error" },
+      { status: 500 },
+    );
   } finally {
     await client.close().catch(() => {});
   }
 }
 
-export async function GET(req: Request, ctx: { params: { planningId: string } }) {
+/* ---------------------------------- GET ---------------------------------- */
+
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ planningId: string }> },
+) {
+  const { planningId } = await params;
+
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
@@ -119,13 +140,13 @@ export async function GET(req: Request, ctx: { params: { planningId: string } })
     return Response.json({ ok: false, error: "Missing SESSION_SECRET" }, { status: 500 });
 
   const session = readSession(req, secret);
-  if (!session) return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
+  if (!session)
+    return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
 
-  const planningId = ctx?.params?.planningId;
   if (!planningId) {
     return Response.json(
       { ok: false, error: "Route params missing. Check folder name is [planningId]." },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -141,12 +162,16 @@ export async function GET(req: Request, ctx: { params: { planningId: string } })
       companyId: session.activeCompanyId,
     });
 
-    if (!doc) return Response.json({ ok: false, error: "Planning not found" }, { status: 404 });
+    if (!doc)
+      return Response.json({ ok: false, error: "Planning not found" }, { status: 404 });
 
     return Response.json({ ok: true, planning: doc });
   } catch (e: any) {
     console.error("GET PLANNING ERROR:", e);
-    return Response.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
+    return Response.json(
+      { ok: false, error: e?.message ?? "Unknown error" },
+      { status: 500 },
+    );
   } finally {
     await client.close().catch(() => {});
   }
