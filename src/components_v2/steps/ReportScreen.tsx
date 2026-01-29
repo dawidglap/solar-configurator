@@ -5,6 +5,7 @@ import Image from "next/image";
 import { ChevronDown } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { PANEL_CATALOG } from "@/constants/panels";
+import ProductionSummaryCard from "../report/ProductionSummaryCard";
 
 const fmt2 = new Intl.NumberFormat("de-CH", {
   minimumFractionDigits: 2,
@@ -210,7 +211,7 @@ export default function ReportScreen() {
                 title="Produktion"
                 className="col-span-12 lg:col-span-6"
               >
-                <SkeletonBox height={240} />
+                <ProductionSummaryCard kWp={moduleInfo.kWp} />
               </CardShell>
 
               {/* Ersparnis */}
