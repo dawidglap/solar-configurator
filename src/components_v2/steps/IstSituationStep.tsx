@@ -22,6 +22,14 @@ import {
 } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 
+function formatChThousands(value: string) {
+  // rimuove tutto tranne numeri
+  const digits = value.replace(/[^\d]/g, "");
+  if (!digits) return "";
+  // inserisce ' come separatore migliaia
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, "'");
+}
+
 export default function IstSituationStep() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -303,7 +311,10 @@ export default function IstSituationStep() {
                       type="text"
                       className="flex-1 rounded-full bg-white/5 border border-white/20 px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                       value={ist.consumption}
-                      onChange={(e) => setIst({ consumption: e.target.value })}
+                      onChange={(e) => {
+                        const formatted = formatChThousands(e.target.value);
+                        setIst({ consumption: formatted });
+                      }}
                       placeholder="z.B. 8'500"
                     />
                     <span className="text-[10px] uppercase tracking-wide text-neutral-300">
