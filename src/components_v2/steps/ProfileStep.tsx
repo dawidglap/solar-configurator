@@ -2,6 +2,7 @@
 "use client";
 
 import type React from "react";
+import { useEffect, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Pencil, Save } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
@@ -15,19 +16,68 @@ export default function ProfileStep() {
   const setProfile = usePlannerV2Store((s) => s.setProfile);
   const setStep = usePlannerV2Store((s) => s.setStep);
 
+  // ✅ default PRIVAT se non valorizzato
+  useEffect(() => {
+    if (!profile.customerType) setProfile({ customerType: "private" } as any);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isPrivate = (profile.customerType || "private") === "private";
+  const showCompanyFields = !isPrivate;
+
+  // update “generico”
   const update =
     (field: keyof typeof profile) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setProfile({ [field]: e.target.value } as any);
     };
 
+  // ✅ sync: Gebäudeadresse -> Rechnungsadresse (sempre uguali)
+  const setBuildingAndSyncBilling = (patch: Partial<typeof profile>) => {
+    const mapped: Partial<typeof profile> = {};
+
+    if (patch.buildingStreet !== undefined)
+      mapped.billingStreet = patch.buildingStreet;
+    if (patch.buildingStreetNo !== undefined)
+      mapped.billingStreetNo = patch.buildingStreetNo;
+    if (patch.buildingCity !== undefined)
+      mapped.billingCity = patch.buildingCity;
+    if (patch.buildingZip !== undefined) mapped.billingZip = patch.buildingZip;
+
+    setProfile({ ...(patch as any), ...(mapped as any) } as any);
+  };
+
+  const updateBuilding =
+    (field: keyof typeof profile) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setBuildingAndSyncBilling({ [field]: e.target.value } as any);
+    };
+
+  const setCustomerType = (t: "private" | "company") => {
+    if (t === "private") {
+      // ✅ PRIVAT: nascondiamo e ripuliamo campi “azienda”
+      setProfile({
+        customerType: "private",
+        legalForm: "",
+        businessName: "",
+        businessStreet: "",
+        businessStreetNo: "",
+        businessCity: "",
+        businessZip: "",
+        businessPhone: "",
+        businessEmail: "",
+        businessWebsite: "",
+      } as any);
+      return;
+    }
+    setProfile({ customerType: "company" } as any);
+  };
+
   const handleSave = async () => {
-    // 1) se manca planningId, non possiamo salvare nel DB
     if (!planningId) {
       console.warn(
         "Missing planningId in URL. Example: /planner-v2?planningId=XXXX",
       );
-      // ti lascio comunque andare avanti, ma non salva nel DB
       setStep("ist");
       return;
     }
@@ -40,7 +90,6 @@ export default function ProfileStep() {
         body: JSON.stringify({ profile }),
       });
 
-      // se non loggato -> login
       if (res.status === 401) {
         router.push(
           `/login?next=${encodeURIComponent(`/planner-v2?planningId=${planningId}`)}`,
@@ -55,17 +104,30 @@ export default function ProfileStep() {
         return;
       }
 
-      // ✅ salvato nel DB, vai allo step successivo
       setStep("ist");
     } catch (err) {
       console.error("SAVE PROFILE ERROR:", err);
     }
   };
 
+  // top grid template (se PRIVAT: 2 colonne + icone; se FIRMA: 3 colonne + icone)
+  const topGridCols = useMemo(() => {
+    return showCompanyFields
+      ? "grid-cols-1 mt-4 lg:grid-cols-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_64px]"
+      : "grid-cols-1 mt-4 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_64px]";
+  }, [showCompanyFields]);
+
+  // second row grid template (se PRIVAT: 2 colonne; se FIRMA: 3 colonne)
+  const secondGridCols = useMemo(() => {
+    return showCompanyFields
+      ? "grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_64px]"
+      : "grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_64px]";
+  }, [showCompanyFields]);
+
   return (
     <div className="w-full rounded-2xl bg-neutral-900/60 text-neutral-50 shadow-xl border border-white/10 backdrop-blur-sm px-6 py-4 space-y-6">
-      {/* ───────────────── TOP ROW: KUNDE / KUNDENTYP / RECHTSFORM / ICONS ───────────────── */}
-      <div className="grid grid-cols-1 mt-4 lg:grid-cols-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_64px] gap-4 items-start">
+      {/* ───────────────── TOP ROW: KUNDE / KUNDENTYP (+ QUELLE) / (RECHTSFORM se FIRMA) / ICONS ───────────────── */}
+      <div className={`grid gap-4 items-start ${topGridCols}`}>
         {/* Kunde */}
         <div className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-200">
@@ -78,7 +140,7 @@ export default function ProfileStep() {
                 type="radio"
                 className="accent-emerald-500 h-3 w-3"
                 checked={profile.customerStatus === "new"}
-                onChange={() => setProfile({ customerStatus: "new" })}
+                onChange={() => setProfile({ customerStatus: "new" } as any)}
               />
               <span>Neuer Kunde</span>
             </label>
@@ -87,7 +149,9 @@ export default function ProfileStep() {
                 type="radio"
                 className="accent-emerald-500 h-3 w-3"
                 checked={profile.customerStatus === "existing"}
-                onChange={() => setProfile({ customerStatus: "existing" })}
+                onChange={() =>
+                  setProfile({ customerStatus: "existing" } as any)
+                }
               />
               <span>Bestandes Kunde</span>
             </label>
@@ -105,8 +169,8 @@ export default function ProfileStep() {
               <input
                 type="radio"
                 className="accent-emerald-500 h-3 w-3"
-                checked={profile.customerType === "private"}
-                onChange={() => setProfile({ customerType: "private" })}
+                checked={(profile.customerType || "private") === "private"}
+                onChange={() => setCustomerType("private")}
               />
               <span>Privat</span>
             </label>
@@ -115,7 +179,7 @@ export default function ProfileStep() {
                 type="radio"
                 className="accent-emerald-500 h-3 w-3"
                 checked={profile.customerType === "company"}
-                onChange={() => setProfile({ customerType: "company" })}
+                onChange={() => setCustomerType("company")}
               />
               <span>Firma</span>
             </label>
@@ -135,23 +199,25 @@ export default function ProfileStep() {
           </select>
         </div>
 
-        {/* Rechtsform */}
-        <div className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-200">
-            Rechtsform
-          </h3>
-          <select
-            className="w-full rounded-full bg-white/5 border border-white/20 px-3 py-[5px] text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
-            value={profile.legalForm}
-            onChange={update("legalForm")}
-          >
-            <option value="">Auswählen</option>
-            <option value="einzelunternehmen">Einzelunternehmen</option>
-            <option value="gmbh">GmbH</option>
-            <option value="ag">AG</option>
-            <option value="verein">Verein</option>
-          </select>
-        </div>
+        {/* Rechtsform (solo se FIRMA) */}
+        {showCompanyFields && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-200">
+              Rechtsform
+            </h3>
+            <select
+              className="w-full rounded-full bg-white/5 border border-white/20 px-3 py-[5px] text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
+              value={profile.legalForm}
+              onChange={update("legalForm")}
+            >
+              <option value="">Auswählen</option>
+              <option value="einzelunternehmen">Einzelunternehmen</option>
+              <option value="gmbh">GmbH</option>
+              <option value="ag">AG</option>
+              <option value="verein">Verein</option>
+            </select>
+          </div>
+        )}
 
         {/* Colonna piccola a destra: Edit / Save */}
         <div className="hidden xl:flex flex-col items-center gap-2 pt-5">
@@ -173,8 +239,8 @@ export default function ProfileStep() {
         </div>
       </div>
 
-      {/* ───────────────── SECOND ROW: 3 MAIN COLUMNS + SPACER ───────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_64px] gap-6">
+      {/* ───────────────── SECOND ROW ───────────────── */}
+      <div className={`${secondGridCols} gap-6`}>
         {/* Kontaktperson */}
         <div className="space-y-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-200">
@@ -187,7 +253,9 @@ export default function ProfileStep() {
                 type="radio"
                 className="accent-emerald-500 h-3 w-3"
                 checked={profile.contactSalutation === "herr"}
-                onChange={() => setProfile({ contactSalutation: "herr" })}
+                onChange={() =>
+                  setProfile({ contactSalutation: "herr" } as any)
+                }
               />
               <span>Herr</span>
             </label>
@@ -196,7 +264,9 @@ export default function ProfileStep() {
                 type="radio"
                 className="accent-emerald-500 h-3 w-3"
                 checked={profile.contactSalutation === "frau"}
-                onChange={() => setProfile({ contactSalutation: "frau" })}
+                onChange={() =>
+                  setProfile({ contactSalutation: "frau" } as any)
+                }
               />
               <span>Frau</span>
             </label>
@@ -234,13 +304,13 @@ export default function ProfileStep() {
               <InputField
                 label="Adresse"
                 value={profile.buildingStreet}
-                onChange={update("buildingStreet")}
+                onChange={updateBuilding("buildingStreet")}
                 className="flex-1"
               />
               <InputField
                 label="Nr."
                 value={profile.buildingStreetNo}
-                onChange={update("buildingStreetNo")}
+                onChange={updateBuilding("buildingStreetNo")}
                 small
                 className="w-20"
               />
@@ -248,19 +318,19 @@ export default function ProfileStep() {
             <InputField
               label="Ort / PLZ"
               value={profile.buildingCity}
-              onChange={update("buildingCity")}
+              onChange={updateBuilding("buildingCity")}
             />
             <InputField
               label="PLZ"
               value={profile.buildingZip}
-              onChange={update("buildingZip")}
+              onChange={updateBuilding("buildingZip")}
               small
               className="w-28"
             />
           </div>
         </div>
 
-        {/* Rechnungsadresse */}
+        {/* Rechnungsadresse (sempre uguale a Gebäudeadresse) */}
         <div className="space-y-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-200">
             Rechnungsadresse
@@ -271,13 +341,22 @@ export default function ProfileStep() {
               <InputField
                 label="Adresse"
                 value={profile.billingStreet}
-                onChange={update("billingStreet")}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setProfile({ billingStreet: v, buildingStreet: v } as any);
+                }}
                 className="flex-1"
               />
               <InputField
                 label="Nr."
                 value={profile.billingStreetNo}
-                onChange={update("billingStreetNo")}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setProfile({
+                    billingStreetNo: v,
+                    buildingStreetNo: v,
+                  } as any);
+                }}
                 small
                 className="w-20"
               />
@@ -286,12 +365,18 @@ export default function ProfileStep() {
             <InputField
               label="Ort / PLZ"
               value={profile.billingCity}
-              onChange={update("billingCity")}
+              onChange={(e) => {
+                const v = e.target.value;
+                setProfile({ billingCity: v, buildingCity: v } as any);
+              }}
             />
             <InputField
               label="PLZ"
               value={profile.billingZip}
-              onChange={update("billingZip")}
+              onChange={(e) => {
+                const v = e.target.value;
+                setProfile({ billingZip: v, buildingZip: v } as any);
+              }}
               small
               className="w-28"
             />
@@ -312,79 +397,95 @@ export default function ProfileStep() {
           </div>
         </div>
 
-        {/* Geschäft */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-200">
-            Geschäft
-          </h3>
+        {/* Geschäft (solo se FIRMA) */}
+        {showCompanyFields && (
+          <div className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-200">
+              Geschäft
+            </h3>
 
-          <div className="space-y-1.5 text-[11px]">
-            <InputField
-              label="Name"
-              value={profile.businessName}
-              onChange={update("businessName")}
-            />
-
-            <div className="flex gap-2">
+            <div className="space-y-1.5 text-[11px]">
               <InputField
-                label="Adresse"
-                value={profile.businessStreet}
-                onChange={update("businessStreet")}
-                className="flex-1"
+                label="Name"
+                value={profile.businessName}
+                onChange={update("businessName")}
+              />
+
+              <div className="flex gap-2">
+                <InputField
+                  label="Adresse"
+                  value={profile.businessStreet}
+                  onChange={update("businessStreet")}
+                  className="flex-1"
+                />
+                <InputField
+                  label="Nr."
+                  value={profile.businessStreetNo}
+                  onChange={update("businessStreetNo")}
+                  small
+                  className="w-20"
+                />
+              </div>
+
+              <InputField
+                label="Ort / PLZ"
+                value={profile.businessCity}
+                onChange={update("businessCity")}
               />
               <InputField
-                label="Nr."
-                value={profile.businessStreetNo}
-                onChange={update("businessStreetNo")}
+                label="PLZ"
+                value={profile.businessZip}
+                onChange={update("businessZip")}
                 small
-                className="w-20"
+                className="w-28"
+              />
+              <InputField
+                label="Tel. Geschäft"
+                value={profile.businessPhone}
+                onChange={update("businessPhone")}
+              />
+              <InputField
+                label="E-Mail Geschäft"
+                value={profile.businessEmail}
+                onChange={update("businessEmail")}
+              />
+              <InputField
+                label="Webseite"
+                value={profile.businessWebsite}
+                onChange={update("businessWebsite")}
               />
             </div>
 
-            <InputField
-              label="Ort / PLZ"
-              value={profile.businessCity}
-              onChange={update("businessCity")}
-            />
-            <InputField
-              label="PLZ"
-              value={profile.businessZip}
-              onChange={update("businessZip")}
-              small
-              className="w-28"
-            />
-            <InputField
-              label="Tel. Geschäft"
-              value={profile.businessPhone}
-              onChange={update("businessPhone")}
-            />
-            <InputField
-              label="E-Mail Geschäft"
-              value={profile.businessEmail}
-              onChange={update("businessEmail")}
-            />
-            <InputField
-              label="Webseite"
-              value={profile.businessWebsite}
-              onChange={update("businessWebsite")}
-            />
+            {/* fallback Save button mobile */}
+            <div className="mt-4 flex justify-end xl:hidden">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/90 hover:bg-emerald-400 text-[11px] font-semibold px-3.5 py-1.5 shadow-lg shadow-emerald-500/30 transition"
+                onClick={handleSave}
+              >
+                <Save className="w-3 h-3" />
+                <span>Speichern</span>
+              </button>
+            </div>
           </div>
-
-          {/* fallback Save button mobile */}
-          <div className="mt-4 flex justify-end xl:hidden">
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/90 hover:bg-emerald-400 text-[11px] font-semibold px-3.5 py-1.5 shadow-lg shadow-emerald-500/30 transition"
-              onClick={handleSave}
-            >
-              <Save className="w-3 h-3" />
-              <span>Speichern</span>
-            </button>
-          </div>
-        </div>
+        )}
 
         <div className="hidden xl:block" />
       </div>
+
+      {/* fallback Save button mobile quando FIRMA è nascosto */}
+      {!showCompanyFields && (
+        <div className="mt-2 flex justify-end xl:hidden">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/90 hover:bg-emerald-400 text-[11px] font-semibold px-3.5 py-1.5 shadow-lg shadow-emerald-500/30 transition"
+            onClick={handleSave}
+          >
+            <Save className="w-3 h-3" />
+            <span>Speichern</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
