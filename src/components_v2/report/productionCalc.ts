@@ -1,26 +1,33 @@
 // src/components_v2/report/productionCalc.ts
-export function calcProductionSummary(params: {
+export function calcProductionSummary(args: {
   kWp: number;
-  yearlyYieldKwhPerKwp?: number; // default 950
-  customerYearlyConsumptionKwh?: number; // default 17500
-  selfConsumptionPct?: number; // default 0.409 (nota: è un coefficiente, non %)
+  yearlyYieldKwhPerKwp?: number;
+  customerYearlyConsumptionKwh?: number;
+  selfConsumptionPct?: number; // 0..1
 }) {
-  const {
-    kWp,
-    yearlyYieldKwhPerKwp = 950,
-    customerYearlyConsumptionKwh = 17500,
-    selfConsumptionPct = 0.409,
-  } = params;
+  const kWp = Number(args.kWp) || 0;
+  const yearlyYieldKwhPerKwp = Number(args.yearlyYieldKwhPerKwp ?? 950) || 0;
+  const consumption = Number(args.customerYearlyConsumptionKwh ?? 17500) || 0;
+  const selfConsumptionPct = Number(args.selfConsumptionPct ?? 0.409) || 0;
 
-  if (!kWp || kWp <= 0) return null;
+  const production = Math.max(0, kWp * yearlyYieldKwhPerKwp); // kWh/a
 
-  const production = kWp * yearlyYieldKwhPerKwp; // kWh/a
-  const selfUse = customerYearlyConsumptionKwh * selfConsumptionPct; // kWh/a (come nel tuo MVP)
+  // ✅ clamp: non puoi autoconsumare più di quanto produci
+  const potentialSelfUse = Math.max(0, consumption * selfConsumptionPct);
+  const selfUse = Math.min(production, potentialSelfUse);
+
   const feedIn = Math.max(0, production - selfUse);
-  const selfUseShare = production > 0 ? selfUse / production : 0; // Eigenverbrauchsanteil
-  const autarky = customerYearlyConsumptionKwh
-    ? selfUse / customerYearlyConsumptionKwh
-    : 0;
 
-  return { production, selfUse, feedIn, selfUseShare, autarky };
+  const selfUseShare = production > 0 ? selfUse / production : 0; // Eigenverbrauchsanteil (0..1)
+  const autarky = consumption > 0 ? selfUse / consumption : 0;     // Autarkiegrad (0..1)
+
+  return {
+    production,
+    selfUse,
+    feedIn,
+    selfUseShare,
+    autarky,
+    selfUseSharePct: selfUseShare * 100,
+    autarkyPct: autarky * 100,
+  };
 }

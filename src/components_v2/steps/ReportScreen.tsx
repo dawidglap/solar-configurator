@@ -11,6 +11,7 @@ import { CHARGERS } from "@/constants/chargers";
 import { HEATPUMPS } from "@/constants/heatpumps";
 import EnergieflussPanel from "../report/EnergieFlussPanel";
 import { calcProductionSummary } from "../report/productionCalc";
+import WirtschaftlichkeitPanel from "../report/WirtschaftlichkeitPanel";
 
 const fmt2 = new Intl.NumberFormat("de-CH", {
   minimumFractionDigits: 2,
@@ -38,7 +39,6 @@ function calcKwpFromPanels(panels: any[]) {
 }
 
 export default function ReportScreen() {
-  // dati reali dal planning (MVP)
   const placedPanels = usePlannerV2Store((s) => s.panels);
 
   const moduleInfo = useMemo(
@@ -46,21 +46,22 @@ export default function ReportScreen() {
     [placedPanels],
   );
 
-  const prodCalc = useMemo(
-    () =>
-      calcProductionSummary({
-        kWp: moduleInfo.kWp,
-        yearlyYieldKwhPerKwp: 950,
-        customerYearlyConsumptionKwh: 17500,
-        selfConsumptionPct: 0.409,
-      }),
-    [moduleInfo.kWp],
-  );
+  // ✅ produzione unificata, no NaN
+  const prodCalc = useMemo(() => {
+    if (!moduleInfo.kWp || moduleInfo.kWp <= 0) return null;
 
-  const selfUseSharePct = prodCalc ? prodCalc.selfUseShare * 100 : 0;
-  const autarkyPct = prodCalc ? prodCalc.autarky * 100 : 0;
+    return calcProductionSummary({
+      kWp: moduleInfo.kWp,
+      yearlyYieldKwhPerKwp: 950, // placeholder
+      customerYearlyConsumptionKwh: 17500, // placeholder
+      selfConsumptionPct: 0.409, // placeholder
+    });
+  }, [moduleInfo.kWp]);
 
-  // stato UI (MVP) – SOLO colonna sinistra
+  const selfUseSharePct = prodCalc?.selfUseSharePct ?? 0;
+  const autarkyPct = prodCalc?.autarkyPct ?? 0;
+
+  // stato UI
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlanKey>("50-40-10");
   const [rabattChf, setRabattChf] = useState<string>("");
   const [rabattPct, setRabattPct] = useState<string>("");
@@ -77,7 +78,6 @@ export default function ReportScreen() {
 
   return (
     <div className="relative w-full h-full overflow-hidden">
-      {/* BACKGROUND come PlannerEmptyState */}
       <div className="absolute inset-0 z-0">
         <Image
           src="/images/hero.webp"
@@ -89,9 +89,7 @@ export default function ReportScreen() {
         <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white to-transparent" />
       </div>
 
-      {/* LAYOUT */}
       <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 pt-10">
-        {/* LEFT SIDEBAR */}
         <aside className="col-span-3 border-r border-white/10 bg-neutral-900/35 backdrop-blur-xl overflow-y-auto">
           <div className="p-4 min-h-full">
             <div className="text-white/90 text-lg font-semibold">Bericht</div>
@@ -99,7 +97,6 @@ export default function ReportScreen() {
               MVP: Links Eingaben, rechts Platzhalter bis Kundendaten vorliegen.
             </div>
 
-            {/* Energiefluss */}
             <SectionTitle title="Energiefluss" />
             <div className="mt-3 space-y-3">
               <SelectField
@@ -108,14 +105,12 @@ export default function ReportScreen() {
                 onChange={setBatteryId}
                 options={BATTERIES}
               />
-
               <SelectField
                 label="Ladestation"
                 value={chargerId}
                 onChange={setChargerId}
                 options={CHARGERS}
               />
-
               <SelectField
                 label="Wärmepumpe"
                 value={heatpumpId}
@@ -124,7 +119,6 @@ export default function ReportScreen() {
               />
             </div>
 
-            {/* Wirtschaftlichkeit */}
             <SectionTitle title="Wirtschaftlichkeit" />
             <div className="mt-3 space-y-3">
               <InputLike
@@ -169,7 +163,6 @@ export default function ReportScreen() {
               />
             </div>
 
-            {/* MINI INFO BOX */}
             <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="text-[12px] text-white/70 font-medium">
                 Geplante PV-Anlage
@@ -208,12 +201,9 @@ export default function ReportScreen() {
           </div>
         </aside>
 
-        {/* MAIN (tutto: 4 grafici/cards) */}
         <main className="col-span-9 bg-neutral-900/25 backdrop-blur-xl overflow-y-auto">
           <div className="p-6 min-h-full">
-            {/* grid 2x2 come screenshot */}
             <div className="grid grid-cols-12 gap-6">
-              {/* Energiefluss */}
               <CardShell
                 title="Energiefluss"
                 className="col-span-12 lg:col-span-6"
@@ -224,23 +214,18 @@ export default function ReportScreen() {
                 />
               </CardShell>
 
-              {/* Wirtschaftlichkeit */}
               <CardShell
                 title="Wirtschaftlichkeit"
                 className="col-span-12 lg:col-span-6"
               >
-                <div className="grid grid-cols-12 gap-3">
-                  <MiniKpiGhost className="col-span-12 md:col-span-4" />
-                  <MiniKpiGhost className="col-span-12 md:col-span-4" />
-                  <MiniKpiGhost className="col-span-12 md:col-span-4" />
-                </div>
-
-                <div className="mt-4">
-                  <SkeletonChart height={160} />
-                </div>
+                <WirtschaftlichkeitPanel
+                  productionKwhYear={prodCalc?.production ?? 0}
+                  selfUseKwhYear={prodCalc?.selfUse ?? 0}
+                  feedInKwhYear={prodCalc?.feedIn ?? 0}
+                  amortYearsInput={Number(amortYears) || undefined}
+                />
               </CardShell>
 
-              {/* Produktion */}
               <CardShell
                 title="Produktion"
                 className="col-span-12 lg:col-span-6"
@@ -248,7 +233,6 @@ export default function ReportScreen() {
                 <ProductionSummaryCard kWp={moduleInfo.kWp} />
               </CardShell>
 
-              {/* Ersparnis */}
               <CardShell
                 title="Ersparnis"
                 className="col-span-12 lg:col-span-6"
@@ -258,7 +242,6 @@ export default function ReportScreen() {
                   <MiniKpiGhost className="col-span-12 md:col-span-4" />
                   <MiniKpiGhost className="col-span-12 md:col-span-4" />
                 </div>
-
                 <div className="mt-4">
                   <SkeletonChart height={180} />
                 </div>
@@ -301,7 +284,6 @@ function SelectField({
   return (
     <div>
       <div className="text-white/70 text-sm">{label}</div>
-
       <div className="mt-2 relative">
         <select
           value={value}
@@ -314,26 +296,7 @@ function SelectField({
             </option>
           ))}
         </select>
-
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/60" />
-      </div>
-    </div>
-  );
-}
-
-function DropdownLike({
-  label,
-  placeholder,
-}: {
-  label: string;
-  placeholder: string;
-}) {
-  return (
-    <div>
-      <div className="text-white/70 text-sm">{label}</div>
-      <div className="mt-2 flex items-center justify-between rounded-full border border-white/15 bg-white/5 px-4 py-2 text-white/70">
-        <span className="text-[13px]">{placeholder}</span>
-        <ChevronDown className="h-4 w-4 opacity-70" />
       </div>
     </div>
   );
@@ -434,21 +397,6 @@ function CardShell({
   );
 }
 
-function KpiGhost({ className }: { className?: string }) {
-  return (
-    <div
-      className={[
-        "rounded-xl border border-white/15 bg-white/5 p-4",
-        className ?? "",
-      ].join(" ")}
-    >
-      <div className="h-3 w-28 rounded bg-white/10 animate-pulse" />
-      <div className="mt-2 h-3 w-44 rounded bg-white/10 animate-pulse" />
-      <div className="mt-3 h-8 w-20 rounded bg-white/10 animate-pulse" />
-    </div>
-  );
-}
-
 function MiniKpiGhost({ className }: { className?: string }) {
   return (
     <div
@@ -460,15 +408,6 @@ function MiniKpiGhost({ className }: { className?: string }) {
       <div className="h-3 w-24 rounded bg-white/10 animate-pulse" />
       <div className="mt-2 h-6 w-24 rounded bg-white/10 animate-pulse" />
     </div>
-  );
-}
-
-function SkeletonBox({ height }: { height: number }) {
-  return (
-    <div
-      className="rounded-xl border border-white/10 bg-white/5 animate-pulse"
-      style={{ height }}
-    />
   );
 }
 

@@ -13,6 +13,7 @@ import { createIstSlice, defaultIst } from './slices/istSlice';
 
 
 
+
 import { history } from './history';
 
 
@@ -57,6 +58,10 @@ import { createLayersSlice } from './slices/layersSlice';
 
 import type { ZonesSlice } from './slices/zonesSlice';
 import { createZonesSlice } from './slices/zonesSlice';
+
+import type { PartsSlice } from "./slices/partsSlice";
+import { createPartsSlice } from "./slices/partsSlice";
+
 
 
 // 👇 rotazione falde: stato di allineamento
@@ -117,7 +122,7 @@ type PlannerV2State = {
     setSelectedSnowGuard: (id?: string) => void;
     exportState: () => any;
 importState: (saved: any) => void;
-} & UISlice & LayersSlice & PanelsSlice & ZonesSlice & ProfileSlice & IstSlice;
+ } & UISlice & LayersSlice & PanelsSlice & ZonesSlice & ProfileSlice & IstSlice & PartsSlice;
 
 
 
@@ -210,6 +215,8 @@ export const usePlannerV2Store = create<PlannerV2State>()(
 
     profile: s.profile,
     ist: s.ist,
+parts:  s.parts,
+
 
   };
 },
@@ -445,11 +452,14 @@ importState: (saved: any) => {
 // ── IST slice
 ...createIstSlice(set, get, api),
 
+...createPartsSlice(set, get, api)
+
+
 
         }),
         {
             name: 'planner-v2',
-            version: 12,
+            version: 13,
 
             storage: createJSONStorage(() => localStorage),
 
@@ -473,6 +483,10 @@ importState: (saved: any) => {
                 selectedSnowGuardId: s.selectedSnowGuardId,
                  profile: s.profile,  
                  ist: s.ist,
+                 partsView: s.partsView,
+
+parts: s.parts,
+
 
 
 
@@ -491,9 +505,17 @@ migrate: (persisted: any, fromVersion?: number) => {
   persisted.ist = defaultIst;
 }
 
+if (!persisted.parts) {
+  persisted.parts = { items: [] };
+}
+if (!Array.isArray(persisted.parts.items)) {
+  persisted.parts.items = [];
+}
+
+
 
   // 🔹 per tutte le versioni precedenti alla 12, partiamo da 'profile'
-  if ((fromVersion ?? 0) < 12) {
+  if ((fromVersion ?? 0) < 13) {
     persisted.step = 'profile';
   }
 
