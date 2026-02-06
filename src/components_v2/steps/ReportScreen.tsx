@@ -9,6 +9,8 @@ import ProductionSummaryCard from "../report/ProductionSummaryCard";
 import { BATTERIES } from "@/constants/batteries";
 import { CHARGERS } from "@/constants/chargers";
 import { HEATPUMPS } from "@/constants/heatpumps";
+import EnergieflussPanel from "../report/EnergieFlussPanel";
+import { calcProductionSummary } from "../report/productionCalc";
 
 const fmt2 = new Intl.NumberFormat("de-CH", {
   minimumFractionDigits: 2,
@@ -43,6 +45,20 @@ export default function ReportScreen() {
     () => calcKwpFromPanels(placedPanels),
     [placedPanels],
   );
+
+  const prodCalc = useMemo(
+    () =>
+      calcProductionSummary({
+        kWp: moduleInfo.kWp,
+        yearlyYieldKwhPerKwp: 950,
+        customerYearlyConsumptionKwh: 17500,
+        selfConsumptionPct: 0.409,
+      }),
+    [moduleInfo.kWp],
+  );
+
+  const selfUseSharePct = prodCalc ? prodCalc.selfUseShare * 100 : 0;
+  const autarkyPct = prodCalc ? prodCalc.autarky * 100 : 0;
 
   // stato UI (MVP) – SOLO colonna sinistra
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlanKey>("50-40-10");
@@ -202,15 +218,10 @@ export default function ReportScreen() {
                 title="Energiefluss"
                 className="col-span-12 lg:col-span-6"
               >
-                {/* KPI row (placeholder) */}
-                <div className="grid grid-cols-12 gap-3">
-                  <KpiGhost className="col-span-12 md:col-span-6" />
-                  <KpiGhost className="col-span-12 md:col-span-6" />
-                </div>
-
-                <div className="mt-4">
-                  <SkeletonChart height={220} />
-                </div>
+                <EnergieflussPanel
+                  selfUseSharePct={selfUseSharePct}
+                  autarkyPct={autarkyPct}
+                />
               </CardShell>
 
               {/* Wirtschaftlichkeit */}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { calcProductionSummary } from "./productionCalc";
 
 const fmt0 = new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 });
 const fmt1 = new Intl.NumberFormat("de-CH", { maximumFractionDigits: 1 });
@@ -10,10 +11,10 @@ const fmt2 = new Intl.NumberFormat("de-CH", {
 });
 
 type Props = {
-  kWp: number; // es. 18.0
-  yearlyYieldKwhPerKwp?: number; // es. 950 (MVP)
-  customerYearlyConsumptionKwh?: number; // es. 17500 (MVP)
-  selfConsumptionPct?: number; // es. 0.409 (MVP)
+  kWp: number;
+  yearlyYieldKwhPerKwp?: number;
+  customerYearlyConsumptionKwh?: number;
+  selfConsumptionPct?: number;
 };
 
 export default function ProductionSummaryCard({
@@ -22,32 +23,21 @@ export default function ProductionSummaryCard({
   customerYearlyConsumptionKwh = 17500,
   selfConsumptionPct = 0.409,
 }: Props) {
-  const calc = useMemo(() => {
-    if (!kWp || kWp <= 0) return null;
-
-    const production = kWp * yearlyYieldKwhPerKwp; // kWh/a
-    const selfUse = customerYearlyConsumptionKwh * selfConsumptionPct; // kWh/a
-    const feedIn = Math.max(0, production - selfUse);
-    const selfUseShare = production > 0 ? selfUse / production : 0;
-
-    // Autarkiegrad = selfUse / consumption
-    const autarky = customerYearlyConsumptionKwh
-      ? selfUse / customerYearlyConsumptionKwh
-      : 0;
-
-    return {
-      production,
-      selfUse,
-      feedIn,
-      selfUseShare,
-      autarky,
-    };
-  }, [
-    kWp,
-    yearlyYieldKwhPerKwp,
-    customerYearlyConsumptionKwh,
-    selfConsumptionPct,
-  ]);
+  const calc = useMemo(
+    () =>
+      calcProductionSummary({
+        kWp,
+        yearlyYieldKwhPerKwp,
+        customerYearlyConsumptionKwh,
+        selfConsumptionPct,
+      }),
+    [
+      kWp,
+      yearlyYieldKwhPerKwp,
+      customerYearlyConsumptionKwh,
+      selfConsumptionPct,
+    ],
+  );
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/95 text-black shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
