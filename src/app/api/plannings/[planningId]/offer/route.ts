@@ -3,6 +3,8 @@ import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { PANEL_CATALOG } from "@/constants/panels";
+import { addVollmachtPage } from "./pdf/vollmacht";
+
 
 /* ----------------------------- Session helpers ---------------------------- */
 
@@ -489,6 +491,8 @@ export async function POST(
         color: rgb(0.4, 0.4, 0.4),
       },
     );
+
+    addVollmachtPage(pdf);
 
     const pdfBytes = await pdf.save();
 
