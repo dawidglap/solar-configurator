@@ -2,7 +2,6 @@
 
 import { useMemo } from "react";
 
-const fmt0 = new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 });
 const fmt1 = new Intl.NumberFormat("de-CH", { maximumFractionDigits: 1 });
 
 type Props = {
@@ -59,10 +58,24 @@ export default function EnergieflussPanel(props: Props) {
 
   return (
     <div className="space-y-4">
-      {/* KPI ROW */}
-      <div className="grid grid-cols-2 gap-4">
-        <Kpi label="Eigenverbrauch" value={`${fmt1.format(selfUse)} %`} />
-        <Kpi label="Autarkiegrad" value={`${fmt1.format(autarky)} %`} />
+      {/* KPI ROW (2 box come Wirtschaftlichkeit) */}
+      <div className="grid grid-cols-2 gap-3">
+        <Kpi
+          label="Eigenverbrauch"
+          value={`${fmt1.format(selfUse)} %`}
+          sub="Prozentsatz des Stroms, der nicht in das Netz fliesst."
+        />
+        <Kpi
+          label="Autarkiegrad"
+          value={`${fmt1.format(autarky)} %`}
+          sub={
+            <>
+              Unabhängigkeit
+              <br />
+              vom Netz.
+            </>
+          }
+        />
       </div>
 
       {/* GRAPH */}
@@ -83,12 +96,26 @@ export default function EnergieflussPanel(props: Props) {
   );
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
+function Kpi({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: React.ReactNode;
+}) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-      <div className="text-[11px] text-white/55">{label}</div>
-      <div className="mt-1 text-[20px] font-semibold text-[#91DFC6] tabular-nums">
+    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+      <div className="text-[13px] text-white/70">{label}</div>
+
+      {/* stessa scala e line-height dei KPI di Wirtschaftlichkeit */}
+      <div className="mt-2 text-[26px] md:text-[26px] leading-none font-semibold text-[#91DFC6] tabular-nums">
         {value}
+      </div>
+
+      <div className="mt-2 text-[13px] text-white/45 leading-snug">
+        {sub ?? " "}
       </div>
     </div>
   );
