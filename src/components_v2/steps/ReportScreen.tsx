@@ -77,7 +77,7 @@ export default function ReportScreen() {
       : "—";
 
   return (
-    <div className="relative w-full h-full overflow-hidden">
+    <div className="relative w-full h-full overflow-hidden -mt-10">
       <div className="absolute inset-0 z-0">
         <Image
           src="/images/hero.webp"
