@@ -620,8 +620,8 @@ export default function CanvasStage() {
   });
 
   // stile tetti
-  const stroke = "#60a5fa";
-  const strokeSelected = "#60a5fa";
+  const stroke = "#6ce5e8";
+  const strokeSelected = "#6ce5e8";
   const fill = "rgba(246, 240, 255, 0.12)";
   const strokeWidthNormal = 0.5;
   const strokeWidthSelected = 0.85;
