@@ -192,7 +192,7 @@ export default function StucklisteScreen() {
   }, [placedModulesRow.total, items]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden">
+    <div className="relative w-full h-full overflow-hidden -mt-10">
       {/* BACKGROUND come PlannerEmptyState */}
       <div className="absolute inset-0 z-0">
         <Image
@@ -407,7 +407,7 @@ function RowCard(props: {
   } = props;
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-white/85">
+    <div className="rounded-sm border border-white/10 bg-white/5 px-3 py-3 text-white/85">
       <div className="grid grid-cols-12 gap-2 items-center text-[12px]">
         <div className="col-span-2">{kategorie}</div>
         <div className="col-span-2">{marke}</div>
