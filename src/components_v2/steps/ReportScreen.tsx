@@ -9,7 +9,8 @@ import ProductionSummaryCard from "../report/ProductionSummaryCard";
 import { BATTERIES } from "@/constants/batteries";
 import { CHARGERS } from "@/constants/chargers";
 import { HEATPUMPS } from "@/constants/heatpumps";
-import EnergieFlussPanel from "../report/EnergieFlussPanel";
+import EnergieFlussPanel from "../report/EnergieflussPanel";
+
 import { calcProductionSummary } from "../report/productionCalc";
 import WirtschaftlichkeitPanel from "../report/WirtschaftlichkeitPanel";
 
