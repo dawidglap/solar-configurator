@@ -1,7 +1,7 @@
 // src/components_v2/layout/PlannerEmptyState.tsx
-'use client';
+"use client";
 
-import Image from 'next/image';
+import Image from "next/image";
 
 export default function PlannerEmptyState() {
   return (
@@ -15,7 +15,7 @@ export default function PlannerEmptyState() {
           priority
           className="object-cover object-bottom-right"
         />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white to-transparent" />
+        {/* <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white to-transparent" /> */}
       </div>
 
       {/* CTA con glow/pulse */}
@@ -24,7 +24,7 @@ export default function PlannerEmptyState() {
           className="relative"
           // Sposta la pill di metà della larghezza del pannello proprietà a sinistra.
           // Fallback: 280px → shift 140px.
-          style={{ transform: 'translateX(calc(var(--propW, 280px) / 2))' }}
+          style={{ transform: "translateX(calc(var(--propW, 280px) / 2))" }}
         >
           {/* glow morbido dietro al pill */}
           <div className="absolute -inset-1 rounded-full bg-indigo-400/30 blur-md animate-pulse" />

@@ -61,7 +61,7 @@ export default function Sidebar() {
       { href: "/ausfuehrung", label: "Ausführung", icon: <FiSettings /> }, // placeholder
       { href: "/produkte", label: "Marktplatz", icon: <FiBox /> },
     ],
-    []
+    [],
   );
 
   const bottomItems = useMemo(
@@ -70,16 +70,16 @@ export default function Sidebar() {
       { href: "/settings", label: "Settings", icon: <FiSettings /> }, // placeholder
       { href: "/support", label: "Support", icon: <FiHelpCircle /> }, // placeholder
     ],
-    []
+    [],
   );
 
   return (
     <aside
       className={[
-        "fixed left-0 top-0 z-50 flex h-dvh flex-col",
+        "fixed left-0 top-0 z-[5000] flex h-dvh flex-col",
         "border-r border-white/10 bg-white/5 backdrop-blur-lg shadow-[0_0_25px_rgba(0,0,0,0.6)]",
         "transition-[width] duration-300 overflow-hidden",
-        collapsed ? "w-14" : "w-56",
+        collapsed ? "w-12" : "w-56",
       ].join(" ")}
     >
       {/* TOP */}
@@ -119,7 +119,7 @@ export default function Sidebar() {
               }
               onClick={() => setCollapsed((s) => !s)}
               className={[
-                "flex h-10 w-10 items-center justify-center rounded-full",
+                "flex h-8 w-8 items-center justify-center rounded-full",
                 "border border-white/20 bg-neutral-900/80 text-white",
                 "shadow-lg shadow-black/40 backdrop-blur-md",
                 "hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-white/20",

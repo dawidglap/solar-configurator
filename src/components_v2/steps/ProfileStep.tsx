@@ -125,7 +125,7 @@ export default function ProfileStep() {
   }, [showCompanyFields]);
 
   return (
-    <div className="w-full rounded-2xl bg-neutral-900/60 text-neutral-50 shadow-xl border border-white/10 backdrop-blur-sm px-6 py-4 space-y-6">
+    <div className="w-full rounded-b-2xl  text-neutral-50 shadow-xl border-b border-l border-r border-white/10 bg-transparent backdrop-blur-md px-6 py-4 space-y-6">
       {/* ───────────────── TOP ROW: KUNDE / KUNDENTYP (+ QUELLE) / (RECHTSFORM se FIRMA) / ICONS ───────────────── */}
       <div className={`grid gap-4 items-start ${topGridCols}`}>
         {/* Kunde */}

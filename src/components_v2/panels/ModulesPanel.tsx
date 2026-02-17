@@ -21,7 +21,7 @@ const inputBase =
   "focus:ring-1 focus:ring-neutral-400 focus:border-neutral-300 transition";
 
 const labelSm =
-  "block text-[10px] font-medium uppercase tracking-wide text-neutral-400";
+  "block text-[10px] font-medium uppercase tracking-wide text-neutral-200";
 
 // Piccola icona "tilt": triangolo + arco di angolo
 function IconTilt(props: React.SVGProps<SVGSVGElement>) {
@@ -243,7 +243,7 @@ export default function ModulesPanel() {
   );
 
   return (
-    <div className="w-full max-w-[240px] space-y-4 p-2 bg-neutral-800 text-white border-l border-neutral-800">
+    <div className="w-full max-w-[240px] space-y-4 p-2 text-white ">
       {/* === EBENEN (tabella compatta) === */}
       <div className="px-0">
         <div className={`${labelSm} mb-2`}>
@@ -252,7 +252,7 @@ export default function ModulesPanel() {
 
         {detected?.length > 0 && (
           <div className="mb-2">
-            <div className="mb-1 text-[10px] font-medium text-neutral-400">
+            <div className="mb-1 text-[10px] font-medium text-neutral-200">
               Erkannte Dächer
             </div>
             <DetectedRoofsImport />
@@ -260,13 +260,13 @@ export default function ModulesPanel() {
         )}
 
         {layers.length === 0 ? (
-          <p className="px-1 py-1 text-[11px] text-neutral-400">
+          <p className="px-1 py-1 text-[11px] text-neutral-200">
             Noch keine Ebenen.
           </p>
         ) : (
           <div className="text-[10px]">
             {/* Header (7 colonne, griglia aggiornata) */}
-            <div className="grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-6 text-[10px] text-neutral-400">
+            <div className="grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-6 text-[10px] text-neutral-200">
               <div className="font-medium">D</div>
               <div className="flex items-center justify-center">
                 <MdViewModule className="h-3 w-3" />
@@ -569,7 +569,7 @@ export default function ModulesPanel() {
               aria-label="Randabstand (m)"
             />
           </div>
-          <span className="pb-1 text-[10px] text-neutral-400">m</span>
+          <span className="pb-1 text-[10px] text-neutral-200">m</span>
         </div>
         {/* Abstand tra pannelli rimane 0,02 interno/non visibile */}
       </section>
@@ -642,7 +642,7 @@ export default function ModulesPanel() {
             className={`${inputBase} cursor-not-allowed bg-neutral-900 text-neutral-500 border-neutral-800`}
             aria-label="Modulneigung (%)"
           />
-          <span className="pb-1 text-[10px] text-neutral-400">%</span>
+          <span className="pb-1 text-[10px] text-neutral-200">%</span>
         </div>
       </section>
 

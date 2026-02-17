@@ -659,7 +659,7 @@ export default function CanvasStage() {
     return (
       <div
         ref={containerRef}
-        className="relative h-full w-full overflow-hidden "
+        className="relative h-full  w-full overflow-hidden "
       >
         <OverlayProgressStepper />
         <OverlayTopToolbar />
@@ -667,7 +667,7 @@ export default function CanvasStage() {
         <div
           className="absolute inset-0 flex items-start"
           style={{
-            paddingTop: "calc(var(--tb, 48px) + 16px)",
+            paddingTop: "calc(var(--tb, 48px) + 0px)",
           }}
         >
           <div className="w-full  h-full">
@@ -689,7 +689,7 @@ export default function CanvasStage() {
 
         <div
           className="absolute inset-0"
-          style={{ paddingTop: "calc(var(--tb, 48px) + 0px)" }}
+          style={{ paddingTop: "calc(var(--tb, 0px) + 0px)" }}
         >
           <StucklisteScreen />
         </div>
@@ -753,7 +753,7 @@ export default function CanvasStage() {
         className="fixed z-[310] pointer-events-auto"
         style={{
           left: "calc(var(--sb, 64px) -2px)", // subito a destra della sidebar
-          top: "calc(var(--tb, 48px) + 41px)", // sotto la topbar
+          top: "calc(var(--tb, 48px) + 40px)", // sotto la topbar
           bottom: "0px",
           width: "var(--propW, 280px)",
         }}

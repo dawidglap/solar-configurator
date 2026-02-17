@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import React, { useMemo } from 'react';
-import { usePlannerV2Store } from './state/plannerV2Store';
+import React, { useMemo } from "react";
+import { usePlannerV2Store } from "./state/plannerV2Store";
 
 type Props = {
   /** Drehung des Orientierungs-HUD (°), 0 = Rohbild */
@@ -18,7 +18,7 @@ function normDeg(d: number) {
 
 function dirLabel(deg: number) {
   const a = normDeg(deg);
-  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
   const idx = Math.round(a / 45) % 8;
   return dirs[idx];
 }
@@ -33,13 +33,13 @@ export default function CompassHUD({ rotateDeg }: Props) {
   // Orientierung des Dachs = tatsächlicher Dachazimut + HUD-Rotation
   const roofDirectionDeg = useMemo(
     () => normDeg(roofAzimuthDeg + rotateDeg),
-    [roofAzimuthDeg, rotateDeg]
+    [roofAzimuthDeg, rotateDeg],
   );
 
   const label = dirLabel(roofDirectionDeg);
 
   return (
-    <div className="fixed right-3 top-24 z-[260] pointer-events-none">
+    <div className="fixed right-3 top-24 z-[260] pointer-events-none mt-4">
       <div
         className="
           pointer-events-auto flex flex-col items-center gap-1.5
@@ -58,14 +58,14 @@ export default function CompassHUD({ rotateDeg }: Props) {
                 className="absolute left-1/2 top-1/2"
                 style={{
                   transform: `rotate(${deg}deg) translateY(-48%)`,
-                  transformOrigin: 'center',
+                  transformOrigin: "center",
                 }}
               >
                 <div
                   className={
                     isCardinal
-                      ? 'w-[1.5px] h-3 bg-neutral-200'
-                      : 'w-[1px] h-2 bg-neutral-600/80'
+                      ? "w-[1.5px] h-3 bg-neutral-200"
+                      : "w-[1px] h-2 bg-neutral-600/80"
                   }
                 />
               </div>
@@ -96,7 +96,7 @@ export default function CompassHUD({ rotateDeg }: Props) {
             className="absolute left-1/2 top-1/2"
             style={{
               transform: `translate(-50%, -50%) rotate(${roofDirectionDeg}deg)`,
-              transformOrigin: 'center',
+              transformOrigin: "center",
             }}
           >
             {/* Schaft */}

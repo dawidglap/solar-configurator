@@ -96,7 +96,7 @@ export default function IstSituationStep() {
   const onBack = () => setStep("profile");
 
   return (
-    <div className="w-full rounded-2xl bg-neutral-900/55 text-neutral-50 shadow-xl border border-white/10 backdrop-blur-md px-5 py-5 lg:px-7 lg:py-6 space-y-4">
+    <div className="w-full rounded-b-2xl rounded-t-none bg-transparent  text-neutral-50 -mt-4 border border-white/10 border-t-0 backdrop-blur-md px-5 py-5 lg:px-7 lg:py-6 space-y-4">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="space-y-1">

@@ -530,7 +530,7 @@ export default function TopToolbar() {
   }
 
   return (
-    <div className="flex h-10 items-center justify-between gap-2 px-2 overflow-x-auto overscroll-x-contain scrollbar-thin scrollbar-thumb-transparent scrollbar-track-transparent bg-neutral-800/90 text-white ">
+    <div className="flex h-10  items-center justify-between gap-2 px-2 overflow-x-auto overscroll-x-contain scrollbar-thin scrollbar-thumb-transparent scrollbar-track-transparent bg-transparent text-white ">
       {/* SX: sequenza unica — Auswählen + icone 1–6 + controlli moduli */}
       <div className=" flex min-w-0 items-center gap-2">
         <TopbarAddressSearch />

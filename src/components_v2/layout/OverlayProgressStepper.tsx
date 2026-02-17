@@ -204,18 +204,14 @@ export default function OverlayProgressStepper() {
       style={{
         paddingLeft: "var(--sb, 64px)",
         // iOS-like glass (trasparente + blur)
-        background:
-          "linear-gradient(180deg, rgba(58, 78, 92, 0.68) 0%, rgba(44, 62, 74, 0.54) 100%)",
-        backdropFilter: "blur(18px)",
-        WebkitBackdropFilter: "blur(18px)",
-        borderBottom: "1px solid rgba(255,255,255,0.10)",
-        boxShadow: "0 12px 40px rgba(0,0,0,0.22)",
+        // background:
+        //   "linear-gradient(180deg, rgba(58, 78, 92, 0.68) 0%, rgba(44, 62, 74, 0.54) 100%)",
       }}
     >
       {/* highlight top edge */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/20" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px" />
 
-      <div className="relative flex h-14 w-full items-center px-4">
+      <div className="relative flex h-14 w-full items-center px-4 bg-transparent backdrop-blur-md border-t border-l border-r border-white/10 mt-2 rounded-tr-2xl rounded-tl-2xl">
         <nav aria-label="Wizard progress" className="w-full">
           {/* TRACK */}
           <div
