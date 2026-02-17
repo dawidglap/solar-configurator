@@ -2,7 +2,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Pencil, Save } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
@@ -71,6 +71,9 @@ export default function ProfileStep() {
     [],
   );
 
+  // ✅ selezione cliente esistente SOLO locale (così non serve ProfileData.existingCustomerId)
+  const [selectedExistingId, setSelectedExistingId] = useState<string>("");
+
   // ✅ default PRIVAT se non valorizzato
   useEffect(() => {
     if (!profile.customerType) setProfile({ customerType: "private" } as any);
@@ -131,8 +134,6 @@ export default function ProfileStep() {
     if (!c) return;
 
     setProfile({
-      existingCustomerId: c.id ?? "",
-
       contactSalutation: c.contactSalutation ?? "",
       contactFirstName: c.contactFirstName ?? "",
       contactLastName: c.contactLastName ?? "",
@@ -168,7 +169,8 @@ export default function ProfileStep() {
     e: React.ChangeEvent<HTMLSelectElement>,
   ) => {
     const id = e.target.value;
-    setProfile({ existingCustomerId: id } as any);
+    setSelectedExistingId(id);
+
     const found = existingCustomers.find((x) => x.id === id) ?? null;
     applyExistingCustomerToProfile(found);
   };
@@ -237,7 +239,6 @@ export default function ProfileStep() {
               Kunde
             </h3>
 
-            {/* radio come in foto */}
             <div className="flex flex-col gap-2 text-[11px]">
               <label className="inline-flex items-center gap-1">
                 <input
@@ -245,10 +246,8 @@ export default function ProfileStep() {
                   className="accent-emerald-500 h-3 w-3"
                   checked={(profile.customerStatus || "new") === "new"}
                   onChange={() => {
-                    setProfile({
-                      customerStatus: "new",
-                      existingCustomerId: "",
-                    } as any);
+                    setProfile({ customerStatus: "new" } as any);
+                    setSelectedExistingId(""); // ✅ reset UI select
                   }}
                 />
                 <span>Neuer Kunde</span>
@@ -267,11 +266,10 @@ export default function ProfileStep() {
               </label>
             </div>
 
-            {/* select appare SOLO se Bestandes Kunde */}
             {isExisting && (
               <select
                 className={`${fieldWidth} mt-2 rounded-full bg-white/5 border-1 border-white/80 px-3 py-[5px] text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/70`}
-                value={profile.existingCustomerId || ""}
+                value={selectedExistingId}
                 onChange={handleExistingCustomerSelect}
               >
                 <option value="">Kunde auswählen (Demo)</option>
@@ -433,7 +431,7 @@ export default function ProfileStep() {
                   label="Adresse"
                   value={profile.buildingStreet}
                   onChange={updateBuilding("buildingStreet")}
-                  className={`${fieldWidth} `}
+                  className={`${fieldWidth}`}
                 />
                 <InputField
                   label="Nr."
@@ -467,7 +465,7 @@ export default function ProfileStep() {
                     const v = e.target.value;
                     setProfile({ billingStreet: v, buildingStreet: v } as any);
                   }}
-                  className={`${fieldWidth} `}
+                  className={`${fieldWidth}`}
                 />
                 <InputField
                   label="Nr."
@@ -600,6 +598,7 @@ export default function ProfileStep() {
   );
 }
 
+/* --- piccolo componente riutilizzabile per gli input --- */
 type InputFieldProps = {
   label: string;
   value: string;
