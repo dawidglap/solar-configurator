@@ -20,7 +20,7 @@ function asPct(v: unknown) {
   return Number.isFinite(n) ? clamp(n, 0, 100) : 0;
 }
 
-export default function EnergieFlussPanel(props: Props) {
+export default function EnergieflussPanel(props: Props) {
   const selfUse = asPct(props.selfUsePct ?? props.selfUseSharePct);
   const autarky = asPct(props.autarkyPct);
 

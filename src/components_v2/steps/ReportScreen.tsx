@@ -9,7 +9,7 @@ import ProductionSummaryCard from "../report/ProductionSummaryCard";
 import { BATTERIES } from "@/constants/batteries";
 import { CHARGERS } from "@/constants/chargers";
 import { HEATPUMPS } from "@/constants/heatpumps";
-import EnergieFlussPanel from "../report/EnergieflussPanel";
+import EnergieflussPanel from "../report/EnergieflussPanel";
 
 import { calcProductionSummary } from "../report/productionCalc";
 import WirtschaftlichkeitPanel from "../report/WirtschaftlichkeitPanel";
@@ -208,7 +208,7 @@ export default function ReportScreen() {
                 title="Energiefluss"
                 className="col-span-12 lg:col-span-6"
               >
-                <EnergieFlussPanel
+                <EnergieflussPanel
                   selfUseSharePct={selfUseSharePct}
                   autarkyPct={autarkyPct}
                 />
