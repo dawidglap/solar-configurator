@@ -77,7 +77,7 @@ export default function ReportScreen() {
       : "—";
 
   return (
-    <div className="relative w-full h-full overflow-hidden -mt-10">
+    <div className="relative w-full h-full overflow-hidden ">
       <div className="absolute inset-0 z-0">
         <Image
           src="/images/hero.webp"
@@ -86,11 +86,10 @@ export default function ReportScreen() {
           priority
           className="object-cover object-bottom-right"
         />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white to-transparent" />
       </div>
 
-      <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 pt-10">
-        <aside className="col-span-3 border-r border-white/10 bg-neutral-900/35 backdrop-blur-xl overflow-y-auto">
+      <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 -pt-10">
+        <aside className="col-span-3 border-r border-l border-b border-white/10 bg-transparent backdrop-blur-md overflow-y-auto">
           <div className="p-4 min-h-full">
             <div className="text-white/90 text-lg font-semibold">Bericht</div>
             <div className="mt-1 text-[12px] text-white/55">
@@ -201,7 +200,7 @@ export default function ReportScreen() {
           </div>
         </aside>
 
-        <main className="col-span-9 bg-neutral-900/25 backdrop-blur-xl overflow-y-auto">
+        <main className="col-span-9 bg-transparent backdrop-blur-md overflow-y-auto">
           <div className="p-6 min-h-full">
             <div className="grid grid-cols-12 gap-6">
               <CardShell

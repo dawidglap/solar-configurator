@@ -192,7 +192,7 @@ export default function StucklisteScreen() {
   }, [placedModulesRow.total, items]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden -mt-10">
+    <div className="relative w-full h-full overflow-hidden ">
       {/* BACKGROUND come PlannerEmptyState */}
       <div className="absolute inset-0 z-0">
         <Image
@@ -202,11 +202,10 @@ export default function StucklisteScreen() {
           priority
           className="object-cover object-bottom-right"
         />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white to-transparent" />
       </div>
 
       {/* CONTENUTO sopra al background */}
-      <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 pt-10">
+      <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 pt-0">
         {/* LEFT */}
         <aside className="col-span-3 border-r border-white/10 bg-neutral-900/35 backdrop-blur-xl overflow-y-auto">
           <div className="p-4 min-h-full">
