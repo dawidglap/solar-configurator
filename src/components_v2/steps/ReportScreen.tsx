@@ -287,7 +287,7 @@ function SelectField({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full appearance-none rounded-full border border-white/15 bg-white/5 px-4 py-2 pr-10 text-[13px] text-white/80 outline-none"
+          className="w-full appearance-none rounded-full border border-white bg-white/5 px-4 py-2 pr-10 text-[13px] text-white/80 outline-none"
         >
           {options.map((o) => (
             <option key={o.id} value={o.id}>
@@ -319,7 +319,7 @@ function InputLike({
   return (
     <div>
       <div className="text-white/70 text-sm">{label}</div>
-      <div className="mt-2 flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2">
+      <div className="mt-2 flex items-center gap-2 rounded-full border border-white bg-white/5 px-4 py-2">
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -355,7 +355,7 @@ function Dropdown<T extends string>({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value as T)}
-          className="w-full appearance-none rounded-full border border-white/15 bg-white/5 px-4 py-2 pr-10 text-[13px] text-white/80 outline-none"
+          className="w-full appearance-none rounded-full border border-white bg-white/5 px-4 py-2 pr-10 text-[13px] text-white/80 outline-none"
         >
           {options.map((o) => (
             <option key={o.key} value={o.key}>
@@ -400,7 +400,7 @@ function MiniKpiGhost({ className }: { className?: string }) {
   return (
     <div
       className={[
-        "rounded-xl border border-white/15 bg-white/5 p-3",
+        "rounded-xl border border-white bg-white/5 p-3",
         className ?? "",
       ].join(" ")}
     >
