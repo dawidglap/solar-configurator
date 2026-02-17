@@ -187,7 +187,7 @@ export default function ProfileStep() {
 
           {/* Quelle (Lead-Quelle) */}
           <select
-            className="mt-1.5 w-full rounded-full bg-white/5 border border-white/20 px-3 py-[5px] text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
+            className="mt-1.5 w-full rounded-full bg-white/5 border-2 border-white px-3 py-[5px] text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
             value={profile.source}
             onChange={update("source")}
           >
@@ -206,7 +206,7 @@ export default function ProfileStep() {
               Rechtsform
             </h3>
             <select
-              className="w-full rounded-full bg-white/5 border border-white/20 px-3 py-[5px] text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
+              className="w-full rounded-full bg-white/5 border-2 border-white px-3 py-[5px] text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
               value={profile.legalForm}
               onChange={update("legalForm")}
             >
@@ -223,7 +223,7 @@ export default function ProfileStep() {
         <div className="hidden xl:flex flex-col items-center gap-2 pt-5">
           <button
             type="button"
-            className="h-8 w-8 rounded-full border border-white/20 bg-white/5 backdrop-blur hover:bg-white/10 flex items-center justify-center transition"
+            className="h-8 w-8 rounded-full border-2 border-white bg-white/5 backdrop-blur hover:bg-white/10 flex items-center justify-center transition"
             title="Bearbeiten"
           >
             <Pencil className="w-3.5 h-3.5 text-neutral-100" />
@@ -320,13 +320,13 @@ export default function ProfileStep() {
               value={profile.buildingCity}
               onChange={updateBuilding("buildingCity")}
             />
-            <InputField
+            {/* <InputField
               label="PLZ"
               value={profile.buildingZip}
               onChange={updateBuilding("buildingZip")}
               small
               className="w-28"
-            />
+            /> */}
           </div>
         </div>
 
@@ -389,7 +389,7 @@ export default function ProfileStep() {
             </span>
             <input
               type="text"
-              className="w-full rounded-full bg-white/5 border border-white/20 px-3 py-[5px] text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
+              className="w-full rounded-full bg-white/5 border-2 border-white px-3 py-[5px] text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
               value={profile.leadLabel}
               onChange={update("leadLabel")}
               placeholder="#117"
@@ -512,7 +512,7 @@ function InputField({
       <span className="block text-[10px] text-neutral-200 mb-0.5">{label}</span>
       <input
         type="text"
-        className={`w-full rounded-full bg-white/5 border border-white/20 px-3 py-[5px] text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/70 ${
+        className={`w-full rounded-full bg-white/5 border-2 border-white px-3 py-[5px] text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/70 ${
           small ? "max-w-full" : ""
         }`}
         value={value}
