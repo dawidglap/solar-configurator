@@ -211,7 +211,7 @@ export default function OverlayProgressStepper() {
       {/* highlight top edge */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px" />
 
-      <div className="relative flex h-14 w-full items-center px-4 bg-transparent backdrop-blur-md border-t border-l border-r border-white/10 mt-2 rounded-tr-2xl rounded-tl-2xl">
+      <div className="relative flex h-14 w-full items-center px-4 bg-black/50 backdrop-blur-md border-t border-l  border-white/10  rounded-tl-2xl rounded-bl-2xl">
         <nav aria-label="Wizard progress" className="w-full">
           {/* TRACK */}
           <div
