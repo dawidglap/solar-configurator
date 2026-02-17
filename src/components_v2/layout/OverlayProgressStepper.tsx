@@ -189,7 +189,7 @@ export default function OverlayProgressStepper() {
                         type="button"
                         onClick={onClick}
                         aria-current={isActive ? "step" : undefined}
-                        className={`${base} focus:outline-none group`}
+                        className={`${base} focus:outline-none group cursor-pointer`}
                         style={{ ["--active" as any]: ACTIVE }}
                         title={s.label}
                       >
