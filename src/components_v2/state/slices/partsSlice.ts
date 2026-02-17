@@ -16,9 +16,16 @@ export type PartsState = {
   items: LineItem[];
 };
 
-export type PartsSlice = {
-  parts: PartsState;
+// ✅ NEW: view state per UI (così v2store può persisterlo senza errori)
+export type PartsView = "list" | "categories"; // cambia/estendi quando vuoi
+export const defaultPartsView: PartsView = "list";
 
+export type PartsSlice = {
+  // ✅ NEW
+  partsView: PartsView;
+  setPartsView: (v: PartsView) => void;
+
+  parts: PartsState;
   setParts: (patch: Partial<PartsState>) => void;
 
   addPart: (item: LineItem) => void;
@@ -32,12 +39,14 @@ export const defaultParts: PartsState = {
   items: [],
 };
 
-export const createPartsSlice: StateCreator<
-  PartsSlice,
-  [],
-  [],
-  PartsSlice
-> = (set, get) => ({
+export const createPartsSlice: StateCreator<PartsSlice, [], [], PartsSlice> = (
+  set,
+  get
+) => ({
+  // ✅ NEW default
+  partsView: defaultPartsView,
+  setPartsView: (v) => set({ partsView: v }),
+
   parts: defaultParts,
 
   setParts: (patch) =>
@@ -45,7 +54,10 @@ export const createPartsSlice: StateCreator<
 
   addPart: (item) =>
     set((s: any) => ({
-      parts: { ...(s.parts || defaultParts), items: [item, ...(s.parts?.items || [])] },
+      parts: {
+        ...(s.parts || defaultParts),
+        items: [item, ...(s.parts?.items || [])],
+      },
     })),
 
   removePart: (id) =>
