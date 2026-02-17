@@ -183,7 +183,7 @@ export default function IstSituationStep() {
                 <input
                   type="number"
                   min={0}
-                  className="w-20 rounded-full bg-white/5 border-2 border-white px-3 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                  className="w-20 rounded-full bg-white/5 border border-white px-3 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                   value={ist.unitsCount}
                   onChange={(e) => setIst({ unitsCount: e.target.value })}
                 />
@@ -309,7 +309,7 @@ export default function IstSituationStep() {
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
-                      className="flex-1 rounded-full bg-white/5 border-2 border-white px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                      className="flex-1 rounded-full bg-white/5 border border-white px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                       value={ist.consumption}
                       onChange={(e) => {
                         const formatted = formatChThousands(e.target.value);
@@ -334,7 +334,7 @@ export default function IstSituationStep() {
                 <Flame className="w-7 h-7 opacity-80" />
                 <div className="flex-1 space-y-2">
                   <select
-                    className="w-full rounded-full bg-white/5 border-2 border-white px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                    className="w-full rounded-full bg-white/5 border border-white px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                     value={ist.heating}
                     onChange={(e) => setIst({ heating: e.target.value as any })}
                   >
@@ -368,7 +368,7 @@ export default function IstSituationStep() {
                 <div className="flex-1 flex items-center gap-2">
                   <input
                     type="text"
-                    className="flex-1 rounded-full bg-white/5 border-2 border-white px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                    className="flex-1 rounded-full bg-white/5 border border-white px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                     value={ist.hakSize}
                     onChange={(e) => setIst({ hakSize: e.target.value })}
                     placeholder="z.B. 40"
@@ -414,7 +414,7 @@ export default function IstSituationStep() {
                     </span>
                     <input
                       type="text"
-                      className="w-full rounded-full bg-white/5 border-2 border-white px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                      className="w-full rounded-full bg-white/5 border border-white px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                       value={ist.evCar}
                       onChange={(e) => setIst({ evCar: e.target.value })}
                       placeholder="z.B. Tesla Model 3"
@@ -457,13 +457,13 @@ export default function IstSituationStep() {
               <div className="space-y-2">
                 <input
                   type="text"
-                  className="w-full rounded-full bg-white/5 border-2 border-white px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                  className="w-full rounded-full bg-white/5 border border-white px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                   value={ist.dismantling}
                   onChange={(e) => setIst({ dismantling: e.target.value })}
                   placeholder="Demontage bestehender Anlage / Dach?"
                 />
                 <textarea
-                  className="w-full min-h-[48px] rounded-2xl bg-white/5 border-2 border-white px-3 py-1.5 text-[11px] resize-none focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                  className="w-full min-h-[48px] rounded-2xl bg-white/5 border border-white px-3 py-1.5 text-[11px] resize-none focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
                   value={ist.dismantlingNote}
                   onChange={(e) => setIst({ dismantlingNote: e.target.value })}
                   placeholder="Notiz"
@@ -479,7 +479,7 @@ export default function IstSituationStep() {
             type="button"
             onClick={onBack}
             disabled={saving}
-            className="inline-flex items-center rounded-full border-2 border-white text-[11px] lg:text-xs px-4 py-2 text-neutral-100 hover:bg-white/5 transition disabled:opacity-60"
+            className="inline-flex items-center rounded-full border border-white text-[11px] lg:text-xs px-4 py-2 text-neutral-100 hover:bg-white/5 transition disabled:opacity-60"
           >
             Zurück zum Profil
           </button>
