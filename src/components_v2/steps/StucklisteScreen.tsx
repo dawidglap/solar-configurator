@@ -324,7 +324,7 @@ export default function StucklisteScreen() {
         </main>
 
         {/* RIGHT (Preview placeholder) */}
-        <aside className="col-span-3 border-l border-white/10 bg-neutral-900/35 backdrop-blur-xl">
+        <aside className="col-span-3 border-l border-white/10 bg-transparent backdrop-blur-md">
           <div className="p-4">
             <div className="text-sm font-medium text-white/80">Vorschau</div>
 
