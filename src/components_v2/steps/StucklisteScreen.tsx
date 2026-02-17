@@ -224,7 +224,7 @@ export default function StucklisteScreen() {
                 <select
                   value={selectedCatalogPanelId}
                   onChange={(e) => setSelectedCatalogPanelId(e.target.value)}
-                  className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-left text-white/80 focus:outline-none"
+                  className="w-full rounded-full border border-white bg-white/5 px-3 py-2 text-left text-white/80 focus:outline-none"
                 >
                   {PANEL_CATALOG.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -236,7 +236,7 @@ export default function StucklisteScreen() {
                 <button
                   type="button"
                   onClick={addManualModuleLineFromCatalog}
-                  className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-left text-white/80 hover:bg-white/10 transition"
+                  className="w-full rounded-full border border-white bg-white/5 px-3 py-2 text-left text-white/80 hover:bg-white/10 transition"
                 >
                   Als Zusatzposten hinzufügen (manuell)
                 </button>
@@ -374,7 +374,7 @@ function LeftButton({ label, onAdd }: { label: string; onAdd: () => void }) {
       <button
         type="button"
         onClick={onAdd}
-        className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-left text-white/80 hover:bg-white/10 transition"
+        className="w-full rounded-full border border-white bg-white/5 px-3 py-2 text-left text-white/80 hover:bg-white/10 transition"
       >
         Auswahl… (Beispiel hinzufügen)
       </button>
