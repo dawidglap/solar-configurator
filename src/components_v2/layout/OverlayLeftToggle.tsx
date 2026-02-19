@@ -1,30 +1,32 @@
 // src/components_v2/layout/OverlayLeftToggle.tsx
-'use client';
+"use client";
 
-import type { CSSProperties } from 'react';
-import { PanelLeft } from 'lucide-react';
-import { usePlannerV2Store } from '../state/plannerV2Store';
+import type { CSSProperties } from "react";
+import { PanelLeft } from "lucide-react";
+import { usePlannerV2Store } from "../state/plannerV2Store";
 
 export default function OverlayLeftToggle() {
-  const open   = usePlannerV2Store(s => s.ui.leftPanelOpen);
-  const toggle = usePlannerV2Store(s => s.toggleLeftPanelOpen);
-  const step   = usePlannerV2Store(s => s.step);
-  const count  = usePlannerV2Store(s => s.layers.length);
+  const open = usePlannerV2Store((s) => s.ui.leftPanelOpen);
+  const toggle = usePlannerV2Store((s) => s.toggleLeftPanelOpen);
+  const step = usePlannerV2Store((s) => s.step);
+  const count = usePlannerV2Store((s) => s.layers.length);
 
   // Se il pannello Ebenen è aperto, nascondi il toggle
   if (open) return null;
 
-  const isPrimary = step === 'building';
+  const isPrimary = step === "building";
 
   const baseBtn =
-    'pointer-events-auto fixed z-[320] h-9 px-3 rounded-full border shadow ' +
-    'inline-flex items-center gap-2 text-sm transition-colors';
-  const filled  = 'bg-neutral-900 text-white border-neutral-900 hover:bg-neutral-800';
-  const outline = 'bg-white/90 text-neutral-800 border-neutral-200 hover:bg-white';
+    "pointer-events-auto fixed z-[320] h-9 px-3 rounded-full border shadow " +
+    "inline-flex items-center gap-2 text-sm transition-colors";
+  const filled =
+    "bg-neutral-900 text-white border-neutral-900 hover:bg-neutral-800";
+  const outline =
+    "bg-white/90 text-neutral-800 border-neutral-200 hover:bg-white";
 
   const style: CSSProperties = {
-    top: 'calc(var(--tb, 48px) + 48px)',
-    right: '8px', // vicino al bordo destro quando il pannello è chiuso
+    top: "calc(var(--tb, 48px) + 48px)",
+    right: "8px", // vicino al bordo destro quando il pannello è chiuso
   };
 
   return (
@@ -34,7 +36,7 @@ export default function OverlayLeftToggle() {
       aria-pressed={false}
       aria-controls="right-layers-panel"
       onClick={toggle}
-      className={[baseBtn, isPrimary ? filled : outline].join(' ')}
+      className={[baseBtn, isPrimary ? filled : outline].join(" ")}
       style={style}
     >
       <PanelLeft className="w-4 h-4" />

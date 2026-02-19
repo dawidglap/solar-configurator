@@ -1,12 +1,16 @@
 // src/components_v2/ui/ProjectStatsBar.tsx
-'use client';
+"use client";
 
-import React, { useMemo } from 'react';
-import { usePlannerV2Store } from '../state/plannerV2Store';
+import React, { useMemo } from "react";
+import { usePlannerV2Store } from "../state/plannerV2Store";
 
 function fmt(
   n: number,
-  { min = 0, max = 0, locale = 'de-CH' }: { min?: number; max?: number; locale?: string } = {}
+  {
+    min = 0,
+    max = 0,
+    locale = "de-CH",
+  }: { min?: number; max?: number; locale?: string } = {},
 ) {
   return new Intl.NumberFormat(locale, {
     minimumFractionDigits: min,
@@ -15,8 +19,8 @@ function fmt(
 }
 
 export default function ProjectStatsBar() {
-  const panels  = usePlannerV2Store((s) => s.panels);
-  const mpp     = usePlannerV2Store((s) => s.snapshot.mppImage);
+  const panels = usePlannerV2Store((s) => s.panels);
+  const mpp = usePlannerV2Store((s) => s.snapshot.mppImage);
   const selSpec = usePlannerV2Store((s) => s.getSelectedPanel());
 
   const { count, areaM2, kwp } = useMemo(() => {
@@ -30,8 +34,8 @@ export default function ProjectStatsBar() {
   return (
     <div
       className="
-        inline-flex items-center h-8 rounded-full
-        border border-neutral-800 bg-neutral-900/70
+        inline-flex items-center h-8 pl-4
+        border-l border-white/80
         px-2 select-none
       "
       aria-live="polite"
@@ -45,12 +49,12 @@ export default function ProjectStatsBar() {
         {/* Count */}
         <span className="text-neutral-100">{fmt(count)}</span>
         <span className="mx-2 text-neutral-300">Module</span>
-        <span className="me-2 text-neutral-700">|</span>
+        <span className="me-2 text-white">|</span>
 
         {/* kWp */}
         <span className="text-neutral-100">{fmt(kwp, { min: 2, max: 2 })}</span>
         <span className="ml-1 text-neutral-300">kWp</span>
-        <span className="me-2 ms-2 text-neutral-700">|</span>
+        <span className="me-2 ms-2 text-white">|</span>
 
         {/* m² */}
         <span className="text-neutral-100">{fmt(Math.round(areaM2))}</span>

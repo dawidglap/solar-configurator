@@ -191,13 +191,13 @@ export default function TopbarAddressSearch() {
           planner-topbar
           relative z-[1000000]
           flex min-w-[260px] max-w-[260px] items-center gap-2
-          h-9 rounded-full border border-neutral-800 bg-neutral-900/90 pl-2 pr-2 text-white
+          h-9 rounded-full border border-white/80 bg-transparent pl-2 pr-2 text-white
           focus-within:ring-1 focus-within:ring-white/10
           overflow-visible text-xs
         `}
         aria-busy={loading ? "true" : "false"}
       >
-        <Search className="h-3 w-3 text-neutral-500 shrink-0" />
+        <Search className="h-3 w-3 text-white/80 shrink-0" />
 
         <div className="relative flex-1">
           {loading && (
