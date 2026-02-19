@@ -1,11 +1,16 @@
 // src/components_v2/canvas/RoofHudOverlay.tsx
-'use client';
+"use client";
 
-import React from 'react';
-import EdgeLengthBadges from './EdgeLengthBadges';
+import React from "react";
+import EdgeLengthBadges from "./EdgeLengthBadges";
 
 type Pt = { x: number; y: number };
-type Roof = { id: string; points: Pt[]; azimuthDeg?: number; tiltDeg?: number } | null;
+type Roof = {
+  id: string;
+  points: Pt[];
+  azimuthDeg?: number;
+  tiltDeg?: number;
+} | null;
 
 export default function RoofHudOverlay({
   selectedRoof,
@@ -21,8 +26,13 @@ export default function RoofHudOverlay({
   canToggleShape = true,
 }: {
   selectedRoof: Roof;
-  view: { scale?: number; fitScale?: number; offsetX?: number; offsetY?: number };
-  shapeMode: 'normal' | 'trapezio';
+  view: {
+    scale?: number;
+    fitScale?: number;
+    offsetX?: number;
+    offsetY?: number;
+  };
+  shapeMode: "normal" | "trapezio";
   onToggleShape: () => void;
   mpp?: number | null;
   edgeColor: string;
@@ -33,12 +43,14 @@ export default function RoofHudOverlay({
 }) {
   if (!selectedRoof) return null;
 
-  const s  = view.scale || view.fitScale || 1;
+  const s = view.scale || view.fitScale || 1;
   const ox = view.offsetX || 0;
   const oy = view.offsetY || 0;
 
   // bbox in coordinate immagine (per posizionare il toggle)
-  let minX = Infinity, maxX = -Infinity, minY = Infinity;
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity;
   for (const p of selectedRoof.points) {
     if (p.x < minX) minX = p.x;
     if (p.x > maxX) maxX = p.x;
@@ -48,7 +60,7 @@ export default function RoofHudOverlay({
 
   // posizione sullo Stage (HUD fisso in screen-space)
   const left = ox + midXImg * s;
-  const top  = Math.max(8, oy + minY * s - 36);
+  const top = Math.max(8, oy + minY * s - 36);
 
   return (
     <>
@@ -56,11 +68,11 @@ export default function RoofHudOverlay({
       {canToggleShape && (
         <button
           onClick={onToggleShape}
-          className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-200 bg-white/90 px-2 py-0.5 text-[11px] shadow hover:bg-white"
+          className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 text-black rounded-full border border-neutral-200 bg-white/90 px-2 py-0.5 text-[11px] shadow hover:bg-white"
           style={{ left, top }}
           title="Formmodus umschalten"
         >
-          {shapeMode === 'normal' ? 'Normal' : 'Trapez'}
+          {shapeMode === "normal" ? "Normal" : "Trapez"}
         </button>
       )}
 

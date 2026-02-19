@@ -621,10 +621,10 @@ export default function CanvasStage() {
 
   // stile tetti
   const stroke = "#6ce5e8";
-  const strokeSelected = "#6ce5e8";
+  const strokeSelected = "#34bbbd";
   const fill = "rgba(246, 240, 255, 0.12)";
-  const strokeWidthNormal = 0.5;
-  const strokeWidthSelected = 0.85;
+  const strokeWidthNormal = 1;
+  const strokeWidthSelected = 1.85;
 
   const areaLabel = (pts: Pt[]) => {
     if (!snap.mppImage) return null;
