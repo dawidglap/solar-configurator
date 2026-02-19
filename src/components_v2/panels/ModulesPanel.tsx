@@ -17,8 +17,8 @@ import GridRotationControl from "../modules/GridRotationControl";
 type Pt = { x: number; y: number };
 
 const inputBase =
-  "w-full h-8 rounded-xl border border-neutral-900 bg-neutral-900/90 px-2 text-[11px] leading-none outline-none " +
-  "focus:ring-1 focus:ring-neutral-400 focus:border-neutral-300 transition";
+  "w-full h-8 rounded-xl border border-white/80 bg-transparent px-2 text-white text-[11px] leading-none outline-none " +
+  "focus:ring-1 focus:ring-white focus:border-white transition";
 
 const labelSm =
   "block text-[10px] font-medium uppercase tracking-wide text-neutral-200";
@@ -347,7 +347,7 @@ export default function ModulesPanel() {
                       className={[
                         "grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-8",
                         active
-                          ? "bg-slate-900 text-white"
+                          ? "bg-white/35 text-white"
                           : "hover:bg-neutral-900/60 text-neutral-100",
                       ].join(" ")}
                     >
