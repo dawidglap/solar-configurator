@@ -687,12 +687,7 @@ export default function CanvasStage() {
         <OverlayProgressStepper />
         <OverlayTopToolbar />
 
-        <div
-          className="absolute inset-0"
-          style={{ paddingTop: "calc(var(--tb, 0px) + 0px)" }}
-        >
-          <StucklisteScreen />
-        </div>
+        <StucklisteScreen />
       </div>
     );
   }

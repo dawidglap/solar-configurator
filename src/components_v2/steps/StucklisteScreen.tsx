@@ -192,7 +192,7 @@ export default function StucklisteScreen() {
   }, [placedModulesRow.total, items]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden ">
+    <div className="relative w-full h-full overflow-hidden pt-10 border-l rounded-t-2xl rounded-b-2xl border-[#7E8B97]">
       {/* BACKGROUND come PlannerEmptyState */}
       <div className="absolute inset-0 z-0">
         <Image
@@ -208,23 +208,25 @@ export default function StucklisteScreen() {
       <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 pt-0">
         {/* LEFT */}
         <aside className="col-span-3 border-r border-white/10 bg-transparent backdrop-blur-md overflow-y-auto">
-          <div className="p-4 min-h-full">
+          <div className="p-3 min-h-full">
             <div className="flex items-center gap-2 text-white/80">
-              <div className="h-7 w-7 rounded-full border border-white/20 grid place-items-center">
-                <Plus className="h-4 w-4" />
+              <div className="h-6 w-6 rounded-full border border-white/20 grid place-items-center">
+                <Plus className="h-3.5 w-3.5" />
               </div>
-              <div className="text-sm font-medium">Neue Leistung erstellen</div>
+              <div className="text-[12px] font-medium">
+                Neue Leistung erstellen
+              </div>
             </div>
 
-            <div className="mt-4 space-y-4 text-sm">
+            <div className="mt-3 space-y-3 text-[12px]">
               {/* MODULE dropdown reale: prende da PANEL_CATALOG */}
-              <div className="space-y-2">
-                <div className="text-white/70">Module:</div>
+              <div className="space-y-1.5">
+                <div className="text-white/70 text-[11px]">Module:</div>
 
                 <select
                   value={selectedCatalogPanelId}
                   onChange={(e) => setSelectedCatalogPanelId(e.target.value)}
-                  className="w-full rounded-full border border-white bg-white/5 px-3 py-2 text-left text-white/80 focus:outline-none"
+                  className="w-full rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-left text-white/80 text-[12px] leading-tight focus:outline-none"
                 >
                   {PANEL_CATALOG.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -236,12 +238,12 @@ export default function StucklisteScreen() {
                 <button
                   type="button"
                   onClick={addManualModuleLineFromCatalog}
-                  className="w-full rounded-full border border-white bg-white/5 px-3 py-2 text-left text-white/80 hover:bg-white/10 transition"
+                  className="w-full rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-left text-white/80 text-[12px] leading-tight hover:bg-white/10 transition"
                 >
                   Als Zusatzposten hinzufügen (manuell)
                 </button>
 
-                <div className="text-[11px] text-white/40 leading-snug">
+                <div className="text-[10px] text-white/40 leading-snug">
                   Wichtig: Diese Aktion verändert NICHT die geplanten Module auf
                   dem Dach. Sie fügt nur einen Posten zur Stückliste hinzu.
                 </div>
@@ -262,9 +264,13 @@ export default function StucklisteScreen() {
                 label="Vollmacht"
                 onAdd={() => addSample("Vollmacht")}
               />
+              <LeftButton
+                label="Bestellformular"
+                onAdd={() => addSample("Bestellformular")}
+              />
             </div>
 
-            <div className="mt-6 text-[11px] text-white/40 leading-snug">
+            <div className="mt-5 text-[10px] text-white/40 leading-snug">
               TODO (später): Das Modul-/Produkt-Katalog wird pro Firma aus der
               Datenbank geladen. Aktuell nutzen wir PANEL_CATALOG als MVP.
             </div>
@@ -273,9 +279,9 @@ export default function StucklisteScreen() {
 
         {/* CENTER */}
         <main className="col-span-6 bg-trandsparent backdrop-blur-md overflow-y-auto">
-          <div className="p-4 min-h-full">
+          <div className="p-3 min-h-full">
             {/* header row */}
-            <div className="text-[11px] uppercase tracking-wide text-white/45 grid grid-cols-12 gap-2 pb-2 border-b border-white/10">
+            <div className="text-[10px] uppercase tracking-wide text-white/70 grid grid-cols-12 gap-2 pb-2 border-b border-white/10">
               <div className="col-span-2">Kategorie</div>
               <div className="col-span-2">Marke</div>
               <div className="col-span-3">Beschreibung</div>
@@ -291,9 +297,9 @@ export default function StucklisteScreen() {
               marke={placedModulesRow.spec?.brand ?? "—"}
               beschreibung={
                 placedModulesRow.spec
-                  ? `${placedModulesRow.spec.model} (${fmt0.format(
-                      placedModulesRow.wp,
-                    )} Wp) – ${fmt2.format(placedModulesRow.kWp)} kWp`
+                  ? `${placedModulesRow.spec.model} (${fmt0.format(placedModulesRow.wp)} Wp) – ${fmt2.format(
+                      placedModulesRow.kWp,
+                    )} kWp`
                   : "Keine Module platziert"
               }
               einzelpreis={placedModulesRow.spec?.priceChf ?? 0}
@@ -304,7 +310,7 @@ export default function StucklisteScreen() {
             />
 
             {/* Other items (manual examples) */}
-            <div className="mt-3 space-y-2">
+            <div className="mt-2.5 space-y-1.5">
               {items.map((r) => (
                 <RowCard
                   key={r.id}
@@ -316,7 +322,7 @@ export default function StucklisteScreen() {
                   einheit={r.einheit ?? "—"}
                   total={rowTotal(r)}
                   editable
-                  onDelete={() => removeItem(r.id)} // ✅ NEW
+                  onDelete={() => removeItem(r.id)}
                 />
               ))}
             </div>
@@ -325,11 +331,13 @@ export default function StucklisteScreen() {
 
         {/* RIGHT (Preview placeholder) */}
         <aside className="col-span-3 border-l border-white/10 bg-transparent backdrop-blur-md">
-          <div className="p-4">
-            <div className="text-sm font-medium text-white/80">Vorschau</div>
+          <div className="p-3">
+            <div className="text-[12px] font-medium text-white/80">
+              Vorschau
+            </div>
 
             {/* mini totals box (nicht PDF, nur MVP info) */}
-            <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-3 text-[12px] text-white/75 space-y-1">
+            <div className="mt-2.5 rounded-lg border border-white/10 bg-white/5 p-2.5 text-[11px] text-white/75 space-y-1">
               <div className="flex justify-between">
                 <span>Module (geplant)</span>
                 <span className="tabular-nums">
@@ -351,12 +359,12 @@ export default function StucklisteScreen() {
               </div>
             </div>
 
-            <div className="mt-3 space-y-3">
+            <div className="mt-2.5 space-y-2">
               <PreviewSkeleton />
               <PreviewSkeleton />
             </div>
 
-            <div className="mt-4 text-[11px] text-white/45">
+            <div className="mt-3 text-[10px] text-white/45 leading-snug">
               Die PDF-Vorschau kommt später. Im MVP zeigen wir hier nur ein
               Platzhalter-Layout.
             </div>
@@ -369,7 +377,7 @@ export default function StucklisteScreen() {
 
 function LeftButton({ label, onAdd }: { label: string; onAdd: () => void }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       <div className="text-white/70">{label}</div>
       <button
         type="button"
@@ -406,7 +414,7 @@ function RowCard(props: {
   } = props;
 
   return (
-    <div className="rounded-sm border border-white/10 bg-white/5 px-3 py-3 text-white/85">
+    <div className="rounded-sm border border-white/80 bg-white/5 px-3 py-3 text-white/85">
       <div className="grid grid-cols-12 gap-2 items-center text-[12px]">
         <div className="col-span-2">{kategorie}</div>
         <div className="col-span-2">{marke}</div>
