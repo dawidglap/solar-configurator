@@ -192,7 +192,7 @@ export default function StucklisteScreen() {
   }, [placedModulesRow.total, items]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden pt-10 border-l rounded-t-2xl rounded-b-2xl border-[#7E8B97]">
+    <div className="relative w-full h-full overflow-hidden border-l  rounded-b-2xl border-[#7E8B97]">
       {/* BACKGROUND come PlannerEmptyState */}
       <div className="absolute inset-0 z-0">
         <Image

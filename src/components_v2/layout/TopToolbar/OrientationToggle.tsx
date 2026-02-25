@@ -168,7 +168,7 @@ export default function OrientationToggle({
           onBlur={portraitTip.hide}
           className={`${baseBtn} ${
             orientation === "portrait"
-              ? "bg-black text-white rounded-l-full"
+              ? "bg-white text-black rounded-l-full"
               : "text-neutral-200 hover:bg-neutral-600  rounded-l-full"
           }`}
           aria-label="Portrait (vertikal)"
@@ -195,7 +195,7 @@ export default function OrientationToggle({
           onBlur={landscapeTip.hide}
           className={`${baseBtn} ${
             orientation === "landscape"
-              ? "bg-black text-white rounded-r-full"
+              ? "bg-white text-black rounded-r-full"
               : "text-neutral-200 hover:bg-neutral-600 rounded-r-full"
           }`}
           aria-label="Landscape (horizontal)"
