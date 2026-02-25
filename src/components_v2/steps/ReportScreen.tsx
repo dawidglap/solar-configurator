@@ -90,7 +90,7 @@ export default function ReportScreen() {
       </div>
 
       <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 -pt-10">
-        <aside className="col-span-3 border-r border-l border-b border-white/10 bg-transparent backdrop-blur-md overflow-y-auto">
+        <aside className="col-span-3 border-r border-l border-b border-[#7E8B97] bg-transparent backdrop-blur-md overflow-y-auto">
           <div className="p-4 min-h-full">
             <div className="text-white/90 text-lg font-semibold">Bericht</div>
             <div className="mt-1 text-[12px] text-white/55">

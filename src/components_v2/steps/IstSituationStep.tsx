@@ -91,7 +91,7 @@ export default function IstSituationStep() {
   };
 
   return (
-    <div className="w-full min-h-[97.5vh] rounded-bl-2xl rounded-t-none bg-transparent text-neutral-50 -mt-4 border border-[#7E8B97] border-t-0 backdrop-blur-md">
+    <div className="w-full min-h-[97vh] rounded-bl-2xl rounded-t-none bg-transparent text-neutral-50 -mt-4 border border-[#7E8B97] border-t-0 backdrop-blur-md">
       <div className="h-[calc(100vh-1rem)] overflow-y-auto px-5 py-5 lg:px-7 lg:py-6 space-y-4">
         {/* Header */}
         <div className="flex items-start justify-between">

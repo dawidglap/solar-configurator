@@ -231,7 +231,7 @@ export default function ProfileStep() {
     : "";
 
   return (
-    <div className="w-full h-full rounded-bl-2xl text-neutral-50 shadow-xl border-b border-l border-[#7E8B97] bg-transparent backdrop-blur-md px-6 py-4 flex flex-col">
+    <div className="w-full h-full rounded-bl-2xl text-neutral-50 shadow-xl border-l border-[#7E8B97] bg-transparent backdrop-blur-md px-6 py-4 flex flex-col">
       <div className="flex-1 space-y-6">
         {/* ───────────────── TOP ROW ───────────────── */}
         <div className={`grid gap-4 items-start ${topGridCols}`}>
