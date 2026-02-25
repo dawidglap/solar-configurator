@@ -195,7 +195,9 @@ export default function OverlayProgressStepper() {
                       >
                         {/* Label normale */}
                         <span
-                          className={`${labelCls} ${isActive ? activeCls : idleCls} group-hover:hidden`}
+                          className={`${labelCls} ${
+                            isActive ? activeCls : idleCls
+                          } ${!isActive ? "group-hover:hidden" : ""}`}
                         >
                           {displayText}
                         </span>
