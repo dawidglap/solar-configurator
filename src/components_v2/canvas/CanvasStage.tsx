@@ -702,7 +702,7 @@ export default function CanvasStage() {
         <OverlayTopToolbar />
         <div
           className="absolute inset-0"
-          style={{ paddingTop: "calc(var(--tb, 48px) + 0px)" }}
+          style={{ paddingTop: "calc(var(--tb, 0px) + 0px)" }}
         >
           <ReportScreen />
         </div>
