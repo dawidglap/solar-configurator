@@ -109,7 +109,7 @@ export default function OfferScreen() {
 
       <div className="relative z-10 w-full h-full grid grid-cols-12">
         {/* LEFT */}
-        <aside className="col-span-3 bg-neutral-900/45 backdrop-blur-xl border-r border-white/10 flex flex-col h-full">
+        <aside className="col-span-3 bg-transparent  backdrop-blur-xl  border-l border-[#7E8B97]     flex flex-col h-full">
           {/* SCROLLABLE CONTENT */}
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
             <div className="text-white/90 text-lg font-medium">Bericht</div>
