@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FiFileText, FiLayers, FiMessageSquare, FiBell } from "react-icons/fi";
 
 type ColumnId =
@@ -33,6 +33,17 @@ type Card = {
 type DragState = null | {
   cardId: string;
   fromCol: ColumnId;
+};
+
+type PlanningListItem = {
+  id: string;
+  status: string;
+  currentStep: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  firstName: string;
+  lastName: string;
+  businessName: string;
 };
 
 const DEFAULT_COLUMNS: ColumnId[] = [
@@ -68,7 +79,7 @@ export default function AuftraegePage() {
         title: "Erstellt",
         kpiTop: "0 CHF",
         kpiLabel: "Erstellt",
-        kpiSub: "(0) Entwurf (0)",
+        kpiSub: "(0)",
         accentClass: "text-white/70",
       },
       offeriert: {
@@ -98,20 +109,93 @@ export default function AuftraegePage() {
         cardBorder: "border-rose-300/55",
       },
     }),
-    []
+    [],
   );
 
-  // ✅ cards state locale (refresh reset)
+  // ✅ Board state (ora arriva dal DB per "erstellt")
   const [cardsByCol, setCardsByCol] = useState<Record<ColumnId, Card[]>>(
     () => ({
-      leads: [mkCard("l1"), mkCard("l2"), mkCard("l3")],
-      terminiert: [mkCard("t1"), mkCard("t2")],
-      erstellt: [mkCard("e1"), mkCard("e2")],
-      offeriert: [mkCard("o1"), mkCard("o2"), mkCard("o3")],
-      gewonnen: [mkCard("g1"), mkCard("g2")],
-      verloren: [mkCard("v1")],
-    })
+      leads: [],
+      terminiert: [],
+      erstellt: [],
+      offeriert: [],
+      gewonnen: [],
+      verloren: [],
+    }),
   );
+
+  // ✅ Loading / error solo per "erstellt" (MVP)
+  const [loadingErstellt, setLoadingErstellt] = useState(true);
+  const [errorErstellt, setErrorErstellt] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadErstellt() {
+      setLoadingErstellt(true);
+      setErrorErstellt(null);
+
+      try {
+        const res = await fetch("/api/plannings?limit=300", {
+          credentials: "include",
+        });
+
+        if (res.status === 401) {
+          if (!alive) return;
+          setErrorErstellt("Nicht eingeloggt.");
+          return;
+        }
+
+        const json = await res.json().catch(() => null);
+        if (!alive) return;
+
+        if (!json?.ok || !Array.isArray(json.items)) {
+          setErrorErstellt("Fehler beim Laden der Planungen.");
+          return;
+        }
+
+        const items = json.items as PlanningListItem[];
+
+        const cards: Card[] = items.map((p) => {
+          const fullName = `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim();
+          const title = fullName || p.businessName || "Unbenannte Planung";
+
+          const d = p.updatedAt ? new Date(p.updatedAt) : null;
+          const date = d ? formatDateDE(d) : "";
+
+          // owner: qui mettiamo info vera che abbiamo (step + status)
+          const owner = `${p.status}${p.currentStep ? ` · ${p.currentStep}` : ""}`;
+
+          return {
+            id: p.id,
+            title,
+            amount: "—", // non abbiamo ancora un amount reale nel DB
+            owner,
+            date,
+            alerts: 0,
+          };
+        });
+
+        setCardsByCol((prev) => ({
+          ...prev,
+          erstellt: cards,
+        }));
+      } catch (e) {
+        console.error(e);
+        if (!alive) return;
+        setErrorErstellt("Fehler beim Laden der Planungen.");
+      } finally {
+        if (!alive) return;
+        setLoadingErstellt(false);
+      }
+    }
+
+    loadErstellt();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // drag state (singola card)
   const dragRef = useRef<DragState>(null);
@@ -141,7 +225,7 @@ export default function AuftraegePage() {
 
     const { cardId, fromCol } = st;
     setCardsByCol((prev) =>
-      moveCard(prev, fromCol, targetCol, cardId, beforeCardId)
+      moveCard(prev, fromCol, targetCol, cardId, beforeCardId),
     );
   }
 
@@ -162,7 +246,11 @@ export default function AuftraegePage() {
             key={id}
             top={columns[id].kpiTop}
             label={columns[id].kpiLabel}
-            sub={columns[id].kpiSub}
+            sub={
+              id === "erstellt"
+                ? `(${cardsByCol.erstellt.length})`
+                : columns[id].kpiSub
+            }
             accentClass={columns[id].accentClass}
           />
         ))}
@@ -188,6 +276,18 @@ export default function AuftraegePage() {
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => onDropToColumn(colId)}
             >
+              {/* ✅ Solo nella colonna "erstellt": messaggi loading/error */}
+              {colId === "erstellt" && loadingErstellt && (
+                <div className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/60">
+                  Lade Planungen…
+                </div>
+              )}
+              {colId === "erstellt" && !loadingErstellt && errorErstellt && (
+                <div className="rounded-xl border border-rose-300/25 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-200">
+                  {errorErstellt}
+                </div>
+              )}
+
               {cardsByCol[colId].map((card) => (
                 <div
                   key={card.id}
@@ -269,9 +369,7 @@ function ProjectCard({
       ].join(" ")}
       title="Drag mich"
     >
-      {/* padding più piccolo */}
       <div className="rounded-xl border border-white/10 px-3 py-2.5">
-        {/* riga top */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="truncate text-[13px] font-medium text-white/90">
@@ -287,7 +385,6 @@ function ProjectCard({
           <div className="shrink-0 text-[11px] text-white/60">{card.date}</div>
         </div>
 
-        {/* icons row (piccole) */}
         <div className="mt-2 flex items-center justify-between">
           <div className="flex items-center gap-3 text-white/70">
             <FiFileText className="h-4 w-4" />
@@ -303,7 +400,6 @@ function ProjectCard({
             </div>
           </div>
 
-          {/* piccolo placeholder circle */}
           <div className="h-6 w-6 rounded-full border border-white/15 bg-black/20" />
         </div>
       </div>
@@ -318,14 +414,12 @@ function moveCard(
   fromCol: ColumnId,
   toCol: ColumnId,
   cardId: string,
-  beforeCardId: string | null
+  beforeCardId: string | null,
 ) {
-  // trova card
   const fromList = prev[fromCol];
   const card = fromList.find((c) => c.id === cardId);
   if (!card) return prev;
 
-  // se droppo sulla stessa colonna e stessa posizione, proviamo comunque a riordinare
   const next: Record<ColumnId, Card[]> = {
     ...prev,
     [fromCol]: prev[fromCol].filter((c) => c.id !== cardId),
@@ -345,13 +439,11 @@ function moveCard(
   return next;
 }
 
-function mkCard(id: string): Card {
-  return {
-    id,
-    title: "Emil Egger-23.7kWp",
-    amount: "0.00 CHF",
-    owner: "Cengiz Cokicli",
-    date: "23.04.25",
-    alerts: 3,
-  };
+/* -------------------- utils -------------------- */
+
+function formatDateDE(d: Date) {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}.${mm}.${yy}`;
 }
