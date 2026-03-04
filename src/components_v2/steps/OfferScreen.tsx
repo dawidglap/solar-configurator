@@ -4,7 +4,7 @@
 import Image from "next/image";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Download } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { PANEL_CATALOG } from "@/constants/panels";
 
@@ -35,13 +35,6 @@ export default function OfferScreen() {
     return { qty, panelId, spec, wp, priceChf, kWp, total };
   }, [placedPanels]);
 
-  const [sections, setSections] = useState({
-    energiefluss: true,
-    wirtschaftlichkeit: true,
-    produktion: true,
-    ersparnis: true,
-  });
-
   const [pdfUrl, setPdfUrl] = useState("");
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [err, setErr] = useState("");
@@ -61,7 +54,12 @@ export default function OfferScreen() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          sections,
+          sections: {
+            energiefluss: true,
+            wirtschaftlichkeit: true,
+            produktion: true,
+            ersparnis: true,
+          },
           summary: {
             qty: placed.qty,
             kWp: placed.kWp,
@@ -94,7 +92,7 @@ export default function OfferScreen() {
   };
 
   return (
-    <div className="relative w-full h-full overflow-hidden">
+    <div className="relative w-full h-full overflow-hidden border-[#7E8B97] border-l rounded-b-2xl">
       {/* background */}
       <div className="absolute inset-0 z-0">
         <Image
@@ -107,125 +105,80 @@ export default function OfferScreen() {
         <div className="absolute inset-0 bg-black/30" />
       </div>
 
-      <div className="relative z-10 w-full h-full grid grid-cols-12">
-        {/* LEFT */}
-        <aside className="col-span-3 bg-transparent  backdrop-blur-xl  border-l border-[#7E8B97]     flex flex-col h-full">
-          {/* SCROLLABLE CONTENT */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-6">
-            <div className="text-white/90 text-lg font-medium">Bericht</div>
-
-            <ToggleRow
-              label="Energiefluss"
-              value={sections.energiefluss}
-              onChange={(v) => setSections((s) => ({ ...s, energiefluss: v }))}
-            />
-            <ToggleRow
-              label="Wirtschaftlichkeit"
-              value={sections.wirtschaftlichkeit}
-              onChange={(v) =>
-                setSections((s) => ({ ...s, wirtschaftlichkeit: v }))
-              }
-            />
-            <ToggleRow
-              label="Produktion"
-              value={sections.produktion}
-              onChange={(v) => setSections((s) => ({ ...s, produktion: v }))}
-            />
-            <ToggleRow
-              label="Ersparnis"
-              value={sections.ersparnis}
-              onChange={(v) => setSections((s) => ({ ...s, ersparnis: v }))}
-            />
-
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80">
-              <Row label="Module (geplant)" value={fmt0.format(placed.qty)} />
-              <Row label="Leistung" value={`${fmt2.format(placed.kWp)} kWp`} />
-              <Row
-                label="Modell"
-                value={
-                  placed.spec
-                    ? `${placed.spec.brand} ${placed.spec.model}`
-                    : "—"
-                }
-              />
-            </div>
-          </div>
-
-          {/* STICKY FOOTER */}
-          <div className="sticky bottom-0 border-t border-white/10 bg-neutral-900/80 p-4 space-y-3">
-            <button
-              onClick={onDownload}
-              disabled={!pdfUrl}
-              className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/5 py-2 text-white/80 disabled:opacity-40"
-            >
-              <Download className="w-4 h-4" />
-              Download
-            </button>
-
-            <button
-              onClick={onGenerate}
-              disabled={loadingPdf}
-              className="w-full rounded-full border border-white/30 bg-white/10 py-3 text-white font-medium"
-            >
-              {loadingPdf ? "Generiere…" : "PDF generieren"}
-            </button>
-
-            {err && <div className="text-[11px] text-red-300">{err}</div>}
-          </div>
-        </aside>
-
-        {/* MAIN */}
-        <main className="col-span-9 flex items-center justify-center p-10">
-          <div className="w-[720px] aspect-[1/1.414] bg-white shadow-2xl">
+      {/* STAGE */}
+      <div className="relative z-10 w-full h-full flex items-center justify-center px-6 py-6">
+        {/* PDF WRAPPER: centrato e “fit” nello schermo (niente tagli sopra/sotto) */}
+        <div className="relative">
+          {/* A4 box responsive: mantiene look del vecchio (720px) ma si riduce se serve */}
+          <div
+            className={[
+              "bg-white shadow-2xl overflow-hidden",
+              // ✅ dimensione “come prima” ma con fit verticale e orizzontale
+              "w-[min(720px,90vw)]",
+              // ✅ altezza: min tra viewport e rapporto A4 -> evita tagli
+              "h-[min(84vh,calc(90vw*1.414))]",
+            ].join(" ")}
+          >
             {!pdfUrl ? (
               <PdfSkeleton />
             ) : (
-              <iframe src={pdfUrl} className="w-full h-full" />
+              <iframe
+                src={pdfUrl}
+                className="w-full h-full"
+                title="PDF Preview"
+              />
             )}
           </div>
-        </main>
+
+          {/* Download icon in alto a dx del PDF (solo se pdf pronto) */}
+          {pdfUrl && (
+            <button
+              type="button"
+              onClick={onDownload}
+              className="absolute -right-3 top-2 rounded-full border border-[#6CE5E9]/70 bg-neutral-900/65 p-2 text-[#6CE5E9] backdrop-blur-md hover:bg-neutral-900/80 hover:border-[#6CE5E9]"
+              title="Download"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          )}
+
+          {/* Error sotto il PDF */}
+          {err && (
+            <div className="mt-3 text-[11px] text-red-300 text-center">
+              {err}
+            </div>
+          )}
+        </div>
+
+        {/* BUTTON: posizione “come in foto” (in basso, centrato sotto il PDF) */}
+        <div className="absolute left-1/2 bottom-7 -translate-x-1/2">
+          <button
+            onClick={onGenerate}
+            disabled={loadingPdf}
+            className={[
+              "inline-flex items-center justify-center gap-2",
+              "rounded-full border border-[#6CE5E9]/70 bg-neutral-900/40",
+              "px-5 py-2 text-[12px] text-[#6CE5E9] backdrop-blur-md",
+              "hover:bg-neutral-900/55 hover:border-[#6CE5E9]",
+              "disabled:opacity-55",
+            ].join(" ")}
+          >
+            {loadingPdf ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generiere…
+              </>
+            ) : (
+              "PDF generieren"
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-/* helpers */
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between mt-1">
-      <span>{label}</span>
-      <span className="tabular-nums">{value}</span>
-    </div>
-  );
-}
-
-function ToggleRow({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div>
-      <div className="text-white/85 mb-2">{label}</div>
-      <button
-        onClick={() => onChange(!value)}
-        className="w-[86px] h-[34px] rounded-full border border-white/30 bg-white/5 relative"
-      >
-        <span
-          className={`absolute top-[3px] h-[26px] w-[26px] rounded-full bg-white transition-all ${
-            value ? "left-[54px]" : "left-[4px]"
-          }`}
-        />
-      </button>
-    </div>
-  );
-}
-
 function PdfSkeleton() {
+  // ✅ identico alla versione che ti piaceva
   return <div className="w-full h-full p-8 bg-neutral-100 animate-pulse" />;
 }
