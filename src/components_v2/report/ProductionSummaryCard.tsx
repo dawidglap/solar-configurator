@@ -40,13 +40,13 @@ export default function ProductionSummaryCard({
   );
 
   return (
-    <div className="h-full min-h-0 rounded-xl border border-white/10 bg-white/95 text-black shadow-[0_18px_60px_rgba(0,0,0,0.35)] flex flex-col">
+    <div className="h-full min-h-0 rounded-xl border border-white/10 bg-white/15 text-white shadow-[0_18px_60px_rgba(0,0,0,0.35)] flex flex-col">
       {/* HEADER (più compatto) */}
       <div className="px-3 py-2 border-b border-black/10 shrink-0">
         <div className="text-[12px] font-semibold tracking-tight">
           PV-Anlage (Zusammenfassung)
         </div>
-        <div className="text-[10px] text-black/55">
+        <div className="text-[10px] text-white/55">
           MVP-Berechnung (vereinfachtes Modell)
         </div>
       </div>
@@ -105,8 +105,8 @@ export default function ProductionSummaryCard({
 function TableRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1">
-      <div className="text-[11px] text-black/80 leading-tight">{label}</div>
-      <div className="text-[11px] font-semibold tabular-nums text-black whitespace-nowrap">
+      <div className="text-[11px] text-white/80 leading-tight">{label}</div>
+      <div className="text-[11px] font-semibold tabular-nums text-white whitespace-nowrap">
         {value}
       </div>
     </div>
@@ -114,5 +114,5 @@ function TableRow({ label, value }: { label: string; value: string }) {
 }
 
 function Divider() {
-  return <div className="my-1.5 h-px w-full bg-black/10" />;
+  return <div className="my-1.5 h-px w-full bg-white/10" />;
 }
