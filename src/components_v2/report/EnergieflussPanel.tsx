@@ -5,9 +5,8 @@ import { useMemo } from "react";
 const fmt1 = new Intl.NumberFormat("de-CH", { maximumFractionDigits: 1 });
 
 type Props = {
-  // ✅ supportiamo entrambi i nomi (vecchio + nuovo)
-  selfUseSharePct?: number; // 0..100 (vecchio)
-  selfUsePct?: number; // 0..100 (nuovo)
+  selfUseSharePct?: number; // 0..100
+  selfUsePct?: number; // 0..100
   autarkyPct?: number; // 0..100
 };
 
@@ -40,11 +39,10 @@ export default function EnergieflussPanel(props: Props) {
       "Dez",
     ];
 
-    // produzione stagionale normalizzata (0–100)
     const prod = [20, 28, 45, 65, 85, 95, 100, 92, 70, 48, 30, 22];
 
-    const selfFactor = 0.45 + (selfUse / 100) * 0.35; // 0.45–0.80
-    const feedInFactor = 0.6 - (selfUse / 100) * 0.3; // 0.60–0.30
+    const selfFactor = 0.45 + (selfUse / 100) * 0.35;
+    const feedInFactor = 0.6 - (selfUse / 100) * 0.3;
 
     const eigen = prod.map((p) =>
       clamp(p * selfFactor + autarky * 0.05, 0, 100),
@@ -57,71 +55,70 @@ export default function EnergieflussPanel(props: Props) {
   }, [selfUse, autarky]);
 
   return (
-    <div className="space-y-4">
-      {/* KPI ROW (2 box come Wirtschaftlichkeit) */}
-      <div className="grid grid-cols-2 gap-3">
-        <Kpi
+    <div className="h-full min-h-0 flex flex-col gap-3">
+      {/* KPI */}
+      <div className="grid grid-cols-2 gap-3 shrink-0">
+        <KpiCompact
           label="Eigenverbrauch"
           value={`${fmt1.format(selfUse)} %`}
-          sub="Prozentsatz des Stroms, der nicht in das Netz fliesst."
+          sub="Strom, der nicht ins Netz fliesst."
         />
-        <Kpi
+        <KpiCompact
           label="Autarkiegrad"
           value={`${fmt1.format(autarky)} %`}
-          sub={
-            <>
-              Unabhängigkeit
-              <br />
-              vom Netz.
-            </>
-          }
+          sub="Unabhängigkeit vom Netz."
         />
       </div>
 
-      {/* GRAPH */}
-      <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-        <AreaChart labels={chart.labels} s1={chart.eigen} s2={chart.feedIn} />
+      {/* CHART: overflow hidden + svg prende SOLO lo spazio disponibile */}
+      <div className="flex-1 min-h-0 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 overflow-hidden">
+        <div className="h-full min-h-0 flex flex-col">
+          {/* area grafico con altezza controllata ma NON sul svg */}
+          <div className="flex-1 min-h-0 h-[clamp(140px,22vh,240px)]">
+            <AreaChart
+              labels={chart.labels}
+              s1={chart.eigen}
+              s2={chart.feedIn}
+            />
+          </div>
 
-        <div className="mt-3 flex gap-4 text-[11px] text-white/55">
-          <Legend color="bg-emerald-400" label="Eigenverbrauch" />
-          <Legend color="bg-sky-400" label="Netzeinspeisung" />
+          <div className="mt-2 flex items-center gap-5 text-[10px] text-white/60 shrink-0">
+            <LegendDot color="bg-emerald-400" label="Eigenverbrauch" />
+            <LegendDot color="bg-sky-400" label="Netzeinspeisung" />
+          </div>
         </div>
       </div>
 
-      <div className="text-[10px] text-white/40 leading-snug">
-        Visualisierung dient als Platzhalter. Reale Werte werden später aus
-        Standort-, Dach- und Verbrauchsdaten berechnet.
+      {/* nota */}
+      <div className="text-[9px] text-white/40 leading-snug shrink-0">
+        Visualisierung = Placeholder. Später aus Standort-, Dach- und
+        Verbrauchsdaten.
       </div>
     </div>
   );
 }
 
-function Kpi({
+function KpiCompact({
   label,
   value,
   sub,
 }: {
   label: string;
   value: string;
-  sub?: React.ReactNode;
+  sub: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-      <div className="text-[13px] text-white/70">{label}</div>
-
-      {/* stessa scala e line-height dei KPI di Wirtschaftlichkeit */}
-      <div className="mt-2 text-[26px] md:text-[26px] leading-none font-semibold text-[#91DFC6] tabular-nums">
+    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+      <div className="text-[11px] text-white/70 leading-tight">{label}</div>
+      <div className="mt-1 text-[20px] leading-none font-semibold text-[#91DFC6] tabular-nums">
         {value}
       </div>
-
-      <div className="mt-2 text-[13px] text-white/45 leading-snug">
-        {sub ?? " "}
-      </div>
+      <div className="mt-1 text-[10px] text-white/45 leading-snug">{sub}</div>
     </div>
   );
 }
 
-function Legend({ color, label }: { color: string; label: string }) {
+function LegendDot({ color, label }: { color: string; label: string }) {
   return (
     <div className="flex items-center gap-2">
       <div className={`h-2.5 w-2.5 rounded-full ${color}`} />
@@ -154,11 +151,15 @@ function AreaChart({
     `${path(data)} L ${x(data.length - 1)} ${H - P} L ${x(0)} ${H - P} Z`;
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[180px]">
-      <path d={area(s2)} fill="rgba(56,189,248,0.25)" />
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className="w-full h-full block"
+      preserveAspectRatio="none"
+    >
+      <path d={area(s2)} fill="rgba(56,189,248,0.22)" />
       <path d={path(s2)} fill="none" stroke="rgb(56,189,248)" strokeWidth="2" />
 
-      <path d={area(s1)} fill="rgba(52,211,153,0.35)" />
+      <path d={area(s1)} fill="rgba(52,211,153,0.32)" />
       <path d={path(s1)} fill="none" stroke="rgb(52,211,153)" strokeWidth="2" />
     </svg>
   );

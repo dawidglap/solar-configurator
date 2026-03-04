@@ -227,11 +227,11 @@ export default function StucklisteScreen() {
         <aside className=" pt-10 col-span-2 border-r px-2 border-white/10 bg-transparent backdrop-blur-md overflow-y-auto">
           <div className="p-2 min-h-full">
             <div className="flex items-center gap-2 text-white/80">
-              <div className="h-6 w-6 rounded-full border border-white/20 grid place-items-center shrink-0">
-                <Plus className="h-3.5 w-3.5" />
+              <div className="h-6 w-6 rounded-full border bg-white border-white/20 grid place-items-center shrink-0">
+                <Plus className="h-3.5 w-3.5 text-black font-bold" />
               </div>
               <div className="text-[11px] font-medium leading-tight">
-                Neue Leistung
+                Neue Leistung erstellen
               </div>
             </div>
 

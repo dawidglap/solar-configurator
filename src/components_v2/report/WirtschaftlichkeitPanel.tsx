@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { PANEL_CATALOG } from "@/constants/panels";
+import { Maximize2, X } from "lucide-react";
 
 const fmt0 = new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 });
 const fmt1 = new Intl.NumberFormat("de-CH", { maximumFractionDigits: 1 });
@@ -37,6 +38,8 @@ export default function WirtschaftlichkeitPanel({
   feedInChfPerKwh = 0.1,
   years = 15,
 }: Props) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   const placedPanels = usePlannerV2Store((s) => s.panels);
   const selectedPanelId = usePlannerV2Store((s) => s.selectedPanelId);
   const getPartsTotals = usePlannerV2Store((s) => s.getPartsTotals);
@@ -44,7 +47,6 @@ export default function WirtschaftlichkeitPanel({
   const calc = useMemo(() => {
     const startYear = new Date().getFullYear();
 
-    // ---- investimento da store (moduli + extras)
     const qty = placedPanels?.length ?? 0;
     const panelId = placedPanels?.[0]?.panelId || selectedPanelId || "";
     const spec =
@@ -55,7 +57,6 @@ export default function WirtschaftlichkeitPanel({
     const extrasTotal = safeNumber(getPartsTotals?.()?.extrasTotal, 0);
     const investment = modulesTotal + extrasTotal;
 
-    // ---- shares da prodCalc (year1)
     const prod0 = Math.max(0, safeNumber(productionKwhYear, 0));
     const self0 = clamp(safeNumber(selfUseKwhYear, 0), 0, prod0);
     const feed0 = clamp(safeNumber(feedInKwhYear, 0), 0, prod0);
@@ -63,10 +64,9 @@ export default function WirtschaftlichkeitPanel({
     const selfShare = prod0 > 0 ? self0 / prod0 : 0;
     const feedShare = prod0 > 0 ? feed0 / prod0 : 0;
 
-    const opexRate = 0.01; // 1%/a
-    const degrRate = 0.005; // 0.5%/a
+    const opexRate = 0.01;
+    const degrRate = 0.005;
 
-    // se non ho investimento → serie vuota (ma qui almeno vedrai 0 sensato)
     const series: Array<{ yearLabel: string; cum: number }> = [];
     let cum = investment > 0 ? -investment : 0;
 
@@ -82,35 +82,27 @@ export default function WirtschaftlichkeitPanel({
       const net = gross - opex;
 
       cum += net;
-
-      series.push({
-        yearLabel: String(startYear + i),
-        cum,
-      });
+      series.push({ yearLabel: String(startYear + i), cum });
     }
 
-    // breakeven
     let breakevenYears = 0;
     let prevCum = investment > 0 ? -investment : 0;
 
     for (let i = 0; i < series.length; i++) {
       const cur = series[i].cum;
       if (cur >= 0 && investment > 0) {
-        const prevIndex = i; // year i is (i+1)
         const prevVal = prevCum;
         const nextVal = cur;
-
         if (nextVal === prevVal) breakevenYears = i + 1;
         else {
           const t = clamp((0 - prevVal) / (nextVal - prevVal), 0, 1);
-          breakevenYears = prevIndex + t; // 0-based years
+          breakevenYears = i + t;
         }
         break;
       }
       prevCum = cur;
     }
 
-    // ROI year 1
     const annualGross1 = self0 * tariffChfPerKwh + feed0 * feedInChfPerKwh;
     const annualNet1 =
       annualGross1 - (investment > 0 ? investment * opexRate : 0);
@@ -124,7 +116,6 @@ export default function WirtschaftlichkeitPanel({
       roiPct,
       breakevenYears,
       series,
-      startYear,
       tariffChfPerKwh,
       feedInChfPerKwh,
     };
@@ -142,54 +133,103 @@ export default function WirtschaftlichkeitPanel({
 
   const breakevenLabel =
     calc.breakevenYears > 0
-      ? `nach ${fmt1.format(calc.breakevenYears)} Jahre`
+      ? `nach ${fmt1.format(calc.breakevenYears)} Jahren`
       : "—";
 
-  return (
-    <div className="relative">
-      <div className="grid grid-cols-12 gap-3">
-        <KpiBox
-          className="col-span-12 md:col-span-4"
-          title="Breakeven"
-          value={breakevenLabel}
-          sub="vereinfachtes Modell (MVP)"
-        />
-        <KpiBox
-          className="col-span-12 md:col-span-4"
-          title="Gesamtinvestition"
-          value={`${fmt0.format(calc.investment)} CHF`}
-          sub={`Module ${fmt0.format(calc.modulesTotal)} + Extras ${fmt0.format(calc.extrasTotal)}`}
-        />
-        <KpiBox
-          className="col-span-12 md:col-span-4"
-          title="Rendite"
-          value={`${fmt1.format(calc.roiPct)} % p.a.`}
-          sub={`${fmt0.format(calc.annualNet1)} CHF / Jahr`}
-        />
-      </div>
-
-      <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="text-white/85 font-medium">
-            Wirtschaftlichkeit (Cashflow)
-          </div>
-          <div className="text-[12px] text-white/55">
-            Tarif: {fmt2.format(calc.tariffChfPerKwh)} CHF/kWh · Einspeisung:{" "}
-            {fmt2.format(calc.feedInChfPerKwh)} CHF/kWh
-          </div>
+  const PanelBody = ({ expanded }: { expanded: boolean }) => (
+    <div className="h-full min-h-0 flex flex-col">
+      {/* top row: KPI + expand button */}
+      <div className="flex items-start justify-between gap-2 shrink-0">
+        <div className="grid grid-cols-12 gap-1.5 flex-1 min-w-0">
+          <KpiBox
+            className="col-span-12 md:col-span-4"
+            title="Breakeven"
+            value={breakevenLabel}
+            sub="MVP"
+          />
+          <KpiBox
+            className="col-span-12 md:col-span-4"
+            title="Gesamtinvestition"
+            value={`${fmt0.format(calc.investment)} CHF`}
+            sub={`Module ${fmt0.format(calc.modulesTotal)} + Extras ${fmt0.format(
+              calc.extrasTotal,
+            )}`}
+          />
+          <KpiBox
+            className="col-span-12 md:col-span-4"
+            title="Rendite"
+            value={`${fmt1.format(calc.roiPct)} % p.a.`}
+            sub={`${fmt0.format(calc.annualNet1)} CHF/Jahr`}
+          />
         </div>
 
-        <div className="mt-3">
+        {/* <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="shrink-0 rounded-lg border border-white/10 bg-white/5 p-2 text-white/70 hover:bg-white/10"
+          aria-label={expanded ? "Schliessen" : "Vollbild"}
+          title={expanded ? "Schliessen" : "Vollbild"}
+        >
+          {expanded ? (
+            <X className="h-4 w-4" />
+          ) : (
+            <Maximize2 className="h-4 w-4" />
+          )}
+        </button> */}
+      </div>
+
+      {/* header + tariffs */}
+      <div className="mt-2 flex items-start justify-between gap-3 shrink-0">
+        <div className="text-white/85 font-medium leading-tight text-[12px]">
+          Wirtschaftlichkeit <span className="text-white/55">(Cashflow)</span>
+        </div>
+        <div className="text-[9px] text-white/55 text-right leading-snug">
+          Tarif: {fmt2.format(calc.tariffChfPerKwh)} CHF/kWh · Einspeisung:{" "}
+          {fmt2.format(calc.feedInChfPerKwh)} CHF/kWh
+        </div>
+      </div>
+
+      {/* chart: 최대 spazio possibile */}
+      <div
+        className={[
+          "mt-2 flex-1 min-h-0 overflow-hidden rounded-xl border border-white/10 bg-white/5",
+          expanded ? "p-3" : "p-2",
+        ].join(" ")}
+      >
+        <div className="h-full min-h-0">
           <CashflowBarChart series={calc.series} />
         </div>
+      </div>
 
-        <div className="mt-3 text-[12px] text-white/45 leading-snug">
-          Hinweis: MVP-Placeholder. Später ersetzen wir
-          Tarife/Profil/Degradation/OPEX durch echte Standortdaten
-          (EIC/Netzbetreiber), Eigenverbrauchsprofil, Wartung, etc.
-        </div>
+      <div className="mt-2 text-[9px] text-white/35 leading-snug shrink-0">
+        MVP-Placeholder. Später echte Tarife/Profil/OPEX.
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* normal */}
+      <div className="h-full min-h-0">
+        <PanelBody expanded={false} />
+      </div>
+
+      {/* fullscreen overlay (semplice, senza toccare ReportScreen) */}
+      {isExpanded && (
+        <div className="fixed inset-0 z-[9999]">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setIsExpanded(false)}
+          />
+          <div className="absolute inset-4 md:inset-8 rounded-2xl border border-white/10 bg-neutral-900/60 backdrop-blur-xl shadow-[0_0_80px_rgba(0,0,0,0.65)] overflow-hidden">
+            <div className="h-full w-full p-4 md:p-6">
+              {/* qui diamo TANTO spazio al grafico */}
+              <PanelBody expanded />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -203,16 +243,15 @@ function KpiBox(props: {
   return (
     <div
       className={[
-        "rounded-2xl border border-white/10 bg-white/5 px-4 py-4",
+        "rounded-xl border border-white/10 bg-white/5 px-2.5 py-2.5",
         className ?? "",
       ].join(" ")}
     >
-      <div className="text-[13px] text-white/70">{title}</div>
-      {/* ✅ numeri più piccoli rispetto a prima */}
-      <div className="mt-2 text-[18px] md:text-[18px] leading-none font-semibold text-[#91DFC6] tabular-nums">
+      <div className="text-[10px] text-white/65 leading-tight">{title}</div>
+      <div className="mt-1 text-[13px] leading-none font-semibold text-[#91DFC6] tabular-nums">
         {value}
       </div>
-      <div className="mt-2 text-[13px] text-white/45">{sub}</div>
+      <div className="mt-1 text-[9px] text-white/40 leading-snug">{sub}</div>
     </div>
   );
 }
@@ -225,10 +264,11 @@ function CashflowBarChart(props: {
   const W = 860;
   const H = 320;
 
-  const padL = 72;
-  const padR = 18;
-  const padT = 16;
-  const padB = 46;
+  // più spazio utile al grafico, meno padding “sprecato”
+  const padL = 52;
+  const padR = 10;
+  const padT = 10;
+  const padB = 30;
 
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
@@ -246,14 +286,20 @@ function CashflowBarChart(props: {
 
   const zeroY = y(0);
 
-  const ticks = 6;
+  // meno tick ma leggibili
+  const ticks = 5;
   const tickVals = Array.from({ length: ticks }, (_, i) => {
     const t = i / (ticks - 1);
     return minY + (maxY - minY) * (1 - t);
   });
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className="w-full h-full block"
+      preserveAspectRatio="none"
+    >
+      {/* grid + labels */}
       {tickVals.map((tv, idx) => {
         const yy = y(tv);
         return (
@@ -267,11 +313,11 @@ function CashflowBarChart(props: {
               strokeWidth="1"
             />
             <text
-              x={padL - 10}
+              x={padL - 8}
               y={yy + 4}
               textAnchor="end"
-              fontSize="12"
-              fill="rgba(255,255,255,0.65)"
+              fontSize="10"
+              fill="rgba(255,255,255,0.62)"
             >
               {fmt0.format(tv)}
             </text>
@@ -288,6 +334,7 @@ function CashflowBarChart(props: {
         strokeWidth="1"
       />
 
+      {/* bars */}
       {series.map((s, i) => {
         const xv = x(i);
         const nextX =
@@ -295,7 +342,7 @@ function CashflowBarChart(props: {
             ? x(i + 1)
             : xv + innerW / Math.max(1, series.length);
         const step = Math.max(1, nextX - xv);
-        const barW = Math.max(10, step * 0.68);
+        const barW = Math.max(8, step * 0.62);
 
         const v = s.cum;
         const top = y(Math.max(0, v));
@@ -311,19 +358,22 @@ function CashflowBarChart(props: {
               y={top}
               width={barW}
               height={h}
-              rx={8}
+              rx={6}
               fill={isPos ? "rgba(34,197,94,0.95)" : "rgba(239,68,68,0.95)"}
               opacity={0.95}
             />
-            <text
-              x={xv}
-              y={H - 16}
-              textAnchor="middle"
-              fontSize="12"
-              fill="rgba(255,255,255,0.72)"
-            >
-              {s.yearLabel}
-            </text>
+            {/* labels più radi */}
+            {i % 2 === 0 && (
+              <text
+                x={xv}
+                y={H - 12}
+                textAnchor="middle"
+                fontSize="10"
+                fill="rgba(255,255,255,0.62)"
+              >
+                {s.yearLabel}
+              </text>
+            )}
           </g>
         );
       })}

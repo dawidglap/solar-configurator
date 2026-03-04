@@ -39,6 +39,11 @@ function calcKwpFromPanels(panels: any[]) {
   return { qty, panelId, spec, wp, kWp };
 }
 
+// ✅ pill sizing = come Stuckliste (h-7, rounded-full, text-[11px], px-2)
+const pillBase =
+  "w-full h-7 rounded-full border border-white/80 bg-transparent px-2 text-white text-[11px] leading-none outline-none " +
+  "focus:ring-1 focus:ring-white focus:border-white transition";
+
 export default function ReportScreen() {
   const placedPanels = usePlannerV2Store((s) => s.panels);
 
@@ -78,7 +83,7 @@ export default function ReportScreen() {
       : "—";
 
   return (
-    <div className="relative w-full h-full overflow-hidden ">
+    <div className="relative w-full h-full overflow-hidden border-[#7E8B97] border-l rounded-b-2xl">
       <div className="absolute inset-0 z-0">
         <Image
           src="/images/hero.webp"
@@ -89,28 +94,33 @@ export default function ReportScreen() {
         />
       </div>
 
-      <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 -pt-10">
-        <aside className="col-span-3 border-r border-l border-b border-[#7E8B97] bg-transparent backdrop-blur-md overflow-y-auto">
-          <div className="p-4 min-h-full">
-            <div className="text-white/90 text-lg font-semibold">Bericht</div>
-            <div className="mt-1 text-[12px] text-white/55">
-              MVP: Links Eingaben, rechts Platzhalter bis Kundendaten vorliegen.
+      {/* ✅ stessa struttura/dimensioni di Stuckliste: grid 12, left 2/12 con pt-10 + px-2 */}
+      <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 pt-0">
+        <aside className="col-span-2 border-r px-2 border-white/10 bg-transparent backdrop-blur-md overflow-y-auto">
+          <div className="p-2 min-h-full">
+            {/* === Energiefluss === */}
+            <div className="text-white/90 text-[14px] font-semibold">
+              Energiefluss
             </div>
 
-            <SectionTitle title="Energiefluss" />
             <div className="mt-3 space-y-3">
+              {/* Batterie */}
               <SelectField
                 label="Batterie"
                 value={batteryId}
                 onChange={setBatteryId}
                 options={BATTERIES}
               />
+
+              {/* Ladestation */}
               <SelectField
                 label="Ladestation"
                 value={chargerId}
                 onChange={setChargerId}
                 options={CHARGERS}
               />
+
+              {/* Wärmepumpe */}
               <SelectField
                 label="Wärmepumpe"
                 value={heatpumpId}
@@ -119,136 +129,124 @@ export default function ReportScreen() {
               />
             </div>
 
-            <SectionTitle title="Wirtschaftlichkeit" />
+            {/* === Wirtschaftlichkeit === */}
+            <div className="mt-4 text-white/90 text-[14px] font-semibold">
+              Wirtschaftlichkeit
+            </div>
+
             <div className="mt-3 space-y-3">
               <InputLike
                 label="Rabatt in Zahlen"
                 value={rabattChf}
                 onChange={setRabattChf}
-                suffix="CHF"
-                placeholder="z.B. 500"
+                placeholder="Rabatt in Zahlen"
               />
+
               <InputLike
                 label="Rabatt in %"
                 value={rabattPct}
                 onChange={setRabattPct}
-                suffix="%"
-                placeholder="z.B. 5"
+                placeholder="Rabatt in %"
               />
+            </div>
 
-              <div className="pt-2" />
+            {/* === Förderungen === */}
+            <div className="mt-4 text-white/90 text-[14px] font-semibold">
+              Förderungen
+            </div>
 
+            <div className="mt-3 space-y-3">
               <InputLike
                 label="Förderungen"
                 value={foerderungen}
                 onChange={setFoerderungen}
-                suffix="CHF"
-                placeholder="z.B. 2515.80"
+                placeholder="2'515.80"
               />
+            </div>
 
+            {/* === Zahlungsbedingungen === */}
+            <div className="mt-4 text-white/90 text-[14px] font-semibold">
+              Zahlungsbedingungen:
+            </div>
+
+            <div className="mt-3 space-y-3">
               <Dropdown
                 label="Zahlungsbedingungen"
                 value={paymentPlan}
                 onChange={setPaymentPlan}
                 options={PAYMENT_PLANS}
               />
+            </div>
 
+            {/* === Skonto === */}
+            <div className="mt-4 text-white/90 text-[14px] font-semibold">
+              Skonto:
+            </div>
+
+            <div className="mt-3 space-y-3">
               <InputLike
                 label="Skonto"
                 value={""}
                 onChange={() => {}}
-                suffix="%"
-                placeholder="(später)"
+                placeholder="%"
                 disabled
-              />
-            </div>
-
-            <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-[12px] text-white/70 font-medium">
-                Geplante PV-Anlage
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-white/70">
-                <div className="text-white/50">Module</div>
-                <div className="text-right tabular-nums">
-                  {moduleInfo.qty > 0 ? fmt0.format(moduleInfo.qty) : "—"}
-                </div>
-
-                <div className="text-white/50">Leistung</div>
-                <div className="text-right tabular-nums">{leftKwpLabel}</div>
-
-                <div className="text-white/50">Modell</div>
-                <div className="text-right">
-                  {moduleInfo.spec
-                    ? `${moduleInfo.spec.brand} ${moduleInfo.spec.model}`
-                    : "—"}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 text-[11px] text-white/45">
-              Hinweis: “Wirtschaftlichkeit” später nur anzeigen, wenn
-              Amortisation &lt; 12 Jahre.
-            </div>
-
-            <div className="mt-3">
-              <InputLike
-                label="Amortisation (Jahre)"
-                value={amortYears}
-                onChange={setAmortYears}
-                placeholder="z.B. 11"
               />
             </div>
           </div>
         </aside>
 
-        <main className="col-span-9 bg-transparent backdrop-blur-md overflow-y-auto">
-          <div className="p-6 min-h-full">
-            <div className="grid grid-cols-12 gap-6">
-              <CardShell
-                title="Energiefluss"
-                className="col-span-12 lg:col-span-6"
-              >
-                <EnergieflussPanel
-                  selfUseSharePct={selfUseSharePct}
-                  autarkyPct={autarkyPct}
-                />
-              </CardShell>
-
-              <CardShell
-                title="Wirtschaftlichkeit"
-                className="col-span-12 lg:col-span-6"
-              >
-                <WirtschaftlichkeitPanel
-                  productionKwhYear={prodCalc?.production ?? 0}
-                  selfUseKwhYear={prodCalc?.selfUse ?? 0}
-                  feedInKwhYear={prodCalc?.feedIn ?? 0}
-                  amortYearsInput={Number(amortYears) || undefined}
-                />
-              </CardShell>
-
-              <CardShell
-                title="Produktion"
-                className="col-span-12 lg:col-span-6"
-              >
-                <ProductionSummaryCard kWp={moduleInfo.kWp} />
-              </CardShell>
-
-              <CardShell
-                title="Ersparnis"
-                className="col-span-12 lg:col-span-6"
-              >
-                <div className="grid grid-cols-12 gap-3">
-                  <MiniKpiGhost className="col-span-12 md:col-span-4" />
-                  <MiniKpiGhost className="col-span-12 md:col-span-4" />
-                  <MiniKpiGhost className="col-span-12 md:col-span-4" />
+        {/* ✅ solo struttura: main ora 10/12 (contenuto invariato) */}
+        <main className="col-span-10 bg-transparent backdrop-blur-md overflow-hidden">
+          {/* ✅ niente scroll: il contenuto si adatta all’altezza disponibile */}
+          <div className="p-6 h-full min-h-0 flex flex-col">
+            {/* ✅ griglia 2x2 su desktop/laptop, 1 colonna su schermi piccoli */}
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-6 auto-rows-fr">
+              <CardShell title="Energiefluss" className="min-h-0">
+                {/* ✅ evita overflow interni */}
+                <div className="h-full min-h-0 overflow-hidden">
+                  <EnergieflussPanel
+                    selfUseSharePct={selfUseSharePct}
+                    autarkyPct={autarkyPct}
+                  />
                 </div>
-                <div className="mt-4">
-                  <SkeletonChart height={180} />
+              </CardShell>
+
+              <CardShell title="Wirtschaftlichkeit" className="min-h-0">
+                <div className="h-full min-h-0 overflow-hidden">
+                  <WirtschaftlichkeitPanel
+                    productionKwhYear={prodCalc?.production ?? 0}
+                    selfUseKwhYear={prodCalc?.selfUse ?? 0}
+                    feedInKwhYear={prodCalc?.feedIn ?? 0}
+                    amortYearsInput={Number(amortYears) || undefined}
+                  />
+                </div>
+              </CardShell>
+
+              <CardShell title="Produktion" className="min-h-0">
+                <div className="h-full min-h-0 overflow-hidden">
+                  <ProductionSummaryCard kWp={moduleInfo.kWp} />
+                </div>
+              </CardShell>
+
+              <CardShell title="Ersparnis" className="min-h-0">
+                {/* ✅ layout interno che “respira” ma non forza scroll */}
+                <div className="h-full min-h-0 flex flex-col">
+                  <div className="grid grid-cols-12 gap-3">
+                    <MiniKpiGhost className="col-span-12 md:col-span-4" />
+                    <MiniKpiGhost className="col-span-12 md:col-span-4" />
+                    <MiniKpiGhost className="col-span-12 md:col-span-4" />
+                  </div>
+
+                  <div className="mt-4 flex-1 min-h-0">
+                    {/* ✅ chart si adatta allo spazio rimasto */}
+                    <SkeletonChart height={180} />
+                  </div>
                 </div>
               </CardShell>
             </div>
 
-            <div className="mt-6 text-[11px] text-white/45">
+            {/* ✅ footer info sempre visibile, non spinge a scrollare */}
+            <div className="mt-4 text-[11px] text-white/45">
               Diagramme = Platzhalter. Sobald der Kunde Werte liefert, ersetzen
               wir Skeletons durch echte Charts.
             </div>
@@ -263,7 +261,7 @@ export default function ReportScreen() {
 
 function SectionTitle({ title }: { title: string }) {
   return (
-    <div className="mt-8">
+    <div className="mt-4">
       <div className="text-white/90 text-base font-semibold">{title}</div>
       <div className="mt-2 h-px w-full bg-white/10" />
     </div>
@@ -283,12 +281,14 @@ function SelectField({
 }) {
   return (
     <div>
-      <div className="text-white/70 text-sm">{label}</div>
+      <div className="text-white/70 text-[10px] uppercase tracking-wide">
+        {label}
+      </div>
       <div className="mt-2 relative">
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full appearance-none rounded-full border border-white bg-white/5 px-4 py-2 pr-10 text-[13px] text-white/80 outline-none"
+          className={pillBase + " appearance-none pr-8 text-white/80"}
         >
           {options.map((o) => (
             <option key={o.id} value={o.id}>
@@ -296,7 +296,7 @@ function SelectField({
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/60" />
+        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-white/60" />
       </div>
     </div>
   );
@@ -319,17 +319,20 @@ function InputLike({
 }) {
   return (
     <div>
-      <div className="text-white/70 text-sm">{label}</div>
-      <div className="mt-2 flex items-center gap-2 rounded-full border border-white bg-white/5 px-4 py-2">
+      <div className="text-white/70 text-[10px] uppercase tracking-wide">
+        {label}
+      </div>
+
+      <div className={pillBase + " flex items-center gap-2"}>
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           disabled={disabled}
-          className="w-full bg-transparent text-[13px] text-white/80 outline-none placeholder:text-white/30 disabled:opacity-60"
+          className="w-full bg-transparent text-[11px] text-white/80 outline-none placeholder:text-white/30 disabled:opacity-60"
         />
         {suffix && (
-          <span className="text-[12px] text-white/45 whitespace-nowrap">
+          <span className="text-[10px] text-white/45 whitespace-nowrap">
             {suffix}
           </span>
         )}
@@ -351,12 +354,14 @@ function Dropdown<T extends string>({
 }) {
   return (
     <div>
-      <div className="text-white/70 text-sm">{label}</div>
+      <div className="text-white/70 text-[10px] uppercase tracking-wide">
+        {label}
+      </div>
       <div className="mt-2 relative">
         <select
           value={value}
           onChange={(e) => onChange(e.target.value as T)}
-          className="w-full appearance-none rounded-full border border-white bg-white/5 px-4 py-2 pr-10 text-[13px] text-white/80 outline-none"
+          className={pillBase + " appearance-none pr-8 text-white/80"}
         >
           {options.map((o) => (
             <option key={o.key} value={o.key}>
@@ -364,12 +369,11 @@ function Dropdown<T extends string>({
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/60" />
+        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-white/60" />
       </div>
     </div>
   );
 }
-
 function CardShell({
   title,
   children,
@@ -382,16 +386,21 @@ function CardShell({
   return (
     <section
       className={[
+        // ✅ importantissimo: h-full/min-h-0/overflow-hidden per non far sbordare i panel
+        "h-full min-h-0 overflow-hidden",
         "rounded-2xl border border-white/10 bg-neutral-500/55 backdrop-blur-xl",
         "shadow-[0_0_35px_rgba(0,0,0,0.35)]",
         className ?? "",
       ].join(" ")}
     >
-      <div className="px-5 py-4">
-        <div className="text-white/85 text-sm font-medium text-center">
+      {/* ✅ flex-col per dare uno spazio “misurabile” ai children */}
+      <div className="h-full min-h-0 flex flex-col px-5 py-4">
+        <div className="text-white/85 text-sm font-medium text-center shrink-0">
           {title}
         </div>
-        <div className="mt-4">{children}</div>
+
+        {/* ✅ children prendono lo spazio restante */}
+        <div className="mt-4 flex-1 min-h-0 overflow-hidden">{children}</div>
       </div>
     </section>
   );

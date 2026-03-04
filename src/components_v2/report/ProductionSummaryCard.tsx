@@ -40,17 +40,19 @@ export default function ProductionSummaryCard({
   );
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/95 text-black shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
-      <div className="px-4 py-3 border-b border-black/10">
-        <div className="text-[13px] font-semibold tracking-tight">
+    <div className="h-full min-h-0 rounded-xl border border-white/10 bg-white/95 text-black shadow-[0_18px_60px_rgba(0,0,0,0.35)] flex flex-col">
+      {/* HEADER (più compatto) */}
+      <div className="px-3 py-2 border-b border-black/10 shrink-0">
+        <div className="text-[12px] font-semibold tracking-tight">
           PV-Anlage (Zusammenfassung)
         </div>
-        <div className="text-[11px] text-black/55">
+        <div className="text-[10px] text-black/55">
           MVP-Berechnung (vereinfachtes Modell)
         </div>
       </div>
 
-      <div className="p-4">
+      {/* BODY (più compatto, ma SENZA scroll: entra perché tutto è più piccolo) */}
+      <div className="p-3 flex-1 min-h-0">
         <TableRow
           label="PV-Generatorleistung"
           value={kWp > 0 ? `${fmt2.format(kWp)} kWp` : "—"}
@@ -90,9 +92,10 @@ export default function ProductionSummaryCard({
           value={calc ? `${fmt1.format(calc.autarky * 100)} %` : "—"}
         />
 
-        <div className="mt-3 text-[10px] text-black/45 leading-snug">
-          Hinweis: Werte werden später durch Standort, Dachneigung, Ausrichtung,
-          Verschattung und Tarifdaten ersetzt.
+        {/* Nota più corta e piccola */}
+        <div className="mt-2 text-[9px] text-black/45 leading-snug">
+          Hinweis: Später ersetzen wir Werte durch Standort-/Dachdaten (Neigung,
+          Ausrichtung, Verschattung) und Tarife.
         </div>
       </div>
     </div>
@@ -101,9 +104,9 @@ export default function ProductionSummaryCard({
 
 function TableRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-1.5">
-      <div className="text-[12px] text-black/80">{label}</div>
-      <div className="text-[12px] font-semibold tabular-nums text-black">
+    <div className="flex items-center justify-between gap-3 py-1">
+      <div className="text-[11px] text-black/80 leading-tight">{label}</div>
+      <div className="text-[11px] font-semibold tabular-nums text-black whitespace-nowrap">
         {value}
       </div>
     </div>
@@ -111,5 +114,5 @@ function TableRow({ label, value }: { label: string; value: string }) {
 }
 
 function Divider() {
-  return <div className="my-2 h-px w-full bg-black/10" />;
+  return <div className="my-1.5 h-px w-full bg-black/10" />;
 }
