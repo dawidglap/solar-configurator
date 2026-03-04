@@ -23,6 +23,12 @@ const fmt2 = new Intl.NumberFormat("de-CH", {
 });
 const fmt0 = new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 });
 
+// ✅ pill sizing = come ModulesPanel.tsx (h-8, rounded-xl, text-[11px], px-2)
+const pillBase =
+  "w-full h-7 rounded-full border border-white/80 bg-transparent px-2 text-white text-[11px] leading-none outline-none " +
+  "focus:ring-1 focus:ring-white focus:border-white transition";
+const pillBtn = pillBase + " hover:bg-white/10 active:bg-white/15 text-left";
+
 export default function StucklisteScreen() {
   const placedPanels = usePlannerV2Store((s) => s.panels);
 
@@ -48,7 +54,6 @@ export default function StucklisteScreen() {
 
   /**
    * ✅ 2) Altre voci (manuali) — per ora esempi
-   * (Queste sono cose che l’utente aggiunge nella Stückliste, NON moduli piazzati in planimetria)
    */
   const [items, setItems] = useState<LineItem[]>([
     {
@@ -71,7 +76,7 @@ export default function StucklisteScreen() {
     },
   ]);
 
-  // ✅ NEW: Remove manual item
+  // ✅ Remove manual item
   const removeItem = (id: string) => {
     setItems((prev) => prev.filter((x) => x.id !== id));
   };
@@ -93,7 +98,9 @@ export default function StucklisteScreen() {
         id: `manual-module-${Date.now()}`,
         kategorie: "Modul (manuell)",
         marke: spec.brand,
-        beschreibung: `${spec.model} (${fmt0.format(spec.wp)} Wp) – manuell hinzugefügt`,
+        beschreibung: `${spec.model} (${fmt0.format(
+          spec.wp,
+        )} Wp) – manuell hinzugefügt`,
         einzelpreis: spec.priceChf ?? 0,
         stk: 1,
         einheit: "Stk.",
@@ -158,6 +165,16 @@ export default function StucklisteScreen() {
         stk: 1,
         einheit: "Stk.",
       },
+      Bestellformular: {
+        id: `sample-${Date.now()}`,
+        kategorie: "Bestellformular",
+        marke: "Dokument",
+        beschreibung: "Bestellformular (Beispiel)",
+        einzelpreis: 0,
+        stk: 1,
+        einheit: "Stk.",
+        optional: true,
+      },
     };
 
     const li =
@@ -192,7 +209,7 @@ export default function StucklisteScreen() {
   }, [placedModulesRow.total, items]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden border-l  rounded-b-2xl rounded-tl-2xl border-[#7E8B97]">
+    <div className="relative w-full h-full overflow-hidden border-l rounded-b-2xl rounded-tl-2xl border-[#7E8B97]">
       {/* BACKGROUND come PlannerEmptyState */}
       <div className="absolute inset-0 z-0">
         <Image
@@ -206,27 +223,29 @@ export default function StucklisteScreen() {
 
       {/* CONTENUTO sopra al background */}
       <div className="relative z-10 w-full h-full grid grid-cols-12 gap-0 pt-0">
-        {/* LEFT */}
-        <aside className="col-span-3 border-r border-white/10 bg-transparent backdrop-blur-md overflow-y-auto">
-          <div className="p-3 min-h-full">
+        {/* LEFT: ✅ 2/12 */}
+        <aside className=" pt-10 col-span-2 border-r px-2 border-white/10 bg-transparent backdrop-blur-md overflow-y-auto">
+          <div className="p-2 min-h-full">
             <div className="flex items-center gap-2 text-white/80">
-              <div className="h-6 w-6 rounded-full border border-white/20 grid place-items-center">
+              <div className="h-6 w-6 rounded-full border border-white/20 grid place-items-center shrink-0">
                 <Plus className="h-3.5 w-3.5" />
               </div>
-              <div className="text-[12px] font-medium">
-                Neue Leistung erstellen
+              <div className="text-[11px] font-medium leading-tight">
+                Neue Leistung
               </div>
             </div>
 
-            <div className="mt-3 space-y-3 text-[12px]">
+            <div className="mt-3 space-y-2 text-[11px]">
               {/* MODULE dropdown reale: prende da PANEL_CATALOG */}
-              <div className="space-y-1.5">
-                <div className="text-white/70 text-[11px]">Module:</div>
+              <div className="space-y-2">
+                <div className="text-white/70 text-[10px] uppercase tracking-wide">
+                  Module
+                </div>
 
                 <select
                   value={selectedCatalogPanelId}
                   onChange={(e) => setSelectedCatalogPanelId(e.target.value)}
-                  className="w-full rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-left text-white/80 text-[12px] leading-tight focus:outline-none"
+                  className={pillBase + " text-white/90"}
                 >
                   {PANEL_CATALOG.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -238,14 +257,13 @@ export default function StucklisteScreen() {
                 <button
                   type="button"
                   onClick={addManualModuleLineFromCatalog}
-                  className="w-full rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-left text-white/80 text-[12px] leading-tight hover:bg-white/10 transition"
+                  className={pillBtn + " text-white/85"}
                 >
-                  Als Zusatzposten hinzufügen (manuell)
+                  Zusatzposten +
                 </button>
 
-                <div className="text-[10px] text-white/40 leading-snug">
-                  Wichtig: Diese Aktion verändert NICHT die geplanten Module auf
-                  dem Dach. Sie fügt nur einen Posten zur Stückliste hinzu.
+                <div className="text-[9px] text-white/40 leading-snug">
+                  Ändert keine Dach-Module. Nur Stückliste.
                 </div>
               </div>
 
@@ -258,8 +276,8 @@ export default function StucklisteScreen() {
                 onAdd={() => addSample("Optimierer")}
               />
               <LeftButton label="Montage" onAdd={() => addSample("Montage")} />
-              <LeftButton label="AC Elektrisch" onAdd={() => addSample("AC")} />
-              <LeftButton label="DC Elektrisch" onAdd={() => addSample("DC")} />
+              <LeftButton label="AC" onAdd={() => addSample("AC")} />
+              <LeftButton label="DC" onAdd={() => addSample("DC")} />
               <LeftButton
                 label="Vollmacht"
                 onAdd={() => addSample("Vollmacht")}
@@ -270,36 +288,35 @@ export default function StucklisteScreen() {
               />
             </div>
 
-            <div className="mt-5 text-[10px] text-white/40 leading-snug">
-              TODO (später): Das Modul-/Produkt-Katalog wird pro Firma aus der
-              Datenbank geladen. Aktuell nutzen wir PANEL_CATALOG als MVP.
+            <div className="mt-4 text-[9px] text-white/35 leading-snug">
+              TODO: Katalog pro Firma aus DB. Aktuell PANEL_CATALOG (MVP).
             </div>
           </div>
         </aside>
 
-        {/* CENTER */}
-        <main className="col-span-6 bg-trandsparent backdrop-blur-md overflow-y-auto">
+        {/* CENTER: ✅ 7/12 */}
+        <main className="pt-10  col-span-7 bg-trandsparent backdrop-blur-md overflow-y-auto">
           <div className="p-3 min-h-full">
             {/* header row */}
-            <div className="text-[10px] uppercase tracking-wide text-white/70 grid grid-cols-12 gap-2 pb-2 border-b border-white/10">
+            <div className="text-[10px] uppercase tracking-wide text-white/70 grid grid-cols-12 gap-2 pb-2 border-b-2 border-white">
               <div className="col-span-2">Kategorie</div>
               <div className="col-span-2">Marke</div>
               <div className="col-span-3">Beschreibung</div>
               <div className="col-span-2 text-right">Einzelpreis</div>
               <div className="col-span-1 text-right">Stk.</div>
               <div className="col-span-1 text-center">M.</div>
-              <div className="col-span-1 text-right">Preis in CHF</div>
+              <div className="col-span-1 text-right">Preis CHF</div>
             </div>
-
+            <div className="pt-4"></div>
             {/* ✅ PLACED MODULES (AUTOMATISCH) */}
             <RowCard
               kategorie="Modul"
               marke={placedModulesRow.spec?.brand ?? "—"}
               beschreibung={
                 placedModulesRow.spec
-                  ? `${placedModulesRow.spec.model} (${fmt0.format(placedModulesRow.wp)} Wp) – ${fmt2.format(
-                      placedModulesRow.kWp,
-                    )} kWp`
+                  ? `${placedModulesRow.spec.model} (${fmt0.format(
+                      placedModulesRow.wp,
+                    )} Wp) – ${fmt2.format(placedModulesRow.kWp)} kWp`
                   : "Keine Module platziert"
               }
               einzelpreis={placedModulesRow.spec?.priceChf ?? 0}
@@ -329,46 +346,10 @@ export default function StucklisteScreen() {
           </div>
         </main>
 
-        {/* RIGHT (Preview placeholder) */}
-        <aside className="col-span-3 border-l border-white/10 bg-transparent backdrop-blur-md">
-          <div className="p-3">
-            <div className="text-[12px] font-medium text-white/80">
-              Vorschau
-            </div>
-
-            {/* mini totals box (nicht PDF, nur MVP info) */}
-            <div className="mt-2.5 rounded-lg border border-white/10 bg-white/5 p-2.5 text-[11px] text-white/75 space-y-1">
-              <div className="flex justify-between">
-                <span>Module (geplant)</span>
-                <span className="tabular-nums">
-                  {fmt2.format(totals.placedModulesTotal)} CHF
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Zusatzposten</span>
-                <span className="tabular-nums">
-                  {fmt2.format(totals.extrasTotal)} CHF
-                </span>
-              </div>
-              <div className="h-px bg-white/10 my-2" />
-              <div className="flex justify-between font-medium text-white">
-                <span>Total</span>
-                <span className="tabular-nums">
-                  {fmt2.format(totals.grandTotal)} CHF
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-2.5 space-y-2">
-              <PreviewSkeleton />
-              <PreviewSkeleton />
-            </div>
-
-            <div className="mt-3 text-[10px] text-white/45 leading-snug">
-              Die PDF-Vorschau kommt später. Im MVP zeigen wir hier nur ein
-              Platzhalter-Layout.
-            </div>
-          </div>
+        {/* RIGHT: ✅ 3/12 */}
+        <aside className="pt-10 col-span-3 border-l border-white/10 bg-transparent backdrop-blur-md">
+          {/* Vuota per ora — solo background grigio trasparente (50%) */}
+          <div className="h-full w-full bg-neutral-500/50" />
         </aside>
       </div>
     </div>
@@ -378,13 +359,15 @@ export default function StucklisteScreen() {
 function LeftButton({ label, onAdd }: { label: string; onAdd: () => void }) {
   return (
     <div className="space-y-1">
-      <div className="text-white/70">{label}</div>
+      <div className="text-white/70 text-[10px] uppercase tracking-wide">
+        {label}
+      </div>
       <button
         type="button"
         onClick={onAdd}
-        className="w-full rounded-full border border-white bg-white/5 px-3 py-2 text-left text-white/80 hover:bg-white/10 transition"
+        className={pillBtn + " text-white/85"}
       >
-        Auswahl… (Beispiel hinzufügen)
+        Auswahl… +
       </button>
     </div>
   );
@@ -399,7 +382,7 @@ function RowCard(props: {
   einheit: string;
   total: number;
   editable?: boolean;
-  onDelete?: () => void; // ✅ NEW
+  onDelete?: () => void;
 }) {
   const {
     kategorie,
@@ -445,7 +428,6 @@ function RowCard(props: {
             Bearbeiten
           </button>
 
-          {/* ✅ NEW: delete manual row */}
           <button
             type="button"
             onClick={onDelete}
