@@ -24,17 +24,15 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, error: "Missing email or password" }, { status: 400 });
   }
 
-  // ✅ timeout corto così non resta appeso 30s
   const client = new MongoClient(uri, {
-  serverSelectionTimeoutMS: 5000,
-  family: 4, // ✅ forza IPv4
-});
-
+    serverSelectionTimeoutMS: 5000,
+    family: 4,
+  });
 
   try {
     await client.connect();
 
-    const db = client.db(); // usa il DB dalla connection string (/sola)
+    const db = client.db();
     const users = db.collection("users");
 
     const user: any = await users.findOne({ email });
@@ -47,40 +45,55 @@ export async function POST(req: Request) {
       return Response.json({ ok: false, error: "Invalid credentials" }, { status: 401 });
     }
 
-    const membership = user.memberships?.find(
-  (m: any) => m.status === "active" && m.isDefault
-) || user.memberships?.[0];
+    const membership =
+      user.memberships?.find((m: any) => m.status === "active" && m.isDefault) ||
+      user.memberships?.[0];
 
-if (!membership && !user.isPlatformSuperAdmin) {
-  return Response.json(
-    { ok: false, error: "User has no active company" },
-    { status: 403 }
-  );
-}
+    if (!membership && !user.isPlatformSuperAdmin) {
+      return Response.json(
+        { ok: false, error: "User has no active company" },
+        { status: 403 }
+      );
+    }
 
-const activeCompanyId = membership?.companyId ?? null;
-const activeRole = membership?.role ?? null;
-    if (!activeCompanyId) {
+    const activeCompanyId = membership?.companyId ?? null;
+    const activeRole = membership?.role ?? null;
+
+    if (!activeCompanyId && !user.isPlatformSuperAdmin) {
       return Response.json({ ok: false, error: "User has no company" }, { status: 403 });
     }
 
     const sessionObj = {
-  userId: user._id.toString(),
-  isPlatformSuperAdmin: !!user.isPlatformSuperAdmin,
-  activeCompanyId: activeCompanyId?.toString() ?? null,
-  activeRole,
-  iat: Date.now(),
-};
+      userId: user._id.toString(),
+      isPlatformSuperAdmin: !!user.isPlatformSuperAdmin,
+      activeCompanyId: activeCompanyId?.toString() ?? null,
+      activeRole,
+      iat: Date.now(),
+    };
 
     const payload = Buffer.from(JSON.stringify(sessionObj)).toString("base64url");
     const sig = sign(payload, secret);
     const token = `${payload}.${sig}`;
 
+    const isProd = process.env.NODE_ENV === "production";
+
+    const cookieParts = [
+      `session=${token}`,
+      "Path=/",
+      "HttpOnly",
+      "SameSite=Lax",
+    ];
+
+    if (isProd) {
+      cookieParts.push("Secure");
+      cookieParts.push("Domain=.helionic.ch");
+    }
+
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
-        "Set-Cookie": `session=${token}; Path=/; HttpOnly; SameSite=Lax`,
+        "Set-Cookie": cookieParts.join("; "),
       },
     });
   } catch (e: any) {
