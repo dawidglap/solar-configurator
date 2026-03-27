@@ -16,17 +16,28 @@ export async function GET(req: Request) {
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
-  if (!uri) return Response.json({ ok: false, error: "Missing MONGODB_URI" }, { status: 500 });
-  if (!secret) return Response.json({ ok: false, error: "Missing SESSION_SECRET" }, { status: 500 });
+  if (!uri) {
+    return Response.json({ ok: false, error: "Missing MONGODB_URI" }, { status: 500 });
+  }
+
+  if (!secret) {
+    return Response.json({ ok: false, error: "Missing SESSION_SECRET" }, { status: 500 });
+  }
 
   const token = getCookie(req, "session");
-  if (!token) return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
+  if (!token) {
+    return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
+  }
 
   const [payload, sig] = token.split(".");
-  if (!payload || !sig) return Response.json({ ok: false, error: "Invalid session" }, { status: 401 });
+  if (!payload || !sig) {
+    return Response.json({ ok: false, error: "Invalid session" }, { status: 401 });
+  }
 
   const expected = sign(payload, secret);
-  if (expected !== sig) return Response.json({ ok: false, error: "Invalid session" }, { status: 401 });
+  if (expected !== sig) {
+    return Response.json({ ok: false, error: "Invalid session" }, { status: 401 });
+  }
 
   let session: any;
   try {
@@ -35,26 +46,73 @@ export async function GET(req: Request) {
     return Response.json({ ok: false, error: "Invalid session payload" }, { status: 401 });
   }
 
-  const client = new MongoClient(uri);
-  await client.connect();
+  const client = new MongoClient(uri, {
+    serverSelectionTimeoutMS: 5000,
+    family: 4,
+  });
 
   try {
+    await client.connect();
+
     const db = client.db();
     const users = db.collection("users");
+    const companies = db.collection("companies");
 
-    const user = await users.findOne(
+    const user: any = await users.findOne(
       { _id: new ObjectId(session.userId) },
-      { projection: { passwordHash: 0 } }
+      {
+        projection: {
+          passwordHash: 0,
+        },
+      }
     );
 
-    if (!user) return Response.json({ ok: false, error: "User not found" }, { status: 401 });
+    if (!user) {
+      return Response.json({ ok: false, error: "User not found" }, { status: 401 });
+    }
+
+    let activeCompany = null;
+
+    if (session.activeCompanyId) {
+      activeCompany = await companies.findOne(
+        { _id: new ObjectId(session.activeCompanyId) },
+        {
+          projection: {
+            name: 1,
+            slug: 1,
+            subscriptionStatus: 1,
+            plan: 1,
+          },
+        }
+      );
+    }
 
     return Response.json({
       ok: true,
-      user,
-      activeCompanyId: session.activeCompanyId,
+      user: {
+        id: user._id.toString(),
+        email: user.email,
+        firstName: user.firstName ?? "",
+        lastName: user.lastName ?? "",
+        isPlatformSuperAdmin: !!user.isPlatformSuperAdmin,
+        status: user.status ?? "active",
+      },
+      session: {
+        activeCompanyId: session.activeCompanyId ?? null,
+        activeRole: session.activeRole ?? null,
+        isPlatformSuperAdmin: !!session.isPlatformSuperAdmin,
+      },
+      activeCompany: activeCompany
+        ? {
+            id: activeCompany._id.toString(),
+            name: activeCompany.name ?? "",
+            slug: activeCompany.slug ?? "",
+            subscriptionStatus: activeCompany.subscriptionStatus ?? "active",
+            plan: activeCompany.plan ?? "pro",
+          }
+        : null,
     });
   } finally {
-    await client.close();
+    await client.close().catch(() => {});
   }
 }

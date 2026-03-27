@@ -47,16 +47,30 @@ export async function POST(req: Request) {
       return Response.json({ ok: false, error: "Invalid credentials" }, { status: 401 });
     }
 
-    const activeCompanyId = user.memberships?.[0]?.companyId;
+    const membership = user.memberships?.find(
+  (m: any) => m.status === "active" && m.isDefault
+) || user.memberships?.[0];
+
+if (!membership && !user.isPlatformSuperAdmin) {
+  return Response.json(
+    { ok: false, error: "User has no active company" },
+    { status: 403 }
+  );
+}
+
+const activeCompanyId = membership?.companyId ?? null;
+const activeRole = membership?.role ?? null;
     if (!activeCompanyId) {
       return Response.json({ ok: false, error: "User has no company" }, { status: 403 });
     }
 
     const sessionObj = {
-      userId: user._id.toString(),
-      activeCompanyId: activeCompanyId.toString(),
-      iat: Date.now(),
-    };
+  userId: user._id.toString(),
+  isPlatformSuperAdmin: !!user.isPlatformSuperAdmin,
+  activeCompanyId: activeCompanyId?.toString() ?? null,
+  activeRole,
+  iat: Date.now(),
+};
 
     const payload = Buffer.from(JSON.stringify(sessionObj)).toString("base64url");
     const sig = sign(payload, secret);

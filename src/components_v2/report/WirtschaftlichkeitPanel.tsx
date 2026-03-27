@@ -243,7 +243,7 @@ function KpiBox(props: {
   return (
     <div
       className={[
-        "rounded-xl border border-white/10 bg-white/5 px-2.5 py-2.5",
+        "rounded-xl border border-white/10 bg-red-500 px-2.5 py-2.5",
         className ?? "",
       ].join(" ")}
     >
