@@ -156,12 +156,14 @@ export async function POST(req: Request) {
       `session=${token}`,
       "Path=/",
       "HttpOnly",
-      "SameSite=Lax",
     ];
 
     if (isProd) {
       cookieParts.push("Secure");
       cookieParts.push("Domain=.helionic.ch");
+      cookieParts.push("SameSite=None");
+    } else {
+      cookieParts.push("SameSite=Lax");
     }
 
     return new Response(JSON.stringify({ ok: true }), {
