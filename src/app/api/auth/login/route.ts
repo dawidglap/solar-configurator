@@ -2,26 +2,66 @@
 import { MongoClient } from "mongodb";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { getCorsHeaders } from "@/lib/cors";
 
 function sign(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
 }
 
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin");
+  return new Response(null, {
+    status: 204,
+    headers: getCorsHeaders(origin),
+  });
+}
+
 export async function POST(req: Request) {
+  const origin = req.headers.get("origin");
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
-  if (!uri)
-    return Response.json({ ok: false, error: "Missing MONGODB_URI" }, { status: 500 });
-  if (!secret)
-    return Response.json({ ok: false, error: "Missing SESSION_SECRET" }, { status: 500 });
+  if (!uri) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "Missing MONGODB_URI" }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          ...getCorsHeaders(origin),
+        },
+      }
+    );
+  }
+
+  if (!secret) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "Missing SESSION_SECRET" }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          ...getCorsHeaders(origin),
+        },
+      }
+    );
+  }
 
   const body = await req.json().catch(() => ({}));
   const email = String(body.email ?? "").toLowerCase().trim();
   const password = String(body.password ?? "");
 
   if (!email || !password) {
-    return Response.json({ ok: false, error: "Missing email or password" }, { status: 400 });
+    return new Response(
+      JSON.stringify({ ok: false, error: "Missing email or password" }),
+      {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          ...getCorsHeaders(origin),
+        },
+      }
+    );
   }
 
   const client = new MongoClient(uri, {
@@ -36,13 +76,33 @@ export async function POST(req: Request) {
     const users = db.collection("users");
 
     const user: any = await users.findOne({ email });
+
     if (!user) {
-      return Response.json({ ok: false, error: "Invalid credentials" }, { status: 401 });
+      return new Response(
+        JSON.stringify({ ok: false, error: "Invalid credentials" }),
+        {
+          status: 401,
+          headers: {
+            "Content-Type": "application/json",
+            ...getCorsHeaders(origin),
+          },
+        }
+      );
     }
 
     const passOk = await bcrypt.compare(password, user.passwordHash);
+
     if (!passOk) {
-      return Response.json({ ok: false, error: "Invalid credentials" }, { status: 401 });
+      return new Response(
+        JSON.stringify({ ok: false, error: "Invalid credentials" }),
+        {
+          status: 401,
+          headers: {
+            "Content-Type": "application/json",
+            ...getCorsHeaders(origin),
+          },
+        }
+      );
     }
 
     const membership =
@@ -50,9 +110,15 @@ export async function POST(req: Request) {
       user.memberships?.[0];
 
     if (!membership && !user.isPlatformSuperAdmin) {
-      return Response.json(
-        { ok: false, error: "User has no active company" },
-        { status: 403 }
+      return new Response(
+        JSON.stringify({ ok: false, error: "User has no active company" }),
+        {
+          status: 403,
+          headers: {
+            "Content-Type": "application/json",
+            ...getCorsHeaders(origin),
+          },
+        }
       );
     }
 
@@ -60,7 +126,16 @@ export async function POST(req: Request) {
     const activeRole = membership?.role ?? null;
 
     if (!activeCompanyId && !user.isPlatformSuperAdmin) {
-      return Response.json({ ok: false, error: "User has no company" }, { status: 403 });
+      return new Response(
+        JSON.stringify({ ok: false, error: "User has no company" }),
+        {
+          status: 403,
+          headers: {
+            "Content-Type": "application/json",
+            ...getCorsHeaders(origin),
+          },
+        }
+      );
     }
 
     const sessionObj = {
@@ -94,13 +169,21 @@ export async function POST(req: Request) {
       headers: {
         "Content-Type": "application/json",
         "Set-Cookie": cookieParts.join("; "),
+        ...getCorsHeaders(origin),
       },
     });
   } catch (e: any) {
     console.error("LOGIN ERROR:", e);
-    return Response.json(
-      { ok: false, error: e?.message ?? "Unknown error" },
-      { status: 500 }
+
+    return new Response(
+      JSON.stringify({ ok: false, error: e?.message ?? "Unknown error" }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          ...getCorsHeaders(origin),
+        },
+      }
     );
   } finally {
     await client.close().catch(() => {});
