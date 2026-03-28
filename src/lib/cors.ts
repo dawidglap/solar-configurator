@@ -1,9 +1,27 @@
 export function getCorsHeaders(origin: string | null) {
-  const allowedOrigins = [
+  // origins statici base
+  const staticAllowed = [
     "https://app.helionic.ch",
+    "https://lovable.dev",
   ];
 
-  const isAllowed = origin && allowedOrigins.includes(origin);
+  // supporto wildcard per lovable preview (*.lovableproject.com)
+  const isLovablePreview =
+    !!origin && origin.endsWith(".lovableproject.com");
+
+  // supporto ENV (facoltativo ma consigliato)
+  const envAllowed = (process.env.ALLOWED_CORS_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const isAllowed =
+    !!origin &&
+    (
+      staticAllowed.includes(origin) ||
+      envAllowed.includes(origin) ||
+      isLovablePreview
+    );
 
   return {
     ...(isAllowed ? { "Access-Control-Allow-Origin": origin } : {}),
