@@ -171,33 +171,42 @@ export async function POST(req: Request) {
 
     let customerName = summaryCustomerName;
 
-    if (customerId) {
-      const customer = await customers.findOne(
-        {
-          _id: toObjectIdOrNull(customerId),
-          companyId: session.activeCompanyId,
-        },
-        {
-          projection: {
-            name: 1,
-            firstName: 1,
-            lastName: 1,
-            companyName: 1,
-          },
-        }
-      );
+ if (customerId) {
+  const customerObjectId = toObjectIdOrNull(customerId);
 
-      if (customer) {
-        customerName =
-          safeString(customer.name) ||
-          safeString(customer.companyName) ||
-          [safeString(customer.firstName), safeString(customer.lastName)]
-            .filter(Boolean)
-            .join(" ")
-            .trim() ||
-          customerName;
-      }
+  if (!customerObjectId) {
+    return Response.json(
+      { ok: false, error: "Invalid customerId" },
+      { status: 400 }
+    );
+  }
+
+  const customer = await customers.findOne(
+    {
+      _id: customerObjectId,
+      companyId: session.activeCompanyId,
+    },
+    {
+      projection: {
+        name: 1,
+        firstName: 1,
+        lastName: 1,
+        companyName: 1,
+      },
     }
+  );
+
+  if (customer) {
+    customerName =
+      safeString((customer as any).name) ||
+      safeString((customer as any).companyName) ||
+      [safeString((customer as any).firstName), safeString((customer as any).lastName)]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      customerName;
+  }
+}
 
     const now = new Date();
 
