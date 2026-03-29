@@ -257,31 +257,40 @@ export async function PATCH(
     const customers = db.collection("customers");
 
     // se arriva customerId, verifichiamo che appartenga alla stessa company
-    if (typeof customerId === "string" && safeString(customerId)) {
-      const customer = await customers.findOne({
-        _id: toObjectIdOrNull(customerId),
-        companyId: session.activeCompanyId,
-      });
+   if (typeof customerId === "string" && safeString(customerId)) {
+  const customerObjectId = toObjectIdOrNull(customerId);
 
-      if (!customer) {
-        return Response.json(
-          { ok: false, error: "Customer not found in active company" },
-          { status: 400 },
-        );
-      }
+  if (!customerObjectId) {
+    return Response.json(
+      { ok: false, error: "Invalid customerId" },
+      { status: 400 },
+    );
+  }
 
-      const customerName =
-        safeString(customer.name) ||
-        safeString(customer.companyName) ||
-        [safeString(customer.firstName), safeString(customer.lastName)]
-          .filter(Boolean)
-          .join(" ")
-          .trim();
+  const customer = await customers.findOne({
+    _id: customerObjectId,
+    companyId: session.activeCompanyId,
+  });
 
-      if (customerName && !setObj["summary.customerName"]) {
-        setObj["summary.customerName"] = customerName;
-      }
-    }
+  if (!customer) {
+    return Response.json(
+      { ok: false, error: "Customer not found in active company" },
+      { status: 400 },
+    );
+  }
+
+  const customerName =
+    safeString((customer as any).name) ||
+    safeString((customer as any).companyName) ||
+    [safeString((customer as any).firstName), safeString((customer as any).lastName)]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+  if (customerName && !setObj["summary.customerName"]) {
+    setObj["summary.customerName"] = customerName;
+  }
+}
 
     const res = await plannings.updateOne(
       { _id: new ObjectId(planningId), companyId: session.activeCompanyId },
