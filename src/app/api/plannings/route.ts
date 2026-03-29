@@ -1,9 +1,11 @@
 // src/app/api/plannings/route.ts
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { defaultStoreData } from "@/components_v2/state/defaultStoreData";
 
-export const runtime = "nodejs"; // mongodb + crypto + Buffer => Node runtime
+export const runtime = "nodejs";
+
+/* ----------------------------- Session helpers ---------------------------- */
 
 function sign(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
@@ -31,6 +33,85 @@ function readSession(req: Request, secret: string) {
   }
 }
 
+/* ------------------------------- Helpers ------------------------------- */
+
+function safeString(v: any) {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function toObjectIdOrNull(v: any) {
+  try {
+    if (!v) return null;
+    return new ObjectId(String(v));
+  } catch {
+    return null;
+  }
+}
+
+function extractCustomerName(doc: any) {
+  const fromSummary = safeString(doc?.summary?.customerName);
+  if (fromSummary) return fromSummary;
+
+  const businessName = safeString(doc?.data?.profile?.businessName);
+  if (businessName) return businessName;
+
+  const firstName = safeString(doc?.data?.profile?.contactFirstName);
+  const lastName = safeString(doc?.data?.profile?.contactLastName);
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+
+  return fullName || "";
+}
+
+function extractSummaryFromPlanning(doc: any) {
+  const existing = doc?.summary ?? {};
+
+  const panels = Array.isArray(doc?.data?.panels) ? doc.data.panels : [];
+  const layers = Array.isArray(doc?.data?.layers) ? doc.data.layers : [];
+  const selectedPanelId =
+    safeString(doc?.summary?.selectedPanelId) ||
+    safeString(doc?.data?.selectedPanelId) ||
+    "";
+
+  const moduleCount =
+    typeof existing.moduleCount === "number"
+      ? existing.moduleCount
+      : panels.length;
+
+  const roofCount =
+    typeof existing.roofCount === "number"
+      ? existing.roofCount
+      : layers.length;
+
+  const hasSnapshot =
+    typeof existing.hasSnapshot === "boolean"
+      ? existing.hasSnapshot
+      : !!doc?.data?.snapshotScale;
+
+  const dcPowerKw =
+    typeof existing.dcPowerKw === "number"
+      ? existing.dcPowerKw
+      : 0;
+
+  return {
+    customerName: safeString(existing.customerName) || extractCustomerName(doc),
+    moduleCount,
+    selectedPanelId,
+    dcPowerKw,
+    roofCount,
+    hasSnapshot,
+    lastCalculatedAt: existing.lastCalculatedAt ?? null,
+  };
+}
+
+function buildPlanningNumber() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  return `ANG-${y}-${rand}`;
+}
+
+/* --------------------------------- POST --------------------------------- */
+
 export async function POST(req: Request) {
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
@@ -41,6 +122,7 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+
   if (!secret) {
     return Response.json(
       { ok: false, error: "Missing SESSION_SECRET" },
@@ -53,22 +135,101 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
   }
 
+  const body = await req.json().catch(() => ({} as any));
+
+  const customerId = safeString(body?.customerId) || null;
+  const title = safeString(body?.title) || "Neues Projekt";
+  const planningNumber = safeString(body?.planningNumber) || buildPlanningNumber();
+
+  const commercialStage =
+    safeString(body?.commercial?.stage) || "lead";
+
+  const commercialValueChf =
+    typeof body?.commercial?.valueChf === "number"
+      ? body.commercial.valueChf
+      : 0;
+
+  const commercialAssignedToUserId =
+    safeString(body?.commercial?.assignedToUserId) || session.userId;
+
+  const commercialSource =
+    safeString(body?.commercial?.source) || "";
+
+  const commercialLabel =
+    safeString(body?.commercial?.label) || "";
+
+  const summaryCustomerName =
+    safeString(body?.summary?.customerName) || "";
+
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
     await client.connect();
     const db = client.db();
     const plannings = db.collection("plannings");
+    const customers = db.collection("customers");
+
+    let customerName = summaryCustomerName;
+
+    if (customerId) {
+      const customer = await customers.findOne(
+        {
+          _id: toObjectIdOrNull(customerId),
+          companyId: session.activeCompanyId,
+        },
+        {
+          projection: {
+            name: 1,
+            firstName: 1,
+            lastName: 1,
+            companyName: 1,
+          },
+        }
+      );
+
+      if (customer) {
+        customerName =
+          safeString(customer.name) ||
+          safeString(customer.companyName) ||
+          [safeString(customer.firstName), safeString(customer.lastName)]
+            .filter(Boolean)
+            .join(" ")
+            .trim() ||
+          customerName;
+      }
+    }
 
     const now = new Date();
 
     const doc = {
       companyId: session.activeCompanyId,
+      customerId,
       createdByUserId: session.userId,
+
       status: "draft",
       currentStep: "profile",
 
-      // ✅ invece di {}, mettiamo la shape completa
+      title,
+      planningNumber,
+
+      commercial: {
+        stage: commercialStage, // lead | offer | won | lost
+        valueChf: commercialValueChf,
+        assignedToUserId: commercialAssignedToUserId,
+        source: commercialSource,
+        label: commercialLabel,
+      },
+
+      summary: {
+        customerName,
+        moduleCount: 0,
+        selectedPanelId: "",
+        dcPowerKw: 0,
+        roofCount: 0,
+        hasSnapshot: false,
+        lastCalculatedAt: null,
+      },
+
       data: defaultStoreData(),
 
       createdAt: now,
@@ -92,10 +253,8 @@ export async function POST(req: Request) {
   }
 }
 
-/**
- * ✅ NEW: list plannings for the currently logged-in company
- * Returns only lightweight fields (no full `data`).
- */
+/* ---------------------------------- GET ---------------------------------- */
+
 export async function GET(req: Request) {
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
@@ -106,6 +265,7 @@ export async function GET(req: Request) {
       { status: 500 }
     );
   }
+
   if (!secret) {
     return Response.json(
       { ok: false, error: "Missing SESSION_SECRET" },
@@ -128,36 +288,94 @@ export async function GET(req: Request) {
     const db = client.db();
     const plannings = db.collection("plannings");
 
+    const filter: any = {
+      companyId: session.activeCompanyId,
+    };
+
+    // opzionale: filtro per customerId
+    const customerId = safeString(searchParams.get("customerId"));
+    if (customerId) {
+      filter.customerId = customerId;
+    }
+
+    // opzionale: filtro per stage
+    const stage = safeString(searchParams.get("stage"));
+    if (stage) {
+      filter["commercial.stage"] = stage;
+    }
+
     const docs = await plannings
-      .find(
-        { companyId: session.activeCompanyId },
-        {
-          projection: {
-            _id: 1,
-            status: 1,
-            currentStep: 1,
-            createdAt: 1,
-            updatedAt: 1,
-            "data.profile.contactFirstName": 1,
-            "data.profile.contactLastName": 1,
-            "data.profile.businessName": 1,
-          },
-        }
-      )
+      .find(filter, {
+        projection: {
+          _id: 1,
+          companyId: 1,
+          customerId: 1,
+          createdByUserId: 1,
+
+          status: 1,
+          currentStep: 1,
+
+          title: 1,
+          planningNumber: 1,
+          commercial: 1,
+          summary: 1,
+
+          createdAt: 1,
+          updatedAt: 1,
+
+          "data.profile.contactFirstName": 1,
+          "data.profile.contactLastName": 1,
+          "data.profile.businessName": 1,
+          "data.selectedPanelId": 1,
+          "data.panels": 1,
+          "data.layers": 1,
+          "data.snapshotScale": 1,
+        },
+      })
       .sort({ updatedAt: -1 })
       .limit(limit)
       .toArray();
 
-    const items = docs.map((d: any) => ({
-      id: String(d._id),
-      status: d.status ?? "draft",
-      currentStep: d.currentStep ?? null,
-      createdAt: d.createdAt ?? null,
-      updatedAt: d.updatedAt ?? null,
-      firstName: d?.data?.profile?.contactFirstName ?? "",
-      lastName: d?.data?.profile?.contactLastName ?? "",
-      businessName: d?.data?.profile?.businessName ?? "",
-    }));
+    const items = docs.map((d: any) => {
+      const summary = extractSummaryFromPlanning(d);
+      const customerName = extractCustomerName(d);
+
+      return {
+        id: String(d._id),
+        companyId: d.companyId ?? null,
+        customerId: d.customerId ?? null,
+        createdByUserId: d.createdByUserId ?? null,
+
+        status: d.status ?? "draft",
+        currentStep: d.currentStep ?? null,
+
+        title: safeString(d.title) || "Unbenanntes Projekt",
+        planningNumber: safeString(d.planningNumber) || "",
+
+        commercial: {
+          stage: safeString(d?.commercial?.stage) || "lead",
+          valueChf:
+            typeof d?.commercial?.valueChf === "number"
+              ? d.commercial.valueChf
+              : 0,
+          assignedToUserId: d?.commercial?.assignedToUserId ?? null,
+          source: safeString(d?.commercial?.source),
+          label: safeString(d?.commercial?.label),
+        },
+
+        summary,
+
+        customerName,
+
+        createdAt: d.createdAt ?? null,
+        updatedAt: d.updatedAt ?? null,
+
+        // backward compatibility / UI helpers
+        firstName: safeString(d?.data?.profile?.contactFirstName),
+        lastName: safeString(d?.data?.profile?.contactLastName),
+        businessName: safeString(d?.data?.profile?.businessName),
+      };
+    });
 
     return Response.json({ ok: true, items });
   } catch (e: any) {
