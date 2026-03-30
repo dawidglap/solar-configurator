@@ -2,7 +2,7 @@
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { defaultStoreData } from "@/components_v2/state/defaultStoreData";
-
+import { getCorsHeaders } from "@/lib/cors";
 
 export const runtime = "nodejs";
 
@@ -111,29 +111,43 @@ function buildPlanningNumber() {
   return `ANG-${y}-${rand}`;
 }
 
+/* -------------------------------- OPTIONS -------------------------------- */
+
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin");
+  return new Response(null, {
+    status: 204,
+    headers: getCorsHeaders(origin),
+  });
+}
+
 /* --------------------------------- POST --------------------------------- */
 
 export async function POST(req: Request) {
+  const origin = req.headers.get("origin");
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
   if (!uri) {
-    return Response.json(
-      { ok: false, error: "Missing MONGODB_URI" },
-      { status: 500 }
+    return new Response(
+      JSON.stringify({ ok: false, error: "Missing MONGODB_URI" }),
+      { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
     );
   }
 
   if (!secret) {
-    return Response.json(
-      { ok: false, error: "Missing SESSION_SECRET" },
-      { status: 500 }
+    return new Response(
+      JSON.stringify({ ok: false, error: "Missing SESSION_SECRET" }),
+      { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
     );
   }
 
   const session = readSession(req, secret);
   if (!session) {
-    return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
+    return new Response(
+      JSON.stringify({ ok: false, error: "Not logged in" }),
+      { status: 401, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
+    );
   }
 
   const body = await req.json().catch(() => ({} as any));
@@ -142,25 +156,15 @@ export async function POST(req: Request) {
   const title = safeString(body?.title) || "Neues Projekt";
   const planningNumber = safeString(body?.planningNumber) || buildPlanningNumber();
 
-  const commercialStage =
-    safeString(body?.commercial?.stage) || "lead";
-
+  const commercialStage = safeString(body?.commercial?.stage) || "lead";
   const commercialValueChf =
-    typeof body?.commercial?.valueChf === "number"
-      ? body.commercial.valueChf
-      : 0;
-
+    typeof body?.commercial?.valueChf === "number" ? body.commercial.valueChf : 0;
   const commercialAssignedToUserId =
     safeString(body?.commercial?.assignedToUserId) || session.userId;
+  const commercialSource = safeString(body?.commercial?.source) || "";
+  const commercialLabel = safeString(body?.commercial?.label) || "";
 
-  const commercialSource =
-    safeString(body?.commercial?.source) || "";
-
-  const commercialLabel =
-    safeString(body?.commercial?.label) || "";
-
-  const summaryCustomerName =
-    safeString(body?.summary?.customerName) || "";
+  const summaryCustomerName = safeString(body?.summary?.customerName) || "";
 
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
@@ -172,42 +176,42 @@ export async function POST(req: Request) {
 
     let customerName = summaryCustomerName;
 
- if (customerId) {
-  const customerObjectId = toObjectIdOrNull(customerId);
+    if (customerId) {
+      const customerObjectId = toObjectIdOrNull(customerId);
 
-  if (!customerObjectId) {
-    return Response.json(
-      { ok: false, error: "Invalid customerId" },
-      { status: 400 }
-    );
-  }
+      if (!customerObjectId) {
+        return new Response(
+          JSON.stringify({ ok: false, error: "Invalid customerId" }),
+          { status: 400, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
+        );
+      }
 
-  const customer = await customers.findOne(
-    {
-      _id: customerObjectId,
-      companyId: session.activeCompanyId,
-    },
-    {
-      projection: {
-        name: 1,
-        firstName: 1,
-        lastName: 1,
-        companyName: 1,
-      },
+      const customer = await customers.findOne(
+        {
+          _id: customerObjectId,
+          companyId: session.activeCompanyId,
+        },
+        {
+          projection: {
+            name: 1,
+            firstName: 1,
+            lastName: 1,
+            companyName: 1,
+          },
+        }
+      );
+
+      if (customer) {
+        customerName =
+          safeString((customer as any).name) ||
+          safeString((customer as any).companyName) ||
+          [safeString((customer as any).firstName), safeString((customer as any).lastName)]
+            .filter(Boolean)
+            .join(" ")
+            .trim() ||
+          customerName;
+      }
     }
-  );
-
-  if (customer) {
-    customerName =
-      safeString((customer as any).name) ||
-      safeString((customer as any).companyName) ||
-      [safeString((customer as any).firstName), safeString((customer as any).lastName)]
-        .filter(Boolean)
-        .join(" ")
-        .trim() ||
-      customerName;
-  }
-}
 
     const now = new Date();
 
@@ -223,7 +227,7 @@ export async function POST(req: Request) {
       planningNumber,
 
       commercial: {
-        stage: commercialStage, // lead | offer | won | lost
+        stage: commercialStage,
         valueChf: commercialValueChf,
         assignedToUserId: commercialAssignedToUserId,
         source: commercialSource,
@@ -248,15 +252,15 @@ export async function POST(req: Request) {
 
     const res = await plannings.insertOne(doc);
 
-    return Response.json({
-      ok: true,
-      planningId: res.insertedId.toString(),
-    });
+    return new Response(
+      JSON.stringify({ ok: true, planningId: res.insertedId.toString() }),
+      { status: 200, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
+    );
   } catch (e: any) {
     console.error("CREATE PLANNING ERROR:", e);
-    return Response.json(
-      { ok: false, error: e?.message ?? "Unknown error" },
-      { status: 500 }
+    return new Response(
+      JSON.stringify({ ok: false, error: e?.message ?? "Unknown error" }),
+      { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
     );
   } finally {
     await client.close().catch(() => {});
@@ -266,26 +270,30 @@ export async function POST(req: Request) {
 /* ---------------------------------- GET ---------------------------------- */
 
 export async function GET(req: Request) {
+  const origin = req.headers.get("origin");
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
   if (!uri) {
-    return Response.json(
-      { ok: false, error: "Missing MONGODB_URI" },
-      { status: 500 }
+    return new Response(
+      JSON.stringify({ ok: false, error: "Missing MONGODB_URI" }),
+      { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
     );
   }
 
   if (!secret) {
-    return Response.json(
-      { ok: false, error: "Missing SESSION_SECRET" },
-      { status: 500 }
+    return new Response(
+      JSON.stringify({ ok: false, error: "Missing SESSION_SECRET" }),
+      { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
     );
   }
 
   const session = readSession(req, secret);
   if (!session) {
-    return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
+    return new Response(
+      JSON.stringify({ ok: false, error: "Not logged in" }),
+      { status: 401, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
+    );
   }
 
   const { searchParams } = new URL(req.url);
@@ -302,13 +310,11 @@ export async function GET(req: Request) {
       companyId: session.activeCompanyId,
     };
 
-    // opzionale: filtro per customerId
     const customerId = safeString(searchParams.get("customerId"));
     if (customerId) {
       filter.customerId = customerId;
     }
 
-    // opzionale: filtro per stage
     const stage = safeString(searchParams.get("stage"));
     if (stage) {
       filter["commercial.stage"] = stage;
@@ -321,18 +327,14 @@ export async function GET(req: Request) {
           companyId: 1,
           customerId: 1,
           createdByUserId: 1,
-
           status: 1,
           currentStep: 1,
-
           title: 1,
           planningNumber: 1,
           commercial: 1,
           summary: 1,
-
           createdAt: 1,
           updatedAt: 1,
-
           "data.profile.contactFirstName": 1,
           "data.profile.contactLastName": 1,
           "data.profile.businessName": 1,
@@ -355,13 +357,10 @@ export async function GET(req: Request) {
         companyId: d.companyId ?? null,
         customerId: d.customerId ?? null,
         createdByUserId: d.createdByUserId ?? null,
-
         status: d.status ?? "draft",
         currentStep: d.currentStep ?? null,
-
         title: safeString(d.title) || "Unbenanntes Projekt",
         planningNumber: safeString(d.planningNumber) || "",
-
         commercial: {
           stage: safeString(d?.commercial?.stage) || "lead",
           valueChf:
@@ -372,27 +371,25 @@ export async function GET(req: Request) {
           source: safeString(d?.commercial?.source),
           label: safeString(d?.commercial?.label),
         },
-
         summary,
-
         customerName,
-
         createdAt: d.createdAt ?? null,
         updatedAt: d.updatedAt ?? null,
-
-        // backward compatibility / UI helpers
         firstName: safeString(d?.data?.profile?.contactFirstName),
         lastName: safeString(d?.data?.profile?.contactLastName),
         businessName: safeString(d?.data?.profile?.businessName),
       };
     });
 
-    return Response.json({ ok: true, items });
+    return new Response(
+      JSON.stringify({ ok: true, items }),
+      { status: 200, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
+    );
   } catch (e: any) {
     console.error("LIST PLANNINGS ERROR:", e);
-    return Response.json(
-      { ok: false, error: e?.message ?? "Unknown error" },
-      { status: 500 }
+    return new Response(
+      JSON.stringify({ ok: false, error: e?.message ?? "Unknown error" }),
+      { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
     );
   } finally {
     await client.close().catch(() => {});
