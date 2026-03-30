@@ -1,6 +1,7 @@
 // src/app/api/plannings/[planningId]/route.ts
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
+import { getCorsHeaders } from "@/lib/cors";
 
 export const runtime = "nodejs";
 
@@ -62,8 +63,15 @@ function deriveSummaryFromPlanner(docLike: any) {
   const data = docLike?.data ?? {};
   const existingSummary = docLike?.summary ?? {};
 
-  const panels = Array.isArray(data?.panels) ? data.panels : [];
-  const layers = Array.isArray(data?.layers) ? data.layers : [];
+  const panels =
+    Array.isArray(data?.panels) ? data.panels :
+    Array.isArray(data?.planner?.panels) ? data.planner.panels :
+    [];
+
+  const layers =
+    Array.isArray(data?.layers) ? data.layers :
+    Array.isArray(data?.planner?.layers) ? data.planner.layers :
+    [];
 
   return {
     customerName:
@@ -77,7 +85,8 @@ function deriveSummaryFromPlanner(docLike: any) {
 
     selectedPanelId:
       safeString(existingSummary.selectedPanelId) ||
-      safeString(data?.selectedPanelId),
+      safeString(data?.selectedPanelId) ||
+      safeString(data?.planner?.selectedPanelId),
 
     dcPowerKw:
       typeof existingSummary.dcPowerKw === "number"
@@ -94,9 +103,28 @@ function deriveSummaryFromPlanner(docLike: any) {
         ? existingSummary.hasSnapshot
         : !!data?.snapshotScale,
 
-    lastCalculatedAt:
-      existingSummary.lastCalculatedAt ?? null,
+    lastCalculatedAt: existingSummary.lastCalculatedAt ?? null,
   };
+}
+
+function jsonResponse(origin: string | null, body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      ...getCorsHeaders(origin),
+    },
+  });
+}
+
+/* -------------------------------- OPTIONS -------------------------------- */
+
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin");
+  return new Response(null, {
+    status: 204,
+    headers: getCorsHeaders(origin),
+  });
 }
 
 /* --------------------------------- PATCH --------------------------------- */
@@ -105,29 +133,36 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ planningId: string }> },
 ) {
+  const origin = req.headers.get("origin");
   const { planningId } = await params;
 
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
   if (!uri) {
-    return Response.json({ ok: false, error: "Missing MONGODB_URI" }, { status: 500 });
+    return jsonResponse(origin, { ok: false, error: "Missing MONGODB_URI" }, 500);
   }
 
   if (!secret) {
-    return Response.json({ ok: false, error: "Missing SESSION_SECRET" }, { status: 500 });
+    return jsonResponse(origin, { ok: false, error: "Missing SESSION_SECRET" }, 500);
   }
 
   const session = readSession(req, secret);
   if (!session) {
-    return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
+    return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
   }
 
   if (!planningId) {
-    return Response.json(
+    return jsonResponse(
+      origin,
       { ok: false, error: "Route params missing. Check folder name is [planningId]." },
-      { status: 500 },
+      500
     );
+  }
+
+  const planningObjectId = toObjectIdOrNull(planningId);
+  if (!planningObjectId) {
+    return jsonResponse(origin, { ok: false, error: "Invalid planningId" }, 400);
   }
 
   const body = await req.json().catch(() => ({} as any));
@@ -155,19 +190,21 @@ export async function PATCH(
     (summary && typeof summary === "object");
 
   if (!hasPlannerPayload && !hasCrmPayload) {
-    return Response.json(
+    return jsonResponse(
+      origin,
       {
         ok: false,
         error:
           "Send planner data ({ profile }, { ist }, { planner }) or CRM fields ({ title, customerId, planningNumber, commercial, summary })",
       },
-      { status: 400 },
+      400
     );
   }
 
-  const setObj: any = { updatedAt: new Date() };
+  const setObj: Record<string, any> = { updatedAt: new Date() };
 
   // -------------------- CRM-friendly metadata --------------------
+
   if (typeof title === "string") {
     setObj.title = safeString(title) || "Unbenanntes Projekt";
   }
@@ -225,7 +262,6 @@ export async function PATCH(
 
   // -------------------- Planner flow payload --------------------
 
-  // dopo Profil si passa a IST
   if (profile && typeof profile === "object") {
     setObj["data.profile"] = profile;
     setObj.currentStep = "ist";
@@ -236,13 +272,11 @@ export async function PATCH(
     }
   }
 
-  // dopo IST si passa a Building (mappa)
   if (ist && typeof ist === "object") {
     setObj["data.ist"] = ist;
     setObj.currentStep = "building";
   }
 
-  // dopo planner (roof + moduli) si passa a offer/review
   if (planner && typeof planner === "object") {
     setObj["data.planner"] = planner;
     setObj.currentStep = "offer";
@@ -256,66 +290,83 @@ export async function PATCH(
     const plannings = db.collection("plannings");
     const customers = db.collection("customers");
 
-    // se arriva customerId, verifichiamo che appartenga alla stessa company
-   if (typeof customerId === "string" && safeString(customerId)) {
-  const customerObjectId = toObjectIdOrNull(customerId);
+    if (typeof customerId === "string" && safeString(customerId)) {
+      const customerObjectId = toObjectIdOrNull(customerId);
 
-  if (!customerObjectId) {
-    return Response.json(
-      { ok: false, error: "Invalid customerId" },
-      { status: 400 },
-    );
-  }
+      if (!customerObjectId) {
+        return jsonResponse(origin, { ok: false, error: "Invalid customerId" }, 400);
+      }
 
-  const customer = await customers.findOne({
-    _id: customerObjectId,
-    companyId: session.activeCompanyId,
-  });
+      const customer = await customers.findOne({
+        _id: customerObjectId,
+        companyId: session.activeCompanyId,
+      });
 
-  if (!customer) {
-    return Response.json(
-      { ok: false, error: "Customer not found in active company" },
-      { status: 400 },
-    );
-  }
+      if (!customer) {
+        return jsonResponse(
+          origin,
+          { ok: false, error: "Customer not found in active company" },
+          400
+        );
+      }
 
-  const customerName =
-    safeString((customer as any).name) ||
-    safeString((customer as any).companyName) ||
-    [safeString((customer as any).firstName), safeString((customer as any).lastName)]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
+      const customerName =
+        safeString((customer as any).name) ||
+        safeString((customer as any).companyName) ||
+        [safeString((customer as any).firstName), safeString((customer as any).lastName)]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
 
-  if (customerName && !setObj["summary.customerName"]) {
-    setObj["summary.customerName"] = customerName;
-  }
-}
+      if (customerName && !setObj["summary.customerName"]) {
+        setObj["summary.customerName"] = customerName;
+      }
+    }
 
     const res = await plannings.updateOne(
-      { _id: new ObjectId(planningId), companyId: session.activeCompanyId },
+      { _id: planningObjectId, companyId: session.activeCompanyId },
       { $set: setObj },
     );
 
     if (res.matchedCount === 0) {
-      return Response.json({ ok: false, error: "Planning not found" }, { status: 404 });
+      return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
     }
 
-    // ritorna il doc aggiornato in forma utile per il CRM
     const updated = await plannings.findOne({
-      _id: new ObjectId(planningId),
+      _id: planningObjectId,
       companyId: session.activeCompanyId,
     });
 
-    return Response.json({
-      ok: true,
-      planning: updated,
-    });
+    if (!updated) {
+      return jsonResponse(origin, { ok: false, error: "Planning not found after update" }, 404);
+    }
+
+    const normalized = {
+      ...updated,
+      _id: String((updated as any)._id),
+      summary: deriveSummaryFromPlanner(updated),
+      title: safeString((updated as any)?.title) || "Unbenanntes Projekt",
+      planningNumber: safeString((updated as any)?.planningNumber) || "",
+      commercial: {
+        stage: safeString((updated as any)?.commercial?.stage) || "lead",
+        valueChf:
+          typeof (updated as any)?.commercial?.valueChf === "number"
+            ? (updated as any).commercial.valueChf
+            : 0,
+        assignedToUserId: (updated as any)?.commercial?.assignedToUserId ?? null,
+        source: safeString((updated as any)?.commercial?.source),
+        label: safeString((updated as any)?.commercial?.label),
+      },
+      customerId: (updated as any)?.customerId ?? null,
+    };
+
+    return jsonResponse(origin, { ok: true, planning: normalized }, 200);
   } catch (e: any) {
     console.error("UPDATE PLANNING ERROR:", e);
-    return Response.json(
+    return jsonResponse(
+      origin,
       { ok: false, error: e?.message ?? "Unknown error" },
-      { status: 500 },
+      500
     );
   } finally {
     await client.close().catch(() => {});
@@ -328,29 +379,36 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ planningId: string }> },
 ) {
+  const origin = req.headers.get("origin");
   const { planningId } = await params;
 
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
   if (!uri) {
-    return Response.json({ ok: false, error: "Missing MONGODB_URI" }, { status: 500 });
+    return jsonResponse(origin, { ok: false, error: "Missing MONGODB_URI" }, 500);
   }
 
   if (!secret) {
-    return Response.json({ ok: false, error: "Missing SESSION_SECRET" }, { status: 500 });
+    return jsonResponse(origin, { ok: false, error: "Missing SESSION_SECRET" }, 500);
   }
 
   const session = readSession(req, secret);
   if (!session) {
-    return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
+    return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
   }
 
   if (!planningId) {
-    return Response.json(
+    return jsonResponse(
+      origin,
       { ok: false, error: "Route params missing. Check folder name is [planningId]." },
-      { status: 500 },
+      500
     );
+  }
+
+  const planningObjectId = toObjectIdOrNull(planningId);
+  if (!planningObjectId) {
+    return jsonResponse(origin, { ok: false, error: "Invalid planningId" }, 400);
   }
 
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
@@ -361,38 +419,40 @@ export async function GET(
     const plannings = db.collection("plannings");
 
     const doc = await plannings.findOne({
-      _id: new ObjectId(planningId),
+      _id: planningObjectId,
       companyId: session.activeCompanyId,
     });
 
     if (!doc) {
-      return Response.json({ ok: false, error: "Planning not found" }, { status: 404 });
+      return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
     }
 
     const normalized = {
       ...doc,
+      _id: String((doc as any)._id),
       summary: deriveSummaryFromPlanner(doc),
-      title: safeString(doc?.title) || "Unbenanntes Projekt",
-      planningNumber: safeString(doc?.planningNumber) || "",
+      title: safeString((doc as any)?.title) || "Unbenanntes Projekt",
+      planningNumber: safeString((doc as any)?.planningNumber) || "",
       commercial: {
-        stage: safeString(doc?.commercial?.stage) || "lead",
+        stage: safeString((doc as any)?.commercial?.stage) || "lead",
         valueChf:
-          typeof doc?.commercial?.valueChf === "number"
-            ? doc.commercial.valueChf
+          typeof (doc as any)?.commercial?.valueChf === "number"
+            ? (doc as any).commercial.valueChf
             : 0,
-        assignedToUserId: doc?.commercial?.assignedToUserId ?? null,
-        source: safeString(doc?.commercial?.source),
-        label: safeString(doc?.commercial?.label),
+        assignedToUserId: (doc as any)?.commercial?.assignedToUserId ?? null,
+        source: safeString((doc as any)?.commercial?.source),
+        label: safeString((doc as any)?.commercial?.label),
       },
-      customerId: doc?.customerId ?? null,
+      customerId: (doc as any)?.customerId ?? null,
     };
 
-    return Response.json({ ok: true, planning: normalized });
+    return jsonResponse(origin, { ok: true, planning: normalized }, 200);
   } catch (e: any) {
     console.error("GET PLANNING ERROR:", e);
-    return Response.json(
+    return jsonResponse(
+      origin,
       { ok: false, error: e?.message ?? "Unknown error" },
-      { status: 500 },
+      500
     );
   } finally {
     await client.close().catch(() => {});
