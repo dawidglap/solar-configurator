@@ -48,15 +48,84 @@ function toObjectIdOrNull(v: any) {
   }
 }
 
+function firstNonEmpty(...values: any[]) {
+  for (const v of values) {
+    const s = safeString(v);
+    if (s) return s;
+  }
+  return "";
+}
+
 function buildCustomerNameFromProfile(profile: any) {
-  const businessName = safeString(profile?.businessName);
+  const businessName = firstNonEmpty(
+    profile?.businessName,
+    profile?.companyName,
+    profile?.company
+  );
   if (businessName) return businessName;
 
-  const firstName = safeString(profile?.contactFirstName);
-  const lastName = safeString(profile?.contactLastName);
-  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const fullName = [
+    safeString(profile?.contactFirstName),
+    safeString(profile?.contactLastName),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
 
-  return fullName || "";
+  return fullName || safeString(profile?.name) || "";
+}
+
+function extractCityFromAddress(address: any) {
+  const a = safeString(address);
+  if (!a) return "";
+
+  const parts = a.split(",");
+  const lastPart = parts[parts.length - 1]?.trim() || "";
+
+  // es. "9445 Rebstein"
+  const match = lastPart.match(/^(\d{4})\s+(.+)$/);
+  if (match) return match[2].trim();
+
+  return lastPart;
+}
+
+function deriveProjectTitleFromData(profile: any, ist: any) {
+  const businessName = firstNonEmpty(
+    profile?.businessName,
+    profile?.companyName,
+    profile?.company
+  );
+
+  const privateName = firstNonEmpty(
+    [safeString(profile?.contactFirstName), safeString(profile?.contactLastName)]
+      .filter(Boolean)
+      .join(" "),
+    profile?.name
+  );
+
+  const displayName = businessName || privateName;
+
+  const city = firstNonEmpty(
+    profile?.city,
+    profile?.place,
+    profile?.location,
+    profile?.postalCity,
+    profile?.addressCity,
+    ist?.city,
+    ist?.place,
+    ist?.location,
+    extractCityFromAddress(profile?.address),
+    extractCityFromAddress(ist?.address)
+  );
+
+  if (displayName && city) return `PV ${displayName} - ${city}`;
+  if (displayName) return `PV ${displayName}`;
+  return "";
+}
+
+function shouldAutoRenameTitle(existingTitle: string) {
+  const t = safeString(existingTitle).toLowerCase();
+  return !t || t === "neues projekt" || t === "unbenanntes projekt";
 }
 
 function deriveSummaryFromPlanner(docLike: any) {
@@ -203,85 +272,6 @@ export async function PATCH(
 
   const setObj: Record<string, any> = { updatedAt: new Date() };
 
-  // -------------------- CRM-friendly metadata --------------------
-
-  if (typeof title === "string") {
-    setObj.title = safeString(title) || "Unbenanntes Projekt";
-  }
-
-  if (typeof customerId === "string") {
-    setObj.customerId = safeString(customerId) || null;
-  }
-
-  if (typeof planningNumber === "string") {
-    setObj.planningNumber = safeString(planningNumber);
-  }
-
-  if (commercial && typeof commercial === "object") {
-    if (typeof commercial.stage === "string") {
-      setObj["commercial.stage"] = safeString(commercial.stage) || "lead";
-    }
-    if (typeof commercial.valueChf === "number") {
-      setObj["commercial.valueChf"] = commercial.valueChf;
-    }
-    if (typeof commercial.assignedToUserId === "string") {
-      setObj["commercial.assignedToUserId"] =
-        safeString(commercial.assignedToUserId) || null;
-    }
-    if (typeof commercial.source === "string") {
-      setObj["commercial.source"] = safeString(commercial.source);
-    }
-    if (typeof commercial.label === "string") {
-      setObj["commercial.label"] = safeString(commercial.label);
-    }
-  }
-
-  if (summary && typeof summary === "object") {
-    if (typeof summary.customerName === "string") {
-      setObj["summary.customerName"] = safeString(summary.customerName);
-    }
-    if (typeof summary.moduleCount === "number") {
-      setObj["summary.moduleCount"] = summary.moduleCount;
-    }
-    if (typeof summary.selectedPanelId === "string") {
-      setObj["summary.selectedPanelId"] = safeString(summary.selectedPanelId);
-    }
-    if (typeof summary.dcPowerKw === "number") {
-      setObj["summary.dcPowerKw"] = summary.dcPowerKw;
-    }
-    if (typeof summary.roofCount === "number") {
-      setObj["summary.roofCount"] = summary.roofCount;
-    }
-    if (typeof summary.hasSnapshot === "boolean") {
-      setObj["summary.hasSnapshot"] = summary.hasSnapshot;
-    }
-    if ("lastCalculatedAt" in summary) {
-      setObj["summary.lastCalculatedAt"] = summary.lastCalculatedAt ?? null;
-    }
-  }
-
-  // -------------------- Planner flow payload --------------------
-
-  if (profile && typeof profile === "object") {
-    setObj["data.profile"] = profile;
-    setObj.currentStep = "ist";
-
-    const customerName = buildCustomerNameFromProfile(profile);
-    if (customerName) {
-      setObj["summary.customerName"] = customerName;
-    }
-  }
-
-  if (ist && typeof ist === "object") {
-    setObj["data.ist"] = ist;
-    setObj.currentStep = "building";
-  }
-
-  if (planner && typeof planner === "object") {
-    setObj["data.planner"] = planner;
-    setObj.currentStep = "offer";
-  }
-
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
@@ -289,6 +279,115 @@ export async function PATCH(
     const db = client.db();
     const plannings = db.collection("plannings");
     const customers = db.collection("customers");
+
+    const existingPlanning = await plannings.findOne({
+      _id: planningObjectId,
+      companyId: session.activeCompanyId,
+    });
+
+    if (!existingPlanning) {
+      return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
+    }
+
+    const canAutoRename = shouldAutoRenameTitle(
+      safeString((existingPlanning as any)?.title)
+    );
+
+    // -------------------- CRM-friendly metadata --------------------
+
+    if (typeof title === "string") {
+      setObj.title = safeString(title) || "Unbenanntes Projekt";
+    }
+
+    if (typeof customerId === "string") {
+      setObj.customerId = safeString(customerId) || null;
+    }
+
+    if (typeof planningNumber === "string") {
+      setObj.planningNumber = safeString(planningNumber);
+    }
+
+    if (commercial && typeof commercial === "object") {
+      if (typeof commercial.stage === "string") {
+        setObj["commercial.stage"] = safeString(commercial.stage) || "lead";
+      }
+      if (typeof commercial.valueChf === "number") {
+        setObj["commercial.valueChf"] = commercial.valueChf;
+      }
+      if (typeof commercial.assignedToUserId === "string") {
+        setObj["commercial.assignedToUserId"] =
+          safeString(commercial.assignedToUserId) || null;
+      }
+      if (typeof commercial.source === "string") {
+        setObj["commercial.source"] = safeString(commercial.source);
+      }
+      if (typeof commercial.label === "string") {
+        setObj["commercial.label"] = safeString(commercial.label);
+      }
+    }
+
+    if (summary && typeof summary === "object") {
+      if (typeof summary.customerName === "string") {
+        setObj["summary.customerName"] = safeString(summary.customerName);
+      }
+      if (typeof summary.moduleCount === "number") {
+        setObj["summary.moduleCount"] = summary.moduleCount;
+      }
+      if (typeof summary.selectedPanelId === "string") {
+        setObj["summary.selectedPanelId"] = safeString(summary.selectedPanelId);
+      }
+      if (typeof summary.dcPowerKw === "number") {
+        setObj["summary.dcPowerKw"] = summary.dcPowerKw;
+      }
+      if (typeof summary.roofCount === "number") {
+        setObj["summary.roofCount"] = summary.roofCount;
+      }
+      if (typeof summary.hasSnapshot === "boolean") {
+        setObj["summary.hasSnapshot"] = summary.hasSnapshot;
+      }
+      if ("lastCalculatedAt" in summary) {
+        setObj["summary.lastCalculatedAt"] = summary.lastCalculatedAt ?? null;
+      }
+    }
+
+    // -------------------- Planner flow payload --------------------
+
+    if (profile && typeof profile === "object") {
+      setObj["data.profile"] = profile;
+      setObj.currentStep = "ist";
+
+      const customerName = buildCustomerNameFromProfile(profile);
+      if (customerName) {
+        setObj["summary.customerName"] = customerName;
+      }
+
+      const autoTitle = deriveProjectTitleFromData(profile, ist);
+      if (autoTitle && canAutoRename) {
+        setObj.title = autoTitle;
+      }
+    }
+
+    if (ist && typeof ist === "object") {
+      setObj["data.ist"] = ist;
+      setObj.currentStep = "building";
+
+      const effectiveProfile =
+        profile && typeof profile === "object"
+          ? profile
+          : (existingPlanning as any)?.data?.profile;
+
+      const autoTitle = deriveProjectTitleFromData(effectiveProfile, ist);
+      if (autoTitle && canAutoRename) {
+        setObj.title = autoTitle;
+      }
+    }
+
+    if (planner && typeof planner === "object") {
+      setObj["data.planner"] = planner;
+      setObj.currentStep = "offer";
+    }
+
+    // -------------------- customerId validation / sync --------------------
 
     if (typeof customerId === "string" && safeString(customerId)) {
       const customerObjectId = toObjectIdOrNull(customerId);
