@@ -8,20 +8,18 @@ import ResponsiveGuard from "@/components_v2/layout/ResponsiveGuard";
 import PlannerWelcomeScreen from "@/components_v2/layout/PlannerWelcomeScreen";
 import { usePlannerV2Store } from "@/components_v2/state/plannerV2Store";
 import { usePlanningLoad } from "@/components_v2/state/usePlanningLoad";
+import { useAutoSave } from "@/components_v2/state/planning/useAutoSave";
 
 export default function PlannerV2Page() {
   const sp = useSearchParams();
   const planningId = sp.get("planningId");
 
-  // ✅ avvia il loader (fetch + populate store)
   usePlanningLoad();
+  useAutoSave();
 
   const setStep = usePlannerV2Store((s) => s.setStep);
-
-  // stato locale: se l'utente ha già cliccato "Neue Planung starten"
   const [started, setStarted] = useState(false);
 
-  // ✅ se arrivo con ?planningId=... allora apro direttamente il planner (niente welcome)
   useEffect(() => {
     if (planningId) setStarted(true);
   }, [planningId]);
