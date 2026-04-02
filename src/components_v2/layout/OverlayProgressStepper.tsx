@@ -1,8 +1,9 @@
-// src/components_v2/layout/OverlayProgressStepper.tsx
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { usePlannerV2Store } from "../state/plannerV2Store";
+import { savePlannerToDb } from "../state/planning/savePlanning";
 import {
   User,
   Home,
@@ -123,6 +124,11 @@ export default function OverlayProgressStepper() {
   const step = usePlannerV2Store((s) => s.step);
   const setStep = usePlannerV2Store((s) => s.setStep);
 
+  const sp = useSearchParams();
+  const planningId = sp.get("planningId");
+
+  const [isRedirecting, setIsRedirecting] = useState(false);
+
   const activeIndex = useMemo(
     () =>
       Math.max(
@@ -132,8 +138,8 @@ export default function OverlayProgressStepper() {
     [step],
   );
 
-  // topbar height -> css var --tb
   const barRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const el = barRef.current;
     if (!el) return;
@@ -150,13 +156,28 @@ export default function OverlayProgressStepper() {
     };
   }, []);
 
+  const goToLovableStep = async (
+    target: "stueckliste" | "bericht" | "angebot",
+  ) => {
+    if (!planningId || isRedirecting) return;
+
+    try {
+      setIsRedirecting(true);
+      await savePlannerToDb(planningId);
+      window.location.href = `https://app.helionic.ch/planung/${planningId}/${target}`;
+    } catch (err) {
+      console.error(`Failed to save before redirecting to ${target}:`, err);
+      alert("Speichern fehlgeschlagen. Bitte erneut versuchen.");
+      setIsRedirecting(false);
+    }
+  };
+
   return (
     <div
       ref={barRef}
       className="fixed left-0 right-0 top-0 z-[200] planner-topbar text-white"
       style={{ paddingLeft: "var(--sb, 64px)" }}
     >
-      {/* highlight top edge */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px" />
 
       <div className="relative flex h-10 w-full items-center px-4 bg-black/35 backdrop-blur-md border-t border-l border-b border-[#7E8B97] rounded-tl-2xl">
@@ -166,8 +187,36 @@ export default function OverlayProgressStepper() {
               {UI_STEPS.map((s, i) => {
                 const isActive = i === activeIndex;
 
-                const onClick = () => {
-                  if (!s.clickable) return;
+                const onClick = async () => {
+                  if (!s.clickable || isRedirecting) return;
+
+                  // planner interno
+                  if (
+                    s.key === "profile" ||
+                    s.key === "ist" ||
+                    s.key === "building" ||
+                    s.key === "modules"
+                  ) {
+                    setStep(s.key as StoreKey);
+                    return;
+                  }
+
+                  // bridge verso Lovable
+                  if (s.key === "parts") {
+                    await goToLovableStep("stueckliste");
+                    return;
+                  }
+
+                  if (s.key === "report") {
+                    await goToLovableStep("bericht");
+                    return;
+                  }
+
+                  if (s.key === "offer") {
+                    await goToLovableStep("angebot");
+                    return;
+                  }
+
                   setStep(s.key as StoreKey);
                 };
 
@@ -179,7 +228,6 @@ export default function OverlayProgressStepper() {
                 const idleCls = "text-white/75 hover:text-white";
                 const disabledCls = "text-white/45 cursor-default";
 
-                // ✅ hover: mostra lo "short" (ma non quando è active)
                 const displayText = !isActive ? s.short : s.label;
 
                 return (
@@ -188,22 +236,23 @@ export default function OverlayProgressStepper() {
                       <button
                         type="button"
                         onClick={onClick}
+                        disabled={isRedirecting}
                         aria-current={isActive ? "step" : undefined}
-                        className={`${base} focus:outline-none group cursor-pointer`}
+                        className={`${base} focus:outline-none group cursor-pointer disabled:opacity-50 disabled:cursor-wait`}
                         style={{ ["--active" as any]: ACTIVE }}
                         title={s.label}
                       >
-                        {/* Label normale */}
                         <span
                           className={`${labelCls} ${
                             isActive ? activeCls : idleCls
                           } ${!isActive ? "group-hover:hidden" : ""}`}
                         >
-                          {displayText}
+                          {isRedirecting && s.key === "parts"
+                            ? "Speichert..."
+                            : displayText}
                         </span>
 
-                        {/* Label hover (short) */}
-                        {!isActive && (
+                        {!isActive && !isRedirecting && (
                           <span
                             className={`${labelCls} ${idleCls} hidden group-hover:inline`}
                           >
