@@ -14,7 +14,7 @@ function mapSalutation(v: any): "herr" | "frau" | null {
   return null;
 }
 
-/** ✅ fallback: vecchia shape API -> nuova shape store */
+/** fallback: vecchia shape API -> nuova shape store */
 function mapLegacyApiProfileToStore(api: any) {
   const customerType = String(api?.customerKind ?? "").toLowerCase();
   const customerStatus = String(api?.customerType ?? "").toLowerCase();
@@ -58,7 +58,6 @@ function mapLegacyApiProfileToStore(api: any) {
   };
 }
 
-/** ✅ capiamo se il profile è già in “store shape” */
 function looksLikeStoreProfile(p: any) {
   if (!p || typeof p !== "object") return false;
   return (
@@ -69,21 +68,85 @@ function looksLikeStoreProfile(p: any) {
   );
 }
 
+function mapDbStepToStoreStep(stepFromDb: any) {
+  if (
+    stepFromDb === "profile" ||
+    stepFromDb === "ist" ||
+    stepFromDb === "building" ||
+    stepFromDb === "modules" ||
+    stepFromDb === "strings" ||
+    stepFromDb === "parts" ||
+    stepFromDb === "report" ||
+    stepFromDb === "offer"
+  ) {
+    return stepFromDb;
+  }
+  return "profile";
+}
+
+function buildSnapshotFromPlanning(planning: any) {
+  const data = planning?.data ?? {};
+  const planner = data?.planner ?? {};
+
+  // supporta più shape possibili
+  return {
+    url:
+      planner?.snapshot?.url ??
+      data?.snapshot?.url ??
+      data?.snapshotUrl ??
+      null,
+
+    width:
+      planner?.snapshot?.width ??
+      data?.snapshot?.width ??
+      data?.snapshotWidth ??
+      null,
+
+    height:
+      planner?.snapshot?.height ??
+      data?.snapshot?.height ??
+      data?.snapshotHeight ??
+      null,
+
+    mppImage:
+      planner?.snapshot?.mppImage ??
+      data?.snapshot?.mppImage ??
+      data?.snapshotMppImage ??
+      data?.mppImage ??
+      null,
+
+    address:
+      planner?.snapshot?.address ??
+      data?.snapshot?.address ??
+      [
+        data?.profile?.buildingStreet,
+        data?.profile?.buildingStreetNo,
+        [data?.profile?.buildingZip, data?.profile?.buildingCity]
+          .filter(Boolean)
+          .join(" "),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      null,
+  };
+}
+
 export function usePlanningLoad() {
   const sp = useSearchParams();
   const router = useRouter();
   const planningId = sp.get("planningId");
 
   const setStep = usePlannerV2Store((s) => s.setStep);
-
   const setProfile = usePlannerV2Store((s) => s.setProfile);
   const setIstAll = usePlannerV2Store((s) => s.setIstAll);
-
   const importState = usePlannerV2Store((s) => s.importState);
   const setSnapshot = usePlannerV2Store((s) => s.setSnapshot);
 
   useEffect(() => {
     if (!planningId) return;
+
+    let cancelled = false;
 
     (async () => {
       const res = await fetch(`/api/plannings/${planningId}`, {
@@ -96,28 +159,15 @@ export function usePlanningLoad() {
       }
 
       const json = await res.json().catch(() => null);
-      if (!json?.ok) return;
+      if (!json?.ok || cancelled) return;
 
       const planning = json.planning;
       const data = planning?.data ?? {};
 
-      const stepFromDb = planning?.currentStep;
-      if (
-        stepFromDb === "profile" ||
-        stepFromDb === "ist" ||
-        stepFromDb === "building" ||
-        stepFromDb === "modules" ||
-        stepFromDb === "strings" ||
-        stepFromDb === "parts" ||
-        stepFromDb === "report" ||
-        stepFromDb === "offer"
-      ) {
-        setStep(stepFromDb);
-      } else {
-        setStep("profile");
-      }
+      // 1) step
+      setStep(mapDbStepToStoreStep(planning?.currentStep));
 
-      // ✅ PROFILE
+      // 2) profile
       if (data.profile && typeof data.profile === "object") {
         const profileToStore = looksLikeStoreProfile(data.profile)
           ? data.profile
@@ -126,30 +176,35 @@ export function usePlanningLoad() {
         setProfile(profileToStore);
       }
 
-      // ✅ IST
+      // 3) ist
       if (data.ist && typeof data.ist === "object") {
         setIstAll(data.ist);
       } else {
         setIstAll(defaultIst);
       }
 
-      // ✅ PLANNER (building + modules)
+      // 4) planner state
       if (data.planner && typeof data.planner === "object") {
-        // 1) importa stato planner (layers/zones/panels/modules/...)
         importState(data.planner);
-
-        // 2) snapshot (immagine + scala) se presente
-        if (data.planner.snapshot) {
-          setSnapshot(data.planner.snapshot);
-        }
       }
 
-      // ✅ pulisci undo/redo (se vuoi)
+      // 5) snapshot re-hydration (importantissimo)
+      const snapshot = buildSnapshotFromPlanning(planning);
+
+      if (snapshot.url || snapshot.width || snapshot.height || snapshot.mppImage || snapshot.address) {
+        setSnapshot(snapshot);
+      }
+
+      // 6) clear undo/redo
       try {
         const h: any = (await import("./history")).history;
         h?.clear?.();
       } catch {}
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     planningId,
     router,
