@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Loader2, Search } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import AddressSearchOSM from "../geocoding/AddressSearchOSM";
@@ -15,6 +16,7 @@ import {
 } from "../utils/geo";
 import axios from "axios";
 import { history as plannerHistory } from "../state/history";
+import { savePlannerToDb } from "../state/planning/savePlanning";
 
 /** proietta (lat,lon) → px immagine usando la bbox3857 dello snapshot */
 function latLonToPx(
@@ -97,18 +99,22 @@ async function fetchRoofsAtPointToPx(
 }
 
 export default function TopbarAddressSearch() {
+  const sp = useSearchParams();
+  const planningId = sp.get("planningId");
+
   const resetForNewAddress = usePlannerV2Store((s) => s.resetForNewAddress);
   const setUI = usePlannerV2Store((s) => s.setUI);
   const addRoof = usePlannerV2Store((s) => s.addRoof);
+  const setStep = usePlannerV2Store((s) => s.setStep);
 
-  // ✅ nuovo: persistenza address
+  // persistenza address
   const address = usePlannerV2Store((s) => (s as any).address);
   const setAddress = usePlannerV2Store((s) => (s as any).setAddress);
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // ✅ testo visibile nella searchbar (controllato)
+  // testo visibile nella searchbar
   const [addressText, setAddressText] = useState<string>(
     () => address?.label ?? "",
   );
@@ -117,9 +123,10 @@ export default function TopbarAddressSearch() {
     if (address?.label) setAddressText(address.label);
   }, [address?.label]);
 
-  const startFromAddress = async (lat: number, lon: number) => {
+  const startFromAddress = async (lat: number, lon: number, label: string) => {
     setErr(null);
     setLoading(true);
+
     try {
       const ZOOM = 20;
       const {
@@ -153,17 +160,20 @@ export default function TopbarAddressSearch() {
         mppImage: metersPerPixel3857(lat, ZOOM),
         center: { lat, lon },
         zoom: ZOOM,
+        address: label,
         bbox3857: { minX: bl.x, minY: bl.y, maxX: tr.x, maxY: tr.y },
       } as const;
 
       // 1) reset totale progetto + snapshot nuovo
       resetForNewAddress(snapObj);
+      setStep("building");
 
-      // 2) crea un checkpoint
+      // 2) checkpoint undo/redo
       plannerHistory.push("before import roofs");
 
-      // 3) importa solo le falde “sotto il punto”
+      // 3) importa falde sotto il punto
       const roofs = await fetchRoofsAtPointToPx(lat, lon, snapObj);
+
       roofs.forEach((p, i) => {
         addRoof({
           id: `sd_${p.id}_${i}`,
@@ -177,6 +187,15 @@ export default function TopbarAddressSearch() {
 
       // 4) pannello proprietà visibile
       setUI({ rightPanelOpen: true });
+
+      // 5) salva subito nel DB il nuovo stato planner
+      if (planningId) {
+        await savePlannerToDb(planningId);
+      } else {
+        console.warn(
+          "No planningId found in URL, planner state not saved to DB.",
+        );
+      }
     } catch (e: any) {
       setErr(e?.message ?? "Unbekannter Fehler.");
     } finally {
@@ -215,7 +234,7 @@ export default function TopbarAddressSearch() {
                 setAddress?.({ label, lat: r.lat, lon: r.lon });
                 setAddressText(label);
 
-                startFromAddress(r.lat, r.lon);
+                startFromAddress(r.lat, r.lon, label);
               }}
             />
           </div>
