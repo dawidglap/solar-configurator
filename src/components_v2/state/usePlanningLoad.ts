@@ -88,7 +88,17 @@ function buildSnapshotFromPlanning(planning: any) {
   const data = planning?.data ?? {};
   const planner = data?.planner ?? {};
 
-  // supporta più shape possibili
+  const fallbackAddress = [
+    data?.profile?.buildingStreet,
+    data?.profile?.buildingStreetNo,
+    [data?.profile?.buildingZip, data?.profile?.buildingCity]
+      .filter(Boolean)
+      .join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
   return {
     url:
       planner?.snapshot?.url ??
@@ -118,17 +128,7 @@ function buildSnapshotFromPlanning(planning: any) {
     address:
       planner?.snapshot?.address ??
       data?.snapshot?.address ??
-      [
-        data?.profile?.buildingStreet,
-        data?.profile?.buildingStreetNo,
-        [data?.profile?.buildingZip, data?.profile?.buildingCity]
-          .filter(Boolean)
-          .join(" "),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .trim() ||
-      null,
+      (fallbackAddress || null),
   };
 }
 
@@ -188,10 +188,16 @@ export function usePlanningLoad() {
         importState(data.planner);
       }
 
-      // 5) snapshot re-hydration (importantissimo)
+      // 5) snapshot re-hydration
       const snapshot = buildSnapshotFromPlanning(planning);
 
-      if (snapshot.url || snapshot.width || snapshot.height || snapshot.mppImage || snapshot.address) {
+      if (
+        snapshot.url ||
+        snapshot.width ||
+        snapshot.height ||
+        snapshot.mppImage ||
+        snapshot.address
+      ) {
         setSnapshot(snapshot);
       }
 
