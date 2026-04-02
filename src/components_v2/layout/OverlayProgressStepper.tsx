@@ -190,18 +190,16 @@ export default function OverlayProgressStepper() {
                 const onClick = async () => {
                   if (!s.clickable || isRedirecting) return;
 
-                  // planner interno
                   if (
                     s.key === "profile" ||
                     s.key === "ist" ||
                     s.key === "building" ||
                     s.key === "modules"
                   ) {
-                    setStep(s.key as StoreKey);
+                    setStep(s.key);
                     return;
                   }
 
-                  // bridge verso Lovable
                   if (s.key === "parts") {
                     await goToLovableStep("stueckliste");
                     return;
@@ -217,7 +215,7 @@ export default function OverlayProgressStepper() {
                     return;
                   }
 
-                  setStep(s.key as StoreKey);
+                  return;
                 };
 
                 const base =
