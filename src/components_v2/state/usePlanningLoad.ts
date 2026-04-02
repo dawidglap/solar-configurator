@@ -294,5 +294,6 @@ if (snapshot?.address) {
     setStep,
     importState,
     setSnapshot,
+    setAddress,
   ]);
 }

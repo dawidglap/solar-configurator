@@ -42,8 +42,8 @@ function highlightMatches(label: string, query: string): React.ReactNode {
     let last = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(label))) {
-      const s = m.index,
-        e = s + m[0].length;
+      const s = m.index;
+      const e = s + m[0].length;
       if (s > last) parts.push(label.slice(last, s));
       parts.push(
         <mark
@@ -54,7 +54,7 @@ function highlightMatches(label: string, query: string): React.ReactNode {
         </mark>,
       );
       last = e;
-      if (re.lastIndex === s) re.lastIndex++; // anti-loop
+      if (re.lastIndex === s) re.lastIndex++;
     }
     if (last < label.length) parts.push(label.slice(last));
     return parts;
@@ -74,15 +74,23 @@ type Suggest = {
 export default function AddressSearchOSM({
   onPick,
   placeholder = "Adresse suchen…",
+  value,
+  onChangeText,
 }: Props) {
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(value ?? "");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(-1);
   const [results, setResults] = useState<Suggest[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
-  // anchor + dropdown (portal)
+  // sync parent -> local input
+  useEffect(() => {
+    if (typeof value === "string" && value !== q) {
+      setQ(value);
+    }
+  }, [value]); // intentionally not depending on q
+
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const [portalNode] = useState(() => {
@@ -94,21 +102,16 @@ export default function AddressSearchOSM({
     return null;
   });
 
-  // ----------- pick centrale: aggiorna input + chiude dropdown + chiama onPick ----------
   const handlePick = useCallback(
     (r: Suggest) => {
-      // mostra l’indirizzo completo nella barra
       setQ(r.label);
-
-      // callback verso il padre (TopbarAddressSearch)
+      onChangeText?.(r.label);
       onPick(r);
-
-      // chiudi lista & reset
       setOpen(false);
       setResults([]);
       setActive(-1);
     },
-    [onPick],
+    [onPick, onChangeText],
   );
 
   useEffect(() => {
@@ -121,10 +124,10 @@ export default function AddressSearchOSM({
     };
   }, [portalNode]);
 
-  // ---------- FETCH: GeoAdmin SearchServer (come Sonnendach) ----------
   useEffect(() => {
     setErr(null);
     const qTrim = q.trim();
+
     if (qTrim.length < 3) {
       setResults([]);
       setOpen(false);
@@ -145,7 +148,6 @@ export default function AddressSearchOSM({
         });
         const json = await res.json();
 
-        // Map GeoAdmin → Suggest (pulisce HTML dalla label)
         const parsed: Suggest[] = (json?.results ?? [])
           .map((r: any) => {
             const a = r?.attrs ?? {};
@@ -154,7 +156,6 @@ export default function AddressSearchOSM({
             const lat = Number(a.lat ?? r.y);
             const lon = Number(a.lon ?? r.x);
 
-            // estrazioni dal testo pulito
             const mPost = label.match(/\b(\d{4})\b/);
             const mNum = label.match(/\b(\d{1,3}(?:[a-z]|(?:\.\d+)?)?)\b/);
             const postcode = mPost ? mPost[1] : undefined;
@@ -166,15 +167,12 @@ export default function AddressSearchOSM({
           })
           .filter((x: Suggest | null): x is Suggest => !!x);
 
-        // Intenzione utente (prefisso CAP + civico)
         const ql = qTrim.toLowerCase();
         const tokens = ql.split(/\s+/);
 
-        // prefisso CAP: ultima “parola” 2–4 cifre (9, 94, 944, 9445)
         const lastTok = tokens.at(-1) || "";
         const capPrefix = /^\d{2,4}$/.test(lastTok) ? lastTok : null;
 
-        // civico: prima occorrenza “6”, “6a”, “6.1” (max 4-5 char), ignorando CAP
         let houseInQuery: string | null = null;
         for (const tkn of tokens) {
           if (/^\d{1,3}[a-z]?$/.test(tkn) || /^\d{1,3}\.\d+$/.test(tkn)) {
@@ -182,30 +180,31 @@ export default function AddressSearchOSM({
             break;
           }
         }
-        if (houseInQuery && capPrefix && houseInQuery === capPrefix)
+        if (houseInQuery && capPrefix && houseInQuery === capPrefix) {
           houseInQuery = null;
+        }
 
-        // Filtri: prefisso CAP (se presente e presente nel risultato) + civico parziale
         const filtered = parsed.filter((it) => {
           if (
             capPrefix &&
             it.postcode &&
             !String(it.postcode).startsWith(capPrefix)
-          )
+          ) {
             return false;
+          }
           if (houseInQuery) {
             if (!it.number) return false;
             const n = String(it.number).toLowerCase();
-            if (!(n === houseInQuery || n.startsWith(houseInQuery)))
+            if (!(n === houseInQuery || n.startsWith(houseInQuery))) {
               return false;
+            }
           }
           return true;
         });
 
-        // Ordinamento: CAP più specifico > begins-with > occorrenza > label corta
         const sorted = filtered.sort((a, b) => {
-          const al = a.label.toLowerCase(),
-            bl = b.label.toLowerCase();
+          const al = a.label.toLowerCase();
+          const bl = b.label.toLowerCase();
 
           const specA = capPrefix
             ? a.postcode?.startsWith(capPrefix)
@@ -219,14 +218,15 @@ export default function AddressSearchOSM({
             : 0;
           if (specA !== specB) return specB - specA;
 
-          const aStarts = Number(al.startsWith(ql)),
-            bStarts = Number(bl.startsWith(ql));
+          const aStarts = Number(al.startsWith(ql));
+          const bStarts = Number(bl.startsWith(ql));
           if (aStarts !== bStarts) return bStarts - aStarts;
 
-          const ai = al.indexOf(ql),
-            bi = bl.indexOf(ql);
-          if (ai !== bi)
+          const ai = al.indexOf(ql);
+          const bi = bl.indexOf(ql);
+          if (ai !== bi) {
             return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
+          }
 
           return a.label.length - b.label.length;
         });
@@ -247,7 +247,6 @@ export default function AddressSearchOSM({
     return () => clearTimeout(t);
   }, [q]);
 
-  // Posizionamento dropdown (fixed)
   const positionDropdown = useCallback(() => {
     if (!anchorRef.current || !dropdownRef.current) return;
     const r = anchorRef.current.getBoundingClientRect();
@@ -278,20 +277,19 @@ export default function AddressSearchOSM({
     };
   }, [open, positionDropdown]);
 
-  // Chiudi su click fuori
   useEffect(() => {
     if (!open) return;
     const onDocDown = (ev: MouseEvent) => {
       const t = ev.target as Node;
-      if (anchorRef.current?.contains(t) || dropdownRef.current?.contains(t))
+      if (anchorRef.current?.contains(t) || dropdownRef.current?.contains(t)) {
         return;
+      }
       setOpen(false);
     };
     document.addEventListener("mousedown", onDocDown);
     return () => document.removeEventListener("mousedown", onDocDown);
   }, [open]);
 
-  // Keyboard nav
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -348,7 +346,7 @@ export default function AddressSearchOSM({
               role="option"
               aria-selected={i === active}
               onMouseDown={(e) => {
-                e.preventDefault(); // evita blur prima del pick
+                e.preventDefault();
                 handlePick(r);
               }}
               onMouseEnter={() => setActive(i)}
@@ -357,7 +355,6 @@ export default function AddressSearchOSM({
                 i === active ? "bg-neutral-700" : "hover:bg-neutral-700/70",
               ].join(" ")}
             >
-              {/* niente truncate forzato: consentiamo andare a capo se serve */}
               <div className="whitespace-normal leading-5">
                 {highlightMatches(r.label, q)}
               </div>
@@ -375,7 +372,11 @@ export default function AddressSearchOSM({
         <input
           type="text"
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setQ(next);
+            onChangeText?.(next);
+          }}
           placeholder={placeholder}
           onFocus={() => setOpen(results.length > 0)}
           onKeyDown={onKeyDown}
