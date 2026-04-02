@@ -5,6 +5,10 @@ import { useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { usePlannerV2Store } from "./plannerV2Store";
 import { defaultIst } from "./slices/istSlice";
+import {
+  buildTiledSnapshot,
+  TILE_SWISSTOPO_SAT,
+} from "../utils/stitchTilesWMTS";
 
 /** normalizza "Herr"/"Frau" -> "herr"/"frau" */
 function mapSalutation(v: any): "herr" | "frau" | null {
@@ -125,11 +129,72 @@ function buildSnapshotFromPlanning(planning: any) {
       data?.mppImage ??
       null,
 
+    center:
+      planner?.snapshot?.center ??
+      data?.snapshot?.center ??
+      null,
+
+    zoom:
+      planner?.snapshot?.zoom ??
+      data?.snapshot?.zoom ??
+      null,
+
+    bbox3857:
+      planner?.snapshot?.bbox3857 ??
+      data?.snapshot?.bbox3857 ??
+      null,
+
     address:
       planner?.snapshot?.address ??
       data?.snapshot?.address ??
       (fallbackAddress || null),
   };
+}
+
+async function rebuildSnapshotIfNeeded(snapshot: any) {
+  if (!snapshot || typeof snapshot !== "object") return snapshot;
+
+  // se url esiste già, non fare nulla
+  if (snapshot.url) return snapshot;
+
+  const lat = snapshot?.center?.lat;
+  const lon = snapshot?.center?.lon;
+  const zoom = snapshot?.zoom;
+  const width = snapshot?.width;
+  const height = snapshot?.height;
+
+  if (
+    typeof lat !== "number" ||
+    typeof lon !== "number" ||
+    typeof zoom !== "number" ||
+    typeof width !== "number" ||
+    typeof height !== "number"
+  ) {
+    return snapshot;
+  }
+
+  try {
+    const rebuilt = await buildTiledSnapshot({
+      lat,
+      lon,
+      zoom,
+      width,
+      height,
+      scale: 1,
+      tileUrl: TILE_SWISSTOPO_SAT,
+      attribution: "© swisstopo",
+    });
+
+    return {
+      ...snapshot,
+      url: rebuilt.dataUrl,
+      width: rebuilt.width,
+      height: rebuilt.height,
+    };
+  } catch (err) {
+    console.error("Failed to rebuild snapshot from saved metadata:", err);
+    return snapshot;
+  }
 }
 
 export function usePlanningLoad() {
@@ -188,15 +253,16 @@ export function usePlanningLoad() {
         importState(data.planner);
       }
 
-      // 5) snapshot re-hydration
-      const snapshot = buildSnapshotFromPlanning(planning);
+      // 5) snapshot re-hydration + rebuild image if needed
+      let snapshot = buildSnapshotFromPlanning(planning);
+      snapshot = await rebuildSnapshotIfNeeded(snapshot);
 
       if (
-        snapshot.url ||
-        snapshot.width ||
-        snapshot.height ||
-        snapshot.mppImage ||
-        snapshot.address
+        snapshot?.url ||
+        snapshot?.width ||
+        snapshot?.height ||
+        snapshot?.mppImage ||
+        snapshot?.address
       ) {
         setSnapshot(snapshot);
       }
