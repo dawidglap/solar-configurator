@@ -382,10 +382,47 @@ export async function PATCH(
       }
     }
 
-    if (planner && typeof planner === "object") {
-      setObj["data.planner"] = planner;
-      setObj.currentStep = "offer";
-    }
+   if (planner && typeof planner === "object") {
+  const existingPlannerState = (existingPlanning as any)?.data?.planner ?? {};
+
+  const mergedPlanner = {
+    ...existingPlannerState,
+    ...planner,
+
+    // merge profondo per snapshot
+    snapshot: {
+      ...(existingPlannerState?.snapshot ?? {}),
+      ...(planner?.snapshot ?? {}),
+    },
+  };
+
+  // se il planner in arrivo non manda snapshot ma quella esiste già, la preserviamo
+  if (
+    !mergedPlanner.snapshot?.url &&
+    existingPlannerState?.snapshot
+  ) {
+    mergedPlanner.snapshot = {
+      ...existingPlannerState.snapshot,
+      ...(planner?.snapshot ?? {}),
+    };
+  }
+
+  setObj["data.planner"] = mergedPlanner;
+
+  // NON saltare direttamente a "offer"
+  // restiamo in building/modules a seconda dello stato del planner
+  const plannerStep = safeString(planner?.step || mergedPlanner?.step);
+
+  if (plannerStep === "modules") {
+    setObj.currentStep = "modules";
+  } else if (plannerStep === "building") {
+    setObj.currentStep = "building";
+  } else {
+    // fallback prudente: se siamo nel planner tecnico, almeno non mandarlo a offer
+    setObj.currentStep =
+      safeString((existingPlanning as any)?.currentStep) || "building";
+  }
+}
 
     // -------------------- customerId validation / sync --------------------
 
