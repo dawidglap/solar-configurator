@@ -132,47 +132,70 @@ function deriveSummaryFromPlanner(docLike: any) {
   const data = docLike?.data ?? {};
   const existingSummary = docLike?.summary ?? {};
 
-  const panels =
-    Array.isArray(data?.panels) ? data.panels :
-    Array.isArray(data?.planner?.panels) ? data.planner.panels :
-    [];
+  const planner = data?.planner ?? {};
 
-  const layers =
-    Array.isArray(data?.layers) ? data.layers :
-    Array.isArray(data?.planner?.layers) ? data.planner.layers :
-    [];
+  const panels = Array.isArray(planner?.panels)
+    ? planner.panels
+    : Array.isArray(data?.panels)
+      ? data.panels
+      : [];
+
+  const layers = Array.isArray(planner?.layers)
+    ? planner.layers
+    : Array.isArray(data?.layers)
+      ? data.layers
+      : [];
+
+  const catalogPanels = Array.isArray(planner?.catalogPanels)
+    ? planner.catalogPanels
+    : Array.isArray(data?.catalogPanels)
+      ? data.catalogPanels
+      : [];
+
+  const selectedPanelId =
+    safeString(existingSummary.selectedPanelId) ||
+    safeString(planner?.selectedPanelId) ||
+    safeString(data?.selectedPanelId);
+
+  const selectedPanel = catalogPanels.find(
+    (p: any) => safeString(p?.id) === selectedPanelId
+  );
+
+  const moduleCount = panels.length;
+
+  const panelWp =
+    typeof selectedPanel?.wp === "number"
+      ? selectedPanel.wp
+      : 0;
+
+  const dcPowerKw =
+    moduleCount > 0 && panelWp > 0
+      ? Number(((moduleCount * panelWp) / 1000).toFixed(2))
+      : typeof existingSummary.dcPowerKw === "number"
+        ? existingSummary.dcPowerKw
+        : 0;
 
   return {
     customerName:
       safeString(existingSummary.customerName) ||
       buildCustomerNameFromProfile(data?.profile),
 
-    moduleCount:
-      typeof existingSummary.moduleCount === "number"
-        ? existingSummary.moduleCount
-        : panels.length,
+    moduleCount,
 
-    selectedPanelId:
-      safeString(existingSummary.selectedPanelId) ||
-      safeString(data?.selectedPanelId) ||
-      safeString(data?.planner?.selectedPanelId),
+    selectedPanelId,
 
-    dcPowerKw:
-      typeof existingSummary.dcPowerKw === "number"
-        ? existingSummary.dcPowerKw
-        : 0,
+    dcPowerKw,
 
-    roofCount:
-      typeof existingSummary.roofCount === "number"
-        ? existingSummary.roofCount
-        : layers.length,
+    roofCount: layers.length,
 
     hasSnapshot:
-      typeof existingSummary.hasSnapshot === "boolean"
-        ? existingSummary.hasSnapshot
-        : !!data?.snapshotScale,
+      typeof planner?.snapshot === "object"
+        ? true
+        : typeof existingSummary.hasSnapshot === "boolean"
+          ? existingSummary.hasSnapshot
+          : false,
 
-    lastCalculatedAt: existingSummary.lastCalculatedAt ?? null,
+    lastCalculatedAt: new Date().toISOString(),
   };
 }
 
@@ -408,6 +431,22 @@ export async function PATCH(
   }
 
   setObj["data.planner"] = mergedPlanner;
+
+    const computedSummary = deriveSummaryFromPlanner({
+    ...(existingPlanning as any),
+    data: {
+      ...((existingPlanning as any)?.data ?? {}),
+      planner: mergedPlanner,
+    },
+    summary: (existingPlanning as any)?.summary ?? {},
+  });
+
+  setObj["summary.moduleCount"] = computedSummary.moduleCount;
+  setObj["summary.selectedPanelId"] = computedSummary.selectedPanelId;
+  setObj["summary.dcPowerKw"] = computedSummary.dcPowerKw;
+  setObj["summary.roofCount"] = computedSummary.roofCount;
+  setObj["summary.hasSnapshot"] = computedSummary.hasSnapshot;
+  setObj["summary.lastCalculatedAt"] = computedSummary.lastCalculatedAt;
 
   // NON saltare direttamente a "offer"
   // restiamo in building/modules a seconda dello stato del planner
