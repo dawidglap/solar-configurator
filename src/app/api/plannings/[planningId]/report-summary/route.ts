@@ -44,6 +44,10 @@ function safeNumber(v: any, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function safeBoolean(v: any, fallback = false) {
+  return typeof v === "boolean" ? v : fallback;
+}
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -67,6 +71,21 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
   });
 }
 
+function parseMoneyLike(value: any, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return fallback;
+
+  const normalized = value
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/CHF/gi, "")
+    .replace(/'/g, "")
+    .replace(/,/g, ".");
+
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function averageRoofTiltDeg(layers: any[]) {
   if (!Array.isArray(layers) || layers.length === 0) return 20;
 
@@ -81,12 +100,6 @@ function averageRoofTiltDeg(layers: any[]) {
 }
 
 function inferYieldPerKwpFromRoofs(layers: any[]) {
-  // MVP serio:
-  // - se abbiamo azimut e tilt, usiamo una stima prudente
-  // - default Svizzera: 950 kWh/kWp
-  // - Sud / tilt medio buono => valore più alto
-  // Non è il modello finale, ma è centralizzato e migliorabile.
-
   if (!Array.isArray(layers) || layers.length === 0) {
     return 950;
   }
@@ -95,20 +108,17 @@ function inferYieldPerKwpFromRoofs(layers: any[]) {
     const azimuth = safeNumber(roof?.azimuthDeg, 0);
     const tilt = safeNumber(roof?.tiltDeg, 20);
 
-    // normalizza azimuth in [-180, 180]
     const az = ((((azimuth + 180) % 360) + 360) % 360) - 180;
     const absAz = Math.abs(az);
 
     let base = 950;
 
-    // orientamento molto favorevole
     if (absAz <= 30) base = 1120;
     else if (absAz <= 60) base = 1060;
     else if (absAz <= 100) base = 980;
     else if (absAz <= 140) base = 860;
     else base = 720;
 
-    // tilt adjustment leggero
     if (tilt >= 15 && tilt <= 35) base += 40;
     else if (tilt >= 5 && tilt < 15) base += 10;
     else if (tilt > 35 && tilt <= 50) base -= 20;
@@ -128,19 +138,16 @@ function estimateSelfConsumptionPct(args: {
   hasEv: boolean;
   hasHeatPump: boolean;
 }) {
-  const { yearlyConsumptionKwh, annualProductionKwh, hasBattery, hasEv, hasHeatPump } =
-    args;
+  const { yearlyConsumptionKwh, annualProductionKwh, hasBattery, hasEv, hasHeatPump } = args;
 
   if (annualProductionKwh <= 0 || yearlyConsumptionKwh <= 0) {
     return 0;
   }
 
-  // Base molto prudente
   let pct = 0.32;
 
   const ratio = yearlyConsumptionKwh / annualProductionKwh;
 
-  // se il cliente consuma molto rispetto alla produzione, autoconsumo sale
   if (ratio >= 1.2) pct += 0.08;
   else if (ratio >= 0.9) pct += 0.05;
   else if (ratio >= 0.7) pct += 0.02;
@@ -153,43 +160,138 @@ function estimateSelfConsumptionPct(args: {
   return clamp(pct, 0.15, 0.85);
 }
 
-function getPartsTotalsFromPlanning(doc: any) {
-  const partsItems =
+type NormalizedPartItem = {
+  id: string;
+  category: string;
+  brand: string;
+  name: string;
+  unit: string;
+  unitLabel: string;
+  quantity: number;
+  unitPriceNet: number;
+  lineTotalNet: number;
+};
+
+function normalizePartItem(item: any): NormalizedPartItem {
+  const quantity = safeNumber(
+    item?.quantity ?? item?.qty ?? item?.stk,
+    0
+  );
+
+  const unitPriceNet = safeNumber(
+    item?.unitPriceNet ??
+      item?.unitPriceChf ??
+      item?.unitPrice ??
+      item?.einzelpreis ??
+      item?.priceNet ??
+      item?.priceChf ??
+      item?.price,
+    0
+  );
+
+  const lineTotalNet = safeNumber(
+    item?.lineTotalNet ??
+      item?.lineTotalChf ??
+      item?.totalNet ??
+      item?.totalChf,
+    quantity * unitPriceNet
+  );
+
+  return {
+    id: safeString(item?.id),
+    category: safeString(item?.category ?? item?.kategorie),
+    brand: safeString(item?.brand ?? item?.marke),
+    name: safeString(item?.name ?? item?.beschreibung),
+    unit: safeString(item?.unit ?? item?.einheit),
+    unitLabel: safeString(item?.unitLabel ?? item?.einheit) || safeString(item?.unit ?? item?.einheit),
+    quantity,
+    unitPriceNet,
+    lineTotalNet,
+  };
+}
+
+function getRawPartsItemsFromPlanning(doc: any) {
+  return (
     doc?.data?.parts?.items ??
     doc?.data?.planner?.parts?.items ??
     doc?.data?.planner?.parts ??
-    [];
+    []
+  );
+}
 
-  if (!Array.isArray(partsItems)) {
+function normalizeReportOptions(raw: any) {
+  const battery =
+    typeof raw?.battery === "boolean"
+      ? raw.battery
+      : typeof raw?.hasBattery === "boolean"
+        ? raw.hasBattery
+        : undefined;
+
+  const charging =
+    typeof raw?.charging === "boolean"
+      ? raw.charging
+      : typeof raw?.hasEv === "boolean"
+        ? raw.hasEv
+        : undefined;
+
+  const heatPump =
+    typeof raw?.heatPump === "boolean"
+      ? raw.heatPump
+      : typeof raw?.hasHeatPump === "boolean"
+        ? raw.hasHeatPump
+        : undefined;
+
+  return {
+    battery,
+    charging,
+    heatPump,
+    discountChf: parseMoneyLike(raw?.discountChf ?? raw?.rabattChf, 0),
+    discountPct: parseMoneyLike(raw?.discountPct ?? raw?.rabattPct, 0),
+    subsidyChf: parseMoneyLike(raw?.subsidy ?? raw?.foerderungen, 0),
+    skontoPct: parseMoneyLike(raw?.skonto, 0),
+    paymentTerms: safeString(raw?.paymentTerms ?? raw?.zahlungsbedingungen),
+  };
+}
+
+function shouldIncludePartItem(item: NormalizedPartItem, options: ReturnType<typeof normalizeReportOptions>) {
+  const category = item.category.toLowerCase();
+
+  if (category === "batterie" || category === "battery") {
+    if (options.battery === false) return false;
+  }
+
+  if (category === "ladestation" || category === "wallbox" || category === "ev_charger") {
+    if (options.charging === false) return false;
+  }
+
+  if (category === "wärmepumpe" || category === "waermepumpe" || category === "heatpump" || category === "heat_pump") {
+    if (options.heatPump === false) return false;
+  }
+
+  return true;
+}
+
+function getPartsTotalsFromPlanning(doc: any, reportOptions: ReturnType<typeof normalizeReportOptions>) {
+  const rawItems = getRawPartsItemsFromPlanning(doc);
+
+  if (!Array.isArray(rawItems)) {
     return {
       partsTotalChf: 0,
-      items: [],
+      items: [] as NormalizedPartItem[],
     };
   }
 
-  const normalizedItems = partsItems.map((item: any) => {
-    const qty = safeNumber(item?.quantity ?? item?.qty, 0);
-    const unitPrice = safeNumber(
-      item?.unitPriceChf ?? item?.unitPrice ?? item?.priceChf ?? item?.price,
-      0
-    );
-    const total = safeNumber(item?.totalChf, qty * unitPrice);
-
-    return {
-      ...item,
-      quantity: qty,
-      unitPriceChf: unitPrice,
-      totalChf: total,
-    };
-  });
+  const normalizedItems = rawItems
+    .map(normalizePartItem)
+    .filter((item) => shouldIncludePartItem(item, reportOptions));
 
   const partsTotalChf = normalizedItems.reduce(
-    (sum: number, item: any) => sum + safeNumber(item?.totalChf, 0),
+    (sum, item) => sum + safeNumber(item.lineTotalNet, 0),
     0
   );
 
   return {
-    partsTotalChf,
+    partsTotalChf: Number(partsTotalChf.toFixed(2)),
     items: normalizedItems,
   };
 }
@@ -199,6 +301,7 @@ function buildReportSummary(doc: any) {
   const planner = data?.planner ?? {};
   const ist = data?.ist ?? {};
   const summary = doc?.summary ?? {};
+  const reportOptions = normalizeReportOptions(data?.reportOptions ?? {});
 
   const panels = Array.isArray(planner?.panels) ? planner.panels : [];
   const layers = Array.isArray(planner?.layers) ? planner.layers : [];
@@ -209,6 +312,7 @@ function buildReportSummary(doc: any) {
       : [];
 
   const moduleCount = panels.length;
+
   const selectedPanelId =
     safeString(planner?.selectedPanelId) ||
     safeString(summary?.selectedPanelId) ||
@@ -241,15 +345,24 @@ function buildReportSummary(doc: any) {
   const avgRoofTiltDeg = Number(averageRoofTiltDeg(layers).toFixed(1));
 
   const yearlyConsumptionKwh = safeNumber(ist?.electricityUsageKwh, 0);
-
   const yearlyYieldKwhPerKwp = inferYieldPerKwpFromRoofs(layers);
-
   const annualProductionKwh =
     dcPowerKw > 0 ? Math.round(dcPowerKw * yearlyYieldKwhPerKwp) : 0;
 
-  const hasBattery = !!ist?.hasBattery;
-  const hasEv = !!ist?.hasEV;
-  const hasHeatPump = !!ist?.hasHeatPump;
+  const hasBattery =
+    typeof reportOptions.battery === "boolean"
+      ? reportOptions.battery
+      : !!ist?.hasBattery;
+
+  const hasEv =
+    typeof reportOptions.charging === "boolean"
+      ? reportOptions.charging
+      : !!ist?.hasEV;
+
+  const hasHeatPump =
+    typeof reportOptions.heatPump === "boolean"
+      ? reportOptions.heatPump
+      : !!ist?.hasHeatPump;
 
   const selfConsumptionPctEstimated = estimateSelfConsumptionPct({
     yearlyConsumptionKwh,
@@ -277,11 +390,24 @@ function buildReportSummary(doc: any) {
 
   const modulesTotalChf = Number((moduleCount * moduleUnitPriceChf).toFixed(2));
 
-  const { partsTotalChf } = getPartsTotalsFromPlanning(doc);
+  const { partsTotalChf, items: includedParts } = getPartsTotalsFromPlanning(doc, reportOptions);
 
-  const totalInvestmentChf = Number((modulesTotalChf + partsTotalChf).toFixed(2));
+  const grossInvestmentChf = Number((modulesTotalChf + partsTotalChf).toFixed(2));
 
-  // Default MVP - configurabili poi per azienda
+  const discountFromPctChf = Number(
+    ((grossInvestmentChf * clamp(reportOptions.discountPct, 0, 100)) / 100).toFixed(2)
+  );
+
+  const discountFromChf = Number(Math.max(0, reportOptions.discountChf).toFixed(2));
+  const subsidyChf = Number(Math.max(0, reportOptions.subsidyChf).toFixed(2));
+  const skontoPct = Number(clamp(reportOptions.skontoPct, 0, 100).toFixed(2));
+
+  const totalDiscountChf = Number((discountFromPctChf + discountFromChf).toFixed(2));
+
+  const totalInvestmentChf = Number(
+    Math.max(0, grossInvestmentChf - totalDiscountChf - subsidyChf).toFixed(2)
+  );
+
   const tariffConsumptionChfPerKwh = 0.277;
   const tariffFeedInChfPerKwh = 0.10;
 
@@ -324,6 +450,12 @@ function buildReportSummary(doc: any) {
     moduleUnitPriceChf,
     modulesTotalChf,
     partsTotalChf,
+    grossInvestmentChf,
+    discountFromPctChf,
+    discountFromChf,
+    totalDiscountChf,
+    subsidyChf,
+    skontoPct,
     totalInvestmentChf,
 
     annualSavingsChf,
@@ -339,6 +471,9 @@ function buildReportSummary(doc: any) {
     hasBattery,
     hasEv,
     hasHeatPump,
+
+    paymentTerms: reportOptions.paymentTerms,
+    includedPartsCount: includedParts.length,
 
     lastCalculatedAt: new Date().toISOString(),
     calculationMode: "mvp_estimated",
