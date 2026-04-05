@@ -268,18 +268,20 @@ export async function PATCH(
   const planningNumber = body?.planningNumber;
   const commercial = body?.commercial;
   const summary = body?.summary;
+  const parts = body?.parts;
 
-  const hasPlannerPayload =
-    (profile && typeof profile === "object") ||
-    (ist && typeof ist === "object") ||
-    (planner && typeof planner === "object");
+const hasPlannerPayload =
+  (profile && typeof profile === "object") ||
+  (ist && typeof ist === "object") ||
+  (planner && typeof planner === "object") ||
+  (parts && typeof parts === "object");
 
-  const hasCrmPayload =
-    typeof title === "string" ||
-    typeof customerId === "string" ||
-    typeof planningNumber === "string" ||
-    (commercial && typeof commercial === "object") ||
-    (summary && typeof summary === "object");
+const hasCrmPayload =
+  typeof title === "string" ||
+  typeof customerId === "string" ||
+  typeof planningNumber === "string" ||
+  (commercial && typeof commercial === "object") ||
+  (summary && typeof summary === "object");
 
   if (!hasPlannerPayload && !hasCrmPayload) {
     return jsonResponse(
@@ -461,6 +463,26 @@ export async function PATCH(
     setObj.currentStep =
       safeString((existingPlanning as any)?.currentStep) || "building";
   }
+}
+
+if (parts && typeof parts === "object") {
+  const existingParts = (existingPlanning as any)?.data?.parts ?? {};
+
+  const normalizedItems = Array.isArray(parts?.items) ? parts.items : existingParts.items ?? [];
+  const normalizedFormDocuments =
+    parts?.formDocuments && typeof parts.formDocuments === "object"
+      ? parts.formDocuments
+      : existingParts.formDocuments ?? {};
+
+  setObj["data.parts"] = {
+    ...existingParts,
+    ...parts,
+    items: normalizedItems,
+    formDocuments: normalizedFormDocuments,
+  };
+
+  // se siamo in Stückliste, manteniamo lo step corretto
+  setObj.currentStep = "parts";
 }
 
     // -------------------- customerId validation / sync --------------------
