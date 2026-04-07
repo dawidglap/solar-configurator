@@ -44,10 +44,6 @@ function safeNumber(v: any, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function safeBoolean(v: any, fallback = false) {
-  return typeof v === "boolean" ? v : fallback;
-}
-
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -203,7 +199,9 @@ function normalizePartItem(item: any): NormalizedPartItem {
     brand: safeString(item?.brand ?? item?.marke),
     name: safeString(item?.name ?? item?.beschreibung),
     unit: safeString(item?.unit ?? item?.einheit),
-    unitLabel: safeString(item?.unitLabel ?? item?.einheit) || safeString(item?.unit ?? item?.einheit),
+    unitLabel:
+      safeString(item?.unitLabel ?? item?.einheit) ||
+      safeString(item?.unit ?? item?.einheit),
     quantity,
     unitPriceNet,
     lineTotalNet,
@@ -212,6 +210,7 @@ function normalizePartItem(item: any): NormalizedPartItem {
 
 function getRawPartsItemsFromPlanning(doc: any) {
   return (
+    doc?.parts?.items ??
     doc?.data?.parts?.items ??
     doc?.data?.planner?.parts?.items ??
     doc?.data?.planner?.parts ??
@@ -253,8 +252,16 @@ function normalizeReportOptions(raw: any) {
   };
 }
 
-function shouldIncludePartItem(item: NormalizedPartItem, options: ReturnType<typeof normalizeReportOptions>) {
+function shouldIncludePartItem(
+  item: NormalizedPartItem,
+  options: ReturnType<typeof normalizeReportOptions>
+) {
   const category = item.category.toLowerCase();
+
+  // ESCLUDI i moduli dalle parts: i moduli sono già conteggiati separatamente
+  if (["module", "modules", "modul", "modulele", "pv-module"].includes(category)) {
+    return false;
+  }
 
   if (category === "batterie" || category === "battery") {
     if (options.battery === false) return false;
@@ -264,14 +271,22 @@ function shouldIncludePartItem(item: NormalizedPartItem, options: ReturnType<typ
     if (options.charging === false) return false;
   }
 
-  if (category === "wärmepumpe" || category === "waermepumpe" || category === "heatpump" || category === "heat_pump") {
+  if (
+    category === "wärmepumpe" ||
+    category === "waermepumpe" ||
+    category === "heatpump" ||
+    category === "heat_pump"
+  ) {
     if (options.heatPump === false) return false;
   }
 
   return true;
 }
 
-function getPartsTotalsFromPlanning(doc: any, reportOptions: ReturnType<typeof normalizeReportOptions>) {
+function getPartsTotalsFromPlanning(
+  doc: any,
+  reportOptions: ReturnType<typeof normalizeReportOptions>
+) {
   const rawItems = getRawPartsItemsFromPlanning(doc);
 
   if (!Array.isArray(rawItems)) {
@@ -394,18 +409,27 @@ function buildReportSummary(doc: any) {
 
   const grossInvestmentChf = Number((modulesTotalChf + partsTotalChf).toFixed(2));
 
-  const discountFromPctChf = Number(
-    ((grossInvestmentChf * clamp(reportOptions.discountPct, 0, 100)) / 100).toFixed(2)
-  );
-
-  const discountFromChf = Number(Math.max(0, reportOptions.discountChf).toFixed(2));
+  const discountPct = Number(clamp(reportOptions.discountPct, 0, 100).toFixed(2));
+  const discountChf = Number(Math.max(0, reportOptions.discountChf).toFixed(2));
   const subsidyChf = Number(Math.max(0, reportOptions.subsidyChf).toFixed(2));
   const skontoPct = Number(clamp(reportOptions.skontoPct, 0, 100).toFixed(2));
 
-  const totalDiscountChf = Number((discountFromPctChf + discountFromChf).toFixed(2));
+  const discountFromPctChf = Number(
+    ((grossInvestmentChf * discountPct) / 100).toFixed(2)
+  );
+
+  const totalDiscountChf = Number((discountFromPctChf + discountChf).toFixed(2));
+
+  const netInvestmentBeforeSubsidyChf = Number(
+    Math.max(0, grossInvestmentChf - totalDiscountChf).toFixed(2)
+  );
 
   const totalInvestmentChf = Number(
-    Math.max(0, grossInvestmentChf - totalDiscountChf - subsidyChf).toFixed(2)
+    Math.max(0, netInvestmentBeforeSubsidyChf - subsidyChf).toFixed(2)
+  );
+
+  const skontoValueChf = Number(
+    Math.max(0, netInvestmentBeforeSubsidyChf * (skontoPct / 100)).toFixed(2)
   );
 
   const tariffConsumptionChfPerKwh = 0.277;
@@ -450,12 +474,16 @@ function buildReportSummary(doc: any) {
     moduleUnitPriceChf,
     modulesTotalChf,
     partsTotalChf,
+
     grossInvestmentChf,
+    discountChf,
+    discountPct,
     discountFromPctChf,
-    discountFromChf,
     totalDiscountChf,
     subsidyChf,
+    netInvestmentBeforeSubsidyChf,
     skontoPct,
+    skontoValueChf,
     totalInvestmentChf,
 
     annualSavingsChf,
