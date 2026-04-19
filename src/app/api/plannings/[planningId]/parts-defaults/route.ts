@@ -149,6 +149,14 @@ function hasAnyToken(haystack: string, tokens: string[]) {
   return tokens.some((token) => haystack.includes(token.toLowerCase()));
 }
 
+function isBatteryItem(item: any) {
+  return hasAnyToken(textIndex(item), ["battery", "batterie", "speicher", "akku"]);
+}
+
+function isWallboxItem(item: any) {
+  return hasAnyToken(textIndex(item), ["wallbox", "ladestation", "ev charger", "charger", "easee", "zaptec"]);
+}
+
 /* ------------------------------- Line items ------------------------------- */
 
 function makeLineItem(args: {
@@ -177,6 +185,63 @@ function makeLineItem(args: {
   };
 }
 
+/* ---------------------------- Report options ------------------------------ */
+
+function normalizeReportOptions(raw: any) {
+  return {
+    battery:
+      typeof raw?.battery === "boolean"
+        ? raw.battery
+        : typeof raw?.hasBattery === "boolean"
+          ? raw.hasBattery
+          : typeof raw?.includeBattery === "boolean"
+            ? raw.includeBattery
+            : undefined,
+
+    charging:
+      typeof raw?.charging === "boolean"
+        ? raw.charging
+        : typeof raw?.hasEv === "boolean"
+          ? raw.hasEv
+          : typeof raw?.includeWallbox === "boolean"
+            ? raw.includeWallbox
+            : undefined,
+
+    heatPump:
+      typeof raw?.heatPump === "boolean"
+        ? raw.heatPump
+        : typeof raw?.hasHeatPump === "boolean"
+          ? raw.hasHeatPump
+          : typeof raw?.includeHeatPump === "boolean"
+            ? raw.includeHeatPump
+            : undefined,
+
+    selectedBatteryItemId: safeString(
+      raw?.selectedBatteryItemId ??
+      raw?.batteryItemId ??
+      raw?.selectedBatteryId
+    ),
+
+    selectedWallboxItemId: safeString(
+      raw?.selectedWallboxItemId ??
+      raw?.wallboxItemId ??
+      raw?.selectedWallboxId
+    ),
+
+    paymentTermsPreset: safeString(
+      raw?.paymentTermsPreset ?? raw?.zahlungsbedingungenPreset
+    ),
+
+    paymentTermsLabel: safeString(
+      raw?.paymentTermsLabel ??
+      raw?.paymentTerms ??
+      raw?.zahlungsbedingungen
+    ),
+
+    skontoPct: safeNumber(raw?.skontoPct ?? raw?.skonto, 0),
+  };
+}
+
 /* ------------------------------ Planning core ----------------------------- */
 
 function getPlanningCore(doc: any) {
@@ -184,6 +249,7 @@ function getPlanningCore(doc: any) {
   const planner = data?.planner ?? {};
   const ist = data?.ist ?? {};
   const summary = doc?.summary ?? {};
+  const reportOptions = normalizeReportOptions(data?.reportOptions ?? {});
 
   const panels = Array.isArray(planner?.panels) ? planner.panels : [];
   const layers = Array.isArray(planner?.layers) ? planner.layers : [];
@@ -223,6 +289,7 @@ function getPlanningCore(doc: any) {
     layers,
     ist,
     summary,
+    reportOptions,
     moduleCount,
     selectedPanelId,
     selectedPanel,
@@ -234,6 +301,12 @@ function getPlanningCore(doc: any) {
 
 function getActiveItems(catalogItemsRaw: any[]) {
   return catalogItemsRaw.map(normalizeCatalogItem).filter((i) => i.isActive);
+}
+
+function findItemById(items: any[], itemId?: string | null) {
+  const id = safeString(itemId);
+  if (!id) return null;
+  return items.find((item) => safeString(item.id) === id) ?? null;
 }
 
 function findFirstMatchingItem(
@@ -361,7 +434,7 @@ function chooseInverterAllocation(items: any[], dcPowerKw: number) {
 
 function getBatteries(items: any[]) {
   return items
-    .filter((i) => hasAnyToken(textIndex(i), ["battery", "batterie", "speicher", "akku"]))
+    .filter((i) => isBatteryItem(i))
     .map((i) => {
       const metaKwh = safeNumber(i?.metadata?.capacityKwh, 0);
       const parsedKwh =
@@ -497,11 +570,21 @@ function estimateCommissioningPrice(dcPowerKw: number) {
 
 function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
   const items = getActiveItems(catalogItemsRaw);
-  const { ist, layers, moduleCount, selectedPanel, dcPowerKw } = getPlanningCore(doc);
+  const { ist, layers, moduleCount, selectedPanel, dcPowerKw, reportOptions } = getPlanningCore(doc);
 
   const yearlyConsumptionKwh = safeNumber(ist?.electricityUsageKwh, 0);
-  const hasBattery = !!ist?.hasBattery;
-  const hasEV = !!ist?.hasEV;
+
+  const selectedBatteryItem = findItemById(items, reportOptions.selectedBatteryItemId);
+  const selectedWallboxItem = findItemById(items, reportOptions.selectedWallboxItemId);
+
+  const wantsBattery =
+    !!selectedBatteryItem ||
+    (typeof reportOptions.battery === "boolean" ? reportOptions.battery : !!ist?.hasBattery);
+
+  const wantsWallbox =
+    !!selectedWallboxItem ||
+    (typeof reportOptions.charging === "boolean" ? reportOptions.charging : !!ist?.hasEV);
+
   const roofType = inferRoofType({ ist, layers });
   const roofCount = Array.isArray(layers) ? layers.length : 0;
 
@@ -680,7 +763,11 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     }
   );
 
-  const estimatedAcPrice = estimateAcElectricalPrice(dcPowerKw, yearlyConsumptionKwh, inverterCount || 1);
+  const estimatedAcPrice = estimateAcElectricalPrice(
+    dcPowerKw,
+    yearlyConsumptionKwh,
+    inverterCount || 1
+  );
 
   defaults.push(
     acElectrical
@@ -725,7 +812,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     moduleCount,
     roofType,
     roofCount,
-    hasBattery,
+    hasBattery: wantsBattery,
   });
 
   defaults.push(
@@ -893,8 +980,15 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
   }
 
   /* ------------------------------- battery -------------------------------- */
-  if (hasBattery) {
-    const batteryChoice = chooseBattery(items, dcPowerKw, yearlyConsumptionKwh);
+  if (wantsBattery) {
+    const batteryChoice =
+      selectedBatteryItem && isBatteryItem(selectedBatteryItem)
+        ? {
+            item: selectedBatteryItem,
+            targetKwh: estimateTargetBatteryKwh({ dcPowerKw, yearlyConsumptionKwh }),
+          }
+        : chooseBattery(items, dcPowerKw, yearlyConsumptionKwh);
+
     if (batteryChoice?.item) {
       defaults.push(
         makeLineItem({
@@ -917,14 +1011,18 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
   }
 
   /* ------------------------------- wallbox -------------------------------- */
-  if (hasEV) {
-    const wallbox = findFirstMatchingItem(items, [
-      "wallbox",
-      "ladestation",
-      "ev charger",
-      "easee",
-      "zaptec",
-    ]);
+  if (wantsWallbox) {
+    const wallbox =
+      selectedWallboxItem && isWallboxItem(selectedWallboxItem)
+        ? selectedWallboxItem
+        : findFirstMatchingItem(items, [
+            "wallbox",
+            "ladestation",
+            "ev charger",
+            "easee",
+            "zaptec",
+          ]);
+
     if (wallbox) {
       defaults.push(
         makeLineItem({
