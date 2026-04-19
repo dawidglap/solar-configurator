@@ -67,6 +67,14 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
   });
 }
 
+function round1(n: number) {
+  return Math.round(n * 10) / 10;
+}
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
 /* ------------------------------ Normalization ----------------------------- */
 
 function normalizeCatalogItem(doc: any) {
@@ -137,18 +145,6 @@ function hasAnyToken(haystack: string, tokens: string[]) {
   return tokens.some((token) => haystack.includes(token.toLowerCase()));
 }
 
-function round1(n: number) {
-  return Math.round(n * 10) / 10;
-}
-
-function round2(n: number) {
-  return Math.round(n * 100) / 100;
-}
-
-function compact<T>(arr: Array<T | null | undefined | false>) {
-  return arr.filter(Boolean) as T[];
-}
-
 /* ------------------------------- Line items ------------------------------- */
 
 function makeLineItem(args: {
@@ -160,8 +156,8 @@ function makeLineItem(args: {
   stk: number;
   einheit?: string;
   optional?: boolean;
-  sourceCatalogItemId?: string;
-  sourceCategory?: string;
+  sourceCatalogItemId?: string | null;
+  sourceCategory?: string | null;
 }) {
   return {
     id: args.id,
@@ -266,33 +262,6 @@ function findFirstMatchingItem(
   return candidates[0] ?? null;
 }
 
-function findAllMatchingItems(
-  items: any[],
-  tokens: string[],
-  opts?: {
-    requirePrice?: boolean;
-    excludeTokens?: string[];
-  }
-) {
-  const requirePrice = opts?.requirePrice ?? true;
-  const excludeTokens = opts?.excludeTokens ?? [];
-
-  return items
-    .filter((item) => {
-      const idx = textIndex(item);
-      if (!hasAnyToken(idx, tokens)) return false;
-      if (excludeTokens.length && hasAnyToken(idx, excludeTokens)) return false;
-      if (requirePrice && safeNumber(item.priceNet, 0) <= 0) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      const aScore = safeNumber(a.sortOrder, 0);
-      const bScore = safeNumber(b.sortOrder, 0);
-      if (aScore !== bScore) return aScore - bScore;
-      return safeString(a.name).localeCompare(safeString(b.name));
-    });
-}
-
 /* --------------------------- Inverter allocation -------------------------- */
 
 function getInverters(items: any[]) {
@@ -314,49 +283,67 @@ function getInverters(items: any[]) {
     .sort((a, b) => a.inferredPowerKw - b.inferredPowerKw);
 }
 
+function buildInverterCombinations(
+  models: any[],
+  maxUnits = 3
+): Array<{ items: Array<{ item: any; quantity: number }>; totalKw: number; units: number }> {
+  const combos: Array<{ items: Array<{ item: any; quantity: number }>; totalKw: number; units: number }> = [];
+  const n = models.length;
+
+  function walk(index: number, remainingUnits: number, acc: Array<{ item: any; quantity: number }>) {
+    if (index >= n || remainingUnits <= 0) {
+      const used = acc.filter((x) => x.quantity > 0);
+      const units = used.reduce((sum, x) => sum + x.quantity, 0);
+      if (units > 0) {
+        const totalKw = round2(
+          used.reduce((sum, x) => sum + safeNumber(x.item.inferredPowerKw, 0) * x.quantity, 0)
+        );
+        combos.push({ items: used, totalKw, units });
+      }
+      return;
+    }
+
+    for (let qty = 0; qty <= remainingUnits; qty += 1) {
+      walk(index + 1, remainingUnits - qty, [...acc, { item: models[index], quantity: qty }]);
+    }
+  }
+
+  walk(0, maxUnits, []);
+  return combos;
+}
+
 function chooseInverterAllocation(items: any[], dcPowerKw: number) {
   const inverters = getInverters(items);
   if (!inverters.length || dcPowerKw <= 0) return [];
 
-  const targetAcKw = clamp(dcPowerKw * 0.92, 2, dcPowerKw * 1.02);
+  const minAcKw = dcPowerKw * 0.78;
+  const maxAcKw = dcPowerKw * 1.08;
+  const targetAcKw = dcPowerKw;
 
-  // 1) try single inverter
-  const single = inverters.find(
-    (inv) => inv.inferredPowerKw >= targetAcKw * 0.95 && inv.inferredPowerKw <= dcPowerKw * 1.15
-  );
-  if (single) {
-    return [{ item: single, quantity: 1 }];
+  const combos = buildInverterCombinations(inverters, 3)
+    .filter((combo) => combo.totalKw >= minAcKw && combo.totalKw <= maxAcKw)
+    .sort((a, b) => {
+      if (a.units !== b.units) return a.units - b.units;
+
+      const aDiff = Math.abs(a.totalKw - targetAcKw);
+      const bDiff = Math.abs(b.totalKw - targetAcKw);
+      if (aDiff !== bDiff) return aDiff - bDiff;
+
+      const aDistinct = a.items.length;
+      const bDistinct = b.items.length;
+      if (aDistinct !== bDistinct) return aDistinct - bDistinct;
+
+      return b.totalKw - a.totalKw;
+    });
+
+  if (combos.length) {
+    return combos[0].items;
   }
 
-  // 2) greedy multi-inverter using largest available not exceeding sane count
-  const desc = [...inverters].sort((a, b) => b.inferredPowerKw - a.inferredPowerKw);
-  const chosen: Array<{ item: any; quantity: number }> = [];
-  let remaining = targetAcKw;
-  let safety = 0;
-
-  while (remaining > 0 && safety < 8) {
-    safety += 1;
-    const next =
-      desc.find((inv) => inv.inferredPowerKw <= remaining * 1.15) ??
-      desc.find((inv) => inv.inferredPowerKw > 0) ??
-      null;
-
-    if (!next) break;
-
-    const existing = chosen.find((c) => c.item.id === next.id);
-    if (existing) existing.quantity += 1;
-    else chosen.push({ item: next, quantity: 1 });
-
-    remaining -= next.inferredPowerKw;
-    if (remaining <= 0) break;
-  }
-
-  if (chosen.length) return chosen;
-
-  // 3) ultimate fallback: nearest largest
   const fallback = [...inverters].sort(
     (a, b) =>
-      Math.abs(a.inferredPowerKw - targetAcKw) - Math.abs(b.inferredPowerKw - targetAcKw)
+      Math.abs(safeNumber(a.inferredPowerKw, 0) - dcPowerKw) -
+      Math.abs(safeNumber(b.inferredPowerKw, 0) - dcPowerKw)
   )[0];
 
   return fallback ? [{ item: fallback, quantity: 1 }] : [];
@@ -379,6 +366,7 @@ function getBatteries(items: any[]) {
         inferredCapacityKwh: parsedKwh,
       };
     })
+    .filter((i) => safeNumber(i.inferredCapacityKwh, 0) > 0)
     .sort((a, b) => a.inferredCapacityKwh - b.inferredCapacityKwh);
 }
 
@@ -404,10 +392,11 @@ function chooseBattery(items: any[], dcPowerKw: number, yearlyConsumptionKwh: nu
   const targetKwh = estimateTargetBatteryKwh({ dcPowerKw, yearlyConsumptionKwh });
 
   const preferred =
-    batteries.find((b) => b.inferredCapacityKwh >= targetKwh) ??
+    batteries.find((b) => safeNumber(b.inferredCapacityKwh, 0) >= targetKwh) ??
     [...batteries].sort(
       (a, b) =>
-        Math.abs(a.inferredCapacityKwh - targetKwh) - Math.abs(b.inferredCapacityKwh - targetKwh)
+        Math.abs(safeNumber(a.inferredCapacityKwh, 0) - targetKwh) -
+        Math.abs(safeNumber(b.inferredCapacityKwh, 0) - targetKwh)
     )[0] ??
     null;
 
@@ -457,10 +446,11 @@ function estimateDcElectricalPrice(dcPowerKw: number) {
   return round2(Math.max(700, dcPowerKw * 85));
 }
 
-function estimateAcElectricalPrice(dcPowerKw: number, yearlyConsumptionKwh: number) {
+function estimateAcElectricalPrice(dcPowerKw: number, yearlyConsumptionKwh: number, inverterCount: number) {
   let base = Math.max(900, dcPowerKw * 70);
   if (yearlyConsumptionKwh >= 12000) base += 350;
   if (yearlyConsumptionKwh >= 25000) base += 500;
+  if (inverterCount > 1) base += (inverterCount - 1) * 250;
   return round2(base);
 }
 
@@ -472,6 +462,25 @@ function estimatePronovoControlPrice(dcPowerKw: number) {
   return round2(Math.max(350, 250 + dcPowerKw * 8));
 }
 
+function estimateMontageServicePrice(args: {
+  dcPowerKw: number;
+  moduleCount: number;
+  roofType: "flat" | "pitched";
+  roofCount: number;
+  hasBattery: boolean;
+}) {
+  const { dcPowerKw, moduleCount, roofType, roofCount, hasBattery } = args;
+
+  let base = roofType === "flat" ? 3200 : 2800;
+  base += roofType === "flat" ? moduleCount * 105 : moduleCount * 85;
+  base += Math.max(0, roofCount - 1) * 450;
+  if (hasBattery) base += 600;
+  if (dcPowerKw >= 30) base += 900;
+  if (dcPowerKw >= 50) base += 1200;
+
+  return round2(base);
+}
+
 /* --------------------------- Default item builder ------------------------- */
 
 function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
@@ -481,8 +490,8 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
   const yearlyConsumptionKwh = safeNumber(ist?.electricityUsageKwh, 0);
   const hasBattery = !!ist?.hasBattery;
   const hasEV = !!ist?.hasEV;
-
   const roofType = inferRoofType({ ist, layers });
+  const roofCount = Array.isArray(layers) ? layers.length : 0;
 
   const defaults: any[] = [];
 
@@ -506,6 +515,8 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
 
   /* -------------------------- inverter rows (smart) ----------------------- */
   const inverterAllocation = chooseInverterAllocation(items, dcPowerKw);
+  const inverterCount = inverterAllocation.reduce((sum, x) => sum + safeNumber(x.quantity, 0), 0);
+
   inverterAllocation.forEach((allocation, index) => {
     defaults.push(
       makeLineItem({
@@ -605,7 +616,6 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     "dc-elektrisch",
     "dc electrical",
     "dc installation",
-    "string",
     "generatoranschlusskasten",
     "gak",
   ]);
@@ -634,21 +644,27 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           stk: 1,
           einheit: "Pauschal",
           optional: false,
-          sourceCatalogItemId: null as any,
+          sourceCatalogItemId: null,
           sourceCategory: "dc_electrical",
         })
   );
 
   /* ---------------------------- AC electrical ----------------------------- */
-  const acElectrical = findFirstMatchingItem(items, [
-    "ac elektrisch",
-    "ac-elektrisch",
-    "ac electrical",
-    "ac installation",
-    "netzanschluss",
-    "zähler",
-    "meter",
-  ]);
+  const acElectrical = findFirstMatchingItem(
+    items,
+    [
+      "ac elektrisch",
+      "ac-elektrisch",
+      "ac electrical",
+      "ac installation",
+      "wechselrichter installation",
+      "zähler",
+      "meter",
+    ],
+    {
+      excludeTokens: ["netzanschluss"],
+    }
+  );
 
   defaults.push(
     acElectrical
@@ -670,11 +686,11 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           kategorie: "AC Elektrisch",
           marke: "",
           beschreibung: "AC Elektrisch",
-          einzelpreis: estimateAcElectricalPrice(dcPowerKw, yearlyConsumptionKwh),
+          einzelpreis: estimateAcElectricalPrice(dcPowerKw, yearlyConsumptionKwh, inverterCount || 1),
           stk: 1,
           einheit: "Pauschal",
           optional: false,
-          sourceCatalogItemId: null as any,
+          sourceCatalogItemId: null,
           sourceCategory: "ac_electrical",
         })
   );
@@ -682,27 +698,45 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
   /* --------------------------- installation service ----------------------- */
   const montageService = findFirstMatchingItem(items, [
     "montage pauschal",
+    "montagearbeiten",
+    "bau+dc",
     "montage",
     "installation",
-    "bau+dc",
   ]);
 
-  if (montageService) {
-    defaults.push(
-      makeLineItem({
-        id: "auto-service-montage",
-        kategorie: "Service",
-        marke: montageService.brand,
-        beschreibung: montageService.name || "Montage pauschal",
-        einzelpreis: safeNumber(montageService.priceNet, 0),
-        stk: 1,
-        einheit: montageService.unitLabel || "Pauschal",
-        optional: false,
-        sourceCatalogItemId: montageService.id,
-        sourceCategory: "service",
-      })
-    );
-  }
+  defaults.push(
+    montageService
+      ? makeLineItem({
+          id: "auto-service-montage",
+          kategorie: "Service",
+          marke: montageService.brand,
+          beschreibung: montageService.name || "Montage pauschal",
+          einzelpreis: safeNumber(montageService.priceNet, 0),
+          stk: 1,
+          einheit: montageService.unitLabel || "Pauschal",
+          optional: false,
+          sourceCatalogItemId: montageService.id,
+          sourceCategory: "service",
+        })
+      : makeLineItem({
+          id: "auto-service-montage-generic",
+          kategorie: "Service",
+          marke: "",
+          beschreibung: "Montage pauschal",
+          einzelpreis: estimateMontageServicePrice({
+            dcPowerKw,
+            moduleCount,
+            roofType,
+            roofCount,
+            hasBattery,
+          }),
+          stk: 1,
+          einheit: "Pauschal",
+          optional: false,
+          sourceCatalogItemId: null,
+          sourceCategory: "service",
+        })
+  );
 
   const commissioning = findFirstMatchingItem(items, [
     "inbetriebnahme",
@@ -758,7 +792,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           stk: 1,
           einheit: "Pauschal",
           optional: false,
-          sourceCatalogItemId: null as any,
+          sourceCatalogItemId: null,
           sourceCategory: "administration",
         })
   );
@@ -795,15 +829,14 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           stk: 1,
           einheit: "Pauschal",
           optional: false,
-          sourceCatalogItemId: null as any,
+          sourceCatalogItemId: null,
           sourceCategory: "control",
         })
   );
 
-  /* ------------------------------- extras -------------------------------- */
+  /* -------------------------------- extras -------------------------------- */
   const extraNetz = findFirstMatchingItem(items, [
     "netzanschluss",
-    "netz",
     "grid connection",
   ]);
 
