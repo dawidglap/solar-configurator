@@ -436,7 +436,7 @@ function buildReportSummary(doc: any) {
   let partsTotalChf = costBreakdown.partsTotalChf;
   let grossInvestmentChf = costBreakdown.grossInvestmentChf;
 
-  // Fallback: se la Stückliste non ha ancora righe, usa almeno i moduli dal planner
+  // fallback: se la Stückliste non è ancora salvata, usa almeno i moduli del planner
   if (grossInvestmentChf <= 0 && moduleCount > 0 && fallbackModuleUnitPriceChf > 0) {
     modulesTotalChf = Number((moduleCount * fallbackModuleUnitPriceChf).toFixed(2));
     partsTotalChf = 0;
