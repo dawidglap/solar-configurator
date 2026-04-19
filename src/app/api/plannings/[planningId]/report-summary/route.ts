@@ -91,8 +91,7 @@ function averageRoofTiltDeg(layers: any[]) {
 
   if (!tilts.length) return 20;
 
-  const avg = tilts.reduce((a, b) => a + b, 0) / tilts.length;
-  return avg;
+  return tilts.reduce((a, b) => a + b, 0) / tilts.length;
 }
 
 function inferYieldPerKwpFromRoofs(layers: any[]) {
@@ -141,7 +140,6 @@ function estimateSelfConsumptionPct(args: {
   }
 
   let pct = 0.32;
-
   const ratio = yearlyConsumptionKwh / annualProductionKwh;
 
   if (ratio >= 1.2) pct += 0.08;
@@ -155,6 +153,8 @@ function estimateSelfConsumptionPct(args: {
 
   return clamp(pct, 0.15, 0.85);
 }
+
+/* ------------------------------ Parts helpers ----------------------------- */
 
 type NormalizedPartItem = {
   id: string;
@@ -170,7 +170,9 @@ type NormalizedPartItem = {
 
 function normalizePartItem(item: any): NormalizedPartItem {
   const quantity = safeNumber(
-    item?.quantity ?? item?.qty ?? item?.stk,
+    item?.quantity ??
+      item?.qty ??
+      item?.stk,
     0
   );
 
@@ -252,64 +254,122 @@ function normalizeReportOptions(raw: any) {
   };
 }
 
+function isModuleCategory(category: string) {
+  const c = safeString(category).toLowerCase();
+  return [
+    "module",
+    "modules",
+    "modul",
+    "modulele",
+    "pv-module",
+  ].includes(c);
+}
+
+function isBatteryCategory(category: string) {
+  const c = safeString(category).toLowerCase();
+  return ["batterie", "battery", "speicher", "storage"].includes(c);
+}
+
+function isWallboxCategory(category: string) {
+  const c = safeString(category).toLowerCase();
+  return ["ladestation", "wallbox", "ev_charger", "charger"].includes(c);
+}
+
+function isHeatPumpCategory(category: string) {
+  const c = safeString(category).toLowerCase();
+  return ["wärmepumpe", "waermepumpe", "heatpump", "heat_pump"].includes(c);
+}
+
 function shouldIncludePartItem(
   item: NormalizedPartItem,
   options: ReturnType<typeof normalizeReportOptions>
 ) {
   const category = item.category.toLowerCase();
 
-  // ESCLUDI i moduli dalle parts: i moduli sono già conteggiati separatamente
-  if (["module", "modules", "modul", "modulele", "pv-module"].includes(category)) {
+  if (isBatteryCategory(category) && options.battery === false) {
     return false;
   }
 
-  if (category === "batterie" || category === "battery") {
-    if (options.battery === false) return false;
+  if (isWallboxCategory(category) && options.charging === false) {
+    return false;
   }
 
-  if (category === "ladestation" || category === "wallbox" || category === "ev_charger") {
-    if (options.charging === false) return false;
-  }
-
-  if (
-    category === "wärmepumpe" ||
-    category === "waermepumpe" ||
-    category === "heatpump" ||
-    category === "heat_pump"
-  ) {
-    if (options.heatPump === false) return false;
+  if (isHeatPumpCategory(category) && options.heatPump === false) {
+    return false;
   }
 
   return true;
 }
 
-function getPartsTotalsFromPlanning(
+function getNormalizedIncludedParts(
   doc: any,
   reportOptions: ReturnType<typeof normalizeReportOptions>
 ) {
   const rawItems = getRawPartsItemsFromPlanning(doc);
 
   if (!Array.isArray(rawItems)) {
-    return {
-      partsTotalChf: 0,
-      items: [] as NormalizedPartItem[],
-    };
+    return [] as NormalizedPartItem[];
   }
 
-  const normalizedItems = rawItems
+  return rawItems
     .map(normalizePartItem)
     .filter((item) => shouldIncludePartItem(item, reportOptions));
+}
 
-  const partsTotalChf = normalizedItems.reduce(
-    (sum, item) => sum + safeNumber(item.lineTotalNet, 0),
-    0
+function getCostBreakdownFromIncludedParts(items: NormalizedPartItem[]) {
+  const moduleItems = items.filter((item) => isModuleCategory(item.category));
+  const nonModuleItems = items.filter((item) => !isModuleCategory(item.category));
+
+  const modulesTotalChf = Number(
+    moduleItems.reduce((sum, item) => sum + safeNumber(item.lineTotalNet, 0), 0).toFixed(2)
   );
 
+  const partsTotalChf = Number(
+    nonModuleItems.reduce((sum, item) => sum + safeNumber(item.lineTotalNet, 0), 0).toFixed(2)
+  );
+
+  const grossInvestmentChf = Number((modulesTotalChf + partsTotalChf).toFixed(2));
+
   return {
-    partsTotalChf: Number(partsTotalChf.toFixed(2)),
-    items: normalizedItems,
+    moduleItems,
+    nonModuleItems,
+    modulesTotalChf,
+    partsTotalChf,
+    grossInvestmentChf,
   };
 }
+
+function inferEnergyFlagsFromIncludedParts(args: {
+  items: NormalizedPartItem[];
+  reportOptions: ReturnType<typeof normalizeReportOptions>;
+  ist: any;
+}) {
+  const { items, reportOptions, ist } = args;
+
+  const hasBatteryFromParts = items.some((item) => isBatteryCategory(item.category));
+  const hasEvFromParts = items.some((item) => isWallboxCategory(item.category));
+  const hasHeatPumpFromParts = items.some((item) => isHeatPumpCategory(item.category));
+
+  const hasBattery =
+    hasBatteryFromParts ||
+    (typeof reportOptions.battery === "boolean" ? reportOptions.battery : !!ist?.hasBattery);
+
+  const hasEv =
+    hasEvFromParts ||
+    (typeof reportOptions.charging === "boolean" ? reportOptions.charging : !!ist?.hasEV);
+
+  const hasHeatPump =
+    hasHeatPumpFromParts ||
+    (typeof reportOptions.heatPump === "boolean" ? reportOptions.heatPump : !!ist?.hasHeatPump);
+
+  return {
+    hasBattery,
+    hasEv,
+    hasHeatPump,
+  };
+}
+
+/* --------------------------- Main report builder -------------------------- */
 
 function buildReportSummary(doc: any) {
   const data = doc?.data ?? {};
@@ -326,7 +386,10 @@ function buildReportSummary(doc: any) {
       ? data.catalogPanels
       : [];
 
-  const moduleCount = panels.length;
+  const moduleCount =
+    safeNumber(summary?.moduleCount, 0) > 0
+      ? safeNumber(summary?.moduleCount, 0)
+      : panels.length;
 
   const selectedPanelId =
     safeString(planner?.selectedPanelId) ||
@@ -344,12 +407,14 @@ function buildReportSummary(doc: any) {
   const selectedPanelWp = safeNumber(selectedPanel?.wp, 0);
   const selectedPanelWidthM = safeNumber(selectedPanel?.widthM, 0);
   const selectedPanelHeightM = safeNumber(selectedPanel?.heightM, 0);
-  const moduleUnitPriceChf = safeNumber(selectedPanel?.priceChf, 0);
+  const fallbackModuleUnitPriceChf = safeNumber(selectedPanel?.priceChf, 0);
 
   const dcPowerKw =
-    moduleCount > 0 && selectedPanelWp > 0
-      ? Number(((moduleCount * selectedPanelWp) / 1000).toFixed(2))
-      : 0;
+    safeNumber(summary?.dcPowerKw, 0) > 0
+      ? Number(safeNumber(summary?.dcPowerKw, 0).toFixed(2))
+      : moduleCount > 0 && selectedPanelWp > 0
+        ? Number(((moduleCount * selectedPanelWp) / 1000).toFixed(2))
+        : 0;
 
   const moduleAreaM2 =
     moduleCount > 0 && selectedPanelWidthM > 0 && selectedPanelHeightM > 0
@@ -364,20 +429,30 @@ function buildReportSummary(doc: any) {
   const annualProductionKwh =
     dcPowerKw > 0 ? Math.round(dcPowerKw * yearlyYieldKwhPerKwp) : 0;
 
-  const hasBattery =
-    typeof reportOptions.battery === "boolean"
-      ? reportOptions.battery
-      : !!ist?.hasBattery;
+  const includedParts = getNormalizedIncludedParts(doc, reportOptions);
+  const costBreakdown = getCostBreakdownFromIncludedParts(includedParts);
 
-  const hasEv =
-    typeof reportOptions.charging === "boolean"
-      ? reportOptions.charging
-      : !!ist?.hasEV;
+  let modulesTotalChf = costBreakdown.modulesTotalChf;
+  let partsTotalChf = costBreakdown.partsTotalChf;
+  let grossInvestmentChf = costBreakdown.grossInvestmentChf;
 
-  const hasHeatPump =
-    typeof reportOptions.heatPump === "boolean"
-      ? reportOptions.heatPump
-      : !!ist?.hasHeatPump;
+  // Fallback: se la Stückliste non ha ancora righe, usa almeno i moduli dal planner
+  if (grossInvestmentChf <= 0 && moduleCount > 0 && fallbackModuleUnitPriceChf > 0) {
+    modulesTotalChf = Number((moduleCount * fallbackModuleUnitPriceChf).toFixed(2));
+    partsTotalChf = 0;
+    grossInvestmentChf = Number((modulesTotalChf + partsTotalChf).toFixed(2));
+  }
+
+  const moduleUnitPriceChf =
+    moduleCount > 0 && modulesTotalChf > 0
+      ? Number((modulesTotalChf / moduleCount).toFixed(2))
+      : fallbackModuleUnitPriceChf;
+
+  const { hasBattery, hasEv, hasHeatPump } = inferEnergyFlagsFromIncludedParts({
+    items: includedParts,
+    reportOptions,
+    ist,
+  });
 
   const selfConsumptionPctEstimated = estimateSelfConsumptionPct({
     yearlyConsumptionKwh,
@@ -402,12 +477,6 @@ function buildReportSummary(doc: any) {
     yearlyConsumptionKwh > 0
       ? Number(((selfUseKwh / yearlyConsumptionKwh) * 100).toFixed(1))
       : 0;
-
-  const modulesTotalChf = Number((moduleCount * moduleUnitPriceChf).toFixed(2));
-
-  const { partsTotalChf, items: includedParts } = getPartsTotalsFromPlanning(doc, reportOptions);
-
-  const grossInvestmentChf = Number((modulesTotalChf + partsTotalChf).toFixed(2));
 
   const discountPct = Number(clamp(reportOptions.discountPct, 0, 100).toFixed(2));
   const discountChf = Number(Math.max(0, reportOptions.discountChf).toFixed(2));
