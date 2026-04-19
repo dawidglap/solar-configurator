@@ -75,6 +75,10 @@ function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
 
+function maxPrice(foundPrice: number, estimatedPrice: number) {
+  return round2(Math.max(safeNumber(foundPrice, 0), safeNumber(estimatedPrice, 0)));
+}
+
 /* ------------------------------ Normalization ----------------------------- */
 
 function normalizeCatalogItem(doc: any) {
@@ -287,7 +291,11 @@ function buildInverterCombinations(
   models: any[],
   maxUnits = 3
 ): Array<{ items: Array<{ item: any; quantity: number }>; totalKw: number; units: number }> {
-  const combos: Array<{ items: Array<{ item: any; quantity: number }>; totalKw: number; units: number }> = [];
+  const combos: Array<{
+    items: Array<{ item: any; quantity: number }>;
+    totalKw: number;
+    units: number;
+  }> = [];
   const n = models.length;
 
   function walk(index: number, remainingUnits: number, acc: Array<{ item: any; quantity: number }>) {
@@ -481,6 +489,10 @@ function estimateMontageServicePrice(args: {
   return round2(base);
 }
 
+function estimateCommissioningPrice(dcPowerKw: number) {
+  return round2(Math.max(600, 350 + dcPowerKw * 10));
+}
+
 /* --------------------------- Default item builder ------------------------- */
 
 function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
@@ -620,6 +632,8 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     "gak",
   ]);
 
+  const estimatedDcPrice = estimateDcElectricalPrice(dcPowerKw);
+
   defaults.push(
     dcElectrical
       ? makeLineItem({
@@ -628,7 +642,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           marke: dcElectrical.brand,
           beschreibung:
             dcElectrical.name || dcElectrical.model || "DC Elektrisch",
-          einzelpreis: safeNumber(dcElectrical.priceNet, 0),
+          einzelpreis: maxPrice(dcElectrical.priceNet, estimatedDcPrice),
           stk: 1,
           einheit: dcElectrical.unitLabel || "Pauschal",
           optional: false,
@@ -640,7 +654,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           kategorie: "DC Elektrisch",
           marke: "",
           beschreibung: "DC Elektrisch",
-          einzelpreis: estimateDcElectricalPrice(dcPowerKw),
+          einzelpreis: estimatedDcPrice,
           stk: 1,
           einheit: "Pauschal",
           optional: false,
@@ -666,6 +680,8 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     }
   );
 
+  const estimatedAcPrice = estimateAcElectricalPrice(dcPowerKw, yearlyConsumptionKwh, inverterCount || 1);
+
   defaults.push(
     acElectrical
       ? makeLineItem({
@@ -674,7 +690,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           marke: acElectrical.brand,
           beschreibung:
             acElectrical.name || acElectrical.model || "AC Elektrisch",
-          einzelpreis: safeNumber(acElectrical.priceNet, 0),
+          einzelpreis: maxPrice(acElectrical.priceNet, estimatedAcPrice),
           stk: 1,
           einheit: acElectrical.unitLabel || "Pauschal",
           optional: false,
@@ -686,7 +702,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           kategorie: "AC Elektrisch",
           marke: "",
           beschreibung: "AC Elektrisch",
-          einzelpreis: estimateAcElectricalPrice(dcPowerKw, yearlyConsumptionKwh, inverterCount || 1),
+          einzelpreis: estimatedAcPrice,
           stk: 1,
           einheit: "Pauschal",
           optional: false,
@@ -704,6 +720,14 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     "installation",
   ]);
 
+  const estimatedMontagePrice = estimateMontageServicePrice({
+    dcPowerKw,
+    moduleCount,
+    roofType,
+    roofCount,
+    hasBattery,
+  });
+
   defaults.push(
     montageService
       ? makeLineItem({
@@ -711,7 +735,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           kategorie: "Service",
           marke: montageService.brand,
           beschreibung: montageService.name || "Montage pauschal",
-          einzelpreis: safeNumber(montageService.priceNet, 0),
+          einzelpreis: maxPrice(montageService.priceNet, estimatedMontagePrice),
           stk: 1,
           einheit: montageService.unitLabel || "Pauschal",
           optional: false,
@@ -723,13 +747,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           kategorie: "Service",
           marke: "",
           beschreibung: "Montage pauschal",
-          einzelpreis: estimateMontageServicePrice({
-            dcPowerKw,
-            moduleCount,
-            roofType,
-            roofCount,
-            hasBattery,
-          }),
+          einzelpreis: estimatedMontagePrice,
           stk: 1,
           einheit: "Pauschal",
           optional: false,
@@ -744,22 +762,35 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     "abnahme",
   ]);
 
-  if (commissioning) {
-    defaults.push(
-      makeLineItem({
-        id: "auto-service-inbetriebnahme",
-        kategorie: "Service",
-        marke: commissioning.brand,
-        beschreibung: commissioning.name || "Inbetriebnahme",
-        einzelpreis: safeNumber(commissioning.priceNet, 0),
-        stk: 1,
-        einheit: commissioning.unitLabel || "Pauschal",
-        optional: false,
-        sourceCatalogItemId: commissioning.id,
-        sourceCategory: "service",
-      })
-    );
-  }
+  const estimatedCommissioningPrice = estimateCommissioningPrice(dcPowerKw);
+
+  defaults.push(
+    commissioning
+      ? makeLineItem({
+          id: "auto-service-inbetriebnahme",
+          kategorie: "Service",
+          marke: commissioning.brand,
+          beschreibung: commissioning.name || "Inbetriebnahme",
+          einzelpreis: maxPrice(commissioning.priceNet, estimatedCommissioningPrice),
+          stk: 1,
+          einheit: commissioning.unitLabel || "Pauschal",
+          optional: false,
+          sourceCatalogItemId: commissioning.id,
+          sourceCategory: "service",
+        })
+      : makeLineItem({
+          id: "auto-service-inbetriebnahme-generic",
+          kategorie: "Service",
+          marke: "",
+          beschreibung: "Inbetriebnahme",
+          einzelpreis: estimatedCommissioningPrice,
+          stk: 1,
+          einheit: "Pauschal",
+          optional: false,
+          sourceCatalogItemId: null,
+          sourceCategory: "service",
+        })
+  );
 
   /* -------------------------- administration / planning ------------------- */
   const admin = findFirstMatchingItem(items, [
@@ -769,6 +800,8 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     "projektierung",
   ]);
 
+  const estimatedAdminPrice = estimateAdministrationPrice(dcPowerKw);
+
   defaults.push(
     admin
       ? makeLineItem({
@@ -776,7 +809,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           kategorie: "Administration",
           marke: admin.brand,
           beschreibung: admin.name || admin.model || "Administration / Planung",
-          einzelpreis: safeNumber(admin.priceNet, 0),
+          einzelpreis: maxPrice(admin.priceNet, estimatedAdminPrice),
           stk: 1,
           einheit: admin.unitLabel || "Pauschal",
           optional: false,
@@ -788,7 +821,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           kategorie: "Administration",
           marke: "",
           beschreibung: "Administration / Planung",
-          einzelpreis: estimateAdministrationPrice(dcPowerKw),
+          einzelpreis: estimatedAdminPrice,
           stk: 1,
           einheit: "Pauschal",
           optional: false,
@@ -806,6 +839,8 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     "abnahme kontroll",
   ]);
 
+  const estimatedControlPrice = estimatePronovoControlPrice(dcPowerKw);
+
   defaults.push(
     kontrolle
       ? makeLineItem({
@@ -813,7 +848,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           kategorie: "Kontrolle",
           marke: kontrolle.brand,
           beschreibung: kontrolle.name || kontrolle.model || "Pronovo / Kontrolle",
-          einzelpreis: safeNumber(kontrolle.priceNet, 0),
+          einzelpreis: maxPrice(kontrolle.priceNet, estimatedControlPrice),
           stk: 1,
           einheit: kontrolle.unitLabel || "Pauschal",
           optional: false,
@@ -825,7 +860,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
           kategorie: "Kontrolle",
           marke: "",
           beschreibung: "Pronovo / Kontrolle",
-          einzelpreis: estimatePronovoControlPrice(dcPowerKw),
+          einzelpreis: estimatedControlPrice,
           stk: 1,
           einheit: "Pauschal",
           optional: false,
