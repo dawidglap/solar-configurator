@@ -67,6 +67,8 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
   });
 }
 
+/* ------------------------------ Normalization ----------------------------- */
+
 function normalizeCatalogItem(doc: any) {
   return {
     id: String(doc._id),
@@ -108,6 +110,74 @@ function parsePowerKwFromText(input: string) {
 
   return null;
 }
+
+function parseBatteryCapacityKwhFromText(input: string) {
+  const s = safeString(input).toLowerCase();
+  const m = s.match(/(\d+(?:[.,]\d+)?)\s*kwh/);
+  if (!m?.[1]) return null;
+
+  const n = Number(m[1].replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+function textIndex(item: any) {
+  return [
+    safeString(item.category),
+    safeString(item.subcategory),
+    safeString(item.brand),
+    safeString(item.model),
+    safeString(item.name),
+    safeString(item.description),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function hasAnyToken(haystack: string, tokens: string[]) {
+  return tokens.some((token) => haystack.includes(token.toLowerCase()));
+}
+
+function round1(n: number) {
+  return Math.round(n * 10) / 10;
+}
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+function compact<T>(arr: Array<T | null | undefined | false>) {
+  return arr.filter(Boolean) as T[];
+}
+
+/* ------------------------------- Line items ------------------------------- */
+
+function makeLineItem(args: {
+  id: string;
+  kategorie: string;
+  marke?: string;
+  beschreibung: string;
+  einzelpreis: number;
+  stk: number;
+  einheit?: string;
+  optional?: boolean;
+  sourceCatalogItemId?: string;
+  sourceCategory?: string;
+}) {
+  return {
+    id: args.id,
+    kategorie: args.kategorie,
+    marke: safeString(args.marke),
+    beschreibung: args.beschreibung,
+    einzelpreis: Number(safeNumber(args.einzelpreis, 0).toFixed(2)),
+    stk: Number(safeNumber(args.stk, 0).toFixed(2)),
+    einheit: args.einheit || "Stk.",
+    optional: !!args.optional,
+    sourceCatalogItemId: args.sourceCatalogItemId ?? null,
+    sourceCategory: args.sourceCategory ?? null,
+  };
+}
+
+/* ------------------------------ Planning core ----------------------------- */
 
 function getPlanningCore(doc: any) {
   const data = doc?.data ?? {};
@@ -160,35 +230,74 @@ function getPlanningCore(doc: any) {
   };
 }
 
-function makeLineItem(args: {
-  id: string;
-  kategorie: string;
-  marke?: string;
-  beschreibung: string;
-  einzelpreis: number;
-  stk: number;
-  einheit?: string;
-  optional?: boolean;
-  sourceCatalogItemId?: string;
-  sourceCategory?: string;
-}) {
-  return {
-    id: args.id,
-    kategorie: args.kategorie,
-    marke: safeString(args.marke),
-    beschreibung: args.beschreibung,
-    einzelpreis: Number(safeNumber(args.einzelpreis, 0).toFixed(2)),
-    stk: Number(safeNumber(args.stk, 0).toFixed(2)),
-    einheit: args.einheit || "Stk.",
-    optional: !!args.optional,
-    sourceCatalogItemId: args.sourceCatalogItemId ?? null,
-    sourceCategory: args.sourceCategory ?? null,
-  };
+/* ----------------------------- Catalog lookups ---------------------------- */
+
+function getActiveItems(catalogItemsRaw: any[]) {
+  return catalogItemsRaw.map(normalizeCatalogItem).filter((i) => i.isActive);
 }
 
-function chooseBestInverter(items: any[], dcPowerKw: number) {
-  const inverters = items
-    .filter((i) => i.category === "inverter" && i.isActive)
+function findFirstMatchingItem(
+  items: any[],
+  tokens: string[],
+  opts?: {
+    requirePrice?: boolean;
+    excludeTokens?: string[];
+  }
+) {
+  const requirePrice = opts?.requirePrice ?? true;
+  const excludeTokens = opts?.excludeTokens ?? [];
+
+  const candidates = items.filter((item) => {
+    const idx = textIndex(item);
+    if (!hasAnyToken(idx, tokens)) return false;
+    if (excludeTokens.length && hasAnyToken(idx, excludeTokens)) return false;
+    if (requirePrice && safeNumber(item.priceNet, 0) <= 0) return false;
+    return true;
+  });
+
+  candidates.sort((a, b) => {
+    const aScore = safeNumber(a.sortOrder, 0);
+    const bScore = safeNumber(b.sortOrder, 0);
+    if (aScore !== bScore) return aScore - bScore;
+
+    return safeString(a.name).localeCompare(safeString(b.name));
+  });
+
+  return candidates[0] ?? null;
+}
+
+function findAllMatchingItems(
+  items: any[],
+  tokens: string[],
+  opts?: {
+    requirePrice?: boolean;
+    excludeTokens?: string[];
+  }
+) {
+  const requirePrice = opts?.requirePrice ?? true;
+  const excludeTokens = opts?.excludeTokens ?? [];
+
+  return items
+    .filter((item) => {
+      const idx = textIndex(item);
+      if (!hasAnyToken(idx, tokens)) return false;
+      if (excludeTokens.length && hasAnyToken(idx, excludeTokens)) return false;
+      if (requirePrice && safeNumber(item.priceNet, 0) <= 0) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const aScore = safeNumber(a.sortOrder, 0);
+      const bScore = safeNumber(b.sortOrder, 0);
+      if (aScore !== bScore) return aScore - bScore;
+      return safeString(a.name).localeCompare(safeString(b.name));
+    });
+}
+
+/* --------------------------- Inverter allocation -------------------------- */
+
+function getInverters(items: any[]) {
+  return items
+    .filter((i) => hasAnyToken(textIndex(i), ["inverter", "wechselrichter"]))
     .map((i) => {
       const metaKw = safeNumber(i?.metadata?.powerKw, 0);
       const parsedKw =
@@ -200,45 +309,180 @@ function chooseBestInverter(items: any[], dcPowerKw: number) {
         ...i,
         inferredPowerKw: parsedKw,
       };
-    });
-
-  if (!inverters.length) return null;
-
-  // prefer inverter >= ~85% of DC size, but not massively oversized
-  const minPreferred = dcPowerKw > 0 ? dcPowerKw * 0.85 : 0;
-
-  const candidates = inverters
-    .filter((i) => i.inferredPowerKw > 0 && i.inferredPowerKw >= minPreferred)
-    .sort((a, b) => a.inferredPowerKw - b.inferredPowerKw);
-
-  if (candidates.length) return candidates[0];
-
-  const fallbackMeasured = inverters
+    })
     .filter((i) => i.inferredPowerKw > 0)
-    .sort(
+    .sort((a, b) => a.inferredPowerKw - b.inferredPowerKw);
+}
+
+function chooseInverterAllocation(items: any[], dcPowerKw: number) {
+  const inverters = getInverters(items);
+  if (!inverters.length || dcPowerKw <= 0) return [];
+
+  const targetAcKw = clamp(dcPowerKw * 0.92, 2, dcPowerKw * 1.02);
+
+  // 1) try single inverter
+  const single = inverters.find(
+    (inv) => inv.inferredPowerKw >= targetAcKw * 0.95 && inv.inferredPowerKw <= dcPowerKw * 1.15
+  );
+  if (single) {
+    return [{ item: single, quantity: 1 }];
+  }
+
+  // 2) greedy multi-inverter using largest available not exceeding sane count
+  const desc = [...inverters].sort((a, b) => b.inferredPowerKw - a.inferredPowerKw);
+  const chosen: Array<{ item: any; quantity: number }> = [];
+  let remaining = targetAcKw;
+  let safety = 0;
+
+  while (remaining > 0 && safety < 8) {
+    safety += 1;
+    const next =
+      desc.find((inv) => inv.inferredPowerKw <= remaining * 1.15) ??
+      desc.find((inv) => inv.inferredPowerKw > 0) ??
+      null;
+
+    if (!next) break;
+
+    const existing = chosen.find((c) => c.item.id === next.id);
+    if (existing) existing.quantity += 1;
+    else chosen.push({ item: next, quantity: 1 });
+
+    remaining -= next.inferredPowerKw;
+    if (remaining <= 0) break;
+  }
+
+  if (chosen.length) return chosen;
+
+  // 3) ultimate fallback: nearest largest
+  const fallback = [...inverters].sort(
+    (a, b) =>
+      Math.abs(a.inferredPowerKw - targetAcKw) - Math.abs(b.inferredPowerKw - targetAcKw)
+  )[0];
+
+  return fallback ? [{ item: fallback, quantity: 1 }] : [];
+}
+
+/* ----------------------------- Battery choice ----------------------------- */
+
+function getBatteries(items: any[]) {
+  return items
+    .filter((i) => hasAnyToken(textIndex(i), ["battery", "batterie", "speicher", "akku"]))
+    .map((i) => {
+      const metaKwh = safeNumber(i?.metadata?.capacityKwh, 0);
+      const parsedKwh =
+        metaKwh > 0
+          ? metaKwh
+          : parseBatteryCapacityKwhFromText(`${i.name} ${i.model} ${i.description}`) ?? 0;
+
+      return {
+        ...i,
+        inferredCapacityKwh: parsedKwh,
+      };
+    })
+    .sort((a, b) => a.inferredCapacityKwh - b.inferredCapacityKwh);
+}
+
+function estimateTargetBatteryKwh(args: {
+  dcPowerKw: number;
+  yearlyConsumptionKwh: number;
+}) {
+  const { dcPowerKw, yearlyConsumptionKwh } = args;
+
+  let target = Math.max(5, dcPowerKw * 0.55);
+
+  if (yearlyConsumptionKwh >= 8000) target += 2;
+  if (yearlyConsumptionKwh >= 12000) target += 3;
+  if (yearlyConsumptionKwh >= 18000) target += 4;
+
+  return clamp(round1(target), 5, 30);
+}
+
+function chooseBattery(items: any[], dcPowerKw: number, yearlyConsumptionKwh: number) {
+  const batteries = getBatteries(items);
+  if (!batteries.length) return null;
+
+  const targetKwh = estimateTargetBatteryKwh({ dcPowerKw, yearlyConsumptionKwh });
+
+  const preferred =
+    batteries.find((b) => b.inferredCapacityKwh >= targetKwh) ??
+    [...batteries].sort(
       (a, b) =>
-        Math.abs(a.inferredPowerKw - dcPowerKw) -
-        Math.abs(b.inferredPowerKw - dcPowerKw)
-    );
+        Math.abs(a.inferredCapacityKwh - targetKwh) - Math.abs(b.inferredCapacityKwh - targetKwh)
+    )[0] ??
+    null;
 
-  if (fallbackMeasured.length) return fallbackMeasured[0];
-
-  return inverters[0];
+  return preferred
+    ? {
+        item: preferred,
+        targetKwh,
+      }
+    : null;
 }
 
-function estimateMountingRailMeters(moduleCount: number) {
-  // MVP prudente: circa 2.4 m di rotaie per modulo
-  return Number((moduleCount * 2.4).toFixed(1));
+/* --------------------------- Mounting estimation -------------------------- */
+
+function inferRoofType(args: { ist: any; layers: any[] }) {
+  const roofShape = safeString(args.ist?.roofShape).toLowerCase();
+
+  if (roofShape.includes("flat") || roofShape.includes("flach")) return "flat";
+  if (roofShape.includes("schräg") || roofShape.includes("schrag")) return "pitched";
+  if (roofShape.includes("sattel")) return "pitched";
+  if (roofShape.includes("pult")) return "pitched";
+  if (roofShape.includes("walm")) return "pitched";
+
+  const tilts = (Array.isArray(args.layers) ? args.layers : [])
+    .map((l) => safeNumber(l?.tiltDeg, NaN))
+    .filter((n) => Number.isFinite(n));
+
+  if (tilts.length) {
+    const avg = tilts.reduce((a, b) => a + b, 0) / tilts.length;
+    return avg <= 5 ? "flat" : "pitched";
+  }
+
+  return "pitched";
 }
 
-function estimateRoofHooks(moduleCount: number) {
-  // MVP prudente: circa 3 hooks per modulo
+function estimateMountingRailMeters(moduleCount: number, roofType: "flat" | "pitched") {
+  const factor = roofType === "flat" ? 2.8 : 2.4;
+  return round1(moduleCount * factor);
+}
+
+function estimateRoofHooks(moduleCount: number, roofType: "flat" | "pitched") {
+  if (roofType === "flat") return 0;
   return Math.ceil(moduleCount * 3);
 }
 
+function estimateDcElectricalPrice(dcPowerKw: number) {
+  if (dcPowerKw <= 0) return 0;
+  return round2(Math.max(700, dcPowerKw * 85));
+}
+
+function estimateAcElectricalPrice(dcPowerKw: number, yearlyConsumptionKwh: number) {
+  let base = Math.max(900, dcPowerKw * 70);
+  if (yearlyConsumptionKwh >= 12000) base += 350;
+  if (yearlyConsumptionKwh >= 25000) base += 500;
+  return round2(base);
+}
+
+function estimateAdministrationPrice(dcPowerKw: number) {
+  return round2(Math.max(450, 180 + dcPowerKw * 18));
+}
+
+function estimatePronovoControlPrice(dcPowerKw: number) {
+  return round2(Math.max(350, 250 + dcPowerKw * 8));
+}
+
+/* --------------------------- Default item builder ------------------------- */
+
 function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
-  const items = catalogItemsRaw.map(normalizeCatalogItem);
-  const { ist, moduleCount, selectedPanel, dcPowerKw } = getPlanningCore(doc);
+  const items = getActiveItems(catalogItemsRaw);
+  const { ist, layers, moduleCount, selectedPanel, dcPowerKw } = getPlanningCore(doc);
+
+  const yearlyConsumptionKwh = safeNumber(ist?.electricityUsageKwh, 0);
+  const hasBattery = !!ist?.hasBattery;
+  const hasEV = !!ist?.hasEV;
+
+  const roofType = inferRoofType({ ist, layers });
 
   const defaults: any[] = [];
 
@@ -260,30 +504,36 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     );
   }
 
-  /* ------------------------------ inverter row ----------------------------- */
-  const bestInverter = chooseBestInverter(items, dcPowerKw);
-  if (bestInverter) {
+  /* -------------------------- inverter rows (smart) ----------------------- */
+  const inverterAllocation = chooseInverterAllocation(items, dcPowerKw);
+  inverterAllocation.forEach((allocation, index) => {
     defaults.push(
       makeLineItem({
-        id: "auto-inverter",
+        id: `auto-inverter-${index + 1}`,
         kategorie: "Wechselrichter",
-        marke: bestInverter.brand,
+        marke: allocation.item.brand,
         beschreibung:
-          safeString(bestInverter.name) || safeString(bestInverter.model) || "Wechselrichter",
-        einzelpreis: safeNumber(bestInverter.priceNet, 0),
-        stk: 1,
-        einheit: bestInverter.unitLabel || "Stk.",
+          safeString(allocation.item.name) ||
+          safeString(allocation.item.model) ||
+          "Wechselrichter",
+        einzelpreis: safeNumber(allocation.item.priceNet, 0),
+        stk: allocation.quantity,
+        einheit: allocation.item.unitLabel || "Stk.",
         optional: false,
-        sourceCatalogItemId: bestInverter.id,
+        sourceCatalogItemId: allocation.item.id,
         sourceCategory: "inverter",
       })
     );
-  }
+  });
 
-  /* ------------------------------ mounting rows ---------------------------- */
-  const rail = items.find(
-    (i) => i.category === "mounting" && safeString(i.name).toLowerCase().includes("montageschiene")
-  );
+  /* ------------------------- mounting / substructure ---------------------- */
+  const rail = findFirstMatchingItem(items, [
+    "montageschiene",
+    "schiene",
+    "rail",
+    "mounting rail",
+  ]);
+
   if (rail && moduleCount > 0) {
     defaults.push(
       makeLineItem({
@@ -292,7 +542,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
         marke: rail.brand,
         beschreibung: rail.name || "Montageschiene",
         einzelpreis: safeNumber(rail.priceNet, 0),
-        stk: estimateMountingRailMeters(moduleCount),
+        stk: estimateMountingRailMeters(moduleCount, roofType),
         einheit: rail.unitLabel || "m",
         optional: false,
         sourceCatalogItemId: rail.id,
@@ -301,10 +551,10 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     );
   }
 
-  const hooks = items.find(
-    (i) => i.category === "mounting" && safeString(i.name).toLowerCase().includes("dachhaken")
-  );
-  if (hooks && moduleCount > 0) {
+  const hooks = findFirstMatchingItem(items, ["dachhaken", "roof hook", "hook"]);
+  const hookQty = estimateRoofHooks(moduleCount, roofType);
+
+  if (hooks && moduleCount > 0 && hookQty > 0) {
     defaults.push(
       makeLineItem({
         id: "auto-mounting-hooks",
@@ -312,7 +562,7 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
         marke: hooks.brand,
         beschreibung: hooks.name || "Dachhaken",
         einzelpreis: safeNumber(hooks.priceNet, 0),
-        stk: estimateRoofHooks(moduleCount),
+        stk: hookQty,
         einheit: hooks.unitLabel || "Stk.",
         optional: false,
         sourceCatalogItemId: hooks.id,
@@ -321,30 +571,145 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     );
   }
 
-  /* ------------------------------- services ------------------------------- */
-  const montage = items.find(
-    (i) => i.category === "service" && safeString(i.name).toLowerCase().includes("montage")
+  const flatMounting = findFirstMatchingItem(items, [
+    "flachdach",
+    "aufständerung",
+    "aufstaenderung",
+    "ballast",
+    "flat roof",
+  ]);
+
+  if (flatMounting && moduleCount > 0 && roofType === "flat") {
+    defaults.push(
+      makeLineItem({
+        id: "auto-flat-roof-substructure",
+        kategorie: "Montage",
+        marke: flatMounting.brand,
+        beschreibung:
+          flatMounting.name ||
+          flatMounting.model ||
+          "Flachdach-Unterkonstruktion",
+        einzelpreis: safeNumber(flatMounting.priceNet, 0),
+        stk: 1,
+        einheit: flatMounting.unitLabel || "Set",
+        optional: false,
+        sourceCatalogItemId: flatMounting.id,
+        sourceCategory: "mounting",
+      })
+    );
+  }
+
+  /* ---------------------------- DC electrical ----------------------------- */
+  const dcElectrical = findFirstMatchingItem(items, [
+    "dc elektrisch",
+    "dc-elektrisch",
+    "dc electrical",
+    "dc installation",
+    "string",
+    "generatoranschlusskasten",
+    "gak",
+  ]);
+
+  defaults.push(
+    dcElectrical
+      ? makeLineItem({
+          id: "auto-dc-electrical",
+          kategorie: "DC Elektrisch",
+          marke: dcElectrical.brand,
+          beschreibung:
+            dcElectrical.name || dcElectrical.model || "DC Elektrisch",
+          einzelpreis: safeNumber(dcElectrical.priceNet, 0),
+          stk: 1,
+          einheit: dcElectrical.unitLabel || "Pauschal",
+          optional: false,
+          sourceCatalogItemId: dcElectrical.id,
+          sourceCategory: "dc_electrical",
+        })
+      : makeLineItem({
+          id: "auto-dc-electrical-generic",
+          kategorie: "DC Elektrisch",
+          marke: "",
+          beschreibung: "DC Elektrisch",
+          einzelpreis: estimateDcElectricalPrice(dcPowerKw),
+          stk: 1,
+          einheit: "Pauschal",
+          optional: false,
+          sourceCatalogItemId: null as any,
+          sourceCategory: "dc_electrical",
+        })
   );
-  if (montage) {
+
+  /* ---------------------------- AC electrical ----------------------------- */
+  const acElectrical = findFirstMatchingItem(items, [
+    "ac elektrisch",
+    "ac-elektrisch",
+    "ac electrical",
+    "ac installation",
+    "netzanschluss",
+    "zähler",
+    "meter",
+  ]);
+
+  defaults.push(
+    acElectrical
+      ? makeLineItem({
+          id: "auto-ac-electrical",
+          kategorie: "AC Elektrisch",
+          marke: acElectrical.brand,
+          beschreibung:
+            acElectrical.name || acElectrical.model || "AC Elektrisch",
+          einzelpreis: safeNumber(acElectrical.priceNet, 0),
+          stk: 1,
+          einheit: acElectrical.unitLabel || "Pauschal",
+          optional: false,
+          sourceCatalogItemId: acElectrical.id,
+          sourceCategory: "ac_electrical",
+        })
+      : makeLineItem({
+          id: "auto-ac-electrical-generic",
+          kategorie: "AC Elektrisch",
+          marke: "",
+          beschreibung: "AC Elektrisch",
+          einzelpreis: estimateAcElectricalPrice(dcPowerKw, yearlyConsumptionKwh),
+          stk: 1,
+          einheit: "Pauschal",
+          optional: false,
+          sourceCatalogItemId: null as any,
+          sourceCategory: "ac_electrical",
+        })
+  );
+
+  /* --------------------------- installation service ----------------------- */
+  const montageService = findFirstMatchingItem(items, [
+    "montage pauschal",
+    "montage",
+    "installation",
+    "bau+dc",
+  ]);
+
+  if (montageService) {
     defaults.push(
       makeLineItem({
         id: "auto-service-montage",
         kategorie: "Service",
-        marke: montage.brand,
-        beschreibung: montage.name || "Montage pauschal",
-        einzelpreis: safeNumber(montage.priceNet, 0),
+        marke: montageService.brand,
+        beschreibung: montageService.name || "Montage pauschal",
+        einzelpreis: safeNumber(montageService.priceNet, 0),
         stk: 1,
-        einheit: montage.unitLabel || "Pauschal",
+        einheit: montageService.unitLabel || "Pauschal",
         optional: false,
-        sourceCatalogItemId: montage.id,
+        sourceCatalogItemId: montageService.id,
         sourceCategory: "service",
       })
     );
   }
 
-  const commissioning = items.find(
-    (i) => i.category === "service" && safeString(i.name).toLowerCase().includes("inbetriebnahme")
-  );
+  const commissioning = findFirstMatchingItem(items, [
+    "inbetriebnahme",
+    "commissioning",
+    "abnahme",
+  ]);
+
   if (commissioning) {
     defaults.push(
       makeLineItem({
@@ -362,42 +727,121 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
     );
   }
 
-  /* -------------------------------- extras -------------------------------- */
-  const netz = items.find(
-    (i) => i.category === "extra" && safeString(i.name).toLowerCase().includes("netzanschluss")
+  /* -------------------------- administration / planning ------------------- */
+  const admin = findFirstMatchingItem(items, [
+    "administration",
+    "planung",
+    "project management",
+    "projektierung",
+  ]);
+
+  defaults.push(
+    admin
+      ? makeLineItem({
+          id: "auto-administration",
+          kategorie: "Administration",
+          marke: admin.brand,
+          beschreibung: admin.name || admin.model || "Administration / Planung",
+          einzelpreis: safeNumber(admin.priceNet, 0),
+          stk: 1,
+          einheit: admin.unitLabel || "Pauschal",
+          optional: false,
+          sourceCatalogItemId: admin.id,
+          sourceCategory: "administration",
+        })
+      : makeLineItem({
+          id: "auto-administration-generic",
+          kategorie: "Administration",
+          marke: "",
+          beschreibung: "Administration / Planung",
+          einzelpreis: estimateAdministrationPrice(dcPowerKw),
+          stk: 1,
+          einheit: "Pauschal",
+          optional: false,
+          sourceCatalogItemId: null as any,
+          sourceCategory: "administration",
+        })
   );
-  if (netz) {
+
+  /* ------------------------- pronovo / kontrolleur ------------------------ */
+  const kontrolle = findFirstMatchingItem(items, [
+    "kontrolle",
+    "kontrolleur",
+    "pronovo",
+    "akkreditiert",
+    "abnahme kontroll",
+  ]);
+
+  defaults.push(
+    kontrolle
+      ? makeLineItem({
+          id: "auto-pronovo-control",
+          kategorie: "Kontrolle",
+          marke: kontrolle.brand,
+          beschreibung: kontrolle.name || kontrolle.model || "Pronovo / Kontrolle",
+          einzelpreis: safeNumber(kontrolle.priceNet, 0),
+          stk: 1,
+          einheit: kontrolle.unitLabel || "Pauschal",
+          optional: false,
+          sourceCatalogItemId: kontrolle.id,
+          sourceCategory: "control",
+        })
+      : makeLineItem({
+          id: "auto-pronovo-control-generic",
+          kategorie: "Kontrolle",
+          marke: "",
+          beschreibung: "Pronovo / Kontrolle",
+          einzelpreis: estimatePronovoControlPrice(dcPowerKw),
+          stk: 1,
+          einheit: "Pauschal",
+          optional: false,
+          sourceCatalogItemId: null as any,
+          sourceCategory: "control",
+        })
+  );
+
+  /* ------------------------------- extras -------------------------------- */
+  const extraNetz = findFirstMatchingItem(items, [
+    "netzanschluss",
+    "netz",
+    "grid connection",
+  ]);
+
+  if (extraNetz) {
     defaults.push(
       makeLineItem({
         id: "auto-extra-netzanschluss",
         kategorie: "Extra",
-        marke: netz.brand,
-        beschreibung: netz.name || "Netzanschluss",
-        einzelpreis: safeNumber(netz.priceNet, 0),
+        marke: extraNetz.brand,
+        beschreibung: extraNetz.name || "Netzanschluss",
+        einzelpreis: safeNumber(extraNetz.priceNet, 0),
         stk: 1,
-        einheit: netz.unitLabel || "Pauschal",
+        einheit: extraNetz.unitLabel || "Pauschal",
         optional: false,
-        sourceCatalogItemId: netz.id,
+        sourceCatalogItemId: extraNetz.id,
         sourceCategory: "extra",
       })
     );
   }
 
   /* ------------------------------- battery -------------------------------- */
-  if (ist?.hasBattery) {
-    const battery = items.find((i) => i.category === "battery" && i.isActive);
-    if (battery) {
+  if (hasBattery) {
+    const batteryChoice = chooseBattery(items, dcPowerKw, yearlyConsumptionKwh);
+    if (batteryChoice?.item) {
       defaults.push(
         makeLineItem({
           id: "auto-battery",
           kategorie: "Batterie",
-          marke: battery.brand,
-          beschreibung: battery.name || battery.model || "Batteriespeicher",
-          einzelpreis: safeNumber(battery.priceNet, 0),
+          marke: batteryChoice.item.brand,
+          beschreibung:
+            batteryChoice.item.name ||
+            batteryChoice.item.model ||
+            `Batteriespeicher ~${batteryChoice.targetKwh} kWh`,
+          einzelpreis: safeNumber(batteryChoice.item.priceNet, 0),
           stk: 1,
-          einheit: battery.unitLabel || "Set",
+          einheit: batteryChoice.item.unitLabel || "Set",
           optional: false,
-          sourceCatalogItemId: battery.id,
+          sourceCatalogItemId: batteryChoice.item.id,
           sourceCategory: "battery",
         })
       );
@@ -405,8 +849,14 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
   }
 
   /* ------------------------------- wallbox -------------------------------- */
-  if (ist?.hasEV) {
-    const wallbox = items.find((i) => i.category === "wallbox" && i.isActive);
+  if (hasEV) {
+    const wallbox = findFirstMatchingItem(items, [
+      "wallbox",
+      "ladestation",
+      "ev charger",
+      "easee",
+      "zaptec",
+    ]);
     if (wallbox) {
       defaults.push(
         makeLineItem({
