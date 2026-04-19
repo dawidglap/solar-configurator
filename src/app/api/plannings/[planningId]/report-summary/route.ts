@@ -48,6 +48,14 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+function round1(n: number) {
+  return Math.round(n * 10) / 10;
+}
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
 function toObjectIdOrNull(v: any) {
   try {
     if (!v) return null;
@@ -94,37 +102,168 @@ function averageRoofTiltDeg(layers: any[]) {
   return tilts.reduce((a, b) => a + b, 0) / tilts.length;
 }
 
-function inferYieldPerKwpFromRoofs(layers: any[]) {
-  if (!Array.isArray(layers) || layers.length === 0) {
+/* ---------------------- Yield helpers from Sonnendach --------------------- */
+
+function normalizeSuitabilityLabel(v: any) {
+  return safeString(v).toLowerCase();
+}
+
+function estimateSpecificYieldFromSuitability(eignung?: string) {
+  const e = normalizeSuitabilityLabel(eignung);
+
+  if (!e) return null;
+  if (e.includes("sehr gut") || e.includes("sehrgut")) return 1120;
+  if (e === "gut" || e.includes(" gut")) return 1020;
+  if (e.includes("mittel")) return 900;
+  if (e.includes("genügend") || e.includes("genuegend")) return 800;
+  if (e.includes("schlecht")) return 720;
+
+  return null;
+}
+
+function estimateSpecificYieldFromAzimuthTilt(roof: any) {
+  const azimuth = safeNumber(roof?.azimuthDeg, 0);
+  const tilt = safeNumber(roof?.tiltDeg, 20);
+
+  const az = ((((azimuth + 180) % 360) + 360) % 360) - 180;
+  const absAz = Math.abs(az);
+
+  let base = 950;
+
+  if (absAz <= 30) base = 1120;
+  else if (absAz <= 60) base = 1060;
+  else if (absAz <= 100) base = 980;
+  else if (absAz <= 140) base = 860;
+  else base = 720;
+
+  if (tilt >= 15 && tilt <= 35) base += 40;
+  else if (tilt >= 5 && tilt < 15) base += 10;
+  else if (tilt > 35 && tilt <= 50) base -= 20;
+  else if (tilt > 50) base -= 60;
+
+  return clamp(Math.round(base), 650, 1200);
+}
+
+function inferRoofSpecificYield(roof: any) {
+  const explicitSpecificYield = safeNumber(
+    roof?.specificYieldKwhKw ??
+      roof?.specificYield ??
+      roof?.spezErtrag ??
+      roof?.spez_ertrag,
+    NaN
+  );
+  if (Number.isFinite(explicitSpecificYield) && explicitSpecificYield > 0) {
+    return Math.round(explicitSpecificYield);
+  }
+
+  const irradiation = safeNumber(
+    roof?.irradiationKwhM2 ??
+      roof?.globalstrahlung ??
+      roof?.strahlung,
+    NaN
+  );
+  if (Number.isFinite(irradiation) && irradiation > 0) {
+    return clamp(Math.round(irradiation * 0.72), 650, 1250);
+  }
+
+  const suitabilityBased = estimateSpecificYieldFromSuitability(
+    roof?.eignung ?? roof?.suitability ?? roof?.dachEignung
+  );
+  if (typeof suitabilityBased === "number") {
+    return suitabilityBased;
+  }
+
+  return estimateSpecificYieldFromAzimuthTilt(roof);
+}
+
+function inferRoofWeight(roof: any, roofId: string, panelsOnRoof: any[]) {
+  const explicitArea = safeNumber(
+    roof?.areaM2 ?? roof?.flaeche ?? roof?.fläche,
+    NaN
+  );
+  if (Number.isFinite(explicitArea) && explicitArea > 0) {
+    return explicitArea;
+  }
+
+  if (panelsOnRoof.length > 0) {
+    return panelsOnRoof.length;
+  }
+
+  return roofId ? 1 : 1;
+}
+
+function getUsedRoofIdsFromPanels(panels: any[]) {
+  const ids = new Set<string>();
+
+  for (const panel of Array.isArray(panels) ? panels : []) {
+    const roofId = safeString(panel?.roofId);
+    if (roofId) ids.add(roofId);
+  }
+
+  return ids;
+}
+
+function getUsedRoofs(layers: any[], panels: any[]) {
+  if (!Array.isArray(layers) || layers.length === 0) return [];
+
+  const usedRoofIds = getUsedRoofIdsFromPanels(panels);
+
+  if (!usedRoofIds.size) {
+    return layers;
+  }
+
+  const filtered = layers.filter((roof) => usedRoofIds.has(safeString(roof?.id)));
+  return filtered.length ? filtered : layers;
+}
+
+function inferYieldPerKwpFromRoofs(layers: any[], panels: any[]) {
+  const roofsForYield = getUsedRoofs(layers, panels);
+
+  if (!Array.isArray(roofsForYield) || roofsForYield.length === 0) {
     return 950;
   }
 
-  const values = layers.map((roof) => {
-    const azimuth = safeNumber(roof?.azimuthDeg, 0);
-    const tilt = safeNumber(roof?.tiltDeg, 20);
+  const values = roofsForYield
+    .map((roof) => {
+      const roofId = safeString(roof?.id);
+      const panelsOnRoof = Array.isArray(panels)
+        ? panels.filter((p) => safeString(p?.roofId) === roofId)
+        : [];
 
-    const az = ((((azimuth + 180) % 360) + 360) % 360) - 180;
-    const absAz = Math.abs(az);
+      const specificYield = inferRoofSpecificYield(roof);
+      const weight = inferRoofWeight(roof, roofId, panelsOnRoof);
 
-    let base = 950;
+      return {
+        specificYield,
+        weight,
+      };
+    })
+    .filter(
+      (entry) =>
+        Number.isFinite(entry.specificYield) &&
+        entry.specificYield > 0 &&
+        Number.isFinite(entry.weight) &&
+        entry.weight > 0
+    );
 
-    if (absAz <= 30) base = 1120;
-    else if (absAz <= 60) base = 1060;
-    else if (absAz <= 100) base = 980;
-    else if (absAz <= 140) base = 860;
-    else base = 720;
+  if (!values.length) {
+    return 950;
+  }
 
-    if (tilt >= 15 && tilt <= 35) base += 40;
-    else if (tilt >= 5 && tilt < 15) base += 10;
-    else if (tilt > 35 && tilt <= 50) base -= 20;
-    else if (tilt > 50) base -= 60;
+  const weightedSum = values.reduce(
+    (sum, entry) => sum + entry.specificYield * entry.weight,
+    0
+  );
+  const totalWeight = values.reduce((sum, entry) => sum + entry.weight, 0);
 
-    return clamp(base, 650, 1200);
-  });
+  if (totalWeight <= 0) {
+    return 950;
+  }
 
-  const avg = values.reduce((a, b) => a + b, 0) / values.length;
-  return Math.round(avg);
+  return Math.round(weightedSum / totalWeight);
 }
+
+/* ------------------------- Self-consumption helper ------------------------ */
 
 function estimateSelfConsumptionPct(args: {
   yearlyConsumptionKwh: number;
@@ -133,7 +272,13 @@ function estimateSelfConsumptionPct(args: {
   hasEv: boolean;
   hasHeatPump: boolean;
 }) {
-  const { yearlyConsumptionKwh, annualProductionKwh, hasBattery, hasEv, hasHeatPump } = args;
+  const {
+    yearlyConsumptionKwh,
+    annualProductionKwh,
+    hasBattery,
+    hasEv,
+    hasHeatPump,
+  } = args;
 
   if (annualProductionKwh <= 0 || yearlyConsumptionKwh <= 0) {
     return 0;
@@ -256,13 +401,7 @@ function normalizeReportOptions(raw: any) {
 
 function isModuleCategory(category: string) {
   const c = safeString(category).toLowerCase();
-  return [
-    "module",
-    "modules",
-    "modul",
-    "modulele",
-    "pv-module",
-  ].includes(c);
+  return ["module", "modules", "modul", "modulele", "pv-module"].includes(c);
 }
 
 function isBatteryCategory(category: string) {
@@ -321,11 +460,15 @@ function getCostBreakdownFromIncludedParts(items: NormalizedPartItem[]) {
   const nonModuleItems = items.filter((item) => !isModuleCategory(item.category));
 
   const modulesTotalChf = Number(
-    moduleItems.reduce((sum, item) => sum + safeNumber(item.lineTotalNet, 0), 0).toFixed(2)
+    moduleItems
+      .reduce((sum, item) => sum + safeNumber(item.lineTotalNet, 0), 0)
+      .toFixed(2)
   );
 
   const partsTotalChf = Number(
-    nonModuleItems.reduce((sum, item) => sum + safeNumber(item.lineTotalNet, 0), 0).toFixed(2)
+    nonModuleItems
+      .reduce((sum, item) => sum + safeNumber(item.lineTotalNet, 0), 0)
+      .toFixed(2)
   );
 
   const grossInvestmentChf = Number((modulesTotalChf + partsTotalChf).toFixed(2));
@@ -411,21 +554,23 @@ function buildReportSummary(doc: any) {
 
   const dcPowerKw =
     safeNumber(summary?.dcPowerKw, 0) > 0
-      ? Number(safeNumber(summary?.dcPowerKw, 0).toFixed(2))
+      ? round2(safeNumber(summary?.dcPowerKw, 0))
       : moduleCount > 0 && selectedPanelWp > 0
-        ? Number(((moduleCount * selectedPanelWp) / 1000).toFixed(2))
+        ? round2((moduleCount * selectedPanelWp) / 1000)
         : 0;
 
   const moduleAreaM2 =
     moduleCount > 0 && selectedPanelWidthM > 0 && selectedPanelHeightM > 0
-      ? Number((moduleCount * selectedPanelWidthM * selectedPanelHeightM).toFixed(2))
+      ? round2(moduleCount * selectedPanelWidthM * selectedPanelHeightM)
       : 0;
 
   const roofCount = layers.length;
-  const avgRoofTiltDeg = Number(averageRoofTiltDeg(layers).toFixed(1));
+  const usedRoofs = getUsedRoofs(layers, panels);
+  const usedRoofCount = Array.isArray(usedRoofs) ? usedRoofs.length : 0;
+  const avgRoofTiltDeg = round1(averageRoofTiltDeg(usedRoofs.length ? usedRoofs : layers));
 
   const yearlyConsumptionKwh = safeNumber(ist?.electricityUsageKwh, 0);
-  const yearlyYieldKwhPerKwp = inferYieldPerKwpFromRoofs(layers);
+  const yearlyYieldKwhPerKwp = inferYieldPerKwpFromRoofs(layers, panels);
   const annualProductionKwh =
     dcPowerKw > 0 ? Math.round(dcPowerKw * yearlyYieldKwhPerKwp) : 0;
 
@@ -438,14 +583,14 @@ function buildReportSummary(doc: any) {
 
   // fallback: se la Stückliste non è ancora salvata, usa almeno i moduli del planner
   if (grossInvestmentChf <= 0 && moduleCount > 0 && fallbackModuleUnitPriceChf > 0) {
-    modulesTotalChf = Number((moduleCount * fallbackModuleUnitPriceChf).toFixed(2));
+    modulesTotalChf = round2(moduleCount * fallbackModuleUnitPriceChf);
     partsTotalChf = 0;
-    grossInvestmentChf = Number((modulesTotalChf + partsTotalChf).toFixed(2));
+    grossInvestmentChf = round2(modulesTotalChf + partsTotalChf);
   }
 
   const moduleUnitPriceChf =
     moduleCount > 0 && modulesTotalChf > 0
-      ? Number((modulesTotalChf / moduleCount).toFixed(2))
+      ? round2(modulesTotalChf / moduleCount)
       : fallbackModuleUnitPriceChf;
 
   const { hasBattery, hasEv, hasHeatPump } = inferEnergyFlagsFromIncludedParts({
@@ -470,52 +615,49 @@ function buildReportSummary(doc: any) {
 
   const selfUseSharePct =
     annualProductionKwh > 0
-      ? Number(((selfUseKwh / annualProductionKwh) * 100).toFixed(1))
+      ? round1((selfUseKwh / annualProductionKwh) * 100)
       : 0;
 
   const autarkyPct =
     yearlyConsumptionKwh > 0
-      ? Number(((selfUseKwh / yearlyConsumptionKwh) * 100).toFixed(1))
+      ? round1((selfUseKwh / yearlyConsumptionKwh) * 100)
       : 0;
 
-  const discountPct = Number(clamp(reportOptions.discountPct, 0, 100).toFixed(2));
-  const discountChf = Number(Math.max(0, reportOptions.discountChf).toFixed(2));
-  const subsidyChf = Number(Math.max(0, reportOptions.subsidyChf).toFixed(2));
-  const skontoPct = Number(clamp(reportOptions.skontoPct, 0, 100).toFixed(2));
+  const discountPct = round2(clamp(reportOptions.discountPct, 0, 100));
+  const discountChf = round2(Math.max(0, reportOptions.discountChf));
+  const subsidyChf = round2(Math.max(0, reportOptions.subsidyChf));
+  const skontoPct = round2(clamp(reportOptions.skontoPct, 0, 100));
 
-  const discountFromPctChf = Number(
-    ((grossInvestmentChf * discountPct) / 100).toFixed(2)
+  const discountFromPctChf = round2((grossInvestmentChf * discountPct) / 100);
+  const totalDiscountChf = round2(discountFromPctChf + discountChf);
+
+  const netInvestmentBeforeSubsidyChf = round2(
+    Math.max(0, grossInvestmentChf - totalDiscountChf)
   );
 
-  const totalDiscountChf = Number((discountFromPctChf + discountChf).toFixed(2));
-
-  const netInvestmentBeforeSubsidyChf = Number(
-    Math.max(0, grossInvestmentChf - totalDiscountChf).toFixed(2)
+  const totalInvestmentChf = round2(
+    Math.max(0, netInvestmentBeforeSubsidyChf - subsidyChf)
   );
 
-  const totalInvestmentChf = Number(
-    Math.max(0, netInvestmentBeforeSubsidyChf - subsidyChf).toFixed(2)
-  );
-
-  const skontoValueChf = Number(
-    Math.max(0, netInvestmentBeforeSubsidyChf * (skontoPct / 100)).toFixed(2)
+  const skontoValueChf = round2(
+    Math.max(0, netInvestmentBeforeSubsidyChf * (skontoPct / 100))
   );
 
   const tariffConsumptionChfPerKwh = 0.277;
-  const tariffFeedInChfPerKwh = 0.10;
+  const tariffFeedInChfPerKwh = 0.1;
 
-  const annualSavingsChf = Number((selfUseKwh * tariffConsumptionChfPerKwh).toFixed(2));
-  const annualFeedInRevenueChf = Number((feedInKwh * tariffFeedInChfPerKwh).toFixed(2));
-  const annualBenefitChf = Number((annualSavingsChf + annualFeedInRevenueChf).toFixed(2));
+  const annualSavingsChf = round2(selfUseKwh * tariffConsumptionChfPerKwh);
+  const annualFeedInRevenueChf = round2(feedInKwh * tariffFeedInChfPerKwh);
+  const annualBenefitChf = round2(annualSavingsChf + annualFeedInRevenueChf);
 
   const breakEvenYears =
     totalInvestmentChf > 0 && annualBenefitChf > 0
-      ? Number((totalInvestmentChf / annualBenefitChf).toFixed(1))
+      ? round1(totalInvestmentChf / annualBenefitChf)
       : null;
 
   const roiPct =
     totalInvestmentChf > 0 && annualBenefitChf > 0
-      ? Number(((annualBenefitChf / totalInvestmentChf) * 100).toFixed(1))
+      ? round1((annualBenefitChf / totalInvestmentChf) * 100)
       : null;
 
   return {
@@ -528,6 +670,7 @@ function buildReportSummary(doc: any) {
     dcPowerKw,
     moduleAreaM2,
     roofCount,
+    usedRoofCount,
     avgRoofTiltDeg,
 
     yearlyConsumptionKwh,
@@ -538,7 +681,7 @@ function buildReportSummary(doc: any) {
     feedInKwh,
     selfUseSharePct,
     autarkyPct,
-    selfConsumptionPctEstimated: Number((selfConsumptionPctEstimated * 100).toFixed(1)),
+    selfConsumptionPctEstimated: round1(selfConsumptionPctEstimated * 100),
 
     moduleUnitPriceChf,
     modulesTotalChf,
