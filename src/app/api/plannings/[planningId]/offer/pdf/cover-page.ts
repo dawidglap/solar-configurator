@@ -30,13 +30,23 @@ export async function addCoverPage(
 
   /* ------------------ HERO ------------------ */
 
-  const heroHeight = 260;
+  const heroHeight = 300;
 
   page.drawImage(heroImage, {
     x: 0,
     y: height - heroHeight,
     width,
     height: heroHeight,
+  });
+
+  /* leggero overlay per dare più contrasto */
+  page.drawRectangle({
+    x: 0,
+    y: height - heroHeight,
+    width,
+    height: heroHeight,
+    color: rgb(0, 0, 0),
+    opacity: 0.12,
   });
 
   /* ------------------ LOGO BOX ------------------ */
@@ -62,44 +72,59 @@ export async function addCoverPage(
   });
 
   /* ------------------ TITLE BLOCK ------------------ */
+  /* ORA ENTRA SOPRA LA HERO, come nel layout Gama */
 
-  const titleBlockY = height - heroHeight - 50;
+  const titleBoxX = 40;
+  const titleBoxWidth = width - 80;
+  const titleBoxHeight = 100;
+
+  // prima era sotto la hero; adesso lo alziamo
+  const titleBoxY = height - heroHeight + 28;
 
   page.drawRectangle({
-    x: 40,
-    y: titleBlockY - 60,
-    width: width - 80,
-    height: 80,
+    x: titleBoxX,
+    y: titleBoxY,
+    width: titleBoxWidth,
+    height: titleBoxHeight,
     color: rgb(0.95, 0.95, 0.95),
   });
 
   page.drawText(data.title || "Photovoltaik-Anlage", {
-    x: 50,
-    y: titleBlockY,
+    x: titleBoxX + 14,
+    y: titleBoxY + 58,
     size: 18,
     font: bold,
     color: rgb(0.12, 0.12, 0.12),
   });
 
   page.drawText(`${Number(data.kWp || 0).toFixed(1)} kWp`, {
-    x: 50,
-    y: titleBlockY - 22,
+    x: titleBoxX + 14,
+    y: titleBoxY + 28,
     size: 14,
     font: bold,
     color: rgb(0.2, 0.2, 0.2),
   });
 
-  page.drawText(`Offerte Nr. ${data.planningNumber || "—"}`, {
-    x: 50,
-    y: titleBlockY - 50,
-    size: 10,
-    font,
-    color: rgb(0.4, 0.4, 0.4),
+  /* linea scura in basso stile Gama */
+  page.drawRectangle({
+    x: titleBoxX + 14,
+    y: titleBoxY + 12,
+    width: titleBoxWidth - 28,
+    height: 3,
+    color: rgb(0.12, 0.26, 0.30),
   });
 
-  /* ------------------ GREETING ------------------ */
+  page.drawText(`Offerte Nr. ${data.planningNumber || "—"}`, {
+    x: titleBoxX + 14,
+    y: titleBoxY - 16,
+    size: 10,
+    font,
+    color: rgb(0.35, 0.35, 0.35),
+  });
 
-  let y = titleBlockY - 110;
+  /* ------------------ GREETING / INTRO ------------------ */
+
+  let y = titleBoxY - 80;
 
   page.drawText(data.customerName || "Kunde", {
     x: 50,
