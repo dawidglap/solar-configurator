@@ -57,7 +57,23 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
   });
 }
 
-/* ---------------------------------- POST ---------------------------------- */
+function getBaseUrl(req: Request) {
+  const proto =
+    req.headers.get("x-forwarded-proto") ||
+    (process.env.NODE_ENV === "development" ? "http" : "https");
+
+  const host =
+    req.headers.get("x-forwarded-host") ||
+    req.headers.get("host");
+
+  if (!host) {
+    throw new Error("Missing host header");
+  }
+
+  return `${proto}://${host}`;
+}
+
+/* ---------------------------------- POST --------------------------------- */
 
 export async function POST(
   req: Request,
@@ -94,7 +110,6 @@ export async function POST(
     const db = client.db();
 
     const plannings = db.collection("plannings");
-    const catalogItems = db.collection("catalogItems");
 
     const planning = await plannings.findOne({
       _id: planningObjectId,
@@ -105,80 +120,42 @@ export async function POST(
       return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
     }
 
-    const data = (planning as any)?.data ?? {};
-    const planner = data?.planner ?? {};
-    const reportOptions = data?.reportOptions ?? {};
+    const baseUrl = getBaseUrl(req);
+    const cookie = req.headers.get("cookie") || "";
 
-    /* -------------------- LOAD CATALOG -------------------- */
-
-    const catalog = await catalogItems
-      .find({
-        companyId: session.activeCompanyId,
-        isActive: true,
-      })
-      .toArray();
-
-    /* -------------------- IMPORT DEFAULTS -------------------- */
-    // IMPORTANTE: assicurati che questo path sia corretto nel tuo progetto
-    const { buildDefaultPartsItems } = await import(
-      "@/app/api/plannings/[planningId]/parts-defaults/route"
-    );
-
- const defaultItems = buildDefaultPartsItems(planning, catalog);
-
-    /* -------------------- ADD BATTERY -------------------- */
-
-    const selectedBatteryId = safeString(
-      reportOptions?.selectedBatteryItemId
-    );
-
-    if (selectedBatteryId) {
-      const battery = catalog.find(
-        (c: any) => String(c._id) === selectedBatteryId
-      );
-
-      if (battery) {
-        defaultItems.push({
-          id: selectedBatteryId,
-          category: battery.category || "battery",
-          brand: battery.brand || "",
-          name: battery.name || battery.model || "Batterie",
-          unit: battery.unit || "piece",
-          unitLabel: battery.unitLabel || "Stk.",
-          quantity: 1,
-          unitPriceNet: Number(battery.priceNet || 0),
-          lineTotalNet: Number(battery.priceNet || 0),
-        });
+    // Reuse the existing parts-defaults route instead of importing route.ts helpers
+    const defaultsRes = await fetch(
+      `${baseUrl}/api/plannings/${planningId}/parts-defaults`,
+      {
+        method: "GET",
+        headers: {
+          cookie,
+        },
+        cache: "no-store",
       }
+    );
+
+    const defaultsData = await defaultsRes.json().catch(() => null);
+
+    if (!defaultsRes.ok || !defaultsData?.ok) {
+      return jsonResponse(
+        origin,
+        {
+          ok: false,
+          error:
+            defaultsData?.error ||
+            defaultsData?.message ||
+            "Failed to load parts defaults",
+        },
+        500
+      );
     }
 
-    /* -------------------- ADD WALLBOX -------------------- */
+    const defaultItems = Array.isArray(defaultsData?.items)
+      ? defaultsData.items
+      : [];
 
-    const selectedWallboxId = safeString(
-      reportOptions?.selectedWallboxItemId
-    );
-
-    if (selectedWallboxId) {
-      const wallbox = catalog.find(
-        (c: any) => String(c._id) === selectedWallboxId
-      );
-
-      if (wallbox) {
-        defaultItems.push({
-          id: selectedWallboxId,
-          category: wallbox.category || "wallbox",
-          brand: wallbox.brand || "",
-          name: wallbox.name || wallbox.model || "Wallbox",
-          unit: wallbox.unit || "piece",
-          unitLabel: wallbox.unitLabel || "Stk.",
-          quantity: 1,
-          unitPriceNet: Number(wallbox.priceNet || 0),
-          lineTotalNet: Number(wallbox.priceNet || 0),
-        });
-      }
-    }
-
-    /* -------------------- SAVE -------------------- */
+    const existingParts = (planning as any)?.data?.parts ?? {};
 
     await plannings.updateOne(
       {
@@ -187,7 +164,10 @@ export async function POST(
       },
       {
         $set: {
-          "data.parts.items": defaultItems,
+          "data.parts": {
+            ...existingParts,
+            items: defaultItems,
+          },
           updatedAt: new Date(),
         },
       }
@@ -196,6 +176,7 @@ export async function POST(
     return jsonResponse(origin, {
       ok: true,
       itemsCount: defaultItems.length,
+      items: defaultItems,
     });
   } catch (e: any) {
     console.error("SYNC PARTS ERROR:", e);
