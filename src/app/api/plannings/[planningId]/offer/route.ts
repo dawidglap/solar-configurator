@@ -2,9 +2,10 @@
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { PANEL_CATALOG } from "@/constants/panels";
+import { getCorsHeaders } from "@/lib/cors";
 import { addVollmachtPage } from "./pdf/vollmacht";
 
+export const runtime = "nodejs";
 
 /* ----------------------------- Session helpers ---------------------------- */
 
@@ -34,219 +35,249 @@ function readSession(req: Request, secret: string) {
   }
 }
 
-/* ---------------------------- Safe data extractors ---------------------------- */
+/* -------------------------------- Helpers -------------------------------- */
 
-function getByPath(obj: any, path: string) {
+function safeString(v: unknown) {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function safeNumber(v: unknown, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toObjectIdOrNull(v: unknown) {
   try {
-    return path.split(".").reduce((acc, k) => acc?.[k], obj);
+    if (!v) return null;
+    return new ObjectId(String(v));
   } catch {
-    return undefined;
+    return null;
   }
 }
 
-function looksLikePanelInstance(o: any) {
-  if (!o || typeof o !== "object") return false;
-
-  // pannello piazzato spesso ha coordinate o roofId
-  const hasRoof = typeof o.roofId === "string" && o.roofId.length > 0;
-
-  // id modello può essere in vari campi:
-  const panelId =
-    o.panelId || o.panelSpecId || o.specId || o.catalogId || o.modelId;
-
-  const hasPanelId = typeof panelId === "string" && panelId.length > 0;
-
-  // coordinate tipiche
-  const hasCoords =
-    typeof o.x === "number" ||
-    typeof o.y === "number" ||
-    typeof o.cx === "number" ||
-    typeof o.cy === "number";
-
-  // basta una combinazione “sensata”
-  return (hasPanelId && (hasRoof || hasCoords)) || (hasRoof && hasCoords);
+function jsonResponse(origin: string | null, body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      ...getCorsHeaders(origin),
+    },
+  });
 }
 
-function extractPlacedPanelsFromKnownPaths(planning: any) {
-  const candidates = [
-    // probabili
-    "data.planner.panels",
-    "data.planner.placedPanels",
-    "data.planner.modules.panels",
-    "data.planner.modules.placedPanels",
-    "data.planner.pv.panels",
-    "data.planner.pv.placedPanels",
-    "data.planner.state.panels",
-    "data.planner.state.placedPanels",
-    // fallback
-    "data.panels",
-    "panels",
-  ];
-
-  for (const p of candidates) {
-    const v = getByPath(planning, p);
-    if (Array.isArray(v) && v.length > 0) {
-      // se sono proprio pannelli
-      if (looksLikePanelInstance(v[0])) return v;
-
-      // a volte è un array dentro un wrapper
-      const first = v[0];
-      if (first && typeof first === "object") {
-        // es: { items:[...] }
-        for (const k of ["items", "data", "list", "panels"]) {
-          const inner = (first as any)[k];
-          if (
-            Array.isArray(inner) &&
-            inner.length > 0 &&
-            looksLikePanelInstance(inner[0])
-          ) {
-            return inner;
-          }
-        }
-      }
-    }
-  }
-  return [];
+function fmtMoney(n: number) {
+  return `CHF ${new Intl.NumberFormat("de-CH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n)}`;
 }
 
-// fallback “deep scan”: cerca ovunque nel planning una lista che sembri pannelli
-function deepFindPanels(obj: any, maxNodes = 20000) {
-  const q: any[] = [obj];
-  let nodes = 0;
-
-  while (q.length) {
-    const cur = q.shift();
-    nodes++;
-    if (nodes > maxNodes) break;
-
-    if (Array.isArray(cur) && cur.length > 0) {
-      if (looksLikePanelInstance(cur[0])) return cur;
-      // continua a scendere
-      for (const it of cur) q.push(it);
-      continue;
-    }
-
-    if (cur && typeof cur === "object") {
-      for (const v of Object.values(cur)) q.push(v);
-    }
-  }
-
-  return [];
+function fmtInt(n: number) {
+  return new Intl.NumberFormat("de-CH", {
+    maximumFractionDigits: 0,
+  }).format(n);
 }
 
-function extractPanelIdFromPanelInstance(p: any): string | undefined {
-  const v =
-    p?.panelId || p?.panelSpecId || p?.specId || p?.catalogId || p?.modelId;
-  return typeof v === "string" && v ? v : undefined;
-}
-
-/* ------------------------- NEW: extract from YOUR DB ------------------------- */
-
-// Nel tuo DB: planning.data.profile
-function extractProfile(planning: any) {
-  return planning?.data?.profile ?? null;
-}
-
-// Nel tuo DB: planning.data.ist
-function extractIst(planning: any) {
-  return planning?.data?.ist ?? null;
-}
-
-// Nel tuo DB: planning.data.selectedPanelId
-function extractSelectedPanelId(planning: any): string | undefined {
-  const v = planning?.data?.selectedPanelId;
-  return typeof v === "string" && v ? v : undefined;
-}
-
-// Nel tuo DB: planning.data.catalogPanels (contiene anche priceChf!)
-function extractCatalogPanels(planning: any): any[] {
-  const v = planning?.data?.catalogPanels;
-  return Array.isArray(v) ? v : [];
-}
-
-/* --------------------------------- Formatters -------------------------------- */
-
-const fmt2 = new Intl.NumberFormat("de-CH", {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-const fmt0 = new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 });
-
-function safeText(v: any) {
-  const s = typeof v === "string" ? v.trim() : "";
-  return s ? s : "—";
+function fmt1(n: number) {
+  return new Intl.NumberFormat("de-CH", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(n);
 }
 
 function joinAddress(street?: string, no?: string, zip?: string, city?: string) {
-  const a = [street?.trim(), no?.trim()].filter(Boolean).join(" ");
-  const b = [zip?.trim(), city?.trim()].filter(Boolean).join(" ");
-  const out = [a, b].filter(Boolean).join(", ");
-  return out || "—";
+  const line1 = [safeString(street), safeString(no)].filter(Boolean).join(" ");
+  const line2 = [safeString(zip), safeString(city)].filter(Boolean).join(" ");
+  return [line1, line2].filter(Boolean).join(", ");
 }
 
-/* --------------------------------- PDF builder -------------------------------- */
+function drawText(page: any, text: string, x: number, y: number, size: number, font: any, color = rgb(0.12, 0.12, 0.12)) {
+  page.drawText(text, { x, y, size, font, color });
+}
 
-function drawLabelValue(
-  page: any,
-  x: number,
-  y: number,
-  label: string,
-  value: string,
-  font: any,
-  bold: any,
-) {
-  page.drawText(label, {
-    x,
-    y,
-    size: 10.5,
-    font,
-    color: rgb(0.35, 0.35, 0.35),
+function drawLine(page: any, x1: number, y1: number, x2: number, y2: number, thickness = 1, color = rgb(0.88, 0.88, 0.9)) {
+  page.drawLine({
+    start: { x: x1, y: y1 },
+    end: { x: x2, y: y2 },
+    thickness,
+    color,
   });
-  page.drawText(value, {
-    x: x + 210,
-    y,
-    size: 10.5,
-    font: bold,
-    color: rgb(0.12, 0.12, 0.12),
+}
+
+function drawLabelValue(page: any, x: number, y: number, label: string, value: string, font: any, bold: any) {
+  drawText(page, label, x, y, 10, font, rgb(0.42, 0.42, 0.46));
+  drawText(page, value || "—", x + 190, y, 10, bold, rgb(0.12, 0.12, 0.12));
+}
+
+function pickCustomerName(profile: any) {
+  const fullName = [
+    safeString(profile?.salutation),
+    safeString(profile?.firstName),
+    safeString(profile?.lastName),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  if (fullName) return fullName;
+  return safeString(profile?.companyName) || "—";
+}
+
+function normalizePartItems(rawItems: any[]) {
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems.map((item) => {
+    const quantity = safeNumber(item?.quantity ?? item?.stk, 0);
+    const unitPriceNet = safeNumber(item?.unitPriceNet ?? item?.einzelpreis, 0);
+    const lineTotalNet = safeNumber(
+      item?.lineTotalNet,
+      Number((quantity * unitPriceNet).toFixed(2))
+    );
+
+    return {
+      id: safeString(item?.id),
+      category: safeString(item?.category ?? item?.kategorie),
+      brand: safeString(item?.brand ?? item?.marke),
+      name: safeString(item?.name ?? item?.beschreibung),
+      quantity,
+      unit: safeString(item?.unit ?? item?.einheit ?? item?.unitLabel) || "Stk.",
+      unitPriceNet,
+      lineTotalNet,
+    };
   });
+}
+
+function getOfferData(planning: any) {
+  const data = planning?.data ?? {};
+  const profile = data?.profile ?? {};
+  const ist = data?.ist ?? {};
+  const planner = data?.planner ?? {};
+  const parts = data?.parts ?? {};
+  const reportOptions = data?.reportOptions ?? {};
+  const summary = planning?.summary ?? {};
+
+  const partItems = normalizePartItems(parts?.items ?? []);
+  const formDocuments = {
+    vollmacht: parts?.formDocuments?.vollmacht !== false,
+    bestellformular: parts?.formDocuments?.bestellformular !== false,
+    agbs: parts?.formDocuments?.agbs !== false,
+  };
+
+  const panelCatalog = Array.isArray(planner?.catalogPanels) ? planner.catalogPanels : [];
+  const selectedPanelId =
+    safeString(summary?.selectedPanelId) ||
+    safeString(planner?.selectedPanelId);
+
+  const selectedPanel =
+    panelCatalog.find((p: any) => safeString(p?.id) === selectedPanelId) ?? null;
+
+  const moduleCount = safeNumber(summary?.moduleCount, 0);
+  const dcPowerKw = safeNumber(summary?.dcPowerKw, 0);
+
+  const moduleItem = partItems.find((i) => i.category.toLowerCase() === "module");
+  const batteryItem = partItems.find((i) => i.category.toLowerCase() === "batterie");
+  const wallboxItem = partItems.find((i) => i.category.toLowerCase() === "ladestation");
+
+  const totalNet = partItems.reduce((sum, item) => sum + safeNumber(item.lineTotalNet, 0), 0);
+
+  return {
+    planningNumber: safeString(planning?.planningNumber) || "—",
+    title: safeString(planning?.title) || "Angebot",
+    customer: {
+      name: pickCustomerName(profile),
+      email: safeString(profile?.email),
+      phone: safeString(profile?.phone || profile?.mobile),
+      address: joinAddress(profile?.street, "", profile?.zip, profile?.city) || "—",
+    },
+    project: {
+      buildingType: safeString(ist?.buildingType) || "—",
+      roofType: safeString(ist?.roofType) || "—",
+      roofCovering: safeString(ist?.roofCovering) || "—",
+      yearlyConsumptionKwh: safeNumber(ist?.electricityUsageKwh, 0),
+      preferredTiming: safeString(ist?.preferredTiming) || "—",
+    },
+    pv: {
+      moduleCount,
+      dcPowerKw,
+      panelBrand: safeString(selectedPanel?.brand),
+      panelModel: safeString(selectedPanel?.model),
+      panelWp: safeNumber(selectedPanel?.wp, 0),
+      modulePriceNet: safeNumber(moduleItem?.unitPriceNet, 0),
+    },
+    options: {
+      includeBattery: !!reportOptions?.battery || !!reportOptions?.includeBattery,
+      includeWallbox: !!reportOptions?.charging || !!reportOptions?.includeWallbox,
+      batteryName: batteryItem?.name || "",
+      wallboxName: wallboxItem?.name || "",
+    },
+    parts: partItems,
+    totals: {
+      totalNet: Number(totalNet.toFixed(2)),
+    },
+    formDocuments,
+  };
+}
+
+function drawPartsTable(page: any, items: ReturnType<typeof normalizePartItems>, startY: number, font: any, bold: any) {
+  const left = 48;
+  const right = 547;
+
+  let y = startY;
+
+  drawText(page, "Position", left, y, 10, bold);
+  drawText(page, "Menge", 320, y, 10, bold);
+  drawText(page, "EP", 390, y, 10, bold);
+  drawText(page, "Total", 470, y, 10, bold);
+  y -= 8;
+
+  drawLine(page, left, y, right, y, 1, rgb(0.8, 0.82, 0.86));
+  y -= 14;
+
+  for (const item of items) {
+    if (y < 90) break;
+
+    const title = [item.brand, item.name].filter(Boolean).join(" ").trim() || "Position";
+
+    drawText(page, title.slice(0, 42), left, y, 9.5, font);
+    drawText(page, `${fmtInt(item.quantity)} ${item.unit}`.trim(), 320, y, 9.5, font);
+    drawText(page, fmtMoney(item.unitPriceNet), 390, y, 9.5, font);
+    drawText(page, fmtMoney(item.lineTotalNet), 470, y, 9.5, bold);
+
+    y -= 15;
+  }
+
+  return y;
 }
 
 /* --------------------------------- Route -------------------------------- */
 
-export const runtime = "nodejs";
-
 export async function POST(
-   req: Request,
-  { params }: { params: Promise<{ planningId: string }> },
+  req: Request,
+  { params }: { params: Promise<{ planningId: string }> }
 ) {
+  const origin = req.headers.get("origin");
   const { planningId } = await params;
 
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
-  if (!uri)
-    return Response.json({ ok: false, error: "Missing MONGODB_URI" }, { status: 500 });
-  if (!secret)
-    return Response.json({ ok: false, error: "Missing SESSION_SECRET" }, { status: 500 });
+  if (!uri) {
+    return jsonResponse(origin, { ok: false, error: "Missing MONGODB_URI" }, 500);
+  }
+
+  if (!secret) {
+    return jsonResponse(origin, { ok: false, error: "Missing SESSION_SECRET" }, 500);
+  }
 
   const session = readSession(req, secret);
-  if (!session)
-    return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
+  if (!session?.activeCompanyId) {
+    return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
+  }
 
-  if (!planningId)
-    return Response.json({ ok: false, error: "Missing planningId param" }, { status: 400 });
-
-  const body = await req.json().catch(() => ({} as any));
-  const summary = body?.summary as
-    | {
-        qty?: number;
-        kWp?: number;
-        panelId?: string | null;
-        model?: string | null;
-        priceChf?: number;
-        totalChf?: number;
-      }
-    | undefined;
+  const planningObjectId = toObjectIdOrNull(planningId);
+  if (!planningObjectId) {
+    return jsonResponse(origin, { ok: false, error: "Invalid planningId" }, 400);
+  }
 
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
@@ -256,243 +287,115 @@ export async function POST(
     const plannings = db.collection("plannings");
 
     const planning = await plannings.findOne({
-      _id: new ObjectId(planningId),
+      _id: planningObjectId,
       companyId: session.activeCompanyId,
     });
 
     if (!planning) {
-      return Response.json({ ok: false, error: "Planning not found" }, { status: 404 });
+      return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
     }
 
-    /* -------------------- Extract: profile/ist (DB) -------------------- */
-
-    const profile = extractProfile(planning);
-    const ist = extractIst(planning);
-
-    /* -------------------- Extract: panels/spec (DB) + fallback summary -------------------- */
-
-    // 1) pannelli piazzati (se presenti)
-    let placedPanels: any[] = extractPlacedPanelsFromKnownPaths(planning);
-    if (!placedPanels.length) placedPanels = deepFindPanels(planning);
-
-    const qtyDb = placedPanels.length;
-    const panelIdDb = placedPanels[0]
-      ? extractPanelIdFromPanelInstance(placedPanels[0])
-      : undefined;
-
-    // 2) se non ci sono pannelli piazzati, nel tuo DB esiste selectedPanelId
-    const selectedPanelIdDb = extractSelectedPanelId(planning);
-
-    // 3) panelId finale: preferisci panelId dai pannelli, poi selectedPanelId, poi summary
-    const panelId =
-      panelIdDb ||
-      selectedPanelIdDb ||
-      (typeof summary?.panelId === "string" ? summary.panelId : undefined);
-
-    // 4) spec: prima prova da catalogPanels in DB (contiene priceChf), poi PANEL_CATALOG
-    const catalogPanelsDb = extractCatalogPanels(planning);
-    const specFromDb = panelId
-      ? catalogPanelsDb.find((p: any) => p?.id === panelId)
-      : undefined;
-
-    const specFromConst = panelId
-      ? PANEL_CATALOG.find((p) => p.id === panelId)
-      : undefined;
-
-    const spec = specFromDb || specFromConst;
-
-    const wp = spec?.wp ?? 0;
-    const priceChfCatalog = (spec as any)?.priceChf ?? 0;
-
-    // quantità: se DB non ce l’ha, usa UI summary
-    const qty =
-      Number.isFinite(qtyDb) && qtyDb > 0
-        ? qtyDb
-        : typeof summary?.qty === "number" && summary.qty > 0
-          ? summary.qty
-          : 0;
-
-    // kWp: preferisci calcolo; se non puoi, usa summary
-    const kWpCalculated = qty && wp ? (qty * wp) / 1000 : 0;
-    const kWp =
-      kWpCalculated > 0
-        ? kWpCalculated
-        : typeof summary?.kWp === "number" && summary.kWp > 0
-          ? summary.kWp
-          : 0;
-
-    const priceChf =
-      priceChfCatalog > 0
-        ? priceChfCatalog
-        : typeof summary?.priceChf === "number"
-          ? summary.priceChf
-          : 0;
-
-    const totalChf =
-      qty && priceChf
-        ? qty * priceChf
-        : typeof summary?.totalChf === "number"
-          ? summary.totalChf
-          : 0;
-
-    const modelText =
-      spec ? `${spec.brand} ${spec.model}` : (summary?.model ?? null);
-
-    /* ------------------------------- Build PDF ------------------------------ */
+    const offer = getOfferData(planning);
 
     const pdf = await PDFDocument.create();
-    const page = pdf.addPage([595.28, 841.89]); // A4
+    const page = pdf.addPage([595.28, 841.89]);
     const font = await pdf.embedFont(StandardFonts.Helvetica);
     const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-    const x = 48;
+    const left = 48;
+    const right = 547;
     let y = 800;
 
-    page.drawText("Angebot", {
-      x,
-      y,
-      size: 20,
-      font: bold,
-      color: rgb(0.1, 0.1, 0.1),
-    });
-    y -= 18;
+    /* ---------------- Header ---------------- */
 
-    page.drawText("Projekt (MVP) – nur verfügbare Daten", {
-      x,
+    drawText(page, "Photovoltaik-Angebot", left, y, 22, bold);
+    y -= 22;
+
+    drawText(
+      page,
+      `${offer.title} • ${offer.planningNumber}`,
+      left,
       y,
-      size: 10,
+      10,
       font,
-      color: rgb(0.4, 0.4, 0.4),
-    });
-
+      rgb(0.4, 0.42, 0.46)
+    );
     y -= 26;
 
-    /* ------------------- Kundendaten (Profile) ------------------- */
+    drawLine(page, left, y, right, y);
+    y -= 22;
 
-    page.drawText("Kundendaten", {
-      x,
-      y,
-      size: 13,
-      font: bold,
-      color: rgb(0.15, 0.15, 0.15),
-    });
-    y -= 16;
+    /* ---------------- Customer ---------------- */
 
-    const contactName =
-      [
-        safeText(profile?.contactFirstName) !== "—" ? profile?.contactFirstName : "",
-        safeText(profile?.contactLastName) !== "—" ? profile?.contactLastName : "",
-      ]
-        .filter(Boolean)
-        .join(" ") || "—";
-
-    const contactEmail = safeText(profile?.contactEmail);
-    const contactMobile = safeText(profile?.contactMobile);
-
-    const buildingAddr = joinAddress(
-      profile?.buildingStreet,
-      profile?.buildingStreetNo,
-      profile?.buildingZip,
-      profile?.buildingCity,
-    );
-
-    const billingAddr = joinAddress(
-      profile?.billingStreet,
-      profile?.billingStreetNo,
-      profile?.billingZip,
-      profile?.billingCity,
-    );
-
-    drawLabelValue(page, x, y, "Kontaktperson", contactName, font, bold); y -= 14;
-    drawLabelValue(page, x, y, "E-Mail", contactEmail, font, bold); y -= 14;
-    drawLabelValue(page, x, y, "Tel. Mobile", contactMobile, font, bold); y -= 14;
-    drawLabelValue(page, x, y, "Gebäudeadresse", buildingAddr, font, bold); y -= 14;
-    drawLabelValue(page, x, y, "Rechnungsadresse", billingAddr, font, bold); y -= 22;
-
-    // Divider
-    page.drawLine({
-      start: { x, y },
-      end: { x: 595.28 - x, y },
-      thickness: 1,
-      color: rgb(0.85, 0.85, 0.85),
-    });
-    y -= 20;
-
-    /* ------------------- IST Situation (DB) ------------------- */
-
-    page.drawText("IST-Situation", {
-      x,
-      y,
-      size: 13,
-      font: bold,
-      color: rgb(0.15, 0.15, 0.15),
-    });
-    y -= 16;
-
-    const istRows: Array<[string, string]> = [
-      ["Gebäudetyp", safeText(ist?.buildingType)],
-      ["Wohneinheiten", safeText(ist?.unitsCount)],
-      ["Dachform", safeText(ist?.roofShape)],
-      ["Dacheindeckung", safeText(ist?.roofCover)],
-      ["Heizung", safeText(ist?.heating)],
-      ["E-Mobilität", safeText(ist?.evTopic)],
-      ["Montagezeit (Tage)", safeText(ist?.montageTime)],
-    ];
-
-    for (const [label, value] of istRows) {
-      drawLabelValue(page, x, y, label, value, font, bold);
-      y -= 14;
-    }
-
-    y -= 10;
-
-    // Divider
-    page.drawLine({
-      start: { x, y },
-      end: { x: 595.28 - x, y },
-      thickness: 1,
-      color: rgb(0.85, 0.85, 0.85),
-    });
-    y -= 20;
-
-    /* ------------------- PV-Anlage (geplant) ------------------- */
-
-    page.drawText("PV-Anlage (geplant)", {
-      x,
-      y,
-      size: 13,
-      font: bold,
-      color: rgb(0.15, 0.15, 0.15),
-    });
-    y -= 16;
-
-    const pvRows: Array<[string, string]> = [
-      ["Module", qty > 0 ? fmt0.format(qty) : "—"],
-      ["Leistung", kWp > 0 ? `${fmt2.format(kWp)} kWp` : "—"],
-      ["Modell", safeText(modelText)],
-      ["Einzelpreis", priceChf > 0 ? `${fmt2.format(priceChf)} CHF` : "—"],
-      ["Total Module", totalChf > 0 ? `${fmt2.format(totalChf)} CHF` : "—"],
-    ];
-
-    for (const [label, value] of pvRows) {
-      drawLabelValue(page, x, y, label, value, font, bold);
-      y -= 14;
-    }
-
+    drawText(page, "Kundendaten", left, y, 13, bold);
     y -= 18;
 
-    page.drawText(
-      "Bericht (Grafiken): Platzhalter – werden nach Kundeninput ergänzt.",
-      {
-        x,
-        y,
-        size: 10,
-        font,
-        color: rgb(0.4, 0.4, 0.4),
-      },
+    drawLabelValue(page, left, y, "Name", offer.customer.name, font, bold); y -= 14;
+    drawLabelValue(page, left, y, "E-Mail", offer.customer.email || "—", font, bold); y -= 14;
+    drawLabelValue(page, left, y, "Telefon", offer.customer.phone || "—", font, bold); y -= 14;
+    drawLabelValue(page, left, y, "Adresse", offer.customer.address || "—", font, bold); y -= 22;
+
+    drawLine(page, left, y, right, y);
+    y -= 22;
+
+    /* ---------------- Project ---------------- */
+
+    drawText(page, "Projekt", left, y, 13, bold);
+    y -= 18;
+
+    drawLabelValue(page, left, y, "Gebäudetyp", offer.project.buildingType, font, bold); y -= 14;
+    drawLabelValue(page, left, y, "Dachtyp", offer.project.roofType, font, bold); y -= 14;
+    drawLabelValue(page, left, y, "Dacheindeckung", offer.project.roofCovering, font, bold); y -= 14;
+    drawLabelValue(page, left, y, "Stromverbrauch / Jahr", offer.project.yearlyConsumptionKwh > 0 ? `${fmtInt(offer.project.yearlyConsumptionKwh)} kWh` : "—", font, bold); y -= 14;
+    drawLabelValue(page, left, y, "Umsetzung", offer.project.preferredTiming, font, bold); y -= 22;
+
+    drawLine(page, left, y, right, y);
+    y -= 22;
+
+    /* ---------------- System summary ---------------- */
+
+    drawText(page, "Anlage", left, y, 13, bold);
+    y -= 18;
+
+    drawLabelValue(page, left, y, "Anzahl Module", offer.pv.moduleCount > 0 ? fmtInt(offer.pv.moduleCount) : "—", font, bold); y -= 14;
+    drawLabelValue(page, left, y, "Anlagenleistung", offer.pv.dcPowerKw > 0 ? `${fmt1(offer.pv.dcPowerKw)} kWp` : "—", font, bold); y -= 14;
+    drawLabelValue(page, left, y, "Modul", [offer.pv.panelBrand, offer.pv.panelModel].filter(Boolean).join(" ") || "—", font, bold); y -= 14;
+    drawLabelValue(page, left, y, "Batterie", offer.options.includeBattery ? (offer.options.batteryName || "Ja") : "Nein", font, bold); y -= 14;
+    drawLabelValue(page, left, y, "Ladestation", offer.options.includeWallbox ? (offer.options.wallboxName || "Ja") : "Nein", font, bold); y -= 22;
+
+    drawLine(page, left, y, right, y);
+    y -= 22;
+
+    /* ---------------- Pricing table ---------------- */
+
+    drawText(page, "Leistungsübersicht", left, y, 13, bold);
+    y -= 20;
+
+    y = drawPartsTable(page, offer.parts, y, font, bold);
+    y -= 10;
+
+    drawLine(page, left, y, right, y, 1, rgb(0.75, 0.77, 0.81));
+    y -= 18;
+
+    drawText(page, "Gesamtpreis netto", 360, y, 11, bold);
+    drawText(page, fmtMoney(offer.totals.totalNet), 470, y, 11, bold);
+    y -= 26;
+
+    drawText(
+      page,
+      "Hinweis: Dieses Dokument ist die technische Angebotsbasis. Layout und Zusatzseiten werden im nächsten Schritt erweitert.",
+      left,
+      y,
+      9,
+      font,
+      rgb(0.42, 0.42, 0.46)
     );
 
-    addVollmachtPage(pdf);
+    /* ---------------- Optional attachment: Vollmacht ---------------- */
+
+    if (offer.formDocuments.vollmacht) {
+      await addVollmachtPage(pdf);
+    }
 
     const pdfBytes = await pdf.save();
 
@@ -502,13 +405,15 @@ export async function POST(
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename="Angebot_${planningId}.pdf"`,
         "Cache-Control": "no-store",
+        ...getCorsHeaders(origin),
       },
     });
   } catch (e: any) {
     console.error("OFFER PDF ERROR:", e);
-    return Response.json(
+    return jsonResponse(
+      origin,
       { ok: false, error: e?.message ?? "Unknown error" },
-      { status: 500 },
+      500
     );
   } finally {
     await client.close().catch(() => {});
