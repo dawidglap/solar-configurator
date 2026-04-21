@@ -119,7 +119,7 @@ export async function addCoverPage(
     y: titleBoxY - 16,
     size: 10,
     font,
-    color: rgb(15, 170, 162),
+    color: rgb(1, 1, 1),
   });
 
   /* ------------------ GREETING / INTRO ------------------ */
