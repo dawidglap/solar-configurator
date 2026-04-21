@@ -1,4 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import fs from "fs/promises";
+import path from "path";
 
 export async function addCoverPage(
   pdf: PDFDocument,
@@ -15,23 +17,15 @@ export async function addCoverPage(
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
-  if (!baseUrl) {
-    throw new Error("Missing NEXT_PUBLIC_BASE_URL");
-  }
+  /* ------------------ ASSETS FROM /public ------------------ */
 
-  /* ------------------ ASSETS ------------------ */
+  const heroPath = path.join(process.cwd(), "public", "hero-pdf.jpg");
+  const logoPath = path.join(process.cwd(), "public", "logo-demo.jpg");
 
-  const heroBytes = await fetch(new URL("/hero-pdf.jpg", baseUrl)).then((r) => {
-    if (!r.ok) throw new Error("hero-pdf.jpg not found");
-    return r.arrayBuffer();
-  });
+  const heroBytes = await fs.readFile(heroPath);
+  const logoBytes = await fs.readFile(logoPath);
+
   const heroImage = await pdf.embedJpg(heroBytes);
-
-  const logoBytes = await fetch(new URL("/logo-demo.jpg", baseUrl)).then((r) => {
-    if (!r.ok) throw new Error("logo-demo.jpg not found");
-    return r.arrayBuffer();
-  });
   const logoImage = await pdf.embedJpg(logoBytes);
 
   /* ------------------ HERO ------------------ */
@@ -47,31 +41,33 @@ export async function addCoverPage(
 
   /* ------------------ LOGO BOX ------------------ */
 
+  const logoBoxX = 40;
+  const logoBoxY = height - 120;
   const logoBoxWidth = 180;
   const logoBoxHeight = 70;
 
   page.drawRectangle({
-    x: 40,
-    y: height - 120,
+    x: logoBoxX,
+    y: logoBoxY,
     width: logoBoxWidth,
     height: logoBoxHeight,
     color: rgb(1, 1, 1),
   });
 
   page.drawImage(logoImage, {
-    x: 50,
-    y: height - 110,
-    width: 140,
-    height: 40,
+    x: logoBoxX + 10,
+    y: logoBoxY + 10,
+    width: 160,
+    height: 50,
   });
 
   /* ------------------ TITLE BLOCK ------------------ */
 
-  const titleY = height - heroHeight - 50;
+  const titleBlockY = height - heroHeight - 50;
 
   page.drawRectangle({
     x: 40,
-    y: titleY - 60,
+    y: titleBlockY - 60,
     width: width - 80,
     height: 80,
     color: rgb(0.95, 0.95, 0.95),
@@ -79,25 +75,23 @@ export async function addCoverPage(
 
   page.drawText(data.title || "Photovoltaik-Anlage", {
     x: 50,
-    y: titleY,
+    y: titleBlockY,
     size: 18,
     font: bold,
     color: rgb(0.12, 0.12, 0.12),
   });
 
-  page.drawText(`${data.kWp.toFixed(1)} kWp`, {
+  page.drawText(`${Number(data.kWp || 0).toFixed(1)} kWp`, {
     x: 50,
-    y: titleY - 22,
+    y: titleBlockY - 22,
     size: 14,
     font: bold,
     color: rgb(0.2, 0.2, 0.2),
   });
 
-  /* ------------------ META ------------------ */
-
-  page.drawText(`Offerte Nr. ${data.planningNumber}`, {
+  page.drawText(`Offerte Nr. ${data.planningNumber || "—"}`, {
     x: 50,
-    y: titleY - 50,
+    y: titleBlockY - 50,
     size: 10,
     font,
     color: rgb(0.4, 0.4, 0.4),
@@ -105,9 +99,9 @@ export async function addCoverPage(
 
   /* ------------------ GREETING ------------------ */
 
-  let y = titleY - 110;
+  let y = titleBlockY - 110;
 
-  page.drawText(`Herr ${data.customerName}`, {
+  page.drawText(data.customerName || "Kunde", {
     x: 50,
     y,
     size: 14,
@@ -115,7 +109,7 @@ export async function addCoverPage(
     color: rgb(0.12, 0.12, 0.12),
   });
 
-  y -= 20;
+  y -= 24;
 
   const paragraph =
     "Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit uns. Mit Helionic haben Sie einen erfahrenen und verlässlichen Partner für innovative Photovoltaik-Lösungen.";
@@ -130,7 +124,7 @@ export async function addCoverPage(
     color: rgb(0.3, 0.3, 0.3),
   });
 
-  y -= 60;
+  y -= 70;
 
   /* ------------------ SIMPLE INVEST BLOCK ------------------ */
 
@@ -149,7 +143,7 @@ export async function addCoverPage(
     y,
     size: 11,
     font,
-    color: rgb(0.12, 0.12, 0.12),
+    color: rgb(0.2, 0.2, 0.2),
   });
 
   page.drawText("— CHF", {
@@ -161,8 +155,6 @@ export async function addCoverPage(
   });
 
   y -= 40;
-
-  /* ------------------ VALIDITY ------------------ */
 
   page.drawText("Offerte gültig bis: —", {
     x: 50,
