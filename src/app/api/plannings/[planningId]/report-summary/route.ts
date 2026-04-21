@@ -313,6 +313,34 @@ type NormalizedPartItem = {
   lineTotalNet: number;
 };
 
+type NormalizedCatalogItem = {
+  id: string;
+  category: string;
+  brand: string;
+  model: string;
+  name: string;
+  description: string;
+  unit: string;
+  unitLabel: string;
+  priceNet: number;
+  isActive: boolean;
+};
+
+function normalizeCatalogItem(item: any): NormalizedCatalogItem {
+  return {
+    id: safeString(item?._id ?? item?.id),
+    category: safeString(item?.category),
+    brand: safeString(item?.brand),
+    model: safeString(item?.model),
+    name: safeString(item?.name),
+    description: safeString(item?.description),
+    unit: safeString(item?.unit) || "piece",
+    unitLabel: safeString(item?.unitLabel) || "Stk.",
+    priceNet: safeNumber(item?.priceNet, 0),
+    isActive: typeof item?.isActive === "boolean" ? item.isActive : true,
+  };
+}
+
 function normalizePartItem(item: any): NormalizedPartItem {
   const quantity = safeNumber(
     item?.quantity ??
@@ -371,14 +399,18 @@ function normalizeReportOptions(raw: any) {
       ? raw.battery
       : typeof raw?.hasBattery === "boolean"
         ? raw.hasBattery
-        : undefined;
+        : typeof raw?.includeBattery === "boolean"
+          ? raw.includeBattery
+          : undefined;
 
   const charging =
     typeof raw?.charging === "boolean"
       ? raw.charging
       : typeof raw?.hasEv === "boolean"
         ? raw.hasEv
-        : undefined;
+        : typeof raw?.includeWallbox === "boolean"
+          ? raw.includeWallbox
+          : undefined;
 
   const heatPump =
     typeof raw?.heatPump === "boolean"
@@ -391,10 +423,25 @@ function normalizeReportOptions(raw: any) {
     battery,
     charging,
     heatPump,
+    selectedBatteryItemId: safeString(
+      raw?.selectedBatteryItemId ??
+      raw?.batteryItemId ??
+      raw?.selectedBatteryId
+    ),
+    selectedWallboxItemId: safeString(
+      raw?.selectedWallboxItemId ??
+      raw?.wallboxItemId ??
+      raw?.selectedWallboxId
+    ),
     discountChf: parseMoneyLike(raw?.discountChf ?? raw?.rabattChf, 0),
     discountPct: parseMoneyLike(raw?.discountPct ?? raw?.rabattPct, 0),
-    subsidyChf: parseMoneyLike(raw?.subsidy ?? raw?.foerderungen, 0),
-    skontoPct: parseMoneyLike(raw?.skonto, 0),
+    subsidyChf: parseMoneyLike(
+      raw?.subsidyChf ??
+      raw?.subsidy ??
+      raw?.foerderungen,
+      0
+    ),
+    skontoPct: parseMoneyLike(raw?.skontoPct ?? raw?.skonto, 0),
     paymentTerms: safeString(raw?.paymentTerms ?? raw?.zahlungsbedingungen),
   };
 }
@@ -512,14 +559,31 @@ function inferEnergyFlagsFromIncludedParts(args: {
   };
 }
 
+function getCatalogItemById(items: NormalizedCatalogItem[], id?: string | null) {
+  const wanted = safeString(id);
+  if (!wanted) return null;
+  return items.find((item) => item.id === wanted) ?? null;
+}
+
+function hasEquivalentPart(items: NormalizedPartItem[], kind: "battery" | "wallbox") {
+  return items.some((item) =>
+    kind === "battery"
+      ? isBatteryCategory(item.category)
+      : isWallboxCategory(item.category)
+  );
+}
+
 /* --------------------------- Main report builder -------------------------- */
 
-function buildReportSummary(doc: any) {
+function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   const data = doc?.data ?? {};
   const planner = data?.planner ?? {};
   const ist = data?.ist ?? {};
   const summary = doc?.summary ?? {};
   const reportOptions = normalizeReportOptions(data?.reportOptions ?? {});
+  const catalogItems = Array.isArray(catalogItemsRaw)
+    ? catalogItemsRaw.map(normalizeCatalogItem).filter((i) => i.isActive)
+    : [];
 
   const panels = Array.isArray(planner?.panels) ? planner.panels : [];
   const layers = Array.isArray(planner?.layers) ? planner.layers : [];
@@ -581,12 +645,41 @@ function buildReportSummary(doc: any) {
   let partsTotalChf = costBreakdown.partsTotalChf;
   let grossInvestmentChf = costBreakdown.grossInvestmentChf;
 
-  // fallback: se la Stückliste non è ancora salvata, usa almeno i moduli del planner
   if (grossInvestmentChf <= 0 && moduleCount > 0 && fallbackModuleUnitPriceChf > 0) {
     modulesTotalChf = round2(moduleCount * fallbackModuleUnitPriceChf);
     partsTotalChf = 0;
     grossInvestmentChf = round2(modulesTotalChf + partsTotalChf);
   }
+
+  const selectedBatteryCatalogItem = getCatalogItemById(
+    catalogItems,
+    reportOptions.selectedBatteryItemId
+  );
+
+  const selectedWallboxCatalogItem = getCatalogItemById(
+    catalogItems,
+    reportOptions.selectedWallboxItemId
+  );
+
+  const batteryAlreadyInParts = hasEquivalentPart(includedParts, "battery");
+  const wallboxAlreadyInParts = hasEquivalentPart(includedParts, "wallbox");
+
+  const extraBatteryCostChf =
+    reportOptions.battery !== false &&
+    selectedBatteryCatalogItem &&
+    !batteryAlreadyInParts
+      ? round2(selectedBatteryCatalogItem.priceNet)
+      : 0;
+
+  const extraWallboxCostChf =
+    reportOptions.charging !== false &&
+    selectedWallboxCatalogItem &&
+    !wallboxAlreadyInParts
+      ? round2(selectedWallboxCatalogItem.priceNet)
+      : 0;
+
+  partsTotalChf = round2(partsTotalChf + extraBatteryCostChf + extraWallboxCostChf);
+  grossInvestmentChf = round2(modulesTotalChf + partsTotalChf);
 
   const moduleUnitPriceChf =
     moduleCount > 0 && modulesTotalChf > 0
@@ -715,6 +808,11 @@ function buildReportSummary(doc: any) {
     paymentTerms: reportOptions.paymentTerms,
     includedPartsCount: includedParts.length,
 
+    extraBatteryCostChf,
+    extraWallboxCostChf,
+    selectedBatteryItemId: reportOptions.selectedBatteryItemId,
+    selectedWallboxItemId: reportOptions.selectedWallboxItemId,
+
     lastCalculatedAt: new Date().toISOString(),
     calculationMode: "mvp_estimated",
   };
@@ -770,6 +868,7 @@ export async function GET(
     await client.connect();
     const db = client.db();
     const plannings = db.collection("plannings");
+    const catalogItems = db.collection("catalogItems");
 
     const doc = await plannings.findOne({
       _id: planningObjectId,
@@ -780,7 +879,14 @@ export async function GET(
       return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
     }
 
-    const reportSummary = buildReportSummary(doc);
+    const catalogDocs = await catalogItems
+      .find({
+        companyId: session.activeCompanyId,
+        isActive: true,
+      })
+      .toArray();
+
+    const reportSummary = buildReportSummary(doc, catalogDocs);
 
     return jsonResponse(
       origin,
