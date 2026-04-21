@@ -284,19 +284,40 @@ function estimateSelfConsumptionPct(args: {
     return 0;
   }
 
-  let pct = 0.32;
   const ratio = yearlyConsumptionKwh / annualProductionKwh;
 
-  if (ratio >= 1.2) pct += 0.08;
-  else if (ratio >= 0.9) pct += 0.05;
-  else if (ratio >= 0.7) pct += 0.02;
-  else if (ratio < 0.45) pct -= 0.04;
+  // base self-consumption without extras
+  let pct = 0.28;
 
-  if (hasBattery) pct += 0.18;
-  if (hasEv) pct += 0.05;
-  if (hasHeatPump) pct += 0.06;
+  // consumption vs production balance
+  if (ratio >= 1.5) pct += 0.12;
+  else if (ratio >= 1.2) pct += 0.09;
+  else if (ratio >= 1.0) pct += 0.07;
+  else if (ratio >= 0.8) pct += 0.04;
+  else if (ratio >= 0.6) pct += 0.01;
+  else pct -= 0.03;
 
-  return clamp(pct, 0.15, 0.85);
+  // battery has the strongest impact on self-consumption
+  if (hasBattery) {
+    pct += 0.18;
+
+    // if production is relatively high, battery adds even more benefit
+    if (ratio <= 1.0) pct += 0.04;
+    if (ratio <= 0.8) pct += 0.03;
+  }
+
+  // EV typically helps shift solar energy into useful consumption
+  if (hasEv) {
+    pct += 0.06;
+  }
+
+  // heat pump also increases on-site usage
+  if (hasHeatPump) {
+    pct += 0.07;
+  }
+
+  // realistic bounds
+  return clamp(pct, 0.18, 0.88);
 }
 
 /* ------------------------------ Parts helpers ----------------------------- */
