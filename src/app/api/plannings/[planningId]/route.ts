@@ -82,7 +82,6 @@ function extractCityFromAddress(address: any) {
   const parts = a.split(",");
   const lastPart = parts[parts.length - 1]?.trim() || "";
 
-  // es. "9445 Rebstein"
   const match = lastPart.match(/^(\d{4})\s+(.+)$/);
   if (match) return match[2].trim();
 
@@ -181,11 +180,8 @@ function deriveSummaryFromPlanner(docLike: any) {
       buildCustomerNameFromProfile(data?.profile),
 
     moduleCount,
-
     selectedPanelId,
-
     dcPowerKw,
-
     roofCount: layers.length,
 
     hasSnapshot:
@@ -270,18 +266,25 @@ export async function PATCH(
   const summary = body?.summary;
   const parts = body?.parts;
 
-const hasPlannerPayload =
-  (profile && typeof profile === "object") ||
-  (ist && typeof ist === "object") ||
-  (planner && typeof planner === "object") ||
-  (parts && typeof parts === "object");
+  // NEW: support Bericht / reportOptions payload
+  const reportOptions =
+    body?.reportOptions ??
+    body?.data?.reportOptions ??
+    body?.["data.reportOptions"];
 
-const hasCrmPayload =
-  typeof title === "string" ||
-  typeof customerId === "string" ||
-  typeof planningNumber === "string" ||
-  (commercial && typeof commercial === "object") ||
-  (summary && typeof summary === "object");
+  const hasPlannerPayload =
+    (profile && typeof profile === "object") ||
+    (ist && typeof ist === "object") ||
+    (planner && typeof planner === "object") ||
+    (parts && typeof parts === "object") ||
+    (reportOptions && typeof reportOptions === "object");
+
+  const hasCrmPayload =
+    typeof title === "string" ||
+    typeof customerId === "string" ||
+    typeof planningNumber === "string" ||
+    (commercial && typeof commercial === "object") ||
+    (summary && typeof summary === "object");
 
   if (!hasPlannerPayload && !hasCrmPayload) {
     return jsonResponse(
@@ -289,7 +292,7 @@ const hasCrmPayload =
       {
         ok: false,
         error:
-          "Send planner data ({ profile }, { ist }, { planner }) or CRM fields ({ title, customerId, planningNumber, commercial, summary })",
+          "Send planner data ({ profile }, { ist }, { planner }, { parts }, { reportOptions }) or CRM fields ({ title, customerId, planningNumber, commercial, summary })",
       },
       400
     );
@@ -407,83 +410,92 @@ const hasCrmPayload =
       }
     }
 
-   if (planner && typeof planner === "object") {
-  const existingPlannerState = (existingPlanning as any)?.data?.planner ?? {};
+    if (planner && typeof planner === "object") {
+      const existingPlannerState = (existingPlanning as any)?.data?.planner ?? {};
 
-  const mergedPlanner = {
-    ...existingPlannerState,
-    ...planner,
+      const mergedPlanner = {
+        ...existingPlannerState,
+        ...planner,
+        snapshot: {
+          ...(existingPlannerState?.snapshot ?? {}),
+          ...(planner?.snapshot ?? {}),
+        },
+      };
 
-    // merge profondo per snapshot
-    snapshot: {
-      ...(existingPlannerState?.snapshot ?? {}),
-      ...(planner?.snapshot ?? {}),
-    },
-  };
+      if (!mergedPlanner.snapshot?.url && existingPlannerState?.snapshot) {
+        mergedPlanner.snapshot = {
+          ...existingPlannerState.snapshot,
+          ...(planner?.snapshot ?? {}),
+        };
+      }
 
-  // se il planner in arrivo non manda snapshot ma quella esiste già, la preserviamo
-  if (
-    !mergedPlanner.snapshot?.url &&
-    existingPlannerState?.snapshot
-  ) {
-    mergedPlanner.snapshot = {
-      ...existingPlannerState.snapshot,
-      ...(planner?.snapshot ?? {}),
-    };
-  }
+      setObj["data.planner"] = mergedPlanner;
 
-  setObj["data.planner"] = mergedPlanner;
+      const computedSummary = deriveSummaryFromPlanner({
+        ...(existingPlanning as any),
+        data: {
+          ...((existingPlanning as any)?.data ?? {}),
+          planner: mergedPlanner,
+        },
+        summary: (existingPlanning as any)?.summary ?? {},
+      });
 
-    const computedSummary = deriveSummaryFromPlanner({
-    ...(existingPlanning as any),
-    data: {
-      ...((existingPlanning as any)?.data ?? {}),
-      planner: mergedPlanner,
-    },
-    summary: (existingPlanning as any)?.summary ?? {},
-  });
+      setObj["summary.moduleCount"] = computedSummary.moduleCount;
+      setObj["summary.selectedPanelId"] = computedSummary.selectedPanelId;
+      setObj["summary.dcPowerKw"] = computedSummary.dcPowerKw;
+      setObj["summary.roofCount"] = computedSummary.roofCount;
+      setObj["summary.hasSnapshot"] = computedSummary.hasSnapshot;
+      setObj["summary.lastCalculatedAt"] = computedSummary.lastCalculatedAt;
 
-  setObj["summary.moduleCount"] = computedSummary.moduleCount;
-  setObj["summary.selectedPanelId"] = computedSummary.selectedPanelId;
-  setObj["summary.dcPowerKw"] = computedSummary.dcPowerKw;
-  setObj["summary.roofCount"] = computedSummary.roofCount;
-  setObj["summary.hasSnapshot"] = computedSummary.hasSnapshot;
-  setObj["summary.lastCalculatedAt"] = computedSummary.lastCalculatedAt;
+      const plannerStep = safeString(planner?.step || mergedPlanner?.step);
 
-  // NON saltare direttamente a "offer"
-  // restiamo in building/modules a seconda dello stato del planner
-  const plannerStep = safeString(planner?.step || mergedPlanner?.step);
+      if (plannerStep === "modules") {
+        setObj.currentStep = "modules";
+      } else if (plannerStep === "building") {
+        setObj.currentStep = "building";
+      } else {
+        setObj.currentStep =
+          safeString((existingPlanning as any)?.currentStep) || "building";
+      }
+    }
 
-  if (plannerStep === "modules") {
-    setObj.currentStep = "modules";
-  } else if (plannerStep === "building") {
-    setObj.currentStep = "building";
-  } else {
-    // fallback prudente: se siamo nel planner tecnico, almeno non mandarlo a offer
-    setObj.currentStep =
-      safeString((existingPlanning as any)?.currentStep) || "building";
-  }
-}
+    if (parts && typeof parts === "object") {
+      const existingParts = (existingPlanning as any)?.data?.parts ?? {};
 
-if (parts && typeof parts === "object") {
-  const existingParts = (existingPlanning as any)?.data?.parts ?? {};
+      const normalizedItems = Array.isArray(parts?.items)
+        ? parts.items
+        : existingParts.items ?? [];
 
-  const normalizedItems = Array.isArray(parts?.items) ? parts.items : existingParts.items ?? [];
-  const normalizedFormDocuments =
-    parts?.formDocuments && typeof parts.formDocuments === "object"
-      ? parts.formDocuments
-      : existingParts.formDocuments ?? {};
+      const normalizedFormDocuments =
+        parts?.formDocuments && typeof parts.formDocuments === "object"
+          ? parts.formDocuments
+          : existingParts.formDocuments ?? {};
 
-  setObj["data.parts"] = {
-    ...existingParts,
-    ...parts,
-    items: normalizedItems,
-    formDocuments: normalizedFormDocuments,
-  };
+      setObj["data.parts"] = {
+        ...existingParts,
+        ...parts,
+        items: normalizedItems,
+        formDocuments: normalizedFormDocuments,
+      };
 
-  // se siamo in Stückliste, manteniamo lo step corretto
-  setObj.currentStep = "parts";
-}
+      setObj.currentStep = "parts";
+    }
+
+    // NEW: save Bericht options
+    if (reportOptions && typeof reportOptions === "object") {
+      const existingReportOptions =
+        (existingPlanning as any)?.data?.reportOptions ?? {};
+
+      setObj["data.reportOptions"] = {
+        ...existingReportOptions,
+        ...reportOptions,
+      };
+
+      // se siamo in Bericht, non sovrascrivere currentStep con qualcosa di sbagliato
+      if (!setObj.currentStep) {
+        setObj.currentStep = "bericht";
+      }
+    }
 
     // -------------------- customerId validation / sync --------------------
 
