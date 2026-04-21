@@ -124,10 +124,7 @@ export async function POST(
       "@/app/api/plannings/[planningId]/parts-defaults/route"
     );
 
-    const defaultItems = buildDefaultPartsItems({
-      planner,
-      catalogItems: catalog,
-    });
+ const defaultItems = buildDefaultPartsItems(planning, catalog);
 
     /* -------------------- ADD BATTERY -------------------- */
 
