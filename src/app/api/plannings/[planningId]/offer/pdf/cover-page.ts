@@ -1,4 +1,4 @@
-import { PDFDocument, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 export async function addCoverPage(
   pdf: PDFDocument,
@@ -10,27 +10,29 @@ export async function addCoverPage(
   }
 ) {
   const page = pdf.addPage([595.28, 841.89]); // A4
-
   const { width, height } = page.getSize();
 
-  const font = await pdf.embedFont("Helvetica");
-  const bold = await pdf.embedFont("Helvetica-Bold");
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+  if (!baseUrl) {
+    throw new Error("Missing NEXT_PUBLIC_BASE_URL");
+  }
 
   /* ------------------ ASSETS ------------------ */
 
-  // HERO IMAGE
-  const heroBytes = await fetch(
-    new URL("/hero-pdf.jpg", process.env.NEXT_PUBLIC_BASE_URL)
-  ).then((r) => r.arrayBuffer());
-
+  const heroBytes = await fetch(new URL("/hero-pdf.jpg", baseUrl)).then((r) => {
+    if (!r.ok) throw new Error("hero-pdf.jpg not found");
+    return r.arrayBuffer();
+  });
   const heroImage = await pdf.embedJpg(heroBytes);
 
-  // LOGO
-  const logoBytes = await fetch(
-    new URL("/logo-demo.jpg", process.env.NEXT_PUBLIC_BASE_URL)
-  ).then((r) => r.arrayBuffer());
-
-  const logoImage = await pdf.embedPng(logoBytes);
+  const logoBytes = await fetch(new URL("/logo-demo.jpg", baseUrl)).then((r) => {
+    if (!r.ok) throw new Error("logo-demo.jpg not found");
+    return r.arrayBuffer();
+  });
+  const logoImage = await pdf.embedJpg(logoBytes);
 
   /* ------------------ HERO ------------------ */
 
@@ -39,7 +41,7 @@ export async function addCoverPage(
   page.drawImage(heroImage, {
     x: 0,
     y: height - heroHeight,
-    width: width,
+    width,
     height: heroHeight,
   });
 
@@ -93,16 +95,13 @@ export async function addCoverPage(
 
   /* ------------------ META ------------------ */
 
-  page.drawText(
-    `Offerte Nr. ${data.planningNumber}`,
-    {
-      x: 50,
-      y: titleY - 50,
-      size: 10,
-      font,
-      color: rgb(0.4, 0.4, 0.4),
-    }
-  );
+  page.drawText(`Offerte Nr. ${data.planningNumber}`, {
+    x: 50,
+    y: titleY - 50,
+    size: 10,
+    font,
+    color: rgb(0.4, 0.4, 0.4),
+  });
 
   /* ------------------ GREETING ------------------ */
 
@@ -113,6 +112,7 @@ export async function addCoverPage(
     y,
     size: 14,
     font: bold,
+    color: rgb(0.12, 0.12, 0.12),
   });
 
   y -= 20;
@@ -139,6 +139,7 @@ export async function addCoverPage(
     y,
     size: 13,
     font: bold,
+    color: rgb(0.12, 0.12, 0.12),
   });
 
   y -= 20;
@@ -148,6 +149,7 @@ export async function addCoverPage(
     y,
     size: 11,
     font,
+    color: rgb(0.12, 0.12, 0.12),
   });
 
   page.drawText("— CHF", {
@@ -155,6 +157,7 @@ export async function addCoverPage(
     y,
     size: 11,
     font: bold,
+    color: rgb(0.12, 0.12, 0.12),
   });
 
   y -= 40;
