@@ -568,7 +568,7 @@ function estimateCommissioningPrice(dcPowerKw: number) {
 
 /* --------------------------- Default item builder ------------------------- */
 
-export function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
+function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
   const items = getActiveItems(catalogItemsRaw);
   const { ist, layers, moduleCount, selectedPanel, dcPowerKw, reportOptions } = getPlanningCore(doc);
 
