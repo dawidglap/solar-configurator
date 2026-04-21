@@ -20,14 +20,14 @@ export async function addCoverPage(
 
   // HERO IMAGE
   const heroBytes = await fetch(
-    new URL("/hero-pdf.webp", process.env.NEXT_PUBLIC_BASE_URL)
+    new URL("/hero-pdf.jpg", process.env.NEXT_PUBLIC_BASE_URL)
   ).then((r) => r.arrayBuffer());
 
   const heroImage = await pdf.embedJpg(heroBytes);
 
   // LOGO
   const logoBytes = await fetch(
-    new URL("/logo-demo.webp", process.env.NEXT_PUBLIC_BASE_URL)
+    new URL("/logo-demo.jpg", process.env.NEXT_PUBLIC_BASE_URL)
   ).then((r) => r.arrayBuffer());
 
   const logoImage = await pdf.embedPng(logoBytes);
