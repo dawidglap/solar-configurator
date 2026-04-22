@@ -177,7 +177,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const pageMarginX = 44;
 
   const heroX = 44;
-  const heroY = 520;
+  const heroY = 536;
   const heroW = width - 88;
   const heroH = 250;
 
@@ -189,7 +189,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const titleBoxX = 58;
   const titleBoxW = width - 116;
   const titleBoxH = 122;
-  const titleBoxY = heroY - 12;
+  const titleBoxY = heroY - 8;
 
   page.drawRectangle({
     x: 0,
@@ -270,7 +270,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     textMuted
   );
 
-  let y = 412;
+  let y = 430;
 
   drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 15, font, textDark);
   y -= 26;
