@@ -53,6 +53,14 @@ function safeNumber(v: unknown, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function formatDateCH(date: Date) {
+  return new Intl.DateTimeFormat("de-CH", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
 function makeJsonResponse(origin: string | null, body: any, status: number) {
   return new Response(JSON.stringify(body), {
     status,
@@ -140,36 +148,38 @@ export async function POST(
     const vatAmountChf = Number((partsTotalNet * (vatRatePct / 100)).toFixed(2));
     const grossPriceChf = Number((partsTotalNet + vatAmountChf).toFixed(2));
 
-const dcPowerKw = safeNumber(summary?.dcPowerKw, 0);
+    const dcPowerKw = safeNumber(summary?.dcPowerKw, 0);
 
-const automaticPvSubsidyChf =
-  safeNumber(
-    reportSummary?.automaticPvSubsidyChf,
-    dcPowerKw <= 0
-      ? 0
-      : dcPowerKw <= 30
-        ? dcPowerKw * 360
-        : dcPowerKw * 300
-  );
+    const automaticPvSubsidyChf = safeNumber(
+      reportSummary?.automaticPvSubsidyChf,
+      dcPowerKw <= 0 ? 0 : dcPowerKw <= 30 ? dcPowerKw * 360 : dcPowerKw * 300
+    );
 
-const manualAdditionalSubsidyChf = safeNumber(
-  reportSummary?.manualAdditionalSubsidyChf ??
-    reportOptions?.additionalSubsidyChf,
-  0
-);
+    const manualAdditionalSubsidyChf = safeNumber(
+      reportSummary?.manualAdditionalSubsidyChf ??
+        reportOptions?.additionalSubsidyChf,
+      0
+    );
 
-const subsidyChf = Number(
-  (automaticPvSubsidyChf + manualAdditionalSubsidyChf).toFixed(2)
-);
+    const subsidyChf = Number(
+      (automaticPvSubsidyChf + manualAdditionalSubsidyChf).toFixed(2)
+    );
 
-const totalInvestmentChf = Number(
-  Math.max(0, grossPriceChf - subsidyChf).toFixed(2)
-);
+    const totalInvestmentChf = Number(
+      Math.max(0, grossPriceChf - subsidyChf).toFixed(2)
+    );
 
     const taxSavingsChf = 0;
     const effectiveCostChf = Number(
       Math.max(0, totalInvestmentChf - taxSavingsChf).toFixed(2)
     );
+
+    const today = new Date();
+    const validUntilDate = new Date(today);
+    validUntilDate.setDate(validUntilDate.getDate() + 30);
+
+    const todayFormatted = formatDateCH(today);
+    const validUntilFormatted = formatDateCH(validUntilDate);
 
     const customerName =
       [safeString(profile?.firstName), safeString(profile?.lastName)]
@@ -191,34 +201,40 @@ const totalInvestmentChf = Number(
     const offer = {
       title: safeString((planning as any)?.title) || "Photovoltaik-Angebot",
       planningNumber: safeString((planning as any)?.planningNumber) || "—",
-   pv: {
-  dcPowerKw,
-  moduleCount: safeNumber(summary?.moduleCount, 0),
-},
+      pv: {
+        dcPowerKw,
+        moduleCount: safeNumber(summary?.moduleCount, 0),
+      },
       customer: {
         name: customerName,
       },
       companyName,
- pricing: {
-  netSystemPriceChf: partsTotalNet,
-  vatRatePct,
-  vatAmountChf,
-  grossPriceChf,
-  automaticPvSubsidyChf,
-  manualAdditionalSubsidyChf,
-  subsidyChf,
-  totalInvestmentChf,
-  taxSavingsChf,
-  effectiveCostChf,
-},
+      pricing: {
+        netSystemPriceChf: partsTotalNet,
+        vatRatePct,
+        vatAmountChf,
+        grossPriceChf,
+        automaticPvSubsidyChf,
+        manualAdditionalSubsidyChf,
+        subsidyChf,
+        totalInvestmentChf,
+        taxSavingsChf,
+        effectiveCostChf,
+      },
       options: {
         batteryLabel: batteryItem
-          ? [safeString(batteryItem?.brand ?? batteryItem?.marke), safeString(batteryItem?.name ?? batteryItem?.beschreibung)]
+          ? [
+              safeString(batteryItem?.brand ?? batteryItem?.marke),
+              safeString(batteryItem?.name ?? batteryItem?.beschreibung),
+            ]
               .filter(Boolean)
               .join(" ")
           : "",
         wallboxLabel: wallboxItem
-          ? [safeString(wallboxItem?.brand ?? wallboxItem?.marke), safeString(wallboxItem?.name ?? wallboxItem?.beschreibung)]
+          ? [
+              safeString(wallboxItem?.brand ?? wallboxItem?.marke),
+              safeString(wallboxItem?.name ?? wallboxItem?.beschreibung),
+            ]
               .filter(Boolean)
               .join(" ")
           : "",
@@ -239,16 +255,17 @@ const totalInvestmentChf = Number(
       vatAmountChf: offer.pricing.vatAmountChf,
       grossPriceChf: offer.pricing.grossPriceChf,
 
-     automaticPvSubsidyChf: offer.pricing.automaticPvSubsidyChf,
-manualAdditionalSubsidyChf: offer.pricing.manualAdditionalSubsidyChf,
-subsidyChf: offer.pricing.subsidyChf,
-
+      automaticPvSubsidyChf: offer.pricing.automaticPvSubsidyChf,
+      manualAdditionalSubsidyChf: offer.pricing.manualAdditionalSubsidyChf,
+      subsidyChf: offer.pricing.subsidyChf,
 
       totalInvestmentChf: offer.pricing.totalInvestmentChf,
       taxSavingsChf: offer.pricing.taxSavingsChf,
       effectiveCostChf: offer.pricing.effectiveCostChf,
 
-      validUntil: "",
+      offerDate: todayFormatted,
+      validUntil: validUntilFormatted,
+
       moduleCount: offer.pv.moduleCount,
       batteryLabel: offer.options.batteryLabel,
       wallboxLabel: offer.options.wallboxLabel,
