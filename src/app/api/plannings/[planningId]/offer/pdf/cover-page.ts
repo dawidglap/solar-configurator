@@ -352,8 +352,8 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
               left: "Förderungen**",
               middle:
                 data.kWp <= 30
-                  ? `Pronovo Einmalvergütung (${money(data.kWp)} kWp × 360 CHF)`
-                  : `Pronovo Einmalvergütung (${money(data.kWp)} kWp × 300 CHF)`,
+                  ? `Pronovo Einmalvergütung `
+                  : `Pronovo Einmalvergütung `,
               right: `-${money(automaticPvSubsidy)} CHF`,
             } satisfies Row,
           ]
@@ -433,7 +433,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   y -= 12;
   drawText(
     page,
-    "**  Die Pronovo-Einmalvergütung wurde auf Basis der aktuellen Anlagenleistung berechnet.",
+    `**  Pronovo-Einmalvergütung: ${data.kWp <= 30 ? "360 CHF/kWp" : "300 CHF/kWp"} auf Basis von ${money(data.kWp)} kWp.`,
     tableX,
     y,
     9,
