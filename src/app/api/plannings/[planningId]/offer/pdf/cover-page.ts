@@ -272,7 +272,7 @@ drawText(
   textMuted
 );
 
-  let y = 492;
+  let y = 515;
 
   drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 15, font, textDark);
   y -= 26;
