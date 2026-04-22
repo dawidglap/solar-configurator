@@ -270,7 +270,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     textMuted
   );
 
-  let y = 230;
+  let y = 630;
 
   drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 15, font, textDark);
   y -= 26;

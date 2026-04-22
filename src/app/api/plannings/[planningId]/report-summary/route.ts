@@ -56,6 +56,12 @@ function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
 
+function calculatePvSubsidyChf(dcPowerKw: number) {
+  if (dcPowerKw <= 0) return 0;
+  const rate = dcPowerKw <= 30 ? 360 : 300;
+  return round2(dcPowerKw * rate);
+}
+
 function toObjectIdOrNull(v: any) {
   try {
     if (!v) return null;
@@ -737,10 +743,14 @@ function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
       ? round1((selfUseKwh / yearlyConsumptionKwh) * 100)
       : 0;
 
-  const discountPct = round2(clamp(reportOptions.discountPct, 0, 100));
-  const discountChf = round2(Math.max(0, reportOptions.discountChf));
-  const subsidyChf = round2(Math.max(0, reportOptions.subsidyChf));
-  const skontoPct = round2(clamp(reportOptions.skontoPct, 0, 100));
+ const discountPct = round2(clamp(reportOptions.discountPct, 0, 100));
+const discountChf = round2(Math.max(0, reportOptions.discountChf));
+
+const automaticPvSubsidyChf = calculatePvSubsidyChf(dcPowerKw);
+const manualAdditionalSubsidyChf = round2(Math.max(0, reportOptions.subsidyChf));
+const subsidyChf = round2(automaticPvSubsidyChf + manualAdditionalSubsidyChf);
+
+const skontoPct = round2(clamp(reportOptions.skontoPct, 0, 100));
 
   const discountFromPctChf = round2((grossInvestmentChf * discountPct) / 100);
   const totalDiscountChf = round2(discountFromPctChf + discountChf);
@@ -801,16 +811,20 @@ function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
     modulesTotalChf,
     partsTotalChf,
 
-    grossInvestmentChf,
-    discountChf,
-    discountPct,
-    discountFromPctChf,
-    totalDiscountChf,
-    subsidyChf,
-    netInvestmentBeforeSubsidyChf,
-    skontoPct,
-    skontoValueChf,
-    totalInvestmentChf,
+   grossInvestmentChf,
+discountChf,
+discountPct,
+discountFromPctChf,
+totalDiscountChf,
+
+automaticPvSubsidyChf,
+manualAdditionalSubsidyChf,
+subsidyChf,
+
+netInvestmentBeforeSubsidyChf,
+skontoPct,
+skontoValueChf,
+totalInvestmentChf,
 
     annualSavingsChf,
     annualFeedInRevenueChf,
