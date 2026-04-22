@@ -1,281 +1,523 @@
-// src/app/api/plannings/[planningId]/offer/pdf/cover-page.ts
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { readFile } from "fs/promises";
-import path from "path";
+import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
 
-export async function addCoverPage(
-  pdf: PDFDocument,
-  data: {
-    title: string;
-    planningNumber: string;
-    kWp: number;
-    customerName: string;
+type OfferCoverData = {
+  title: string;
+  planningNumber: string;
+  kWp: number;
+  customerName: string;
+
+  // economic block
+  netSystemPriceChf: number;
+  vatRatePct: number;
+  vatAmountChf: number;
+  grossPriceChf: number;
+
+  subsidyChf: number;
+  additionalSubsidyChf?: number;
+
+  totalInvestmentChf: number;
+  taxSavingsChf?: number;
+  effectiveCostChf?: number;
+
+  validUntil?: string;
+
+  // optional summary
+  moduleCount?: number;
+  batteryLabel?: string;
+  wallboxLabel?: string;
+};
+
+function money(n?: number) {
+  const value = Number(n ?? 0);
+  return new Intl.NumberFormat("de-CH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function pct(n?: number) {
+  const value = Number(n ?? 0);
+  return new Intl.NumberFormat("de-CH", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function fmtDate(dateLike?: string) {
+  if (!dateLike) return "—";
+  const d = new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return dateLike;
+  return new Intl.DateTimeFormat("de-CH", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(d);
+}
+
+function safeBaseUrl() {
+  return (
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    process.env.APP_BASE_URL ||
+    "https://planner.helionic.ch"
+  ).replace(/\/$/, "");
+}
+
+async function fetchAsset(path: string) {
+  const url = `${safeBaseUrl()}${path}`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`Asset not found: ${url}`);
   }
+  return Buffer.from(await res.arrayBuffer());
+}
+
+function fitContain(
+  srcW: number,
+  srcH: number,
+  boxW: number,
+  boxH: number
+): { width: number; height: number } {
+  const scale = Math.min(boxW / srcW, boxH / srcH);
+  return {
+    width: srcW * scale,
+    height: srcH * scale,
+  };
+}
+
+function fitCover(
+  srcW: number,
+  srcH: number,
+  boxW: number,
+  boxH: number
+): { width: number; height: number } {
+  const scale = Math.max(boxW / srcW, boxH / srcH);
+  return {
+    width: srcW * scale,
+    height: srcH * scale,
+  };
+}
+
+function drawText(
+  page: PDFPage,
+  text: string,
+  x: number,
+  y: number,
+  size: number,
+  font: PDFFont,
+  color = rgb(0.14, 0.22, 0.27)
 ) {
+  page.drawText(text, { x, y, size, font, color });
+}
+
+function drawLine(
+  page: PDFPage,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  thickness = 1,
+  color = rgb(0.78, 0.81, 0.83)
+) {
+  page.drawLine({
+    start: { x: x1, y: y1 },
+    end: { x: x2, y: y2 },
+    thickness,
+    color,
+  });
+}
+
+type Row = {
+  left: string;
+  middle?: string;
+  right: string;
+  bold?: boolean;
+};
+
+function drawPricingRows(args: {
+  page: PDFPage;
+  rows: Row[];
+  x: number;
+  y: number;
+  width: number;
+  lineHeight?: number;
+  font: PDFFont;
+  bold: PDFFont;
+}) {
+  const { page, rows, x, y, width, font, bold } = args;
+  const lineHeight = args.lineHeight ?? 22;
+
+  const col1 = x;
+  const col2 = x + 120;
+  const col3 = x + width;
+
+  let cursorY = y;
+
+  for (const row of rows) {
+    const rowFont = row.bold ? bold : font;
+    const rowColor = rgb(0.17, 0.29, 0.35);
+
+    drawText(page, row.left, col1, cursorY, 11, rowFont, rowColor);
+
+    if (row.middle) {
+      drawText(page, row.middle, col2, cursorY, 11, rowFont, rowColor);
+    }
+
+    const rightWidth = rowFont.widthOfTextAtSize(row.right, 11);
+    drawText(page, row.right, col3 - rightWidth, cursorY, 11, rowFont, rowColor);
+
+    cursorY -= lineHeight;
+  }
+
+  return cursorY;
+}
+
+export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const page = pdf.addPage([595.28, 841.89]); // A4 portrait
   const { width, height } = page.getSize();
 
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const font = await pdf.embedFont("Helvetica");
+  const bold = await pdf.embedFont("Helvetica-Bold");
 
-  const white = rgb(1, 1, 1);
-  const textDark = rgb(0.17, 0.26, 0.31);
-  const textMuted = rgb(0.28, 0.35, 0.39);
-  const lineColor = rgb(0.12, 0.29, 0.33);
-  const lightBox = rgb(0.95, 0.95, 0.95);
+  const textDark = rgb(0.17, 0.29, 0.35);
+  const textMuted = rgb(0.34, 0.42, 0.46);
+  const teal = rgb(0.12, 0.32, 0.37);
+  const softGray = rgb(0.95, 0.95, 0.95);
+  const lineGray = rgb(0.79, 0.81, 0.83);
+
+  /* ---------------- layout ---------------- */
+
+  const pageMarginX = 44;
+  const topWhiteSpace = 28;
+
+  const heroX = 44;
+  const heroY = 512;
+  const heroW = width - 88;
+  const heroH = 300;
+
+  const titleBoxX = 58;
+  const titleBoxW = width - 116;
+  const titleBoxH = 128;
+  const titleBoxY = heroY + 10;
+
+  const logoBoxX = 52;
+  const logoBoxY = heroY + heroH - 86;
+  const logoBoxW = 158;
+  const logoBoxH = 66;
+
+  /* ---------------- top white background ---------------- */
 
   page.drawRectangle({
     x: 0,
     y: 0,
     width,
     height,
-    color: white,
+    color: rgb(1, 1, 1),
   });
 
-  const sideMargin = 32;
-  const topMargin = 34;
-  const heroWidth = width - sideMargin * 2;
-  const heroHeight = 290;
-  const heroX = sideMargin;
-  const heroY = height - topMargin - heroHeight;
+  /* ---------------- hero image ---------------- */
 
-  const heroPath = path.join(process.cwd(), "public", "hero-pdf.jpg");
-  const logoPath = path.join(process.cwd(), "public", "logo-demo.jpg");
-
-  const heroBytes = await readFile(heroPath);
-  const logoBytes = await readFile(logoPath);
-
+  const heroBytes = await fetchAsset("/hero-pdf.jpg");
   const heroImage = await pdf.embedJpg(heroBytes);
-  const logoImage = await pdf.embedJpg(logoBytes);
 
-  /* ---------------- helpers no-stretch ---------------- */
-
-  function fitContain(
-    imgW: number,
-    imgH: number,
-    boxW: number,
-    boxH: number
-  ) {
-    const scale = Math.min(boxW / imgW, boxH / imgH);
-    const w = imgW * scale;
-    const h = imgH * scale;
-    return { w, h };
-  }
-
-  function fitCover(
-    imgW: number,
-    imgH: number,
-    boxW: number,
-    boxH: number
-  ) {
-    const scale = Math.max(boxW / imgW, boxH / imgH);
-    const w = imgW * scale;
-    const h = imgH * scale;
-    return { w, h };
-  }
-
-  /* ---------------- HERO IMAGE: cover, no stretch ---------------- */
-
-  const heroDims = fitCover(
-    heroImage.width,
-    heroImage.height,
-    heroWidth,
-    heroHeight
-  );
+  const heroDims = fitCover(heroImage.width, heroImage.height, heroW, heroH);
 
   page.drawImage(heroImage, {
-    x: heroX + (heroWidth - heroDims.w) / 2,
-    y: heroY + (heroHeight - heroDims.h) / 2,
-    width: heroDims.w,
-    height: heroDims.h,
+    x: heroX + (heroW - heroDims.width) / 2,
+    y: heroY + (heroH - heroDims.height) / 2,
+    width: heroDims.width,
+    height: heroDims.height,
   });
 
-  /* ---------------- LOGO BOX ---------------- */
+  /* white space above + side margins perception */
+  page.drawRectangle({
+    x: 0,
+    y: height - topWhiteSpace,
+    width,
+    height: topWhiteSpace,
+    color: rgb(1, 1, 1),
+  });
 
-  const logoBoxX = heroX + 22;
-  const logoBoxY = heroY + heroHeight - 96;
-  const logoBoxW = 150;
-  const logoBoxH = 66;
+  /* ---------------- logo box ---------------- */
 
   page.drawRectangle({
     x: logoBoxX,
     y: logoBoxY,
     width: logoBoxW,
     height: logoBoxH,
-    color: white,
+    color: rgb(1, 1, 1),
   });
 
-  /* ---------------- LOGO: contain, no stretch ---------------- */
+  const logoBytes = await fetchAsset("/logo-demo.jpg");
+  const logoImage = await pdf.embedJpg(logoBytes);
 
-  const logoPaddingX = 14;
+  const logoPaddingX = 16;
   const logoPaddingY = 10;
-  const logoFitW = logoBoxW - logoPaddingX * 2;
-  const logoFitH = logoBoxH - logoPaddingY * 2;
-
   const logoDims = fitContain(
     logoImage.width,
     logoImage.height,
-    logoFitW,
-    logoFitH
+    logoBoxW - logoPaddingX * 2,
+    logoBoxH - logoPaddingY * 2
   );
 
   page.drawImage(logoImage, {
-    x: logoBoxX + (logoBoxW - logoDims.w) / 2,
-    y: logoBoxY + (logoBoxH - logoDims.h) / 2,
-    width: logoDims.w,
-    height: logoDims.h,
+    x: logoBoxX + (logoBoxW - logoDims.width) / 2,
+    y: logoBoxY + (logoBoxH - logoDims.height) / 2,
+    width: logoDims.width,
+    height: logoDims.height,
   });
 
-  /* ---------------- TITLE / META BOX ---------------- */
-
-  const infoBoxX = heroX + 26;
-  const infoBoxW = heroWidth - 52;
-  const infoBoxH = 128;
-  const infoBoxY = heroY - 34;
+  /* ---------------- title box over hero ---------------- */
 
   page.drawRectangle({
-    x: infoBoxX,
-    y: infoBoxY,
-    width: infoBoxW,
-    height: infoBoxH,
-    color: lightBox,
+    x: titleBoxX,
+    y: titleBoxY,
+    width: titleBoxW,
+    height: titleBoxH,
+    color: softGray,
   });
 
-  const safeTitle = (data.title || "Photovoltaik-Anlage").trim();
-  const safeKwp = Number.isFinite(data.kWp) ? data.kWp : 0;
+  const title = data.title || "Photovoltaik-Anlage";
+  const bigKwText = `${money(data.kWp)} kWp`;
 
-  const titleTextY = infoBoxY + infoBoxH - 42;
-  page.drawText(safeTitle, {
-    x: infoBoxX + 18,
-    y: titleTextY,
-    size: 20,
+  drawText(page, title, titleBoxX + 16, titleBoxY + 78, 19, font, textDark);
+  drawText(page, bigKwText, titleBoxX + 16, titleBoxY + 40, 29, bold, textDark);
+
+  drawLine(
+    page,
+    titleBoxX + 16,
+    titleBoxY + 24,
+    titleBoxX + titleBoxW - 16,
+    titleBoxY + 24,
+    3,
+    teal
+  );
+
+  drawText(
+    page,
+    `Offerte Nr.  ${data.planningNumber || "—"}`,
+    titleBoxX + 16,
+    titleBoxY + 6,
+    10,
     font,
-    color: textDark,
-  });
+    textMuted
+  );
 
-  page.drawText(`${safeKwp.toFixed(2)} kWp`, {
-    x: infoBoxX + 18,
-    y: titleTextY - 44,
-    size: 24,
-    font: bold,
-    color: textDark,
-  });
+  /* ---------------- greeting / intro ---------------- */
 
-  const lineY = infoBoxY + 38;
-  page.drawLine({
-    start: { x: infoBoxX + 18, y: lineY },
-    end: { x: infoBoxX + infoBoxW - 18, y: lineY },
-    thickness: 4,
-    color: lineColor,
-  });
+  let y = 430;
 
-  page.drawText(`Offerte Nr. ${data.planningNumber || "—"}`, {
-    x: infoBoxX + 18,
-    y: infoBoxY + 16,
-    size: 10,
-    font,
-    color: textMuted,
-  });
+  drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 15, font, textDark);
+  y -= 26;
 
-  /* ---------------- GREETING ---------------- */
+  const introLines = [
+    "Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit uns.",
+    "Mit SOLA haben Sie einen verlässlichen Partner für innovative",
+    "Photovoltaik-Lösungen in der Schweiz an Ihrer Seite.",
+  ];
 
-  const contentX = heroX + 26;
-  let y = infoBoxY - 68;
-
-  const customerName = (data.customerName || "").trim();
-  const greeting =
-    customerName && !/^herr\s/i.test(customerName)
-      ? `Herr ${customerName}`
-      : customerName || "Herr Kunde";
-
-  page.drawText(greeting, {
-    x: contentX,
-    y,
-    size: 14,
-    font: bold,
-    color: textDark,
-  });
-
-  y -= 28;
-
-  const paragraph =
-    "Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit uns. Mit Helionic haben Sie einen erfahrenen und verlässlichen Partner für innovative Photovoltaik-Lösungen an Ihrer Seite.";
-
-  const lines = wrapText(paragraph, 78);
-  for (const line of lines) {
-    page.drawText(line, {
-      x: contentX,
-      y,
-      size: 10.5,
-      font,
-      color: textMuted,
-    });
+  for (const line of introLines) {
+    drawText(page, line, pageMarginX, y, 10.5, font, textDark);
     y -= 14;
   }
 
-  y -= 34;
+  /* ---------------- section title ---------------- */
 
-  page.drawText("Ihre Investition", {
-    x: contentX,
+  y -= 22;
+  drawText(page, "Photovoltaik-Anlage", pageMarginX, y, 14, bold, textDark);
+  y -= 20;
+
+  /* ---------------- pricing block ---------------- */
+
+  const grossPrice = Number(data.grossPriceChf || 0);
+  const subsidy = Number(data.subsidyChf || 0);
+  const additionalSubsidy = Number(data.additionalSubsidyChf || 0);
+  const totalSubsidy = subsidy + additionalSubsidy;
+  const taxSavings = Number(data.taxSavingsChf || 0);
+  const effectiveCost =
+    typeof data.effectiveCostChf === "number"
+      ? Number(data.effectiveCostChf)
+      : Math.max(0, Number(data.totalInvestmentChf || 0) - taxSavings);
+
+  const summaryLabelParts = [
+    data.kWp > 0 ? `${money(data.kWp)} kWp` : "",
+    data.moduleCount ? `${data.moduleCount} Module` : "",
+    data.batteryLabel ? data.batteryLabel : "",
+    data.wallboxLabel ? data.wallboxLabel : "",
+  ].filter(Boolean);
+
+  const systemSummary = summaryLabelParts.join(" · ");
+
+  const tableX = pageMarginX;
+  const tableW = 390;
+
+  const costRows: Row[] = [
+    {
+      left: "Kosten*",
+      middle: systemSummary || "Solaranlage",
+      right: `${money(data.netSystemPriceChf)} CHF`,
+    },
+    {
+      left: "",
+      middle: `MWST ${pct(data.vatRatePct)} %`,
+      right: `${money(data.vatAmountChf)} CHF`,
+    },
+    {
+      left: "",
+      middle: "Kosten inkl. MWST",
+      right: `${money(grossPrice)} CHF`,
+      bold: true,
+    },
+  ];
+
+  y = drawPricingRows({
+    page,
+    rows: costRows,
+    x: tableX,
     y,
-    size: 13,
-    font: bold,
-    color: textDark,
-  });
-
-  y -= 14;
-
-  page.drawLine({
-    start: { x: contentX, y },
-    end: { x: contentX + 46, y },
-    thickness: 1.5,
-    color: lineColor,
-  });
-
-  y -= 26;
-
-  page.drawText("Gesamtpreis netto", {
-    x: contentX,
-    y,
-    size: 11,
+    width: tableW,
     font,
-    color: textDark,
+    bold,
   });
 
-  page.drawText("— CHF", {
-    x: width - sideMargin - 140,
-    y,
-    size: 11,
-    font: bold,
-    color: textDark,
-  });
+  drawLine(page, tableX, y + 8, tableX + tableW, y + 8, 1, lineGray);
 
-  y -= 44;
+  if (totalSubsidy > 0) {
+    const subsidyRows: Row[] = [
+      {
+        left: "Förderungen**",
+        middle: "Einmalvergütung (Photovoltaik)",
+        right: `-${money(subsidy)} CHF`,
+      },
+      ...(additionalSubsidy > 0
+        ? [
+            {
+              left: "",
+              middle: "Weitere Fördergelder",
+              right: `-${money(additionalSubsidy)} CHF`,
+            } satisfies Row,
+          ]
+        : []),
+    ];
 
-  page.drawText("Offerte gültig bis: —", {
-    x: contentX,
-    y,
-    size: 10.5,
-    font,
-    color: textMuted,
-  });
-}
+    y -= 12;
+    y = drawPricingRows({
+      page,
+      rows: subsidyRows,
+      x: tableX,
+      y,
+      width: tableW,
+      font,
+      bold,
+    });
 
-function wrapText(text: string, maxCharsPerLine: number) {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let current = "";
-
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word;
-    if (next.length <= maxCharsPerLine) {
-      current = next;
-    } else {
-      if (current) lines.push(current);
-      current = word;
-    }
+    drawLine(page, tableX, y + 8, tableX + tableW, y + 8, 1, lineGray);
   }
 
-  if (current) lines.push(current);
-  return lines;
+  y -= 12;
+
+  const investmentRows: Row[] = [
+    {
+      left: "Ihre Investition",
+      middle: "Ihre Gesamtinvestition",
+      right: `${money(data.totalInvestmentChf)} CHF`,
+    },
+    ...(taxSavings > 0
+      ? [
+          {
+            left: "",
+            middle: "Erwartete Steuerersparnis***",
+            right: `${money(taxSavings)} CHF`,
+          } satisfies Row,
+        ]
+      : []),
+    {
+      left: "",
+      middle: "Effektive Kosten",
+      right: `${money(effectiveCost)} CHF`,
+      bold: true,
+    },
+  ];
+
+  y = drawPricingRows({
+    page,
+    rows: investmentRows,
+    x: tableX,
+    y,
+    width: tableW,
+    font,
+    bold,
+  });
+
+  drawLine(page, tableX, y + 8, tableX + tableW, y + 8, 1, lineGray);
+
+  /* ---------------- notes ---------------- */
+
+  y -= 18;
+  drawText(
+    page,
+    "*   Kosten gelten bei Bestellung aller aufgeführten Systeme.",
+    tableX,
+    y,
+    9,
+    font,
+    textDark
+  );
+  y -= 12;
+  drawText(
+    page,
+    "**  Förderungen können nicht garantiert werden.",
+    tableX,
+    y,
+    9,
+    font,
+    textDark
+  );
+  y -= 12;
+  drawText(
+    page,
+    "*** Erwartete Steuerersparnis ist eine unverbindliche Schätzung.",
+    tableX,
+    y,
+    9,
+    font,
+    textDark
+  );
+
+  /* ---------------- validity ---------------- */
+
+  y -= 34;
+  drawText(page, "Offerte gültig bis:", tableX, y, 10.5, font, textDark);
+  drawText(page, fmtDate(data.validUntil), tableX + 118, y, 10.5, bold, textDark);
+  drawLine(page, tableX, y - 8, tableX + 270, y - 8, 1, lineGray);
+
+  /* ---------------- closing ---------------- */
+
+  y -= 34;
+  drawText(
+    page,
+    "Als Ihr persönlicher Ansprechpartner stehen wir Ihnen jederzeit gerne",
+    tableX,
+    y,
+    10.5,
+    font,
+    textDark
+  );
+  y -= 14;
+  drawText(
+    page,
+    "zur Verfügung. Wir freuen uns, von Ihnen zu hören!",
+    tableX,
+    y,
+    10.5,
+    font,
+    textDark
+  );
+
+  y -= 46;
+  drawText(page, "Mit freundlichen Grüssen", tableX, y, 11, font, textDark);
+
+  y -= 38;
+  drawText(page, "SOLA AG", tableX, y, 18, bold, textDark);
+  y -= 18;
+  drawText(page, "Ihr Partner für Photovoltaik-Lösungen", tableX, y, 10.5, font, textMuted);
 }
