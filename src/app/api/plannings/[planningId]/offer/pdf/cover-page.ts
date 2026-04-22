@@ -1,10 +1,6 @@
-import {
-  PDFDocument,
-  PDFPage,
-  PDFFont,
-  StandardFonts,
-  rgb,
-} from "pdf-lib";
+import { promises as fs } from "fs";
+import path from "path";
+import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
 
 type OfferCoverData = {
   title: string;
@@ -13,7 +9,6 @@ type OfferCoverData = {
   customerName: string;
   companyName: string;
 
-  // economic block
   netSystemPriceChf: number;
   vatRatePct: number;
   vatAmountChf: number;
@@ -28,10 +23,16 @@ type OfferCoverData = {
 
   validUntil?: string;
 
-  // optional summary
   moduleCount?: number;
   batteryLabel?: string;
   wallboxLabel?: string;
+};
+
+type Row = {
+  left: string;
+  middle?: string;
+  right: string;
+  bold?: boolean;
 };
 
 function money(n?: number) {
@@ -54,6 +55,7 @@ function fmtDate(dateLike?: string) {
   if (!dateLike) return "—";
   const d = new Date(dateLike);
   if (Number.isNaN(d.getTime())) return dateLike;
+
   return new Intl.DateTimeFormat("de-CH", {
     day: "2-digit",
     month: "2-digit",
@@ -61,21 +63,9 @@ function fmtDate(dateLike?: string) {
   }).format(d);
 }
 
-function safeBaseUrl() {
-  return (
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    process.env.APP_BASE_URL ||
-    "https://planner.helionic.ch"
-  ).replace(/\/$/, "");
-}
-
-async function fetchAsset(path: string) {
-  const url = `${safeBaseUrl()}${path}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`Asset not found: ${url}`);
-  }
-  return Buffer.from(await res.arrayBuffer());
+async function readPublicAsset(filename: string) {
+  const filePath = path.join(process.cwd(), "public", filename);
+  return fs.readFile(filePath);
 }
 
 function fitContain(
@@ -133,13 +123,6 @@ function drawLine(
   });
 }
 
-type Row = {
-  left: string;
-  middle?: string;
-  right: string;
-  bold?: boolean;
-};
-
 function drawPricingRows(args: {
   page: PDFPage;
   rows: Row[];
@@ -182,8 +165,8 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const page = pdf.addPage([595.28, 841.89]);
   const { width, height } = page.getSize();
 
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const font = await pdf.embedFont("Helvetica");
+  const bold = await pdf.embedFont("Helvetica-Bold");
 
   const textDark = rgb(0.17, 0.29, 0.35);
   const textMuted = rgb(0.34, 0.42, 0.46);
@@ -191,29 +174,22 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const softGray = rgb(0.95, 0.95, 0.95);
   const lineGray = rgb(0.79, 0.81, 0.83);
 
-  const companyName = data.companyName?.trim() || "Ihre Firma";
-
-  /* ---------------- layout ---------------- */
-
   const pageMarginX = 44;
-  const topWhiteSpace = 28;
 
   const heroX = 44;
-  const heroY = 512;
+  const heroY = 520;
   const heroW = width - 88;
-  const heroH = 300;
+  const heroH = 250;
+
+  const logoBoxX = 56;
+  const logoBoxY = heroY + heroH - 80;
+  const logoBoxW = 150;
+  const logoBoxH = 58;
 
   const titleBoxX = 58;
   const titleBoxW = width - 116;
-  const titleBoxH = 128;
-  const titleBoxY = heroY + 10;
-
-  const logoBoxX = 52;
-  const logoBoxY = heroY + heroH - 86;
-  const logoBoxW = 158;
-  const logoBoxH = 66;
-
-  /* ---------------- page background ---------------- */
+  const titleBoxH = 122;
+  const titleBoxY = heroY - 12;
 
   page.drawRectangle({
     x: 0,
@@ -223,9 +199,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     color: rgb(1, 1, 1),
   });
 
-  /* ---------------- hero image (NO STRETCH) ---------------- */
-
-  const heroBytes = await fetchAsset("/hero-pdf.jpg");
+  const heroBytes = await readPublicAsset("hero-pdf.jpg");
   const heroImage = await pdf.embedJpg(heroBytes);
 
   const heroDims = fitCover(heroImage.width, heroImage.height, heroW, heroH);
@@ -237,17 +211,6 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     height: heroDims.height,
   });
 
-  /* top white strip */
-  page.drawRectangle({
-    x: 0,
-    y: height - topWhiteSpace,
-    width,
-    height: topWhiteSpace,
-    color: rgb(1, 1, 1),
-  });
-
-  /* ---------------- logo box ---------------- */
-
   page.drawRectangle({
     x: logoBoxX,
     y: logoBoxY,
@@ -256,17 +219,14 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     color: rgb(1, 1, 1),
   });
 
-  const logoBytes = await fetchAsset("/logo-demo.jpg");
+  const logoBytes = await readPublicAsset("logo-demo.jpg");
   const logoImage = await pdf.embedJpg(logoBytes);
-
-  const logoPaddingX = 16;
-  const logoPaddingY = 10;
 
   const logoDims = fitContain(
     logoImage.width,
     logoImage.height,
-    logoBoxW - logoPaddingX * 2,
-    logoBoxH - logoPaddingY * 2
+    logoBoxW - 22,
+    logoBoxH - 16
   );
 
   page.drawImage(logoImage, {
@@ -275,8 +235,6 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     width: logoDims.width,
     height: logoDims.height,
   });
-
-  /* ---------------- title box ---------------- */
 
   page.drawRectangle({
     x: titleBoxX,
@@ -289,15 +247,15 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const title = data.title || "Photovoltaik-Anlage";
   const bigKwText = `${money(data.kWp)} kWp`;
 
-  drawText(page, title, titleBoxX + 16, titleBoxY + 78, 19, font, textDark);
-  drawText(page, bigKwText, titleBoxX + 16, titleBoxY + 40, 29, bold, textDark);
+  drawText(page, title, titleBoxX + 16, titleBoxY + 74, 17.5, font, textDark);
+  drawText(page, bigKwText, titleBoxX + 16, titleBoxY + 38, 25, bold, textDark);
 
   drawLine(
     page,
     titleBoxX + 16,
-    titleBoxY + 24,
+    titleBoxY + 22,
     titleBoxX + titleBoxW - 16,
-    titleBoxY + 24,
+    titleBoxY + 22,
     3,
     teal
   );
@@ -306,23 +264,21 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     page,
     `Offerte Nr.  ${data.planningNumber || "—"}`,
     titleBoxX + 16,
-    titleBoxY + 6,
+    titleBoxY + 5,
     10,
     font,
     textMuted
   );
 
-  /* ---------------- greeting ---------------- */
-
-  let y = 430;
+  let y = 412;
 
   drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 15, font, textDark);
   y -= 26;
 
   const introLines = [
-    "Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit uns.",
-    `Mit ${companyName} haben Sie einen verlässlichen Partner für innovative`,
-    "Photovoltaik-Lösungen in der Schweiz an Ihrer Seite.",
+    `Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit ${data.companyName || "uns"}.`,
+    `Mit ${data.companyName || "uns"} haben Sie einen verlässlichen Partner für innovative`,
+    "Photovoltaik-Lösungen an Ihrer Seite.",
   ];
 
   for (const line of introLines) {
@@ -330,13 +286,9 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     y -= 14;
   }
 
-  /* ---------------- section title ---------------- */
-
   y -= 22;
   drawText(page, "Photovoltaik-Anlage", pageMarginX, y, 14, bold, textDark);
   y -= 20;
-
-  /* ---------------- pricing block ---------------- */
 
   const grossPrice = Number(data.grossPriceChf || 0);
   const subsidy = Number(data.subsidyChf || 0);
@@ -460,8 +412,6 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
 
   drawLine(page, tableX, y + 8, tableX + tableW, y + 8, 1, lineGray);
 
-  /* ---------------- notes ---------------- */
-
   y -= 18;
   drawText(
     page,
@@ -493,14 +443,10 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     textDark
   );
 
-  /* ---------------- validity ---------------- */
-
   y -= 34;
   drawText(page, "Offerte gültig bis:", tableX, y, 10.5, font, textDark);
   drawText(page, fmtDate(data.validUntil), tableX + 118, y, 10.5, bold, textDark);
   drawLine(page, tableX, y - 8, tableX + 270, y - 8, 1, lineGray);
-
-  /* ---------------- closing ---------------- */
 
   y -= 34;
   drawText(
@@ -527,7 +473,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   drawText(page, "Mit freundlichen Grüssen", tableX, y, 11, font, textDark);
 
   y -= 38;
-  drawText(page, companyName, tableX, y, 18, bold, textDark);
+  drawText(page, data.companyName || "—", tableX, y, 18, bold, textDark);
   y -= 18;
   drawText(page, "Ihr Partner für Photovoltaik-Lösungen", tableX, y, 10.5, font, textMuted);
 }
