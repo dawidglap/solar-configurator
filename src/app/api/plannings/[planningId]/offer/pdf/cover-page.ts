@@ -1,5 +1,6 @@
+// src/app/api/plannings/[planningId]/offer/pdf/cover-page.ts
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import fs from "fs/promises";
+import { readFile } from "fs/promises";
 import path from "path";
 
 export async function addCoverPage(
@@ -11,183 +12,242 @@ export async function addCoverPage(
     customerName: string;
   }
 ) {
-  const page = pdf.addPage([595.28, 841.89]); // A4
+  const page = pdf.addPage([595.28, 841.89]); // A4 portrait
   const { width, height } = page.getSize();
 
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
+  /* ------------------ COLORS ------------------ */
+
+  const white = rgb(1, 1, 1);
+  const textDark = rgb(0.17, 0.26, 0.31);      // blu/grigio scuro stile Gama
+  const textMuted = rgb(0.28, 0.35, 0.39);
+  const lineColor = rgb(0.12, 0.29, 0.33);
+  const lightBox = rgb(0.95, 0.95, 0.95);
+
+  /* ------------------ PAGE BACKGROUND ------------------ */
+
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width,
+    height,
+    color: white,
+  });
+
+  /* ------------------ LAYOUT ------------------ */
+
+  const sideMargin = 32;         // bianco dx/sx
+  const topMargin = 34;          // bianco sopra
+  const heroWidth = width - sideMargin * 2;
+  const heroHeight = 290;        // più piccola di prima
+  const heroX = sideMargin;
+  const heroY = height - topMargin - heroHeight;
+
+  /* ------------------ ASSETS FROM /public ------------------ */
+
   const heroPath = path.join(process.cwd(), "public", "hero-pdf.jpg");
   const logoPath = path.join(process.cwd(), "public", "logo-demo.jpg");
 
-  const heroBytes = await fs.readFile(heroPath);
-  const logoBytes = await fs.readFile(logoPath);
+  const heroBytes = await readFile(heroPath);
+  const logoBytes = await readFile(logoPath);
 
   const heroImage = await pdf.embedJpg(heroBytes);
   const logoImage = await pdf.embedJpg(logoBytes);
 
-  const COLOR_TEXT = rgb(0.16, 0.24, 0.28);
-  const COLOR_MUTED = rgb(0.34, 0.38, 0.42);
-  const COLOR_LINE = rgb(0.12, 0.26, 0.30);
-  const COLOR_LIGHT = rgb(0.95, 0.95, 0.95);
-
-  /* ------------------ HERO ------------------ */
-
-  const heroHeight = 300;
+  /* ------------------ HERO IMAGE ------------------ */
 
   page.drawImage(heroImage, {
-    x: 0,
-    y: height - heroHeight,
-    width,
+    x: heroX,
+    y: heroY,
+    width: heroWidth,
     height: heroHeight,
-  });
-
-  page.drawRectangle({
-    x: 0,
-    y: height - heroHeight,
-    width,
-    height: heroHeight,
-    color: rgb(0, 0, 0),
-    opacity: 0.1,
   });
 
   /* ------------------ LOGO BOX ------------------ */
 
-  const logoBoxX = 40;
-  const logoBoxY = height - 118;
-  const logoBoxWidth = 150;
-  const logoBoxHeight = 62;
+  const logoBoxX = heroX + 22;
+  const logoBoxY = heroY + heroHeight - 96;
+  const logoBoxW = 150;
+  const logoBoxH = 66;
 
   page.drawRectangle({
     x: logoBoxX,
     y: logoBoxY,
-    width: logoBoxWidth,
-    height: logoBoxHeight,
-    color: rgb(1, 1, 1),
+    width: logoBoxW,
+    height: logoBoxH,
+    color: white,
   });
 
   page.drawImage(logoImage, {
-    x: logoBoxX + 12,
+    x: logoBoxX + 14,
     y: logoBoxY + 12,
-    width: 126,
-    height: 38,
+    width: 108,
+    height: 40,
   });
 
-  /* ------------------ TITLE BLOCK ------------------ */
+  /* ------------------ TITLE / META BOX ------------------ */
 
-  const titleBoxX = 40;
-  const titleBoxWidth = width - 80;
-  const titleBoxHeight = 112;
-  const titleBoxY = height - heroHeight + 18;
+  // box sovrapposto alla parte bassa della hero, ma non enorme
+  const infoBoxX = heroX + 26;
+  const infoBoxW = heroWidth - 52;
+  const infoBoxH = 128;
+  const infoBoxY = heroY - 34; // sale dentro la hero come da esempio Gama
 
   page.drawRectangle({
-    x: titleBoxX,
-    y: titleBoxY,
-    width: titleBoxWidth,
-    height: titleBoxHeight,
-    color: COLOR_LIGHT,
+    x: infoBoxX,
+    y: infoBoxY,
+    width: infoBoxW,
+    height: infoBoxH,
+    color: lightBox,
   });
 
-  const title = data.title || "Photovoltaik-Anlage";
-  const kwpText = `${Number(data.kWp || 0).toFixed(2)} kWp`;
+  /* ------------------ TITLE ------------------ */
 
-  page.drawText(title, {
-    x: titleBoxX + 16,
-    y: titleBoxY + 66,
-    size: 17,
-    font: font,
-    color: COLOR_TEXT,
-    maxWidth: titleBoxWidth - 32,
+  const safeTitle = (data.title || "Photovoltaik-Anlage").trim();
+  const safeKwp = Number.isFinite(data.kWp) ? data.kWp : 0;
+
+  const titleTextY = infoBoxY + infoBoxH - 42;
+  page.drawText(safeTitle, {
+    x: infoBoxX + 18,
+    y: titleTextY,
+    size: 20,
+    font,
+    color: textDark,
   });
 
-  page.drawText(kwpText, {
-    x: titleBoxX + 16,
-    y: titleBoxY + 26,
-    size: 26,
+  page.drawText(`${safeKwp.toFixed(2)} kWp`, {
+    x: infoBoxX + 18,
+    y: titleTextY - 44,
+    size: 24,
     font: bold,
-    color: COLOR_TEXT,
+    color: textDark,
   });
 
-  page.drawRectangle({
-    x: titleBoxX + 16,
-    y: titleBoxY + 12,
-    width: titleBoxWidth - 32,
-    height: 3,
-    color: COLOR_LINE,
+  /* ------------------ UNDERLINE ------------------ */
+
+  const lineY = infoBoxY + 38;
+  page.drawLine({
+    start: { x: infoBoxX + 18, y: lineY },
+    end: { x: infoBoxX + infoBoxW - 18, y: lineY },
+    thickness: 4,
+    color: lineColor,
   });
 
-  page.drawText(`Offerte Nr.  ${data.planningNumber || "—"}`, {
-    x: titleBoxX + 16,
-    y: titleBoxY - 16,
+  /* ------------------ OFFER NUMBER INSIDE BOX ------------------ */
+
+  page.drawText(`Offerte Nr. ${data.planningNumber || "—"}`, {
+    x: infoBoxX + 18,
+    y: infoBoxY + 16,
     size: 10,
     font,
-    color: COLOR_MUTED,
+    color: textMuted,
   });
 
-  /* ------------------ GREETING ------------------ */
+  /* ------------------ CUSTOMER GREETING ------------------ */
 
-  let y = titleBoxY - 78;
+  const contentX = heroX + 26;
+  let y = infoBoxY - 68;
 
-  page.drawText(data.customerName || "Kunde", {
-    x: 50,
+  const customerName = (data.customerName || "").trim();
+  const greeting =
+    customerName && !/^herr\s/i.test(customerName)
+      ? `Herr ${customerName}`
+      : customerName || "Herr Kunde";
+
+  page.drawText(greeting, {
+    x: contentX,
     y,
-    size: 15,
+    size: 14,
     font: bold,
-    color: COLOR_TEXT,
+    color: textDark,
   });
 
-  y -= 24;
+  y -= 28;
 
   const paragraph =
     "Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit uns. Mit Helionic haben Sie einen erfahrenen und verlässlichen Partner für innovative Photovoltaik-Lösungen an Ihrer Seite.";
 
-  page.drawText(paragraph, {
-    x: 50,
-    y,
-    size: 10,
-    font,
-    maxWidth: width - 100,
-    lineHeight: 14,
-    color: COLOR_MUTED,
-  });
+  const lines = wrapText(paragraph, 78);
+  for (const line of lines) {
+    page.drawText(line, {
+      x: contentX,
+      y,
+      size: 10.5,
+      font,
+      color: textMuted,
+    });
+    y -= 14;
+  }
 
-  y -= 72;
+  y -= 34;
 
   /* ------------------ INVEST BLOCK ------------------ */
 
   page.drawText("Ihre Investition", {
-    x: 50,
+    x: contentX,
     y,
     size: 13,
     font: bold,
-    color: COLOR_TEXT,
+    color: textDark,
   });
 
-  y -= 20;
+  y -= 14;
+
+  page.drawLine({
+    start: { x: contentX, y },
+    end: { x: contentX + 46, y },
+    thickness: 1.5,
+    color: lineColor,
+  });
+
+  y -= 26;
 
   page.drawText("Gesamtpreis netto", {
-    x: 50,
+    x: contentX,
     y,
     size: 11,
     font,
-    color: COLOR_TEXT,
+    color: textDark,
   });
 
   page.drawText("— CHF", {
-    x: 400,
+    x: width - sideMargin - 140,
     y,
     size: 11,
     font: bold,
-    color: COLOR_TEXT,
+    color: textDark,
   });
 
-  y -= 40;
+  y -= 44;
 
   page.drawText("Offerte gültig bis: —", {
-    x: 50,
+    x: contentX,
     y,
-    size: 10,
+    size: 10.5,
     font,
-    color: COLOR_MUTED,
+    color: textMuted,
   });
+}
+
+/* ------------------ SIMPLE WRAP ------------------ */
+
+function wrapText(text: string, maxCharsPerLine: number) {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= maxCharsPerLine) {
+      current = next;
+    } else {
+      if (current) lines.push(current);
+      current = word;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines;
 }
