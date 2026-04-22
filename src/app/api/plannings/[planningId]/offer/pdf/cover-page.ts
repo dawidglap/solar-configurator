@@ -180,7 +180,7 @@ const logoBoxH = 52;
 
 const titleBoxX = 58;
 const titleBoxW = width - 116;
-const titleBoxH = 112;
+const titleBoxH = 102;
 const titleBoxY = heroY - 14;
 
   page.drawRectangle({
