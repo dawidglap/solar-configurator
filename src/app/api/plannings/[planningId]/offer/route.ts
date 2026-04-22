@@ -48,6 +48,21 @@ function safeString(v: unknown) {
   return typeof v === "string" ? v.trim() : "";
 }
 
+function safeNumber(v: unknown, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function makeJsonResponse(origin: string | null, body: any, status: number) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      ...getCorsHeaders(origin),
+    },
+  });
+}
+
 /* ---------------- Route ---------------- */
 
 export async function POST(
@@ -61,29 +76,27 @@ export async function POST(
   const secret = process.env.SESSION_SECRET;
 
   if (!uri) {
-    return new Response(JSON.stringify({ ok: false, error: "Missing MONGODB_URI" }), {
-      status: 500,
-      headers: getCorsHeaders(origin),
-    });
+    return makeJsonResponse(origin, { ok: false, error: "Missing MONGODB_URI" }, 500);
   }
 
   if (!secret) {
-    return new Response(JSON.stringify({ ok: false, error: "Missing SESSION_SECRET" }), {
-      status: 500,
-      headers: getCorsHeaders(origin),
-    });
+    return makeJsonResponse(origin, { ok: false, error: "Missing SESSION_SECRET" }, 500);
   }
 
   const session = readSession(req, secret);
   if (!session?.activeCompanyId) {
-    return new Response(JSON.stringify({ ok: false, error: "Not logged in" }), {
-      status: 401,
-      headers: getCorsHeaders(origin),
-    });
+    return makeJsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
   }
 
-  const planningObjectId = new ObjectId(planningId);
-  const companyObjectId = new ObjectId(String(session.activeCompanyId));
+  let planningObjectId: ObjectId;
+  let companyObjectId: ObjectId;
+
+  try {
+    planningObjectId = new ObjectId(planningId);
+    companyObjectId = new ObjectId(String(session.activeCompanyId));
+  } catch {
+    return makeJsonResponse(origin, { ok: false, error: "Invalid id" }, 400);
+  }
 
   const client = new MongoClient(uri);
 
@@ -100,10 +113,7 @@ export async function POST(
     });
 
     if (!planning) {
-      return new Response(JSON.stringify({ ok: false, error: "Planning not found" }), {
-        status: 404,
-        headers: getCorsHeaders(origin),
-      });
+      return makeJsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
     }
 
     const company = await companies.findOne({
@@ -112,48 +122,118 @@ export async function POST(
 
     const companyName = safeString(company?.name) || "Ihre Firma";
 
-    /* ---------------- MOCK DATA PER TEST COVER ---------------- */
+    const data = (planning as any)?.data ?? {};
+    const profile = data?.profile ?? {};
+    const parts = data?.parts ?? {};
+    const reportOptions = data?.reportOptions ?? {};
+    const summary = (planning as any)?.summary ?? {};
+
+    const items = Array.isArray(parts?.items) ? parts.items : [];
+
+    const partsTotalNet = items.reduce((sum: number, item: any) => {
+      const lineTotal = safeNumber(item?.lineTotalNet ?? item?.lineTotal, 0);
+      return sum + lineTotal;
+    }, 0);
+
+    const vatRatePct = 8.1;
+    const vatAmountChf = Number((partsTotalNet * (vatRatePct / 100)).toFixed(2));
+    const grossPriceChf = Number((partsTotalNet + vatAmountChf).toFixed(2));
+
+    const subsidyChf = safeNumber(
+      reportOptions?.subsidyChf ?? reportOptions?.subsidy,
+      0
+    );
+
+    const additionalSubsidyChf = 0;
+
+    const totalInvestmentChf = Number(
+      Math.max(0, grossPriceChf - subsidyChf - additionalSubsidyChf).toFixed(2)
+    );
+
+    const taxSavingsChf = 0;
+    const effectiveCostChf = Number(
+      Math.max(0, totalInvestmentChf - taxSavingsChf).toFixed(2)
+    );
+
+    const customerName =
+      [safeString(profile?.firstName), safeString(profile?.lastName)]
+        .filter(Boolean)
+        .join(" ") ||
+      safeString(profile?.companyName) ||
+      "—";
+
+    const batteryItem = items.find((item: any) => {
+      const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
+      return category === "batterie" || category === "battery" || category === "speicher";
+    });
+
+    const wallboxItem = items.find((item: any) => {
+      const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
+      return category === "ladestation" || category === "wallbox";
+    });
 
     const offer = {
-      title: "PVA Musterstrasse 12 - Zürich",
-      planningNumber: "ANG-TEST-001",
+      title: safeString((planning as any)?.title) || "Photovoltaik-Angebot",
+      planningNumber: safeString((planning as any)?.planningNumber) || "—",
       pv: {
-        dcPowerKw: 12.5,
+        dcPowerKw: safeNumber(summary?.dcPowerKw, 0),
+        moduleCount: safeNumber(summary?.moduleCount, 0),
       },
       customer: {
-        name: "Max Muster",
+        name: customerName,
       },
       companyName,
+      pricing: {
+        netSystemPriceChf: partsTotalNet,
+        vatRatePct,
+        vatAmountChf,
+        grossPriceChf,
+        subsidyChf,
+        additionalSubsidyChf,
+        totalInvestmentChf,
+        taxSavingsChf,
+        effectiveCostChf,
+      },
+      options: {
+        batteryLabel: batteryItem
+          ? [safeString(batteryItem?.brand ?? batteryItem?.marke), safeString(batteryItem?.name ?? batteryItem?.beschreibung)]
+              .filter(Boolean)
+              .join(" ")
+          : "",
+        wallboxLabel: wallboxItem
+          ? [safeString(wallboxItem?.brand ?? wallboxItem?.marke), safeString(wallboxItem?.name ?? wallboxItem?.beschreibung)]
+              .filter(Boolean)
+              .join(" ")
+          : "",
+      },
     };
-
-    /* ---------------- PDF ---------------- */
 
     const pdf = await PDFDocument.create();
 
-await addCoverPage(pdf, {
-  title: offer.title,
-  planningNumber: offer.planningNumber,
-  kWp: offer.pv.dcPowerKw,
-  customerName: offer.customer.name,
-  companyName: offer.companyName,
+    await addCoverPage(pdf, {
+      title: offer.title,
+      planningNumber: offer.planningNumber,
+      kWp: offer.pv.dcPowerKw,
+      customerName: offer.customer.name,
+      companyName: offer.companyName,
 
-  netSystemPriceChf: 0,
-  vatRatePct: 8.1,
-  vatAmountChf: 0,
-  grossPriceChf: 0,
+      netSystemPriceChf: offer.pricing.netSystemPriceChf,
+      vatRatePct: offer.pricing.vatRatePct,
+      vatAmountChf: offer.pricing.vatAmountChf,
+      grossPriceChf: offer.pricing.grossPriceChf,
 
-  subsidyChf: 0,
-  additionalSubsidyChf: 0,
+      subsidyChf: offer.pricing.subsidyChf,
+      additionalSubsidyChf: offer.pricing.additionalSubsidyChf,
 
-  totalInvestmentChf: 0,
-  taxSavingsChf: 0,
-  effectiveCostChf: 0,
+      totalInvestmentChf: offer.pricing.totalInvestmentChf,
+      taxSavingsChf: offer.pricing.taxSavingsChf,
+      effectiveCostChf: offer.pricing.effectiveCostChf,
 
-  validUntil: "",
-  moduleCount: 0,
-  batteryLabel: "",
-  wallboxLabel: "",
-});
+      validUntil: "",
+      moduleCount: offer.pv.moduleCount,
+      batteryLabel: offer.options.batteryLabel,
+      wallboxLabel: offer.options.wallboxLabel,
+    });
 
     const pdfBytes = await pdf.save();
 
@@ -169,12 +249,10 @@ await addCoverPage(pdf, {
   } catch (e: any) {
     console.error("OFFER ERROR:", e);
 
-    return new Response(
-      JSON.stringify({ ok: false, error: e?.message || "Unknown error" }),
-      {
-        status: 500,
-        headers: getCorsHeaders(origin),
-      }
+    return makeJsonResponse(
+      origin,
+      { ok: false, error: e?.message || "Unknown error" },
+      500
     );
   } finally {
     await client.close().catch(() => {});
