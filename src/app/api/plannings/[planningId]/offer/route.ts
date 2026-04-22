@@ -133,6 +133,8 @@ export async function POST(
   _id: new ObjectId(String(session.userId)),
 });
 
+const companyName = safeString(company?.name) || "Ihre Firma";
+
 const advisorName =
   [safeString(user?.firstName), safeString(user?.lastName)]
     .filter(Boolean)
@@ -140,7 +142,7 @@ const advisorName =
 
 const advisorRole = "Beratung";
 
-    const companyName = safeString(company?.name) || "Ihre Firma";
+    
 
     const data = (planning as any)?.data ?? {};
     const profile = data?.profile ?? {};
