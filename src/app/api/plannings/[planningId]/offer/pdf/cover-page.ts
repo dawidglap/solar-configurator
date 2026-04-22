@@ -433,7 +433,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   y -= 12;
   drawText(
     page,
-    "**  Förderungen können nicht garantiert werden.",
+    "**  Die Pronovo-Einmalvergütung wurde auf Basis der aktuellen Anlagenleistung berechnet.",
     tableX,
     y,
     9,
@@ -443,7 +443,17 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   y -= 12;
   drawText(
     page,
-    "*** Erwartete Steuerersparnis ist eine unverbindliche Schätzung.",
+    "    Weitere Fördergelder (z. B. Kanton / Gemeinde) wurden, falls vorhanden, separat berücksichtigt.",
+    tableX,
+    y,
+    9,
+    font,
+    textDark
+  );
+  y -= 12;
+  drawText(
+    page,
+    "    Förderungen und Steuerersparnisse sind unverbindliche Schätzwerte und nicht garantiert.",
     tableX,
     y,
     9,
