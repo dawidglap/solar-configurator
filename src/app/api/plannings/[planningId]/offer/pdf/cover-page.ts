@@ -270,10 +270,10 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     textMuted
   );
 
-  let y = 430;
+  let y = 230;
 
   drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 15, font, textDark);
-  y -= 126;
+  y -= 26;
 
   const introLines = [
     `Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit ${data.companyName || "uns"}.`,
