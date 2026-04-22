@@ -14,7 +14,7 @@ type OfferCoverData = {
   vatAmountChf: number;
   grossPriceChf: number;
 
-   automaticPvSubsidyChf: number;
+  automaticPvSubsidyChf: number;
   manualAdditionalSubsidyChf?: number;
   subsidyChf: number;
 
@@ -23,6 +23,7 @@ type OfferCoverData = {
   effectiveCostChf?: number;
 
   validUntil?: string;
+  offerDate?: string;
 
   moduleCount?: number;
   batteryLabel?: string;
@@ -50,18 +51,6 @@ function pct(n?: number) {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(value);
-}
-
-function fmtDate(dateLike?: string) {
-  if (!dateLike) return "—";
-  const d = new Date(dateLike);
-  if (Number.isNaN(d.getTime())) return dateLike;
-
-  return new Intl.DateTimeFormat("de-CH", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(d);
 }
 
 async function readPublicAsset(filename: string) {
@@ -271,6 +260,16 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     textMuted
   );
 
+  drawText(
+    page,
+    `Datum: ${data.offerDate || "—"}`,
+    titleBoxX + titleBoxW - 120,
+    titleBoxY + 5,
+    10,
+    font,
+    textMuted
+  );
+
   let y = 480;
 
   drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 15, font, textDark);
@@ -292,7 +291,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   y -= 20;
 
   const grossPrice = Number(data.grossPriceChf || 0);
-    const automaticPvSubsidy = Number(data.automaticPvSubsidyChf || 0);
+  const automaticPvSubsidy = Number(data.automaticPvSubsidyChf || 0);
   const manualAdditionalSubsidy = Number(data.manualAdditionalSubsidyChf || 0);
   const totalSubsidy = Number(data.subsidyChf || 0);
   const taxSavings = Number(data.taxSavingsChf || 0);
@@ -350,10 +349,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
         ? [
             {
               left: "Förderungen**",
-              middle:
-                data.kWp <= 30
-                  ? `Pronovo Einmalvergütung `
-                  : `Pronovo Einmalvergütung `,
+              middle: "Pronovo Einmalvergütung",
               right: `-${money(automaticPvSubsidy)} CHF`,
             } satisfies Row,
           ]
@@ -461,9 +457,9 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     textDark
   );
 
-  y -= 34;
+  y -= 28;
   drawText(page, "Offerte gültig bis:", tableX, y, 10.5, font, textDark);
-  drawText(page, fmtDate(data.validUntil), tableX + 118, y, 10.5, bold, textDark);
+  drawText(page, data.validUntil || "—", tableX + 118, y, 10.5, bold, textDark);
   drawLine(page, tableX, y - 8, tableX + 270, y - 8, 1, lineGray);
 
   y -= 34;
