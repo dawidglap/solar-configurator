@@ -114,6 +114,7 @@ export async function POST(
 
     const plannings = db.collection("plannings");
     const companies = db.collection("companies");
+    const users = db.collection("users");
 
     const planning = await plannings.findOne({
       _id: planningObjectId,
@@ -127,6 +128,17 @@ export async function POST(
     const company = await companies.findOne({
       _id: companyObjectId,
     });
+
+    const user = await users.findOne({
+  _id: new ObjectId(String(session.userId)),
+});
+
+const advisorName =
+  [safeString(user?.firstName), safeString(user?.lastName)]
+    .filter(Boolean)
+    .join(" ") || companyName;
+
+const advisorRole = "Beratung";
 
     const companyName = safeString(company?.name) || "Ihre Firma";
 
@@ -269,6 +281,9 @@ export async function POST(
       moduleCount: offer.pv.moduleCount,
       batteryLabel: offer.options.batteryLabel,
       wallboxLabel: offer.options.wallboxLabel,
+
+      advisorName,
+advisorRole,
     });
 
     const pdfBytes = await pdf.save();

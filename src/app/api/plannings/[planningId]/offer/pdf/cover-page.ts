@@ -28,6 +28,8 @@ type OfferCoverData = {
   moduleCount?: number;
   batteryLabel?: string;
   wallboxLabel?: string;
+  advisorName?: string;
+advisorRole?: string;
 };
 
 type Row = {
@@ -166,20 +168,20 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
 
   const pageMarginX = 44;
 
-  const heroX = 44;
-  const heroY = 536;
-  const heroW = width - 88;
-  const heroH = 250;
+ const heroX = 44;
+const heroY = 560;
+const heroW = width - 88;
+const heroH = 220;
 
-  const logoBoxX = 56;
-  const logoBoxY = heroY + heroH - 80;
-  const logoBoxW = 150;
-  const logoBoxH = 58;
+const logoBoxX = 56;
+const logoBoxY = heroY + heroH - 74;
+const logoBoxW = 138;
+const logoBoxH = 52;
 
-  const titleBoxX = 58;
-  const titleBoxW = width - 116;
-  const titleBoxH = 122;
-  const titleBoxY = heroY - 8;
+const titleBoxX = 58;
+const titleBoxW = width - 116;
+const titleBoxH = 112;
+const titleBoxY = heroY - 14;
 
   page.drawRectangle({
     x: 0,
@@ -237,40 +239,40 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const title = data.title || "Photovoltaik-Anlage";
   const bigKwText = `${money(data.kWp)} kWp`;
 
-  drawText(page, title, titleBoxX + 16, titleBoxY + 74, 17.5, font, textDark);
-  drawText(page, bigKwText, titleBoxX + 16, titleBoxY + 38, 25, bold, textDark);
+  drawText(page, title, titleBoxX + 16, titleBoxY + 66, 16, font, textDark);
+drawText(page, bigKwText, titleBoxX + 16, titleBoxY + 34, 22, bold, textDark);
 
-  drawLine(
-    page,
-    titleBoxX + 16,
-    titleBoxY + 22,
-    titleBoxX + titleBoxW - 16,
-    titleBoxY + 22,
-    3,
-    teal
-  );
+drawLine(
+  page,
+  titleBoxX + 16,
+  titleBoxY + 18,
+  titleBoxX + titleBoxW - 16,
+  titleBoxY + 18,
+  2.5,
+  teal
+);
 
-  drawText(
-    page,
-    `Offerte Nr.  ${data.planningNumber || "—"}`,
-    titleBoxX + 16,
-    titleBoxY + 5,
-    10,
-    font,
-    textMuted
-  );
+drawText(
+  page,
+  `Offerte Nr.  ${data.planningNumber || "—"}`,
+  titleBoxX + 16,
+  titleBoxY + 3,
+  9.5,
+  font,
+  textMuted
+);
 
-  drawText(
-    page,
-    `Datum: ${data.offerDate || "—"}`,
-    titleBoxX + titleBoxW - 120,
-    titleBoxY + 5,
-    10,
-    font,
-    textMuted
-  );
+drawText(
+  page,
+  `Datum: ${data.offerDate || "—"}`,
+  titleBoxX + titleBoxW - 118,
+  titleBoxY + 3,
+  9.5,
+  font,
+  textMuted
+);
 
-  let y = 480;
+  let y = 442;
 
   drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 15, font, textDark);
   y -= 26;
@@ -483,11 +485,20 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     textDark
   );
 
-  y -= 46;
-  drawText(page, "Mit freundlichen Grüssen", tableX, y, 11, font, textDark);
+y -= 34;
+drawText(page, "Mit freundlichen Grüssen", tableX, y, 10.5, font, textDark);
 
-  y -= 38;
-  drawText(page, data.companyName || "—", tableX, y, 18, bold, textDark);
-  y -= 18;
-  drawText(page, "Ihr Partner für Photovoltaik-Lösungen", tableX, y, 10.5, font, textMuted);
+y -= 28;
+drawText(page, data.advisorName || data.companyName || "—", tableX, y, 15, bold, textDark);
+
+y -= 16;
+drawText(
+  page,
+  `${data.advisorRole || "Beratung"} · ${data.companyName || "—"}`,
+  tableX,
+  y,
+  9.5,
+  font,
+  textMuted
+);
 }
