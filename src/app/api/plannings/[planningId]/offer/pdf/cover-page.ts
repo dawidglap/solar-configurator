@@ -1,10 +1,17 @@
-import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFPage,
+  PDFFont,
+  StandardFonts,
+  rgb,
+} from "pdf-lib";
 
 type OfferCoverData = {
   title: string;
   planningNumber: string;
   kWp: number;
   customerName: string;
+  companyName: string;
 
   // economic block
   netSystemPriceChf: number;
@@ -172,17 +179,19 @@ function drawPricingRows(args: {
 }
 
 export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
-  const page = pdf.addPage([595.28, 841.89]); // A4 portrait
+  const page = pdf.addPage([595.28, 841.89]);
   const { width, height } = page.getSize();
 
-  const font = await pdf.embedFont("Helvetica");
-  const bold = await pdf.embedFont("Helvetica-Bold");
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
   const textDark = rgb(0.17, 0.29, 0.35);
   const textMuted = rgb(0.34, 0.42, 0.46);
   const teal = rgb(0.12, 0.32, 0.37);
   const softGray = rgb(0.95, 0.95, 0.95);
   const lineGray = rgb(0.79, 0.81, 0.83);
+
+  const companyName = data.companyName?.trim() || "Ihre Firma";
 
   /* ---------------- layout ---------------- */
 
@@ -204,7 +213,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const logoBoxW = 158;
   const logoBoxH = 66;
 
-  /* ---------------- top white background ---------------- */
+  /* ---------------- page background ---------------- */
 
   page.drawRectangle({
     x: 0,
@@ -214,7 +223,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     color: rgb(1, 1, 1),
   });
 
-  /* ---------------- hero image ---------------- */
+  /* ---------------- hero image (NO STRETCH) ---------------- */
 
   const heroBytes = await fetchAsset("/hero-pdf.jpg");
   const heroImage = await pdf.embedJpg(heroBytes);
@@ -228,7 +237,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     height: heroDims.height,
   });
 
-  /* white space above + side margins perception */
+  /* top white strip */
   page.drawRectangle({
     x: 0,
     y: height - topWhiteSpace,
@@ -252,6 +261,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
 
   const logoPaddingX = 16;
   const logoPaddingY = 10;
+
   const logoDims = fitContain(
     logoImage.width,
     logoImage.height,
@@ -266,7 +276,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     height: logoDims.height,
   });
 
-  /* ---------------- title box over hero ---------------- */
+  /* ---------------- title box ---------------- */
 
   page.drawRectangle({
     x: titleBoxX,
@@ -302,7 +312,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     textMuted
   );
 
-  /* ---------------- greeting / intro ---------------- */
+  /* ---------------- greeting ---------------- */
 
   let y = 430;
 
@@ -311,7 +321,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
 
   const introLines = [
     "Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit uns.",
-    "Mit SOLA haben Sie einen verlässlichen Partner für innovative",
+    `Mit ${companyName} haben Sie einen verlässlichen Partner für innovative`,
     "Photovoltaik-Lösungen in der Schweiz an Ihrer Seite.",
   ];
 
@@ -517,7 +527,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   drawText(page, "Mit freundlichen Grüssen", tableX, y, 11, font, textDark);
 
   y -= 38;
-  drawText(page, "SOLA AG", tableX, y, 18, bold, textDark);
+  drawText(page, companyName, tableX, y, 18, bold, textDark);
   y -= 18;
   drawText(page, "Ihr Partner für Photovoltaik-Lösungen", tableX, y, 10.5, font, textMuted);
 }

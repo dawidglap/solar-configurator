@@ -44,6 +44,10 @@ function readSession(req: Request, secret: string) {
   }
 }
 
+function safeString(v: unknown) {
+  return typeof v === "string" ? v.trim() : "";
+}
+
 /* ---------------- Route ---------------- */
 
 export async function POST(
@@ -51,7 +55,6 @@ export async function POST(
   { params }: { params: Promise<{ planningId: string }> }
 ) {
   const origin = req.headers.get("origin");
-
   const { planningId } = await params;
 
   const uri = process.env.MONGODB_URI;
@@ -79,15 +82,20 @@ export async function POST(
     });
   }
 
+  const planningObjectId = new ObjectId(planningId);
+  const companyObjectId = new ObjectId(String(session.activeCompanyId));
+
   const client = new MongoClient(uri);
 
   try {
     await client.connect();
     const db = client.db();
+
     const plannings = db.collection("plannings");
+    const companies = db.collection("companies");
 
     const planning = await plannings.findOne({
-      _id: new ObjectId(planningId),
+      _id: planningObjectId,
       companyId: session.activeCompanyId,
     });
 
@@ -97,6 +105,12 @@ export async function POST(
         headers: getCorsHeaders(origin),
       });
     }
+
+    const company = await companies.findOne({
+      _id: companyObjectId,
+    });
+
+    const companyName = safeString(company?.name) || "Ihre Firma";
 
     /* ---------------- MOCK DATA PER TEST COVER ---------------- */
 
@@ -109,6 +123,7 @@ export async function POST(
       customer: {
         name: "Max Muster",
       },
+      companyName,
     };
 
     /* ---------------- PDF ---------------- */
@@ -120,6 +135,7 @@ export async function POST(
       planningNumber: offer.planningNumber,
       kWp: offer.pv.dcPowerKw,
       customerName: offer.customer.name,
+      companyName: offer.companyName,
     });
 
     const pdfBytes = await pdf.save();
