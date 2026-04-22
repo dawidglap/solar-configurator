@@ -18,15 +18,11 @@ export async function addCoverPage(
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  /* ------------------ COLORS ------------------ */
-
   const white = rgb(1, 1, 1);
-  const textDark = rgb(0.17, 0.26, 0.31);      // blu/grigio scuro stile Gama
+  const textDark = rgb(0.17, 0.26, 0.31);
   const textMuted = rgb(0.28, 0.35, 0.39);
   const lineColor = rgb(0.12, 0.29, 0.33);
   const lightBox = rgb(0.95, 0.95, 0.95);
-
-  /* ------------------ PAGE BACKGROUND ------------------ */
 
   page.drawRectangle({
     x: 0,
@@ -36,16 +32,12 @@ export async function addCoverPage(
     color: white,
   });
 
-  /* ------------------ LAYOUT ------------------ */
-
-  const sideMargin = 32;         // bianco dx/sx
-  const topMargin = 34;          // bianco sopra
+  const sideMargin = 32;
+  const topMargin = 34;
   const heroWidth = width - sideMargin * 2;
-  const heroHeight = 290;        // più piccola di prima
+  const heroHeight = 290;
   const heroX = sideMargin;
   const heroY = height - topMargin - heroHeight;
-
-  /* ------------------ ASSETS FROM /public ------------------ */
 
   const heroPath = path.join(process.cwd(), "public", "hero-pdf.jpg");
   const logoPath = path.join(process.cwd(), "public", "logo-demo.jpg");
@@ -56,16 +48,49 @@ export async function addCoverPage(
   const heroImage = await pdf.embedJpg(heroBytes);
   const logoImage = await pdf.embedJpg(logoBytes);
 
-  /* ------------------ HERO IMAGE ------------------ */
+  /* ---------------- helpers no-stretch ---------------- */
+
+  function fitContain(
+    imgW: number,
+    imgH: number,
+    boxW: number,
+    boxH: number
+  ) {
+    const scale = Math.min(boxW / imgW, boxH / imgH);
+    const w = imgW * scale;
+    const h = imgH * scale;
+    return { w, h };
+  }
+
+  function fitCover(
+    imgW: number,
+    imgH: number,
+    boxW: number,
+    boxH: number
+  ) {
+    const scale = Math.max(boxW / imgW, boxH / imgH);
+    const w = imgW * scale;
+    const h = imgH * scale;
+    return { w, h };
+  }
+
+  /* ---------------- HERO IMAGE: cover, no stretch ---------------- */
+
+  const heroDims = fitCover(
+    heroImage.width,
+    heroImage.height,
+    heroWidth,
+    heroHeight
+  );
 
   page.drawImage(heroImage, {
-    x: heroX,
-    y: heroY,
-    width: heroWidth,
-    height: heroHeight,
+    x: heroX + (heroWidth - heroDims.w) / 2,
+    y: heroY + (heroHeight - heroDims.h) / 2,
+    width: heroDims.w,
+    height: heroDims.h,
   });
 
-  /* ------------------ LOGO BOX ------------------ */
+  /* ---------------- LOGO BOX ---------------- */
 
   const logoBoxX = heroX + 22;
   const logoBoxY = heroY + heroHeight - 96;
@@ -80,20 +105,33 @@ export async function addCoverPage(
     color: white,
   });
 
+  /* ---------------- LOGO: contain, no stretch ---------------- */
+
+  const logoPaddingX = 14;
+  const logoPaddingY = 10;
+  const logoFitW = logoBoxW - logoPaddingX * 2;
+  const logoFitH = logoBoxH - logoPaddingY * 2;
+
+  const logoDims = fitContain(
+    logoImage.width,
+    logoImage.height,
+    logoFitW,
+    logoFitH
+  );
+
   page.drawImage(logoImage, {
-    x: logoBoxX + 14,
-    y: logoBoxY + 12,
-    width: 108,
-    height: 40,
+    x: logoBoxX + (logoBoxW - logoDims.w) / 2,
+    y: logoBoxY + (logoBoxH - logoDims.h) / 2,
+    width: logoDims.w,
+    height: logoDims.h,
   });
 
-  /* ------------------ TITLE / META BOX ------------------ */
+  /* ---------------- TITLE / META BOX ---------------- */
 
-  // box sovrapposto alla parte bassa della hero, ma non enorme
   const infoBoxX = heroX + 26;
   const infoBoxW = heroWidth - 52;
   const infoBoxH = 128;
-  const infoBoxY = heroY - 34; // sale dentro la hero come da esempio Gama
+  const infoBoxY = heroY - 34;
 
   page.drawRectangle({
     x: infoBoxX,
@@ -102,8 +140,6 @@ export async function addCoverPage(
     height: infoBoxH,
     color: lightBox,
   });
-
-  /* ------------------ TITLE ------------------ */
 
   const safeTitle = (data.title || "Photovoltaik-Anlage").trim();
   const safeKwp = Number.isFinite(data.kWp) ? data.kWp : 0;
@@ -125,8 +161,6 @@ export async function addCoverPage(
     color: textDark,
   });
 
-  /* ------------------ UNDERLINE ------------------ */
-
   const lineY = infoBoxY + 38;
   page.drawLine({
     start: { x: infoBoxX + 18, y: lineY },
@@ -134,8 +168,6 @@ export async function addCoverPage(
     thickness: 4,
     color: lineColor,
   });
-
-  /* ------------------ OFFER NUMBER INSIDE BOX ------------------ */
 
   page.drawText(`Offerte Nr. ${data.planningNumber || "—"}`, {
     x: infoBoxX + 18,
@@ -145,7 +177,7 @@ export async function addCoverPage(
     color: textMuted,
   });
 
-  /* ------------------ CUSTOMER GREETING ------------------ */
+  /* ---------------- GREETING ---------------- */
 
   const contentX = heroX + 26;
   let y = infoBoxY - 68;
@@ -182,8 +214,6 @@ export async function addCoverPage(
   }
 
   y -= 34;
-
-  /* ------------------ INVEST BLOCK ------------------ */
 
   page.drawText("Ihre Investition", {
     x: contentX,
@@ -230,8 +260,6 @@ export async function addCoverPage(
     color: textMuted,
   });
 }
-
-/* ------------------ SIMPLE WRAP ------------------ */
 
 function wrapText(text: string, maxCharsPerLine: number) {
   const words = text.split(/\s+/);
