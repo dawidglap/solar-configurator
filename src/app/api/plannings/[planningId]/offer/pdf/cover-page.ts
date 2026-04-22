@@ -169,7 +169,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const pageMarginX = 44;
 
  const heroX = 44;
-const heroY = 560;
+const heroY = 580;
 const heroW = width - 88;
 const heroH = 220;
 
