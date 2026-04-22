@@ -130,13 +130,30 @@ export async function POST(
 
     const pdf = await PDFDocument.create();
 
-    await addCoverPage(pdf, {
-      title: offer.title,
-      planningNumber: offer.planningNumber,
-      kWp: offer.pv.dcPowerKw,
-      customerName: offer.customer.name,
-      companyName: offer.companyName,
-    });
+await addCoverPage(pdf, {
+  title: offer.title,
+  planningNumber: offer.planningNumber,
+  kWp: offer.pv.dcPowerKw,
+  customerName: offer.customer.name,
+  companyName: offer.companyName,
+
+  netSystemPriceChf: 0,
+  vatRatePct: 8.1,
+  vatAmountChf: 0,
+  grossPriceChf: 0,
+
+  subsidyChf: 0,
+  additionalSubsidyChf: 0,
+
+  totalInvestmentChf: 0,
+  taxSavingsChf: 0,
+  effectiveCostChf: 0,
+
+  validUntil: "",
+  moduleCount: 0,
+  batteryLabel: "",
+  wallboxLabel: "",
+});
 
     const pdfBytes = await pdf.save();
 
