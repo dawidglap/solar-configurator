@@ -17,8 +17,6 @@ export async function addCoverPage(
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  /* ------------------ ASSETS FROM /public ------------------ */
-
   const heroPath = path.join(process.cwd(), "public", "hero-pdf.jpg");
   const logoPath = path.join(process.cwd(), "public", "logo-demo.jpg");
 
@@ -27,6 +25,11 @@ export async function addCoverPage(
 
   const heroImage = await pdf.embedJpg(heroBytes);
   const logoImage = await pdf.embedJpg(logoBytes);
+
+  const COLOR_TEXT = rgb(0.16, 0.24, 0.28);
+  const COLOR_MUTED = rgb(0.34, 0.38, 0.42);
+  const COLOR_LINE = rgb(0.12, 0.26, 0.30);
+  const COLOR_LIGHT = rgb(0.95, 0.95, 0.95);
 
   /* ------------------ HERO ------------------ */
 
@@ -39,22 +42,21 @@ export async function addCoverPage(
     height: heroHeight,
   });
 
-  /* leggero overlay per dare più contrasto */
   page.drawRectangle({
     x: 0,
     y: height - heroHeight,
     width,
     height: heroHeight,
     color: rgb(0, 0, 0),
-    opacity: 0.12,
+    opacity: 0.1,
   });
 
   /* ------------------ LOGO BOX ------------------ */
 
   const logoBoxX = 40;
-  const logoBoxY = height - 120;
-  const logoBoxWidth = 180;
-  const logoBoxHeight = 70;
+  const logoBoxY = height - 118;
+  const logoBoxWidth = 150;
+  const logoBoxHeight = 62;
 
   page.drawRectangle({
     x: logoBoxX,
@@ -65,79 +67,79 @@ export async function addCoverPage(
   });
 
   page.drawImage(logoImage, {
-    x: logoBoxX + 10,
-    y: logoBoxY + 10,
-    width: 160,
-    height: 50,
+    x: logoBoxX + 12,
+    y: logoBoxY + 12,
+    width: 126,
+    height: 38,
   });
 
   /* ------------------ TITLE BLOCK ------------------ */
-  /* ORA ENTRA SOPRA LA HERO, come nel layout Gama */
 
   const titleBoxX = 40;
   const titleBoxWidth = width - 80;
-  const titleBoxHeight = 100;
-
-  // prima era sotto la hero; adesso lo alziamo
-  const titleBoxY = height - heroHeight + 28;
+  const titleBoxHeight = 112;
+  const titleBoxY = height - heroHeight + 18;
 
   page.drawRectangle({
     x: titleBoxX,
     y: titleBoxY,
     width: titleBoxWidth,
     height: titleBoxHeight,
-    color: rgb(0.95, 0.95, 0.95),
+    color: COLOR_LIGHT,
   });
 
-  page.drawText(data.title || "Photovoltaik-Anlage", {
-    x: titleBoxX + 14,
-    y: titleBoxY + 58,
-    size: 18,
+  const title = data.title || "Photovoltaik-Anlage";
+  const kwpText = `${Number(data.kWp || 0).toFixed(2)} kWp`;
+
+  page.drawText(title, {
+    x: titleBoxX + 16,
+    y: titleBoxY + 66,
+    size: 17,
+    font: font,
+    color: COLOR_TEXT,
+    maxWidth: titleBoxWidth - 32,
+  });
+
+  page.drawText(kwpText, {
+    x: titleBoxX + 16,
+    y: titleBoxY + 26,
+    size: 26,
     font: bold,
-    color: rgb(0.12, 0.12, 0.12),
+    color: COLOR_TEXT,
   });
 
-  page.drawText(`${Number(data.kWp || 0).toFixed(1)} kWp`, {
-    x: titleBoxX + 14,
-    y: titleBoxY + 28,
-    size: 14,
-    font: bold,
-    color: rgb(0.2, 0.2, 0.2),
-  });
-
-  /* linea scura in basso stile Gama */
   page.drawRectangle({
-    x: titleBoxX + 14,
+    x: titleBoxX + 16,
     y: titleBoxY + 12,
-    width: titleBoxWidth - 28,
+    width: titleBoxWidth - 32,
     height: 3,
-    color: rgb(0.12, 0.26, 0.30),
+    color: COLOR_LINE,
   });
 
-  page.drawText(`Offerte Nr. ${data.planningNumber || "—"}`, {
-    x: titleBoxX + 14,
+  page.drawText(`Offerte Nr.  ${data.planningNumber || "—"}`, {
+    x: titleBoxX + 16,
     y: titleBoxY - 16,
     size: 10,
     font,
-    color: rgb(1, 1, 1),
+    color: COLOR_MUTED,
   });
 
-  /* ------------------ GREETING / INTRO ------------------ */
+  /* ------------------ GREETING ------------------ */
 
-  let y = titleBoxY - 80;
+  let y = titleBoxY - 78;
 
   page.drawText(data.customerName || "Kunde", {
     x: 50,
     y,
-    size: 14,
+    size: 15,
     font: bold,
-    color: rgb(0.12, 0.12, 0.12),
+    color: COLOR_TEXT,
   });
 
   y -= 24;
 
   const paragraph =
-    "Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit uns. Mit Helionic haben Sie einen erfahrenen und verlässlichen Partner für innovative Photovoltaik-Lösungen.";
+    "Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit uns. Mit Helionic haben Sie einen erfahrenen und verlässlichen Partner für innovative Photovoltaik-Lösungen an Ihrer Seite.";
 
   page.drawText(paragraph, {
     x: 50,
@@ -146,19 +148,19 @@ export async function addCoverPage(
     font,
     maxWidth: width - 100,
     lineHeight: 14,
-    color: rgb(0.3, 0.3, 0.3),
+    color: COLOR_MUTED,
   });
 
-  y -= 70;
+  y -= 72;
 
-  /* ------------------ SIMPLE INVEST BLOCK ------------------ */
+  /* ------------------ INVEST BLOCK ------------------ */
 
   page.drawText("Ihre Investition", {
     x: 50,
     y,
     size: 13,
     font: bold,
-    color: rgb(0.12, 0.12, 0.12),
+    color: COLOR_TEXT,
   });
 
   y -= 20;
@@ -168,7 +170,7 @@ export async function addCoverPage(
     y,
     size: 11,
     font,
-    color: rgb(0.2, 0.2, 0.2),
+    color: COLOR_TEXT,
   });
 
   page.drawText("— CHF", {
@@ -176,7 +178,7 @@ export async function addCoverPage(
     y,
     size: 11,
     font: bold,
-    color: rgb(0.12, 0.12, 0.12),
+    color: COLOR_TEXT,
   });
 
   y -= 40;
@@ -186,6 +188,6 @@ export async function addCoverPage(
     y,
     size: 10,
     font,
-    color: rgb(0.4, 0.4, 0.4),
+    color: COLOR_MUTED,
   });
 }
