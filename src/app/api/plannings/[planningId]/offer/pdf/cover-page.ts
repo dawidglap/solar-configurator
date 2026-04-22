@@ -14,8 +14,9 @@ type OfferCoverData = {
   vatAmountChf: number;
   grossPriceChf: number;
 
+   automaticPvSubsidyChf: number;
+  manualAdditionalSubsidyChf?: number;
   subsidyChf: number;
-  additionalSubsidyChf?: number;
 
   totalInvestmentChf: number;
   taxSavingsChf?: number;
@@ -291,9 +292,9 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   y -= 20;
 
   const grossPrice = Number(data.grossPriceChf || 0);
-  const subsidy = Number(data.subsidyChf || 0);
-  const additionalSubsidy = Number(data.additionalSubsidyChf || 0);
-  const totalSubsidy = subsidy + additionalSubsidy;
+    const automaticPvSubsidy = Number(data.automaticPvSubsidyChf || 0);
+  const manualAdditionalSubsidy = Number(data.manualAdditionalSubsidyChf || 0);
+  const totalSubsidy = Number(data.subsidyChf || 0);
   const taxSavings = Number(data.taxSavingsChf || 0);
   const effectiveCost =
     typeof data.effectiveCostChf === "number"
@@ -345,17 +346,24 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
 
   if (totalSubsidy > 0) {
     const subsidyRows: Row[] = [
-      {
-        left: "Förderungen**",
-        middle: "Einmalvergütung (Photovoltaik)",
-        right: `-${money(subsidy)} CHF`,
-      },
-      ...(additionalSubsidy > 0
+      ...(automaticPvSubsidy > 0
+        ? [
+            {
+              left: "Förderungen**",
+              middle:
+                data.kWp <= 30
+                  ? `Pronovo Einmalvergütung (${money(data.kWp)} kWp × 360 CHF)`
+                  : `Pronovo Einmalvergütung (${money(data.kWp)} kWp × 300 CHF)`,
+              right: `-${money(automaticPvSubsidy)} CHF`,
+            } satisfies Row,
+          ]
+        : []),
+      ...(manualAdditionalSubsidy > 0
         ? [
             {
               left: "",
-              middle: "Weitere Fördergelder",
-              right: `-${money(additionalSubsidy)} CHF`,
+              middle: "Weitere Fördergelder / Kanton",
+              right: `-${money(manualAdditionalSubsidy)} CHF`,
             } satisfies Row,
           ]
         : []),

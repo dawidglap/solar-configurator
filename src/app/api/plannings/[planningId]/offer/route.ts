@@ -127,6 +127,7 @@ export async function POST(
     const parts = data?.parts ?? {};
     const reportOptions = data?.reportOptions ?? {};
     const summary = (planning as any)?.summary ?? {};
+    const reportSummary = (planning as any)?.reportSummary ?? data?.reportSummary ?? null;
 
     const items = Array.isArray(parts?.items) ? parts.items : [];
 
@@ -139,16 +140,31 @@ export async function POST(
     const vatAmountChf = Number((partsTotalNet * (vatRatePct / 100)).toFixed(2));
     const grossPriceChf = Number((partsTotalNet + vatAmountChf).toFixed(2));
 
-    const subsidyChf = safeNumber(
-      reportOptions?.subsidyChf ?? reportOptions?.subsidy,
-      0
-    );
+const dcPowerKw = safeNumber(summary?.dcPowerKw, 0);
 
-    const additionalSubsidyChf = 0;
+const automaticPvSubsidyChf =
+  safeNumber(
+    reportSummary?.automaticPvSubsidyChf,
+    dcPowerKw <= 0
+      ? 0
+      : dcPowerKw <= 30
+        ? dcPowerKw * 360
+        : dcPowerKw * 300
+  );
 
-    const totalInvestmentChf = Number(
-      Math.max(0, grossPriceChf - subsidyChf - additionalSubsidyChf).toFixed(2)
-    );
+const manualAdditionalSubsidyChf = safeNumber(
+  reportSummary?.manualAdditionalSubsidyChf ??
+    reportOptions?.additionalSubsidyChf,
+  0
+);
+
+const subsidyChf = Number(
+  (automaticPvSubsidyChf + manualAdditionalSubsidyChf).toFixed(2)
+);
+
+const totalInvestmentChf = Number(
+  Math.max(0, grossPriceChf - subsidyChf).toFixed(2)
+);
 
     const taxSavingsChf = 0;
     const effectiveCostChf = Number(
@@ -175,25 +191,26 @@ export async function POST(
     const offer = {
       title: safeString((planning as any)?.title) || "Photovoltaik-Angebot",
       planningNumber: safeString((planning as any)?.planningNumber) || "—",
-      pv: {
-        dcPowerKw: safeNumber(summary?.dcPowerKw, 0),
-        moduleCount: safeNumber(summary?.moduleCount, 0),
-      },
+   pv: {
+  dcPowerKw,
+  moduleCount: safeNumber(summary?.moduleCount, 0),
+},
       customer: {
         name: customerName,
       },
       companyName,
-      pricing: {
-        netSystemPriceChf: partsTotalNet,
-        vatRatePct,
-        vatAmountChf,
-        grossPriceChf,
-        subsidyChf,
-        additionalSubsidyChf,
-        totalInvestmentChf,
-        taxSavingsChf,
-        effectiveCostChf,
-      },
+ pricing: {
+  netSystemPriceChf: partsTotalNet,
+  vatRatePct,
+  vatAmountChf,
+  grossPriceChf,
+  automaticPvSubsidyChf,
+  manualAdditionalSubsidyChf,
+  subsidyChf,
+  totalInvestmentChf,
+  taxSavingsChf,
+  effectiveCostChf,
+},
       options: {
         batteryLabel: batteryItem
           ? [safeString(batteryItem?.brand ?? batteryItem?.marke), safeString(batteryItem?.name ?? batteryItem?.beschreibung)]
@@ -222,8 +239,10 @@ export async function POST(
       vatAmountChf: offer.pricing.vatAmountChf,
       grossPriceChf: offer.pricing.grossPriceChf,
 
-      subsidyChf: offer.pricing.subsidyChf,
-      additionalSubsidyChf: offer.pricing.additionalSubsidyChf,
+     automaticPvSubsidyChf: offer.pricing.automaticPvSubsidyChf,
+manualAdditionalSubsidyChf: offer.pricing.manualAdditionalSubsidyChf,
+subsidyChf: offer.pricing.subsidyChf,
+
 
       totalInvestmentChf: offer.pricing.totalInvestmentChf,
       taxSavingsChf: offer.pricing.taxSavingsChf,
