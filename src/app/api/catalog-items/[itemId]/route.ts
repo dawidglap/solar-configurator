@@ -47,6 +47,12 @@ function safeBoolean(v: any, fallback = false) {
   return typeof v === "boolean" ? v : fallback;
 }
 
+function safeStringArray(v: any) {
+  return Array.isArray(v)
+    ? v.map((x) => safeString(x)).filter(Boolean)
+    : [];
+}
+
 function toObjectIdOrNull(v: any) {
   try {
     if (!v) return null;
@@ -76,6 +82,12 @@ function normalizeCatalogItem(doc: any) {
     model: safeString(doc.model),
     name: safeString(doc.name),
     description: safeString(doc.description),
+    longDescription: safeString(doc.longDescription),
+    features: safeStringArray(doc.features),
+    warranty: safeString(doc.warranty),
+    compatibility: safeString(doc.compatibility),
+    notes: safeString(doc.notes),
+    pdfSection: safeString(doc.pdfSection),
     unit: safeString(doc.unit) || "piece",
     unitLabel: safeString(doc.unitLabel) || "Stk.",
     priceNet: safeNumber(doc.priceNet, 0),
@@ -192,6 +204,12 @@ export async function PATCH(
   if (typeof body?.model === "string") setObj.model = safeString(body.model);
   if (typeof body?.name === "string") setObj.name = safeString(body.name);
   if (typeof body?.description === "string") setObj.description = safeString(body.description);
+  if (typeof body?.longDescription === "string") setObj.longDescription = safeString(body.longDescription);
+  if (Array.isArray(body?.features)) setObj.features = safeStringArray(body.features);
+  if (typeof body?.warranty === "string") setObj.warranty = safeString(body.warranty);
+  if (typeof body?.compatibility === "string") setObj.compatibility = safeString(body.compatibility);
+  if (typeof body?.notes === "string") setObj.notes = safeString(body.notes);
+  if (typeof body?.pdfSection === "string") setObj.pdfSection = safeString(body.pdfSection);
   if (typeof body?.unit === "string") setObj.unit = safeString(body.unit);
   if (typeof body?.unitLabel === "string") setObj.unitLabel = safeString(body.unitLabel);
   if (typeof body?.priceNet === "number") setObj.priceNet = safeNumber(body.priceNet, 0);

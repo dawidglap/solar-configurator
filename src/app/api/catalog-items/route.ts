@@ -47,6 +47,12 @@ function safeBoolean(v: any, fallback = false) {
   return typeof v === "boolean" ? v : fallback;
 }
 
+function safeStringArray(v: any) {
+  return Array.isArray(v)
+    ? v.map((x) => safeString(x)).filter(Boolean)
+    : [];
+}
+
 function jsonResponse(origin: string | null, body: any, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -67,6 +73,12 @@ function normalizeCatalogItem(doc: any) {
     model: safeString(doc.model),
     name: safeString(doc.name),
     description: safeString(doc.description),
+    longDescription: safeString(doc.longDescription),
+    features: safeStringArray(doc.features),
+    warranty: safeString(doc.warranty),
+    compatibility: safeString(doc.compatibility),
+    notes: safeString(doc.notes),
+    pdfSection: safeString(doc.pdfSection),
     unit: safeString(doc.unit) || "piece",
     unitLabel: safeString(doc.unitLabel) || "Stk.",
     priceNet: safeNumber(doc.priceNet, 0),
@@ -190,6 +202,12 @@ export async function POST(req: Request) {
     model: safeString(body?.model),
     name,
     description: safeString(body?.description),
+    longDescription: safeString(body?.longDescription),
+    features: safeStringArray(body?.features),
+    warranty: safeString(body?.warranty),
+    compatibility: safeString(body?.compatibility),
+    notes: safeString(body?.notes),
+    pdfSection: safeString(body?.pdfSection),
     unit: safeString(body?.unit) || "piece",
     unitLabel: safeString(body?.unitLabel) || "Stk.",
     priceNet: safeNumber(body?.priceNet, 0),
