@@ -196,7 +196,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const logoBoxW = 128;
   const logoBoxH = 44;
 
-  const titleBoxX = 26;
+  const titleBoxX = 66;
   const titleBoxW = width - 52;
   const titleBoxH = 116;
   const titleBoxY = heroY - 24;
@@ -363,7 +363,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
       : []),
   ];
 
-const tableX = 30;
+const tableX = 44;
 const tableW = width - 60;
 
   const costRows: Row[] = [
