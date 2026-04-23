@@ -82,9 +82,8 @@ function dataUrlToBytes(dataUrl?: string | null) {
   const comma = s.indexOf(",");
   if (comma < 0) return null;
 
-  const base64 = s.slice(comma + 1);
   try {
-    return Buffer.from(base64, "base64");
+    return Buffer.from(s.slice(comma + 1), "base64");
   } catch {
     return null;
   }
@@ -96,26 +95,8 @@ function dataUrlMime(dataUrl?: string | null) {
   return m?.[1] || "";
 }
 
-function fitCover(
-  srcW: number,
-  srcH: number,
-  boxW: number,
-  boxH: number
-): { width: number; height: number } {
+function fitCover(srcW: number, srcH: number, boxW: number, boxH: number) {
   const scale = Math.max(boxW / srcW, boxH / srcH);
-  return {
-    width: srcW * scale,
-    height: srcH * scale,
-  };
-}
-
-function fitContain(
-  srcW: number,
-  srcH: number,
-  boxW: number,
-  boxH: number
-): { width: number; height: number } {
-  const scale = Math.min(boxW / srcW, boxH / srcH);
   return {
     width: srcW * scale,
     height: srcH * scale,
@@ -186,8 +167,8 @@ function drawInfoRow(args: {
   const muted = rgb(0.43, 0.49, 0.52);
   const dark = rgb(0.14, 0.22, 0.27);
 
-  drawText(page, label, x, y, 8, font, muted);
-  drawRightText(page, truncate(value, 34), x + width, y, 8.5, bold, dark);
+  drawText(page, label, x, y, 7.5, font, muted);
+  drawRightText(page, truncate(value, 30), x + width, y, 8, bold, dark);
 
   page.drawLine({
     start: { x, y: y - 7 },
@@ -220,8 +201,8 @@ function drawKpiCard(args: {
     borderWidth: 0.5,
   });
 
-  drawText(page, label, x + 10, y + h - 17, 7.3, font, rgb(0.43, 0.49, 0.52));
-  drawText(page, value, x + 10, y + 14, 14, bold, rgb(0.13, 0.22, 0.27));
+  drawText(page, label, x + 8, y + h - 15, 7, font, rgb(0.43, 0.49, 0.52));
+  drawText(page, value, x + 8, y + 12, 12.5, bold, rgb(0.13, 0.22, 0.27));
 }
 
 async function drawSnapshot(args: {
@@ -277,7 +258,6 @@ async function drawSnapshot(args: {
       height: dims.height,
     });
 
-    // leggero bordo sopra immagine
     page.drawRectangle({
       x,
       y,
@@ -321,55 +301,61 @@ export async function addProjectOverviewPage(
     planningNumber: data.planningNumber,
   });
 
-  const introY = 748;
   drawText(
     page,
     "Übersicht der geplanten Photovoltaikanlage auf Basis der aktuellen Modulplanung.",
     44,
-    introY,
-    9.5,
+    748,
+    9.2,
     font,
     muted
   );
 
   const address = safeString(data.projectAddress) || "—";
 
-  drawText(page, "Projektadresse", 44, 720, 8, font, muted);
-  drawText(page, truncate(address, 75), 44, 705, 12, bold, dark);
+  // Top info — sopra immagine, senza overlap
+  drawText(page, "Projektadresse", 44, 718, 7.5, font, muted);
+  drawText(page, truncate(address, 48), 44, 703, 10.5, bold, dark);
 
-  drawText(page, "Kunde", 335, 720, 8, font, muted);
-  drawText(page, truncate(data.customerName || "—", 42), 335, 705, 12, bold, dark);
+  drawText(page, "Kunde", 335, 718, 7.5, font, muted);
+  drawText(page, truncate(data.customerName || "—", 34), 335, 703, 10.5, bold, dark);
 
-  // Snapshot grande
+  // Snapshot grande ma più basso e più compatto
+  const imageX = 44;
+  const imageY = 382;
+  const imageW = 507;
+  const imageH = 285;
+
   await drawSnapshot({
     pdf,
     page,
     dataUrl: data.projectSnapshotDataUrl,
-    x: 44,
-    y: 365,
-    w: 507,
-    h: 305,
+    x: imageX,
+    y: imageY,
+    w: imageW,
+    h: imageH,
     font,
     bold,
   });
 
-  // piccolo label immagine
+  // Overlay dentro immagine, senza coprire header
   page.drawRectangle({
-    x: 44,
-    y: 365 + 305 - 28,
-    width: 145,
-    height: 28,
+    x: imageX,
+    y: imageY + imageH - 34,
+    width: 158,
+    height: 34,
     color: rgb(1, 1, 1),
-    opacity: 0.88,
+    opacity: 0.86,
   });
-  drawText(page, "Modulbelegung", 56, 365 + 305 - 18, 9, bold, dark);
-  drawText(page, "aktueller Planungsstand", 56, 365 + 305 - 29, 6.5, font, muted);
 
-  // KPI cards
-  const kpiY = 286;
-  const cardW = 120;
-  const cardH = 52;
-  const gap = 9;
+  drawText(page, "Modulbelegung", imageX + 12, imageY + imageH - 20, 8.8, bold, dark);
+  drawText(page, "aktueller Planungsstand", imageX + 12, imageY + imageH - 30, 6.3, font, muted);
+
+  // KPI cards — subito sotto immagine, con spazio corretto
+  const kpiY = 314;
+  const cardW = 121;
+  const cardH = 48;
+  const gap = 7;
 
   drawKpiCard({
     page,
@@ -421,11 +407,11 @@ export async function addProjectOverviewPage(
     bold,
   });
 
-  // Detailtabelle
-  drawText(page, "Technische Eckdaten", 44, 245, 13, bold, dark);
+  // Technische Eckdaten
+  drawText(page, "Technische Eckdaten", 44, 266, 13, bold, dark);
   page.drawLine({
-    start: { x: 44, y: 234 },
-    end: { x: 551, y: 234 },
+    start: { x: 44, y: 254 },
+    end: { x: 551, y: 254 },
     thickness: 1,
     color: rgb(0.84, 0.86, 0.87),
   });
@@ -434,7 +420,7 @@ export async function addProjectOverviewPage(
   const rightX = 315;
   const rowW = 220;
 
-  let y = 213;
+  let y = 233;
 
   drawInfoRow({
     page,
@@ -458,7 +444,7 @@ export async function addProjectOverviewPage(
     bold,
   });
 
-  y -= 25;
+  y -= 24;
 
   drawInfoRow({
     page,
@@ -482,7 +468,7 @@ export async function addProjectOverviewPage(
     bold,
   });
 
-  y -= 25;
+  y -= 24;
 
   drawInfoRow({
     page,
@@ -506,25 +492,24 @@ export async function addProjectOverviewPage(
     bold,
   });
 
-  y -= 38;
-
+  // Hinweis box — più basso, senza collisioni
   page.drawRectangle({
     x: 44,
-    y: 78,
+    y: 86,
     width: 507,
-    height: 55,
+    height: 52,
     color: rgb(0.95, 0.97, 0.97),
     borderColor: rgb(0.84, 0.87, 0.87),
     borderWidth: 0.5,
   });
 
-  drawText(page, "Hinweis", 58, 112, 8, bold, teal);
+  drawText(page, "Hinweis", 58, 119, 8, bold, teal);
   drawText(
     page,
     "Die Projektübersicht basiert auf dem aktuellen Planungsstand und dient der visuellen Orientierung.",
     58,
-    97,
-    8,
+    104,
+    7.7,
     font,
     dark
   );
@@ -532,8 +517,8 @@ export async function addProjectOverviewPage(
     page,
     "Technische Details können sich im Rahmen der Ausführungsplanung und Netzabklärung noch ändern.",
     58,
-    84,
-    8,
+    91,
+    7.7,
     font,
     dark
   );
