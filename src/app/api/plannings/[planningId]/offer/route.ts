@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { PDFDocument } from "pdf-lib";
 import { getCorsHeaders } from "@/lib/cors";
 import { addCoverPage } from "./pdf/cover-page";
+import { addDetailPages } from "./pdf/detail-pages";
 
 export const runtime = "nodejs";
 
@@ -513,13 +514,10 @@ export async function POST(
       advisorRole,
     });
 
-    // QUI DOPO aggiungeremo:
-    // await addDetailPages(pdf, {
-    //   offer,
-    //   company,
-    //   advisorName,
-    //   advisorRole,
-    // });
+    await addDetailPages(pdf, {
+      offer,
+      company,
+    });
 
     const pdfBytes = await pdf.save();
 
