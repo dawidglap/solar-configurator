@@ -294,7 +294,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     textMuted
   );
 
-  let y = 500;
+  let y = 522;
 
   drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 12.5, bold, textDark);
   y -= 22;
@@ -363,8 +363,8 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
       : []),
   ];
 
-  const tableX = pageMarginX;
-  const tableW = 430;
+const tableX = 30;
+const tableW = width - 60;
 
   const costRows: Row[] = [
     {
