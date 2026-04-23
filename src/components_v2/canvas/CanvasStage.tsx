@@ -159,9 +159,9 @@ export default function CanvasStage() {
         }
 
         const dataUrl = stage.toDataURL({
-          pixelRatio: 2,
-          mimeType: "image/png",
-          quality: 1,
+          pixelRatio: 1,
+          mimeType: "image/jpeg",
+          quality: 0.72,
         });
 
         console.log("[Planner] Project snapshot captured", {
