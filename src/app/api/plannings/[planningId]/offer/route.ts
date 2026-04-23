@@ -55,6 +55,12 @@ function safeNumber(v: unknown, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function safeStringArray(v: unknown) {
+  return Array.isArray(v)
+    ? v.map((x) => safeString(x)).filter(Boolean)
+    : [];
+}
+
 function formatDateCH(date: Date) {
   return new Intl.DateTimeFormat("de-CH", {
     day: "2-digit",
@@ -98,6 +104,20 @@ function getItemLineTotal(item: any) {
   );
 
   return qty * unitPrice;
+}
+
+function buildCatalogLookupKey(input: {
+  category?: unknown;
+  brand?: unknown;
+  model?: unknown;
+  name?: unknown;
+}) {
+  return [
+    safeString(input.category).toLowerCase(),
+    safeString(input.brand).toLowerCase(),
+    safeString(input.model).toLowerCase(),
+    safeString(input.name).toLowerCase(),
+  ].join("::");
 }
 
 /* ---------------- Route ---------------- */
@@ -148,6 +168,7 @@ export async function POST(
     const plannings = db.collection("plannings");
     const companies = db.collection("companies");
     const users = db.collection("users");
+    const catalogItems = db.collection("catalogItems");
 
     const planning = await plannings.findOne({
       _id: planningObjectId,
@@ -185,6 +206,83 @@ export async function POST(
     const reportSummary = (planning as any)?.reportSummary ?? data?.reportSummary ?? null;
 
     const items = Array.isArray(parts?.items) ? parts.items : [];
+
+    // TEMP DEBUG: capire shape reale della Stückliste
+    console.log(
+      "OFFER PARTS ITEMS SAMPLE:",
+      JSON.stringify(items.slice(0, 5), null, 2)
+    );
+
+    // Catalogo ricco della company attiva
+    const catalogDocs = await catalogItems
+      .find({
+        companyId: session.activeCompanyId,
+        isActive: true,
+      })
+      .toArray();
+
+    const catalogById = new Map<string, any>();
+    const catalogByCompositeKey = new Map<string, any>();
+
+    for (const doc of catalogDocs) {
+      const id = String(doc?._id ?? "");
+      if (id) {
+        catalogById.set(id, doc);
+      }
+
+      const key = buildCatalogLookupKey({
+        category: doc?.category,
+        brand: doc?.brand,
+        model: doc?.model,
+        name: doc?.name,
+      });
+
+      if (key && !catalogByCompositeKey.has(key)) {
+        catalogByCompositeKey.set(key, doc);
+      }
+    }
+
+    // Arricchimento items con dati catalogo
+    const enrichedItems = items.map((item: any) => {
+      const catalogItemId =
+        safeString(item?.catalogItemId) ||
+        safeString(item?.catalogId) ||
+        safeString(item?.sourceCatalogItemId) ||
+        safeString(item?.itemId) ||
+        "";
+
+      let catalogDoc = catalogItemId ? catalogById.get(catalogItemId) : null;
+
+      // fallback temporaneo se manca catalogItemId
+      if (!catalogDoc) {
+        const fallbackKey = buildCatalogLookupKey({
+          category: item?.category ?? item?.kategorie,
+          brand: item?.brand ?? item?.marke,
+          model: item?.model,
+          name: item?.name ?? item?.beschreibung,
+        });
+
+        catalogDoc = fallbackKey ? catalogByCompositeKey.get(fallbackKey) : null;
+      }
+
+      return {
+        ...item,
+        catalogItemId: catalogItemId || (catalogDoc ? String(catalogDoc._id) : ""),
+        pdfSection: safeString(catalogDoc?.pdfSection),
+        catalogDescription: safeString(catalogDoc?.description),
+        catalogLongDescription: safeString(catalogDoc?.longDescription),
+        catalogFeatures: safeStringArray(catalogDoc?.features),
+        catalogWarranty: safeString(catalogDoc?.warranty),
+        catalogCompatibility: safeString(catalogDoc?.compatibility),
+        catalogNotes: safeString(catalogDoc?.notes),
+      };
+    });
+
+    // TEMP DEBUG: vedere se il bridge catalogo funziona
+    console.log(
+      "OFFER ENRICHED ITEMS SAMPLE:",
+      JSON.stringify(enrichedItems.slice(0, 5), null, 2)
+    );
 
     const partsTotalNet = Number(
       items.reduce((sum: number, item: any) => {
@@ -249,10 +347,7 @@ export async function POST(
       Math.max(0, grossPriceChf - subsidyChf).toFixed(2)
     );
 
-    const taxSavingsChf = safeNumber(
-      reportSummary?.taxSavingsChf,
-      0
-    );
+    const taxSavingsChf = safeNumber(reportSummary?.taxSavingsChf, 0);
 
     const effectiveCostChf = Number(
       Math.max(0, totalInvestmentChf - taxSavingsChf).toFixed(2)
@@ -272,30 +367,30 @@ export async function POST(
       safeString(profile?.companyName) ||
       "—";
 
- const batteryItems = items.filter((item: any) => {
-  const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
-  return category === "batterie" || category === "battery" || category === "speicher";
-});
+    const batteryItems = items.filter((item: any) => {
+      const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
+      return category === "batterie" || category === "battery" || category === "speicher";
+    });
 
-const wallboxItems = items.filter((item: any) => {
-  const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
-  return category === "ladestation" || category === "wallbox";
-});
+    const wallboxItems = items.filter((item: any) => {
+      const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
+      return category === "ladestation" || category === "wallbox";
+    });
 
-const batteryItem = batteryItems[0];
-const wallboxItem = wallboxItems[0];
+    const batteryItem = batteryItems[0];
+    const wallboxItem = wallboxItems[0];
 
-const batteryPriceChf = Number(
-  batteryItems.reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0).toFixed(2)
-);
+    const batteryPriceChf = Number(
+      batteryItems.reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0).toFixed(2)
+    );
 
-const wallboxPriceChf = Number(
-  wallboxItems.reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0).toFixed(2)
-);
+    const wallboxPriceChf = Number(
+      wallboxItems.reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0).toFixed(2)
+    );
 
-const baseSystemNetChf = Number(
-  Math.max(0, partsTotalNet - batteryPriceChf - wallboxPriceChf).toFixed(2)
-);
+    const baseSystemNetChf = Number(
+      Math.max(0, partsTotalNet - batteryPriceChf - wallboxPriceChf).toFixed(2)
+    );
 
     const offer = {
       title: safeString((planning as any)?.title) || "Photovoltaik-Angebot",
@@ -309,7 +404,7 @@ const baseSystemNetChf = Number(
       },
       companyName,
       pricing: {
-  netSystemPriceChf: baseSystemNetChf,
+        netSystemPriceChf: baseSystemNetChf,
         discountChf,
         discountPct,
         discountFromPctChf,
@@ -325,26 +420,57 @@ const baseSystemNetChf = Number(
         taxSavingsChf,
         effectiveCostChf,
       },
-options: {
-  batteryLabel: batteryItem
-    ? [
-        safeString(batteryItem?.brand ?? batteryItem?.marke),
-        safeString(batteryItem?.name ?? batteryItem?.beschreibung),
-      ]
-        .filter(Boolean)
-        .join(" ")
-    : "",
-  wallboxLabel: wallboxItem
-    ? [
-        safeString(wallboxItem?.brand ?? wallboxItem?.marke),
-        safeString(wallboxItem?.name ?? wallboxItem?.beschreibung),
-      ]
-        .filter(Boolean)
-        .join(" ")
-    : "",
-  batteryPriceChf,
-  wallboxPriceChf,
-},
+      options: {
+        batteryLabel: batteryItem
+          ? [
+              safeString(batteryItem?.brand ?? batteryItem?.marke),
+              safeString(batteryItem?.name ?? batteryItem?.beschreibung),
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "",
+        wallboxLabel: wallboxItem
+          ? [
+              safeString(wallboxItem?.brand ?? wallboxItem?.marke),
+              safeString(wallboxItem?.name ?? wallboxItem?.beschreibung),
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "",
+        batteryPriceChf,
+        wallboxPriceChf,
+      },
+
+      // PREPARAZIONE PER PAGINE 2+
+      detailItems: enrichedItems.map((item: any, index: number) => ({
+        position: index + 1,
+        category: safeString(item?.category ?? item?.kategorie),
+        brand: safeString(item?.brand ?? item?.marke),
+        model: safeString(item?.model),
+        name: safeString(item?.name ?? item?.beschreibung),
+        quantity: safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0),
+        unit: safeString(item?.unit),
+        unitLabel: safeString(item?.unitLabel),
+        unitPriceNet: safeNumber(
+          item?.unitPriceNet ??
+            item?.unitPrice ??
+            item?.einzelpreis ??
+            item?.priceNet ??
+            item?.priceChf,
+          0
+        ),
+        lineTotalNet: getItemLineTotal(item),
+
+        catalogItemId: safeString(item?.catalogItemId),
+        pdfSection: safeString(item?.pdfSection),
+
+        description: safeString(item?.catalogDescription),
+        longDescription: safeString(item?.catalogLongDescription),
+        features: safeStringArray(item?.catalogFeatures),
+        warranty: safeString(item?.catalogWarranty),
+        compatibility: safeString(item?.catalogCompatibility),
+        notes: safeString(item?.catalogNotes),
+      })),
     };
 
     const pdf = await PDFDocument.create();
@@ -377,15 +503,23 @@ options: {
       offerDate: todayFormatted,
       validUntil: validUntilFormatted,
 
-   moduleCount: offer.pv.moduleCount,
-batteryLabel: offer.options.batteryLabel,
-wallboxLabel: offer.options.wallboxLabel,
-batteryPriceChf: offer.options.batteryPriceChf,
-wallboxPriceChf: offer.options.wallboxPriceChf,
+      moduleCount: offer.pv.moduleCount,
+      batteryLabel: offer.options.batteryLabel,
+      wallboxLabel: offer.options.wallboxLabel,
+      batteryPriceChf: offer.options.batteryPriceChf,
+      wallboxPriceChf: offer.options.wallboxPriceChf,
 
       advisorName,
       advisorRole,
     });
+
+    // QUI DOPO aggiungeremo:
+    // await addDetailPages(pdf, {
+    //   offer,
+    //   company,
+    //   advisorName,
+    //   advisorRole,
+    // });
 
     const pdfBytes = await pdf.save();
 
