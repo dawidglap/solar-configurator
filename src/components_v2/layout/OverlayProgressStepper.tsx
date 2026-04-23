@@ -163,6 +163,38 @@ export default function OverlayProgressStepper() {
 
     try {
       setIsRedirecting(true);
+
+      if (target === "stueckliste" && step === "modules") {
+        try {
+          const snapshotDataUrl =
+            await window.__helionicCaptureProjectSnapshot?.();
+
+          if (snapshotDataUrl) {
+            await fetch(
+              `https://planner.helionic.ch/api/plannings/${planningId}/snapshot-cache`,
+              {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  snapshotDataUrl,
+                  type: "module-layout",
+                  createdAt: new Date().toISOString(),
+                }),
+              },
+            );
+
+            console.log("[Planner] Snapshot uploaded to temporary cache");
+          } else {
+            console.warn("[Planner] No snapshot captured");
+          }
+        } catch (err) {
+          console.warn("[Planner] Snapshot upload failed:", err);
+        }
+      }
+
       await savePlannerToDb(planningId);
       window.location.href = `https://app.helionic.ch/planung/${planningId}/${target}`;
     } catch (err) {
