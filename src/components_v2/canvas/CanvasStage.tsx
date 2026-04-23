@@ -139,9 +139,46 @@ function localToWorld(p: Pt, O: Pt, theta: number): Pt {
   return add(rot(p, theta), O);
 }
 
+declare global {
+  interface Window {
+    __helionicCaptureProjectSnapshot?: () => Promise<string | null>;
+  }
+}
+
 export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
+  useEffect(() => {
+    window.__helionicCaptureProjectSnapshot = async () => {
+      try {
+        const stage = stageRef.current?.getStage?.();
+
+        if (!stage) {
+          console.warn("[Planner] No Konva stage available for snapshot");
+          return null;
+        }
+
+        const dataUrl = stage.toDataURL({
+          pixelRatio: 2,
+          mimeType: "image/png",
+          quality: 1,
+        });
+
+        console.log("[Planner] Project snapshot captured", {
+          length: dataUrl.length,
+        });
+
+        return dataUrl;
+      } catch (err) {
+        console.warn("[Planner] Snapshot capture failed:", err);
+        return null;
+      }
+    };
+
+    return () => {
+      delete window.__helionicCaptureProjectSnapshot;
+    };
+  }, []);
 
   const step = usePlannerV2Store((s) => s.step);
   // store
