@@ -4,6 +4,7 @@ import { PDFDocument } from "pdf-lib";
 import { getCorsHeaders } from "@/lib/cors";
 import { addCoverPage } from "./pdf/cover-page";
 import { addDetailPages } from "./pdf/detail-pages";
+import { addProjectOverviewPage } from "./pdf/project-overview-page";
 
 export const runtime = "nodejs";
 
@@ -170,6 +171,7 @@ export async function POST(
     const companies = db.collection("companies");
     const users = db.collection("users");
     const catalogItems = db.collection("catalogItems");
+    const snapshotCache = db.collection("snapshotCache");
 
     const planning = await plannings.findOne({
       _id: planningObjectId,
@@ -476,6 +478,66 @@ export async function POST(
 
     const pdf = await PDFDocument.create();
 
+    const snapshotEntry = await snapshotCache.findOne({
+  planningId,
+  companyId: session.activeCompanyId,
+  expiresAt: { $gt: new Date() },
+});
+
+const projectSnapshotDataUrl = safeString(snapshotEntry?.snapshotDataUrl);
+
+const planner = data?.planner ?? {};
+const ist = data?.ist ?? {};
+const plannerSnapshot = planner?.snapshot ?? {};
+
+const selectedPanelId =
+  safeString(planner?.selectedPanelId) ||
+  safeString(summary?.selectedPanelId);
+
+const selectedPanel =
+  Array.isArray(planner?.catalogPanels)
+    ? planner.catalogPanels.find(
+        (p: any) => safeString(p?.id) === selectedPanelId
+      )
+    : null;
+
+const selectedPanelLabel = selectedPanel
+  ? [
+      safeString(selectedPanel?.brand),
+      safeString(selectedPanel?.model),
+      selectedPanel?.wp ? `${safeNumber(selectedPanel.wp)} W` : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+  : selectedPanelId || "—";
+
+const projectAddress =
+  safeString(plannerSnapshot?.address) ||
+  [
+    safeString(profile?.street || profile?.buildingStreet),
+    safeString(profile?.zip || profile?.buildingZip),
+    safeString(profile?.city || profile?.buildingCity),
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+const inverterLabel =
+  items
+    .filter((item: any) => {
+      const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
+      return category === "wechselrichter" || category === "inverter";
+    })
+    .map((item: any) =>
+      [
+        safeString(item?.brand ?? item?.marke),
+        safeString(item?.name ?? item?.beschreibung),
+      ]
+        .filter(Boolean)
+        .join(" ")
+    )
+    .filter(Boolean)
+    .join(", ") || "—";
+
     await addCoverPage(pdf, {
       title: offer.title,
       planningNumber: offer.planningNumber,
@@ -543,6 +605,34 @@ export async function POST(
       offer,
       company: companyForPdf,
     });
+
+    await addProjectOverviewPage(pdf, {
+  title: offer.title,
+  planningNumber: offer.planningNumber,
+
+  projectSnapshotDataUrl,
+
+  customerName: offer.customer.name,
+  projectAddress,
+
+  dcPowerKw: offer.pv.dcPowerKw,
+  moduleCount: offer.pv.moduleCount,
+  roofCount: safeNumber(summary?.roofCount, 0),
+  selectedPanelLabel,
+
+  inverterLabel,
+  batteryLabel: offer.options.batteryLabel,
+  wallboxLabel: offer.options.wallboxLabel,
+
+  roofType: safeString(ist?.roofType || ist?.roofShape),
+  roofCovering: safeString(ist?.roofCovering || ist?.roofCover),
+  electricityUsageKwh: safeNumber(
+    ist?.electricityUsageKwh || ist?.consumption,
+    0
+  ),
+
+  companyName: offer.companyName,
+});
 
     const pdfBytes = await pdf.save();
 
