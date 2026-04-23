@@ -44,6 +44,8 @@ function readSession(req: Request, secret: string) {
   }
 }
 
+/* ---------------- Helpers ---------------- */
+
 function safeString(v: unknown) {
   return typeof v === "string" ? v.trim() : "";
 }
@@ -69,6 +71,33 @@ function makeJsonResponse(origin: string | null, body: any, status: number) {
       ...getCorsHeaders(origin),
     },
   });
+}
+
+function getItemLineTotal(item: any) {
+  const directTotal = safeNumber(
+    item?.lineTotalNet ??
+      item?.lineTotal ??
+      item?.lineTotalChf ??
+      item?.totalNet ??
+      item?.totalChf,
+    NaN
+  );
+
+  if (Number.isFinite(directTotal)) {
+    return directTotal;
+  }
+
+  const qty = safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0);
+  const unitPrice = safeNumber(
+    item?.unitPriceNet ??
+      item?.unitPrice ??
+      item?.einzelpreis ??
+      item?.priceNet ??
+      item?.priceChf,
+    0
+  );
+
+  return qty * unitPrice;
 }
 
 /* ---------------- Route ---------------- */
@@ -98,10 +127,14 @@ export async function POST(
 
   let planningObjectId: ObjectId;
   let companyObjectId: ObjectId;
+  let userObjectId: ObjectId | null = null;
 
   try {
     planningObjectId = new ObjectId(planningId);
     companyObjectId = new ObjectId(String(session.activeCompanyId));
+    if (session.userId) {
+      userObjectId = new ObjectId(String(session.userId));
+    }
   } catch {
     return makeJsonResponse(origin, { ok: false, error: "Invalid id" }, 400);
   }
@@ -129,20 +162,20 @@ export async function POST(
       _id: companyObjectId,
     });
 
-    const user = await users.findOne({
-  _id: new ObjectId(String(session.userId)),
-});
+    const user = userObjectId
+      ? await users.findOne({
+          _id: userObjectId,
+        })
+      : null;
 
-const companyName = safeString(company?.name) || "Ihre Firma";
+    const companyName = safeString(company?.name) || "Ihre Firma";
 
-const advisorName =
-  [safeString(user?.firstName), safeString(user?.lastName)]
-    .filter(Boolean)
-    .join(" ") || companyName;
+    const advisorName =
+      [safeString(user?.firstName), safeString(user?.lastName)]
+        .filter(Boolean)
+        .join(" ") || companyName;
 
-const advisorRole = "Beratung";
-
-    
+    const advisorRole = "Beratung";
 
     const data = (planning as any)?.data ?? {};
     const profile = data?.profile ?? {};
@@ -153,14 +186,47 @@ const advisorRole = "Beratung";
 
     const items = Array.isArray(parts?.items) ? parts.items : [];
 
-    const partsTotalNet = items.reduce((sum: number, item: any) => {
-      const lineTotal = safeNumber(item?.lineTotalNet ?? item?.lineTotal, 0);
-      return sum + lineTotal;
-    }, 0);
+    const partsTotalNet = Number(
+      items.reduce((sum: number, item: any) => {
+        return sum + getItemLineTotal(item);
+      }, 0).toFixed(2)
+    );
+
+    const discountChf = safeNumber(
+      reportSummary?.discountChf ?? reportOptions?.discountChf,
+      0
+    );
+
+    const discountPct = safeNumber(
+      reportSummary?.discountPct ?? reportOptions?.discountPct,
+      0
+    );
+
+    const discountFromPctChf = Number(
+      (
+        reportSummary?.discountFromPctChf ??
+        (partsTotalNet * discountPct) / 100
+      ).toFixed(2)
+    );
+
+    const totalDiscountChf = Number(
+      (
+        reportSummary?.totalDiscountChf ??
+        (discountChf + discountFromPctChf)
+      ).toFixed(2)
+    );
+
+    const netAfterDiscountChf = Number(
+      Math.max(0, partsTotalNet - totalDiscountChf).toFixed(2)
+    );
 
     const vatRatePct = 8.1;
-    const vatAmountChf = Number((partsTotalNet * (vatRatePct / 100)).toFixed(2));
-    const grossPriceChf = Number((partsTotalNet + vatAmountChf).toFixed(2));
+    const vatAmountChf = Number(
+      (netAfterDiscountChf * (vatRatePct / 100)).toFixed(2)
+    );
+    const grossPriceChf = Number(
+      (netAfterDiscountChf + vatAmountChf).toFixed(2)
+    );
 
     const dcPowerKw = safeNumber(summary?.dcPowerKw, 0);
 
@@ -183,7 +249,11 @@ const advisorRole = "Beratung";
       Math.max(0, grossPriceChf - subsidyChf).toFixed(2)
     );
 
-    const taxSavingsChf = 0;
+    const taxSavingsChf = safeNumber(
+      reportSummary?.taxSavingsChf,
+      0
+    );
+
     const effectiveCostChf = Number(
       Math.max(0, totalInvestmentChf - taxSavingsChf).toFixed(2)
     );
@@ -225,6 +295,11 @@ const advisorRole = "Beratung";
       companyName,
       pricing: {
         netSystemPriceChf: partsTotalNet,
+        discountChf,
+        discountPct,
+        discountFromPctChf,
+        totalDiscountChf,
+        netAfterDiscountChf,
         vatRatePct,
         vatAmountChf,
         grossPriceChf,
@@ -265,6 +340,11 @@ const advisorRole = "Beratung";
       companyName: offer.companyName,
 
       netSystemPriceChf: offer.pricing.netSystemPriceChf,
+      discountChf: offer.pricing.discountChf,
+      discountPct: offer.pricing.discountPct,
+      discountFromPctChf: offer.pricing.discountFromPctChf,
+      totalDiscountChf: offer.pricing.totalDiscountChf,
+
       vatRatePct: offer.pricing.vatRatePct,
       vatAmountChf: offer.pricing.vatAmountChf,
       grossPriceChf: offer.pricing.grossPriceChf,
@@ -285,7 +365,7 @@ const advisorRole = "Beratung";
       wallboxLabel: offer.options.wallboxLabel,
 
       advisorName,
-advisorRole,
+      advisorRole,
     });
 
     const pdfBytes = await pdf.save();

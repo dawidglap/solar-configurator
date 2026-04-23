@@ -28,8 +28,14 @@ type OfferCoverData = {
   moduleCount?: number;
   batteryLabel?: string;
   wallboxLabel?: string;
+
   advisorName?: string;
-advisorRole?: string;
+  advisorRole?: string;
+
+  discountChf?: number;
+  discountPct?: number;
+  discountFromPctChf?: number;
+  totalDiscountChf?: number;
 };
 
 type Row = {
@@ -115,6 +121,11 @@ function drawLine(
   });
 }
 
+function truncate(text: string, max = 52) {
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 function drawPricingRows(args: {
   page: PDFPage;
   rows: Row[];
@@ -124,12 +135,14 @@ function drawPricingRows(args: {
   lineHeight?: number;
   font: PDFFont;
   bold: PDFFont;
+  size?: number;
 }) {
   const { page, rows, x, y, width, font, bold } = args;
-  const lineHeight = args.lineHeight ?? 22;
+  const lineHeight = args.lineHeight ?? 19;
+  const size = args.size ?? 10;
 
   const col1 = x;
-  const col2 = x + 120;
+  const col2 = x + 118;
   const col3 = x + width;
 
   let cursorY = y;
@@ -138,14 +151,17 @@ function drawPricingRows(args: {
     const rowFont = row.bold ? bold : font;
     const rowColor = rgb(0.17, 0.29, 0.35);
 
-    drawText(page, row.left, col1, cursorY, 11, rowFont, rowColor);
-
-    if (row.middle) {
-      drawText(page, row.middle, col2, cursorY, 11, rowFont, rowColor);
+    if (row.left) {
+      drawText(page, row.left, col1, cursorY, size, rowFont, rowColor);
     }
 
-    const rightWidth = rowFont.widthOfTextAtSize(row.right, 11);
-    drawText(page, row.right, col3 - rightWidth, cursorY, 11, rowFont, rowColor);
+    if (row.middle) {
+      drawText(page, truncate(row.middle, 44), col2, cursorY, size, rowFont, rowColor);
+    }
+
+    const rightText = row.right || "";
+    const rightWidth = rowFont.widthOfTextAtSize(rightText, size);
+    drawText(page, rightText, col3 - rightWidth, cursorY, size, rowFont, rowColor);
 
     cursorY -= lineHeight;
   }
@@ -168,20 +184,20 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
 
   const pageMarginX = 44;
 
- const heroX = 44;
-const heroY = 580;
-const heroW = width - 88;
-const heroH = 220;
+  const heroX = 44;
+  const heroY = 598;
+  const heroW = width - 88;
+  const heroH = 190;
 
-const logoBoxX = 56;
-const logoBoxY = heroY + heroH - 74;
-const logoBoxW = 138;
-const logoBoxH = 52;
+  const logoBoxX = 56;
+  const logoBoxY = heroY + heroH - 60;
+  const logoBoxW = 128;
+  const logoBoxH = 44;
 
-const titleBoxX = 58;
-const titleBoxW = width - 116;
-const titleBoxH = 102;
-const titleBoxY = heroY - 14;
+  const titleBoxX = 58;
+  const titleBoxW = width - 116;
+  const titleBoxH = 86;
+  const titleBoxY = heroY - 12;
 
   page.drawRectangle({
     x: 0,
@@ -193,7 +209,6 @@ const titleBoxY = heroY - 14;
 
   const heroBytes = await readPublicAsset("hero-pdf.jpg");
   const heroImage = await pdf.embedJpg(heroBytes);
-
   const heroDims = fitCover(heroImage.width, heroImage.height, heroW, heroH);
 
   page.drawImage(heroImage, {
@@ -213,12 +228,11 @@ const titleBoxY = heroY - 14;
 
   const logoBytes = await readPublicAsset("logo-demo.jpg");
   const logoImage = await pdf.embedJpg(logoBytes);
-
   const logoDims = fitContain(
     logoImage.width,
     logoImage.height,
-    logoBoxW - 22,
-    logoBoxH - 16
+    logoBoxW - 18,
+    logoBoxH - 12
   );
 
   page.drawImage(logoImage, {
@@ -239,43 +253,43 @@ const titleBoxY = heroY - 14;
   const title = data.title || "Photovoltaik-Anlage";
   const bigKwText = `${money(data.kWp)} kWp`;
 
-  drawText(page, title, titleBoxX + 16, titleBoxY + 66, 16, font, textDark);
-drawText(page, bigKwText, titleBoxX + 16, titleBoxY + 34, 22, bold, textDark);
+  drawText(page, truncate(title, 42), titleBoxX + 16, titleBoxY + 54, 14.5, font, textDark);
+  drawText(page, bigKwText, titleBoxX + 16, titleBoxY + 24, 18.5, bold, textDark);
 
-drawLine(
-  page,
-  titleBoxX + 16,
-  titleBoxY + 18,
-  titleBoxX + titleBoxW - 16,
-  titleBoxY + 18,
-  2.5,
-  teal
-);
+  drawLine(
+    page,
+    titleBoxX + 16,
+    titleBoxY + 12,
+    titleBoxX + titleBoxW - 16,
+    titleBoxY + 12,
+    2.3,
+    teal
+  );
 
-drawText(
-  page,
-  `Offerte Nr.  ${data.planningNumber || "—"}`,
-  titleBoxX + 16,
-  titleBoxY + 3,
-  9.5,
-  font,
-  textMuted
-);
+  drawText(
+    page,
+    `Offerte Nr.  ${data.planningNumber || "—"}`,
+    titleBoxX + 16,
+    titleBoxY - 2,
+    8.8,
+    font,
+    textMuted
+  );
 
-drawText(
-  page,
-  `Datum: ${data.offerDate || "—"}`,
-  titleBoxX + titleBoxW - 118,
-  titleBoxY + 3,
-  9.5,
-  font,
-  textMuted
-);
+  drawText(
+    page,
+    `Datum: ${data.offerDate || "—"}`,
+    titleBoxX + titleBoxW - 115,
+    titleBoxY - 2,
+    8.8,
+    font,
+    textMuted
+  );
 
-  let y = 515;
+  let y = 500;
 
-  drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 15, font, textDark);
-  y -= 26;
+  drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 12.5, bold, textDark);
+  y -= 22;
 
   const introLines = [
     `Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit ${data.companyName || "uns"}.`,
@@ -284,13 +298,13 @@ drawText(
   ];
 
   for (const line of introLines) {
-    drawText(page, line, pageMarginX, y, 10.5, font, textDark);
-    y -= 14;
+    drawText(page, line, pageMarginX, y, 9.2, font, textDark);
+    y -= 12;
   }
 
-  y -= 22;
-  drawText(page, "Photovoltaik-Anlage", pageMarginX, y, 14, bold, textDark);
-  y -= 20;
+  y -= 16;
+  drawText(page, "Photovoltaik-Anlage", pageMarginX, y, 12.2, bold, textDark);
+  y -= 16;
 
   const grossPrice = Number(data.grossPriceChf || 0);
   const automaticPvSubsidy = Number(data.automaticPvSubsidyChf || 0);
@@ -302,14 +316,38 @@ drawText(
       ? Number(data.effectiveCostChf)
       : Math.max(0, Number(data.totalInvestmentChf || 0) - taxSavings);
 
-  const summaryLabelParts = [
+  const discountChf = Number(data.discountChf || 0);
+  const discountPct = Number(data.discountPct || 0);
+  const discountFromPctChf = Number(data.discountFromPctChf || 0);
+  const totalDiscountChf = Number(data.totalDiscountChf || 0);
+
+  const systemSummary = [
     data.kWp > 0 ? `${money(data.kWp)} kWp` : "",
     data.moduleCount ? `${data.moduleCount} Module` : "",
-    data.batteryLabel ? data.batteryLabel : "",
-    data.wallboxLabel ? data.wallboxLabel : "",
-  ].filter(Boolean);
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
-  const systemSummary = summaryLabelParts.join(" · ");
+  const optionRows: Row[] = [
+    ...(data.batteryLabel
+      ? [
+          {
+            left: "",
+            middle: `Batterie: ${truncate(data.batteryLabel, 36)}`,
+            right: "",
+          } satisfies Row,
+        ]
+      : []),
+    ...(data.wallboxLabel
+      ? [
+          {
+            left: "",
+            middle: `Ladestation: ${truncate(data.wallboxLabel, 36)}`,
+            right: "",
+          } satisfies Row,
+        ]
+      : []),
+  ];
 
   const tableX = pageMarginX;
   const tableW = 390;
@@ -320,6 +358,29 @@ drawText(
       middle: systemSummary || "Solaranlage",
       right: `${money(data.netSystemPriceChf)} CHF`,
     },
+    ...optionRows,
+    ...(totalDiscountChf > 0
+      ? [
+          ...(discountPct > 0
+            ? [
+                {
+                  left: "",
+                  middle: `Rabatt ${pct(discountPct)} %`,
+                  right: `-${money(discountFromPctChf)} CHF`,
+                } satisfies Row,
+              ]
+            : []),
+          ...(discountChf > 0
+            ? [
+                {
+                  left: "",
+                  middle: "Zusätzlicher Rabatt",
+                  right: `-${money(discountChf)} CHF`,
+                } satisfies Row,
+              ]
+            : []),
+        ]
+      : []),
     {
       left: "",
       middle: `MWST ${pct(data.vatRatePct)} %`,
@@ -341,9 +402,11 @@ drawText(
     width: tableW,
     font,
     bold,
+    size: 9.5,
+    lineHeight: 17,
   });
 
-  drawLine(page, tableX, y + 8, tableX + tableW, y + 8, 1, lineGray);
+  drawLine(page, tableX, y + 7, tableX + tableW, y + 7, 1, lineGray);
 
   if (totalSubsidy > 0) {
     const subsidyRows: Row[] = [
@@ -367,7 +430,7 @@ drawText(
         : []),
     ];
 
-    y -= 12;
+    y -= 10;
     y = drawPricingRows({
       page,
       rows: subsidyRows,
@@ -376,12 +439,14 @@ drawText(
       width: tableW,
       font,
       bold,
+      size: 9.5,
+      lineHeight: 17,
     });
 
-    drawLine(page, tableX, y + 8, tableX + tableW, y + 8, 1, lineGray);
+    drawLine(page, tableX, y + 7, tableX + tableW, y + 7, 1, lineGray);
   }
 
-  y -= 12;
+  y -= 10;
 
   const investmentRows: Row[] = [
     {
@@ -414,36 +479,64 @@ drawText(
     width: tableW,
     font,
     bold,
+    size: 9.5,
+    lineHeight: 17,
   });
 
-  drawLine(page, tableX, y + 8, tableX + tableW, y + 8, 1, lineGray);
+  drawLine(page, tableX, y + 7, tableX + tableW, y + 7, 1, lineGray);
 
-  y -= 18;
+  y -= 14;
   drawText(
     page,
     "*   Kosten gelten bei Bestellung aller aufgeführten Systeme.",
     tableX,
     y,
-    9,
+    7.8,
     font,
     textDark
   );
-  y -= 12;
+  y -= 10;
   drawText(
     page,
     `**  Pronovo-Einmalvergütung: ${data.kWp <= 30 ? "360 CHF/kWp" : "300 CHF/kWp"} auf Basis von ${money(data.kWp)} kWp.`,
     tableX,
     y,
-    9,
+    7.8,
     font,
     textDark
   );
-  y -= 12;
+  y -= 10;
   drawText(
     page,
     "    Weitere Fördergelder (z. B. Kanton / Gemeinde) wurden, falls vorhanden, separat berücksichtigt.",
     tableX,
     y,
+    7.8,
+    font,
+    textDark
+  );
+  y -= 10;
+  drawText(
+    page,
+    "    Förderungen und Steuerersparnisse sind unverbindliche Schätzwerte und nicht garantiert.",
+    tableX,
+    y,
+    7.8,
+    font,
+    textDark
+  );
+
+  y -= 22;
+  drawText(page, "Offerte gültig bis:", tableX, y, 9.4, font, textDark);
+  drawText(page, data.validUntil || "—", tableX + 118, y, 9.4, bold, textDark);
+  drawLine(page, tableX, y - 7, tableX + 270, y - 7, 1, lineGray);
+
+  y -= 24;
+  drawText(
+    page,
+    "Als Ihr persönlicher Ansprechpartner stehen wir Ihnen jederzeit gerne",
+    tableX,
+    y,
     9,
     font,
     textDark
@@ -451,7 +544,7 @@ drawText(
   y -= 12;
   drawText(
     page,
-    "    Förderungen und Steuerersparnisse sind unverbindliche Schätzwerte und nicht garantiert.",
+    "zur Verfügung. Wir freuen uns, von Ihnen zu hören!",
     tableX,
     y,
     9,
@@ -459,46 +552,28 @@ drawText(
     textDark
   );
 
-  y -= 28;
-  drawText(page, "Offerte gültig bis:", tableX, y, 10.5, font, textDark);
-  drawText(page, data.validUntil || "—", tableX + 118, y, 10.5, bold, textDark);
-  drawLine(page, tableX, y - 8, tableX + 270, y - 8, 1, lineGray);
+  y -= 26;
+  drawText(page, "Mit freundlichen Grüssen", tableX, y, 9.2, font, textDark);
 
-  y -= 34;
+  y -= 22;
   drawText(
     page,
-    "Als Ihr persönlicher Ansprechpartner stehen wir Ihnen jederzeit gerne",
+    data.advisorName || data.companyName || "—",
     tableX,
     y,
-    10.5,
-    font,
-    textDark
-  );
-  y -= 14;
-  drawText(
-    page,
-    "zur Verfügung. Wir freuen uns, von Ihnen zu hören!",
-    tableX,
-    y,
-    10.5,
-    font,
+    12.5,
+    bold,
     textDark
   );
 
-y -= 34;
-drawText(page, "Mit freundlichen Grüssen", tableX, y, 10.5, font, textDark);
-
-y -= 28;
-drawText(page, data.advisorName || data.companyName || "—", tableX, y, 15, bold, textDark);
-
-y -= 16;
-drawText(
-  page,
-  `${data.advisorRole || "Beratung"} · ${data.companyName || "—"}`,
-  tableX,
-  y,
-  9.5,
-  font,
-  textMuted
-);
+  y -= 13;
+  drawText(
+    page,
+    `${data.advisorRole || "Beratung"} · ${data.companyName || "—"}`,
+    tableX,
+    y,
+    8.5,
+    font,
+    textMuted
+  );
 }
