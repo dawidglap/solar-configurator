@@ -514,9 +514,34 @@ export async function POST(
       advisorRole,
     });
 
-    await addDetailPages(pdf, {
+
+        const companyForPdf = company
+      ? {
+          name: safeString(company?.name),
+          pdfSettings: {
+            showFooter:
+              typeof (company as any)?.pdfSettings?.showFooter === "boolean"
+                ? (company as any).pdfSettings.showFooter
+                : true,
+            footerCompanyName: safeString((company as any)?.pdfSettings?.footerCompanyName),
+            footerAddressLine: safeString((company as any)?.pdfSettings?.footerAddressLine),
+            footerEmail: safeString((company as any)?.pdfSettings?.footerEmail),
+            footerWebsite: safeString((company as any)?.pdfSettings?.footerWebsite),
+            footerPhone: safeString((company as any)?.pdfSettings?.footerPhone),
+            footerMobile: safeString((company as any)?.pdfSettings?.footerMobile),
+            footerBankName: safeString((company as any)?.pdfSettings?.footerBankName),
+            footerAccountHolder: safeString((company as any)?.pdfSettings?.footerAccountHolder),
+            footerIban: safeString((company as any)?.pdfSettings?.footerIban),
+            footerBic: safeString((company as any)?.pdfSettings?.footerBic),
+            footerVatNumber: safeString((company as any)?.pdfSettings?.footerVatNumber),
+            footerUidNumber: safeString((company as any)?.pdfSettings?.footerUidNumber),
+          },
+        }
+      : null;
+
+       await addDetailPages(pdf, {
       offer,
-      company,
+      company: companyForPdf,
     });
 
     const pdfBytes = await pdf.save();
