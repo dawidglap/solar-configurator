@@ -28,14 +28,16 @@ type OfferCoverData = {
   moduleCount?: number;
   batteryLabel?: string;
   wallboxLabel?: string;
-
-  advisorName?: string;
-  advisorRole?: string;
+  batteryPriceChf?: number;
+  wallboxPriceChf?: number;
 
   discountChf?: number;
   discountPct?: number;
   discountFromPctChf?: number;
   totalDiscountChf?: number;
+
+  advisorName?: string;
+  advisorRole?: string;
 };
 
 type Row = {
@@ -156,7 +158,7 @@ function drawPricingRows(args: {
     }
 
     if (row.middle) {
-      drawText(page, truncate(row.middle, 44), col2, cursorY, size, rowFont, rowColor);
+      drawText(page, truncate(row.middle, 52), col2, cursorY, size, rowFont, rowColor);
     }
 
     const rightText = row.right || "";
@@ -171,7 +173,7 @@ function drawPricingRows(args: {
 
 export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const page = pdf.addPage([595.28, 841.89]);
-  const { width, height } = page.getSize();
+  const { width } = page.getSize();
 
   const font = await pdf.embedFont("Helvetica");
   const bold = await pdf.embedFont("Helvetica-Bold");
@@ -194,16 +196,16 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const logoBoxW = 128;
   const logoBoxH = 44;
 
-  const titleBoxX = 58;
-  const titleBoxW = width - 116;
-  const titleBoxH = 86;
-  const titleBoxY = heroY - 12;
+  const titleBoxX = 26;
+  const titleBoxW = width - 52;
+  const titleBoxH = 116;
+  const titleBoxY = heroY - 24;
 
   page.drawRectangle({
     x: 0,
     y: 0,
     width,
-    height,
+    height: 841.89,
     color: rgb(1, 1, 1),
   });
 
@@ -253,16 +255,19 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const title = data.title || "Photovoltaik-Anlage";
   const bigKwText = `${money(data.kWp)} kWp`;
 
-  drawText(page, truncate(title, 42), titleBoxX + 16, titleBoxY + 54, 14.5, font, textDark);
-  drawText(page, bigKwText, titleBoxX + 16, titleBoxY + 24, 18.5, bold, textDark);
+  const titleFontSize =
+    title.length > 48 ? 13.5 : title.length > 40 ? 14.5 : 15.5;
+
+  drawText(page, title, titleBoxX + 16, titleBoxY + 74, titleFontSize, font, textDark);
+  drawText(page, bigKwText, titleBoxX + 16, titleBoxY + 38, 21.5, bold, textDark);
 
   drawLine(
     page,
     titleBoxX + 16,
-    titleBoxY + 12,
+    titleBoxY + 26,
     titleBoxX + titleBoxW - 16,
-    titleBoxY + 12,
-    2.3,
+    titleBoxY + 26,
+    2.5,
     teal
   );
 
@@ -270,18 +275,21 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     page,
     `Offerte Nr.  ${data.planningNumber || "—"}`,
     titleBoxX + 16,
-    titleBoxY - 2,
-    8.8,
+    titleBoxY + 9,
+    9.5,
     font,
     textMuted
   );
 
+  const offerDateText = `Datum: ${data.offerDate || "—"}`;
+  const offerDateWidth = font.widthOfTextAtSize(offerDateText, 9.5);
+
   drawText(
     page,
-    `Datum: ${data.offerDate || "—"}`,
-    titleBoxX + titleBoxW - 115,
-    titleBoxY - 2,
-    8.8,
+    offerDateText,
+    titleBoxX + titleBoxW - 16 - offerDateWidth,
+    titleBoxY + 9,
+    9.5,
     font,
     textMuted
   );
@@ -333,8 +341,11 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
       ? [
           {
             left: "",
-            middle: `Batterie: ${truncate(data.batteryLabel, 36)}`,
-            right: "",
+            middle: `Batterie: ${truncate(data.batteryLabel, 34)}`,
+            right:
+              (data.batteryPriceChf ?? 0) > 0
+                ? `${money(data.batteryPriceChf)} CHF`
+                : "—",
           } satisfies Row,
         ]
       : []),
@@ -342,15 +353,18 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
       ? [
           {
             left: "",
-            middle: `Ladestation: ${truncate(data.wallboxLabel, 36)}`,
-            right: "",
+            middle: `Ladestation: ${truncate(data.wallboxLabel, 34)}`,
+            right:
+              (data.wallboxPriceChf ?? 0) > 0
+                ? `${money(data.wallboxPriceChf)} CHF`
+                : "—",
           } satisfies Row,
         ]
       : []),
   ];
 
   const tableX = pageMarginX;
-  const tableW = 390;
+  const tableW = 430;
 
   const costRows: Row[] = [
     {

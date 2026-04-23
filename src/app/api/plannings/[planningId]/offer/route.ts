@@ -272,15 +272,30 @@ export async function POST(
       safeString(profile?.companyName) ||
       "—";
 
-    const batteryItem = items.find((item: any) => {
-      const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
-      return category === "batterie" || category === "battery" || category === "speicher";
-    });
+ const batteryItems = items.filter((item: any) => {
+  const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
+  return category === "batterie" || category === "battery" || category === "speicher";
+});
 
-    const wallboxItem = items.find((item: any) => {
-      const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
-      return category === "ladestation" || category === "wallbox";
-    });
+const wallboxItems = items.filter((item: any) => {
+  const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
+  return category === "ladestation" || category === "wallbox";
+});
+
+const batteryItem = batteryItems[0];
+const wallboxItem = wallboxItems[0];
+
+const batteryPriceChf = Number(
+  batteryItems.reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0).toFixed(2)
+);
+
+const wallboxPriceChf = Number(
+  wallboxItems.reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0).toFixed(2)
+);
+
+const baseSystemNetChf = Number(
+  Math.max(0, partsTotalNet - batteryPriceChf - wallboxPriceChf).toFixed(2)
+);
 
     const offer = {
       title: safeString((planning as any)?.title) || "Photovoltaik-Angebot",
@@ -294,7 +309,7 @@ export async function POST(
       },
       companyName,
       pricing: {
-        netSystemPriceChf: partsTotalNet,
+  netSystemPriceChf: baseSystemNetChf,
         discountChf,
         discountPct,
         discountFromPctChf,
@@ -310,24 +325,26 @@ export async function POST(
         taxSavingsChf,
         effectiveCostChf,
       },
-      options: {
-        batteryLabel: batteryItem
-          ? [
-              safeString(batteryItem?.brand ?? batteryItem?.marke),
-              safeString(batteryItem?.name ?? batteryItem?.beschreibung),
-            ]
-              .filter(Boolean)
-              .join(" ")
-          : "",
-        wallboxLabel: wallboxItem
-          ? [
-              safeString(wallboxItem?.brand ?? wallboxItem?.marke),
-              safeString(wallboxItem?.name ?? wallboxItem?.beschreibung),
-            ]
-              .filter(Boolean)
-              .join(" ")
-          : "",
-      },
+options: {
+  batteryLabel: batteryItem
+    ? [
+        safeString(batteryItem?.brand ?? batteryItem?.marke),
+        safeString(batteryItem?.name ?? batteryItem?.beschreibung),
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "",
+  wallboxLabel: wallboxItem
+    ? [
+        safeString(wallboxItem?.brand ?? wallboxItem?.marke),
+        safeString(wallboxItem?.name ?? wallboxItem?.beschreibung),
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "",
+  batteryPriceChf,
+  wallboxPriceChf,
+},
     };
 
     const pdf = await PDFDocument.create();
@@ -360,9 +377,11 @@ export async function POST(
       offerDate: todayFormatted,
       validUntil: validUntilFormatted,
 
-      moduleCount: offer.pv.moduleCount,
-      batteryLabel: offer.options.batteryLabel,
-      wallboxLabel: offer.options.wallboxLabel,
+   moduleCount: offer.pv.moduleCount,
+batteryLabel: offer.options.batteryLabel,
+wallboxLabel: offer.options.wallboxLabel,
+batteryPriceChf: offer.options.batteryPriceChf,
+wallboxPriceChf: offer.options.wallboxPriceChf,
 
       advisorName,
       advisorRole,
