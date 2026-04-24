@@ -650,14 +650,17 @@ function addWirtschaftProduktionErsparnisPage(
 
   txt(page, "Ersparnis", 310, 423, 9, bold, C.dark);
 
-  txt(page, "Pro Monat", 310, 398, 7.3, font, C.muted);
-  txt(page, fmtChf(Math.round(annual / 12)), 310, 382, 11, bold, C.dark);
+ const col1 = 310;
+const col2 = 410;
 
-  txt(page, "Pro Jahr", 405, 398, 7.3, font, C.muted);
-  txt(page, fmtChf(annual), 405, 382, 11, bold, C.dark);
+txt(page, "Pro Monat", col1, 398, 7, font, C.muted);
+txt(page, fmtChf(Math.round(annual / 12)), col1, 382, 10, bold, C.dark);
 
-  txt(page, "In 20 Jahren", 310, 362, 7.3, font, C.muted);
-  txt(page, fmtChf(annual * 20), 310, 346, 12, bold, C.green);
+txt(page, "Pro Jahr", col2, 398, 7, font, C.muted);
+txt(page, fmtChf(annual), col2, 382, 10, bold, C.dark);
+
+txt(page, "In 20 Jahren", col1, 360, 7, font, C.muted);
+txt(page, fmtChf(annual * 20), col1, 345, 11, bold, C.green);
 
   // Cashflow
   drawSectionTitle(page, "Kumulierter Cashflow über 25 Jahre", 44, 310, bold);
@@ -677,15 +680,17 @@ function addWirtschaftProduktionErsparnisPage(
     mode: "cashflow",
   });
 
-  txt(
-    page,
-    `Die Investition amortisiert sich rechnerisch nach ca. ${r.breakEvenYears != null ? fmtNum(r.breakEvenYears, 1) : "—"} Jahren. Der Nutzen entsteht vor allem durch Eigenverbrauch, Einspeisevergütung und Förderbeiträge.`,
-    44,
-    84,
-    8,
-    font,
-    C.dark
-  );
+drawParagraph(
+  page,
+  `Die Investition amortisiert sich rechnerisch nach ca. ${r.breakEvenYears != null ? fmtNum(r.breakEvenYears, 1) : "—"} Jahren. Der Nutzen entsteht vor allem durch Eigenverbrauch, Einspeisevergütung und Förderbeiträge.`,
+  44,
+  90,
+  105,
+  12,
+  font,
+  8,
+  C.dark
+);
 
   footer(page, font, data.companyName);
 }
