@@ -207,7 +207,7 @@ export async function POST(
     const parts = data?.parts ?? {};
     const reportOptions = data?.reportOptions ?? {};
     const summary = (planning as any)?.summary ?? {};
-    const reportSummary = (planning as any)?.reportSummary ?? data?.reportSummary ?? null;
+    let reportSummary = (planning as any)?.reportSummary ?? data?.reportSummary ?? null;
 
     const items = Array.isArray(parts?.items) ? parts.items : [];
 
@@ -224,6 +224,34 @@ export async function POST(
         isActive: true,
       })
       .toArray();
+
+      if (!reportSummary) {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "https://planner.helionic.ch";
+
+  const reportRes = await fetch(
+    `${baseUrl}/api/plannings/${planningId}/report-summary`,
+    {
+      method: "GET",
+      headers: {
+        cookie: req.headers.get("cookie") || "",
+        accept: "application/json",
+      },
+      cache: "no-store",
+    }
+  );
+
+  const reportJson = await reportRes.json().catch(() => null);
+
+  if (reportJson?.ok && reportJson?.reportSummary) {
+    reportSummary = reportJson.reportSummary;
+  }
+
+  console.log("OFFER LIVE REPORT SUMMARY:", reportSummary);
+}
 
     const catalogById = new Map<string, any>();
     const catalogByCompositeKey = new Map<string, any>();
