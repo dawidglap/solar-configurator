@@ -128,56 +128,8 @@ function drawKpi(args: {
     borderWidth: 0.6,
   });
 
-  txt(page, label, x + 10, y + h - 17, 7.2, font, C.muted);
-  txt(page, value, x + 10, y + 13, 13, bold, color);
-}
-
-function drawSectionTitle(
-  page: PDFPage,
-  text: string,
-  x: number,
-  y: number,
-  bold: PDFFont
-) {
-  txt(page, text, x, y, 12.5, bold, C.dark);
-
-  page.drawLine({
-    start: { x, y: y - 9 },
-    end: { x: 551, y: y - 9 },
-    thickness: 0.7,
-    color: C.border,
-  });
-}
-
-function drawParagraph(
-  page: PDFPage,
-  text: string,
-  x: number,
-  y: number,
-  maxChars: number,
-  lineHeight: number,
-  font: PDFFont,
-  size = 8.2,
-  color = C.dark
-) {
-  const words = text.split(/\s+/);
-  let line = "";
-  let yy = y;
-
-  for (const word of words) {
-    const next = line ? `${line} ${word}` : word;
-
-    if (next.length > maxChars) {
-      txt(page, line, x, yy, size, font, color);
-      yy -= lineHeight;
-      line = word;
-    } else {
-      line = next;
-    }
-  }
-
-  if (line) txt(page, line, x, yy, size, font, color);
-  return yy - lineHeight;
+  txt(page, label, x + 9, y + h - 14, 6.3, font, C.muted);
+  txt(page, value, x + 9, y + 10, 9.5, bold, color);
 }
 
 function niceCeil(value: number) {
@@ -231,10 +183,10 @@ function drawLineChart(args: {
   const rawMax = Math.max(1, ...data.flatMap((d) => [d.production, d.consumption]));
   const max = niceCeil(rawMax);
 
-  const plotX = x + 42;
-  const plotY = y + 28;
-  const plotW = w - 58;
-  const plotH = h - 58;
+  const plotX = x + 30;
+  const plotY = y + 22;
+  const plotW = w - 42;
+  const plotH = h - 45;
 
   page.drawRectangle({
     x,
@@ -243,21 +195,21 @@ function drawLineChart(args: {
     height: h,
     color: rgb(0.985, 0.99, 0.99),
     borderColor: C.border,
-    borderWidth: 0.6,
+    borderWidth: 0.5,
   });
 
-  for (let i = 0; i <= 4; i++) {
-    const value = (max / 4) * i;
-    const yy = plotY + (plotH / 4) * i;
+  for (let i = 0; i <= 3; i++) {
+    const value = (max / 3) * i;
+    const yy = plotY + (plotH / 3) * i;
 
     page.drawLine({
       start: { x: plotX, y: yy },
       end: { x: plotX + plotW, y: yy },
-      thickness: 0.35,
+      thickness: 0.3,
       color: rgb(0.86, 0.88, 0.89),
     });
 
-    rightTxt(page, fmtAxis(value), plotX - 8, yy - 2, 6.4, font, C.muted);
+    rightTxt(page, fmtAxis(value), plotX - 6, yy - 2, 5.4, font, C.muted);
   }
 
   const point = (val: number, i: number) => ({
@@ -268,23 +220,23 @@ function drawLineChart(args: {
   for (let i = 0; i < data.length - 1; i++) {
     const a = point(data[i].production, i);
     const b = point(data[i + 1].production, i + 1);
-    page.drawLine({ start: a, end: b, thickness: 2, color: C.green });
+    page.drawLine({ start: a, end: b, thickness: 1.5, color: C.green });
 
     const c = point(data[i].consumption, i);
     const d = point(data[i + 1].consumption, i + 1);
-    page.drawLine({ start: c, end: d, thickness: 2, color: C.orange });
+    page.drawLine({ start: c, end: d, thickness: 1.5, color: C.orange });
   }
 
   data.forEach((d, i) => {
     const px = plotX + (plotW / (data.length - 1)) * i;
-    txt(page, d.month, px - 2, y + 11, 6.5, font, C.muted);
+    txt(page, d.month, px - 1.5, y + 8, 5.4, font, C.muted);
   });
 
-  page.drawCircle({ x: x + 185, y: y + h - 20, size: 3, color: C.green });
-  txt(page, "Produktion", x + 193, y + h - 23, 7.3, font, C.muted);
+  page.drawCircle({ x: x + 78, y: y + h - 14, size: 2.3, color: C.green });
+  txt(page, "Produktion", x + 84, y + h - 16, 5.8, font, C.muted);
 
-  page.drawCircle({ x: x + 285, y: y + h - 20, size: 3, color: C.orange });
-  txt(page, "Verbrauch", x + 293, y + h - 23, 7.3, font, C.muted);
+  page.drawCircle({ x: x + 147, y: y + h - 14, size: 2.3, color: C.orange });
+  txt(page, "Verbrauch", x + 153, y + h - 16, 5.8, font, C.muted);
 }
 
 function drawBarChart(args: {
@@ -303,17 +255,14 @@ function drawBarChart(args: {
   const min = Math.min(0, ...values);
   const max = Math.max(1, ...values);
 
-  const limit = mode === "cashflow"
-    ? Math.max(Math.abs(min), Math.abs(max))
-    : niceCeil(max);
-
+  const limit = mode === "cashflow" ? Math.max(Math.abs(min), Math.abs(max)) : niceCeil(max);
   const top = mode === "cashflow" ? limit : niceCeil(max);
   const bottom = mode === "cashflow" ? -limit : 0;
 
-  const plotX = x + 48;
-  const plotY = y + 30;
-  const plotW = w - 62;
-  const plotH = h - 60;
+  const plotX = x + 35;
+  const plotY = y + 22;
+  const plotW = w - 45;
+  const plotH = h - 45;
 
   const valueToY = (value: number) => {
     const range = top - bottom || 1;
@@ -329,32 +278,32 @@ function drawBarChart(args: {
     height: h,
     color: rgb(0.985, 0.99, 0.99),
     borderColor: C.border,
-    borderWidth: 0.6,
+    borderWidth: 0.5,
   });
 
-  for (let i = 0; i <= 4; i++) {
-    const value = bottom + ((top - bottom) / 4) * i;
+  for (let i = 0; i <= 3; i++) {
+    const value = bottom + ((top - bottom) / 3) * i;
     const yy = valueToY(value);
 
     page.drawLine({
       start: { x: plotX, y: yy },
       end: { x: plotX + plotW, y: yy },
-      thickness: 0.35,
+      thickness: 0.3,
       color: rgb(0.86, 0.88, 0.89),
     });
 
-    rightTxt(page, fmtAxis(value), plotX - 8, yy - 2, 6.3, font, C.muted);
+    rightTxt(page, fmtAxis(value), plotX - 6, yy - 2, 5.3, font, C.muted);
   }
 
   page.drawLine({
     start: { x: plotX, y: zeroY },
     end: { x: plotX + plotW, y: zeroY },
-    thickness: 0.6,
+    thickness: 0.5,
     color: rgb(0.65, 0.69, 0.71),
   });
 
-  const gap = 3;
-  const barW = Math.max(4, (plotW - gap * (values.length - 1)) / values.length);
+  const gap = values.length > 12 ? 2 : 4;
+  const barW = Math.max(3, (plotW - gap * (values.length - 1)) / values.length);
 
   values.forEach((v, i) => {
     const bx = plotX + i * (barW + gap);
@@ -370,7 +319,7 @@ function drawBarChart(args: {
     });
 
     if (labels[i] && (values.length <= 12 || i % 5 === 0)) {
-      txt(page, labels[i], bx - 1, y + 11, 6.2, font, C.muted);
+      txt(page, labels[i], bx - 1, y + 8, 5.2, font, C.muted);
     }
   });
 }
@@ -384,7 +333,7 @@ function drawDonut(args: {
   font: PDFFont;
   bold: PDFFont;
 }) {
-  const { page, x, y, size, pct, font, bold } = args;
+  const { page, x, y, size, pct, bold } = args;
 
   page.drawCircle({ x, y, size, color: C.gray });
 
@@ -403,105 +352,10 @@ function drawDonut(args: {
   }
 
   page.drawCircle({ x, y, size: size * 0.57, color: C.white });
-  txt(page, fmtPct(pct, 1), x - 17, y - 4, 11, bold, C.dark);
+  txt(page, fmtPct(pct, 1), x - 14, y - 3, 8.5, bold, C.dark);
 }
 
-function addEnergieflussPage(
-  pdf: PDFDocument,
-  data: ReportPagesData,
-  font: PDFFont,
-  bold: PDFFont
-) {
-  const r = data.reportSummary || {};
-  const page = pdf.addPage([PAGE_W, PAGE_H]);
-
-  header(page, font, bold, "Energiefluss", data.planningNumber);
-
-  txt(
-    page,
-    "Diese Seite zeigt, wie die erzeugte Solarenergie im Gebäude genutzt wird.",
-    44,
-    748,
-    9.5,
-    font,
-    C.muted
-  );
-
-  drawKpi({
-    page,
-    x: 44,
-    y: 685,
-    w: 240,
-    h: 48,
-    label: "Eigenverbrauch",
-    value: fmtPct(r.selfUseSharePct),
-    font,
-    bold,
-    color: C.green,
-  });
-
-  drawKpi({
-    page,
-    x: 311,
-    y: 685,
-    w: 240,
-    h: 48,
-    label: "Autarkie",
-    value: fmtPct(r.autarkyPct),
-    font,
-    bold,
-    color: C.green,
-  });
-
-  drawSectionTitle(page, "Monatliche Produktion und Verbrauch", 44, 645, bold);
-
-  drawLineChart({
-    page,
-    data: monthlyEnergy(r),
-    x: 44,
-    y: 365,
-    w: 507,
-    h: 245,
-    font,
-  });
-
-  drawSectionTitle(page, "Einordnung", 44, 315, bold);
-
-  const text =
-    `Die geplante Photovoltaikanlage erzeugt voraussichtlich ${fmtNum(r.annualProductionKwh)} kWh Solarstrom pro Jahr. ` +
-    `Davon werden rund ${fmtPct(r.selfUseSharePct)} direkt im Gebäude genutzt. ` +
-    `Der Autarkiegrad von ${fmtPct(r.autarkyPct)} zeigt, welchen Anteil des jährlichen Strombedarfs die Anlage rechnerisch abdecken kann. ` +
-    `Ein hoher Eigenverbrauch reduziert den Netzstrombezug und verbessert die Wirtschaftlichkeit im Alltag.`;
-
-  drawParagraph(page, text, CONTENT_LEFT, 90, 105, 12, font);
-
-  page.drawRectangle({
-    x: 44,
-    y: 95,
-    width: 507,
-    height: 58,
-    color: rgb(0.95, 0.98, 0.97),
-    borderColor: C.border,
-    borderWidth: 0.6,
-  });
-
-  txt(page, "Hinweis", 58, 128, 8.5, bold, C.teal);
-  drawParagraph(
-    page,
-    "Die tatsächlichen Werte können je nach Wetter, Verbrauchsprofil, Verschattung und Betriebsverhalten abweichen.",
-    58,
-    112,
-    105,
-    12,
-    font,
-    8,
-    C.dark
-  );
-
-  footer(page, font, data.companyName);
-}
-
-function addWirtschaftProduktionErsparnisPage(
+function addBerichtOverviewPage(
   pdf: PDFDocument,
   data: ReportPagesData,
   font: PDFFont,
@@ -511,27 +365,94 @@ function addWirtschaftProduktionErsparnisPage(
   const offer = data.offer || {};
   const page = pdf.addPage([PAGE_W, PAGE_H]);
 
-  header(page, font, bold, "Wirtschaftlichkeit, Produktion & Ersparnis", data.planningNumber);
+  header(page, font, bold, "Bericht", data.planningNumber);
 
   txt(
     page,
-    "Zusammenfassung der wichtigsten wirtschaftlichen und technischen Kennzahlen.",
+    "Kompakte Übersicht der wichtigsten Kennzahlen zu Energiefluss, Wirtschaftlichkeit, Produktion und Ersparnis.",
     44,
     748,
-    9.5,
+    9,
     font,
     C.muted
   );
 
-  // Wirtschaftlichkeit
-  drawSectionTitle(page, "Wirtschaftlichkeit", 44, 715, bold);
+  const gap = 14;
+  const colW = (CONTENT_WIDTH - gap) / 2;
+  const leftX = 44;
+  const rightX = leftX + colW + gap;
+
+  const annual = n(r.annualBenefitChf);
+  const investment = n(r.totalInvestmentChf ?? offer?.pricing?.totalInvestmentChf);
+
+  // Energiefluss
+  page.drawRectangle({
+    x: leftX,
+    y: 515,
+    width: colW,
+    height: 215,
+    color: C.light,
+    borderColor: C.border,
+    borderWidth: 0.6,
+  });
+
+  txt(page, "Energiefluss", leftX + 12, 708, 11, bold, C.dark);
 
   drawKpi({
     page,
-    x: 44,
-    y: 650,
-    w: 155,
-    h: 46,
+    x: leftX + 12,
+    y: 665,
+    w: 102,
+    h: 36,
+    label: "Eigenverbrauch",
+    value: fmtPct(r.selfUseSharePct),
+    font,
+    bold,
+    color: C.green,
+  });
+
+  drawKpi({
+    page,
+    x: leftX + 125,
+    y: 665,
+    w: 102,
+    h: 36,
+    label: "Autarkie",
+    value: fmtPct(r.autarkyPct),
+    font,
+    bold,
+    color: C.green,
+  });
+
+  drawLineChart({
+    page,
+    data: monthlyEnergy(r),
+    x: leftX + 10,
+    y: 530,
+    w: colW - 20,
+    h: 120,
+    font,
+  });
+
+  // Wirtschaftlichkeit
+  page.drawRectangle({
+    x: rightX,
+    y: 515,
+    width: colW,
+    height: 215,
+    color: C.light,
+    borderColor: C.border,
+    borderWidth: 0.6,
+  });
+
+  txt(page, "Wirtschaftlichkeit", rightX + 12, 708, 11, bold, C.dark);
+
+  drawKpi({
+    page,
+    x: rightX + 12,
+    y: 665,
+    w: 68,
+    h: 36,
     label: "Break-even",
     value: r.breakEvenYears != null ? `${fmtNum(r.breakEvenYears, 1)} J.` : "—",
     font,
@@ -541,22 +462,22 @@ function addWirtschaftProduktionErsparnisPage(
 
   drawKpi({
     page,
-    x: 220,
-    y: 650,
-    w: 155,
-    h: 46,
+    x: rightX + 88,
+    y: 665,
+    w: 82,
+    h: 36,
     label: "Investition",
-    value: fmtChf(r.totalInvestmentChf ?? offer?.pricing?.totalInvestmentChf),
+    value: fmtChf(investment),
     font,
     bold,
   });
 
   drawKpi({
     page,
-    x: 396,
-    y: 650,
-    w: 155,
-    h: 46,
+    x: rightX + 178,
+    y: 665,
+    w: 57,
+    h: 36,
     label: "Rendite",
     value: r.roiPct != null ? fmtPct(r.roiPct) : "—",
     font,
@@ -565,179 +486,123 @@ function addWirtschaftProduktionErsparnisPage(
   });
 
   page.drawRectangle({
-    x: 44,
-    y: 602,
-    width: 507,
-    height: 33,
+    x: rightX + 12,
+    y: 626,
+    width: colW - 24,
+    height: 28,
     color: rgb(0.95, 0.98, 0.97),
     borderColor: C.border,
-    borderWidth: 0.6,
+    borderWidth: 0.5,
   });
 
-  txt(page, "PV Einmalvergütung", 58, 622, 7.5, font, C.muted);
-  txt(page, fmtChf(r.automaticPvSubsidyChf), 158, 622, 8, bold, C.dark);
+  txt(page, "PV Einmalvergütung", rightX + 22, 642, 6.5, font, C.muted);
+  txt(page, fmtChf(r.automaticPvSubsidyChf), rightX + 105, 642, 7.2, bold, C.dark);
 
-  txt(page, "Weitere Förderungen", 267, 622, 7.5, font, C.muted);
-  txt(page, fmtChf(r.manualAdditionalSubsidyChf), 380, 622, 8, bold, C.dark);
+  txt(page, "Weitere", rightX + 22, 631, 6.5, font, C.muted);
+  txt(page, fmtChf(r.manualAdditionalSubsidyChf), rightX + 105, 631, 7.2, bold, C.dark);
 
-  rightTxt(page, `Total ${fmtChf(r.subsidyChf)}`, 535, 622, 8.2, bold, C.green);
+  rightTxt(page, `Total ${fmtChf(r.subsidyChf)}`, rightX + colW - 20, 631, 7.5, bold, C.green);
 
-  // Produktion
-  drawSectionTitle(page, "Produktion", 44, 565, bold);
-
-  const rows = [
-    ["Jahresproduktion", `${fmtNum(r.annualProductionKwh)} kWh`, "Spez. Ertrag", `${fmtNum(r.yearlyYieldKwhPerKwp)} kWh/kWp`],
-    ["Modulleistung", `${fmtNum(r.selectedPanelWp)} Wp`, "Anzahl Module", `${fmtNum(r.moduleCount)} Stk.`],
-    ["Dachflächen", `${fmtNum(r.roofCount)} Fläche${n(r.roofCount) === 1 ? "" : "n"}`, "Belegte Fläche", `${fmtNum(r.moduleAreaM2, 1)} m²`],
-  ];
-
-  let y = 532;
-
-  rows.forEach((row) => {
-    txt(page, row[0], 44, y, 7.5, font, C.muted);
-    rightTxt(page, row[1], 260, y, 8.3, bold, C.dark);
-
-    txt(page, row[2], 315, y, 7.5, font, C.muted);
-    rightTxt(page, row[3], 551, y, 8.3, bold, C.dark);
-
-    page.drawLine({
-      start: { x: 44, y: y - 7 },
-      end: { x: 551, y: y - 7 },
-      thickness: 0.4,
-      color: C.border,
-    });
-
-    y -= 24;
-  });
-
-  // Eigenverbrauch mini
-  page.drawRectangle({
-    x: 44,
-    y: 350,
-    width: 230,
-    height: 95,
-    color: C.light,
-    borderColor: C.border,
-    borderWidth: 0.6,
-  });
-
-  txt(page, "Eigenverbrauch / Einspeisung", 58, 423, 9, bold, C.dark);
-
-  drawDonut({
-    page,
-    x: 118,
-    y: 385,
-    size: 31,
-    pct: n(r.selfUseSharePct),
-    font,
-    bold,
-  });
-
-  txt(page, "Eigenverbrauch", 170, 398, 7.3, font, C.muted);
-  txt(page, fmtPct(r.selfUseSharePct), 170, 384, 9, bold, C.dark);
-
-  txt(page, "Einspeisung", 170, 368, 7.3, font, C.muted);
-  txt(page, fmtPct(100 - n(r.selfUseSharePct)), 170, 354, 9, bold, C.dark);
-
-  // Ersparnis KPI
-  page.drawRectangle({
-    x: 296,
-    y: 350,
-    width: 255,
-    height: 95,
-    color: C.light,
-    borderColor: C.border,
-    borderWidth: 0.6,
-  });
-
-  const annual = n(r.annualBenefitChf);
-
-  txt(page, "Ersparnis", 310, 423, 9, bold, C.dark);
-
-const col1 = 310;
-const col2 = 380;
-const col3 = 450;
-
-const labelY = 398;
-const valueY = 380;
-
-// Pro Monat
-txt(page, "Pro Monat", col1, labelY, 6.5, font, C.muted);
-txt(page, fmtChf(Math.round(annual / 12)), col1, valueY, 9.5, bold, C.dark);
-
-// Pro Jahr
-txt(page, "Pro Jahr", col2, labelY, 6.5, font, C.muted);
-txt(page, fmtChf(annual), col2, valueY, 9.5, bold, C.dark);
-
-// In 20 Jahren
-txt(page, "In 20 Jahren", col3, labelY, 6.5, font, C.muted);
-txt(page, fmtChf(annual * 20), col3, valueY, 10, bold, C.green);
-
-  // Cashflow
-  drawSectionTitle(page, "Kumulierter Cashflow über 25 Jahre", 44, 310, bold);
-
-  const investment = n(r.totalInvestmentChf ?? offer?.pricing?.totalInvestmentChf);
-  const cashflow = Array.from({ length: 26 }, (_, i) => Math.round(-investment + annual * i));
+  const cashflow = Array.from({ length: 26 }, (_, i) =>
+    Math.round(-investment + annual * i)
+  );
 
   drawBarChart({
     page,
     values: cashflow,
     labels: Array.from({ length: 26 }, (_, i) => String(i)),
-    x: 44,
-    y: 120,
-    w: 507,
-    h: 160,
+    x: rightX + 10,
+    y: 530,
+    w: colW - 20,
+    h: 85,
     font,
     mode: "cashflow",
   });
 
-drawParagraph(
-  page,
-  `Die Investition amortisiert sich rechnerisch nach ca. ${r.breakEvenYears != null ? fmtNum(r.breakEvenYears, 1) : "—"} Jahren. Der Nutzen entsteht vor allem durch Eigenverbrauch, Einspeisevergütung und Förderbeiträge.`,
-  44,
-  90,
-  105,
-  12,
-  font,
-  8,
-  C.dark
-);
+  // Produktion
+  page.drawRectangle({
+    x: leftX,
+    y: 300,
+    width: colW,
+    height: 195,
+    color: C.light,
+    borderColor: C.border,
+    borderWidth: 0.6,
+  });
 
-  footer(page, font, data.companyName);
-}
-
-function addErsparnisDetailPage(
-  pdf: PDFDocument,
-  data: ReportPagesData,
-  font: PDFFont,
-  bold: PDFFont
-) {
-  const r = data.reportSummary || {};
-  const page = pdf.addPage([PAGE_W, PAGE_H]);
-
-  header(page, font, bold, "Monatliche Ersparnis", data.planningNumber);
+  txt(page, "Produktion", leftX + 12, 473, 11, bold, C.dark);
 
   txt(
     page,
-    "Die monatliche Darstellung zeigt, wann der finanzielle Nutzen besonders stark ausfällt.",
-    44,
-    748,
-    9.5,
+    `${fmtNum(r.moduleCount)} × ${r.selectedPanelName || "PV Modul"}`,
+    leftX + 12,
+    459,
+    7,
     font,
     C.muted
   );
 
-  const annual = n(r.annualBenefitChf);
-  const factors = [0.04, 0.05, 0.08, 0.1, 0.12, 0.13, 0.13, 0.12, 0.09, 0.07, 0.04, 0.03];
-  const labels = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
-  const values = factors.map((f) => Math.round(annual * f));
+  const prodRows = [
+    ["Jahresproduktion", `${fmtNum(r.annualProductionKwh)} kWh`],
+    ["Spez. Ertrag", `${fmtNum(r.yearlyYieldKwhPerKwp)} kWh/kWp`],
+    ["Modulleistung", `${fmtNum(r.selectedPanelWp)} Wp`],
+    ["Anzahl Module", `${fmtNum(r.moduleCount)}`],
+    ["Dachflächen", `${fmtNum(r.roofCount)}`],
+    ["Belegte Fläche", `${fmtNum(r.moduleAreaM2, 1)} m²`],
+  ];
+
+  let py = 435;
+
+  prodRows.forEach((row, i) => {
+    const x = i % 2 === 0 ? leftX + 12 : leftX + 132;
+    if (i % 2 === 0 && i > 0) py -= 34;
+
+    txt(page, row[0], x, py, 6.8, font, C.muted);
+    txt(page, row[1], x, py - 13, 8.2, bold, C.dark);
+  });
+
+  page.drawLine({
+    start: { x: leftX + 12, y: 345 },
+    end: { x: leftX + colW - 12, y: 345 },
+    thickness: 0.5,
+    color: C.border,
+  });
+
+  drawDonut({
+    page,
+    x: leftX + 62,
+    y: 323,
+    size: 23,
+    pct: n(r.selfUseSharePct),
+    font,
+    bold,
+  });
+
+  txt(page, "Eigenverbrauch", leftX + 105, 331, 6.8, font, C.muted);
+  txt(page, fmtPct(r.selfUseSharePct), leftX + 105, 318, 8.5, bold, C.dark);
+
+  txt(page, "Einspeisung", leftX + 170, 331, 6.8, font, C.muted);
+  txt(page, fmtPct(100 - n(r.selfUseSharePct)), leftX + 170, 318, 8.5, bold, C.dark);
+
+  // Ersparnis
+  page.drawRectangle({
+    x: rightX,
+    y: 300,
+    width: colW,
+    height: 195,
+    color: C.light,
+    borderColor: C.border,
+    borderWidth: 0.6,
+  });
+
+  txt(page, "Ersparnis", rightX + 12, 473, 11, bold, C.dark);
 
   drawKpi({
     page,
-    x: 44,
-    y: 685,
-    w: 155,
-    h: 46,
+    x: rightX + 12,
+    y: 435,
+    w: 68,
+    h: 36,
     label: "Pro Monat",
     value: fmtChf(Math.round(annual / 12)),
     font,
@@ -746,10 +611,10 @@ function addErsparnisDetailPage(
 
   drawKpi({
     page,
-    x: 220,
-    y: 685,
-    w: 155,
-    h: 46,
+    x: rightX + 88,
+    y: 435,
+    w: 68,
+    h: 36,
     label: "Pro Jahr",
     value: fmtChf(annual),
     font,
@@ -758,10 +623,10 @@ function addErsparnisDetailPage(
 
   drawKpi({
     page,
-    x: 396,
-    y: 685,
-    w: 155,
-    h: 46,
+    x: rightX + 164,
+    y: 435,
+    w: 71,
+    h: 36,
     label: "In 20 Jahren",
     value: fmtChf(annual * 20),
     font,
@@ -769,33 +634,46 @@ function addErsparnisDetailPage(
     color: C.green,
   });
 
-  drawSectionTitle(page, "Monatliche Verteilung", 44, 635, bold);
+  const savingFactors = [0.04, 0.05, 0.08, 0.1, 0.12, 0.13, 0.13, 0.12, 0.09, 0.07, 0.04, 0.03];
+  const savingLabels = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+  const savingValues = savingFactors.map((f) => Math.round(annual * f));
 
   drawBarChart({
     page,
-    values,
-    labels,
-    x: 44,
-    y: 330,
-    w: 507,
-    h: 265,
+    values: savingValues,
+    labels: savingLabels,
+    x: rightX + 10,
+    y: 315,
+    w: colW - 20,
+    h: 105,
     font,
     mode: "saving",
   });
 
-  drawSectionTitle(page, "Einordnung", 44, 280, bold);
+  // Monatliche Ersparnis Detail
+  page.drawRectangle({
+    x: 44,
+    y: 78,
+    width: 507,
+    height: 200,
+    color: C.light,
+    borderColor: C.border,
+    borderWidth: 0.6,
+  });
 
-  drawParagraph(
+  txt(page, "Monatliche Ersparnis", 58, 256, 11, bold, C.dark);
+
+  drawBarChart({
     page,
-    `Die Ersparnis entsteht durch vermiedenen Strombezug und die Vergütung für eingespeiste Energie. In sonnenstarken Monaten ist der Effekt in der Regel höher, während im Winter geringere PV-Erträge zu erwarten sind.`,
-    44,
-    250,
-    108,
-    13,
+    values: savingValues,
+    labels: savingLabels,
+    x: 58,
+    y: 100,
+    w: 480,
+    h: 140,
     font,
-    8.5,
-    C.dark
-  );
+    mode: "saving",
+  });
 
   footer(page, font, data.companyName);
 }
@@ -807,7 +685,5 @@ export async function addReportPages(pdf: PDFDocument, data: ReportPagesData) {
   const font = await pdf.embedFont("Helvetica");
   const bold = await pdf.embedFont("Helvetica-Bold");
 
-  addEnergieflussPage(pdf, data, font, bold);
-  addWirtschaftProduktionErsparnisPage(pdf, data, font, bold);
-  addErsparnisDetailPage(pdf, data, font, bold);
+  addBerichtOverviewPage(pdf, data, font, bold);
 }
