@@ -654,17 +654,38 @@ function addWirtschaftProduktionErsparnisPage(
 
   txt(page, "Ersparnis", 310, 423, 9, bold, C.dark);
 
- const col1 = 310;
-const col2 = 410;
+const savingsX = 552;
+const savingsY = 455;
+const savingsW = 457;
+const savingsH = 130;
 
-txt(page, "Pro Monat", col1, 398, 7, font, C.muted);
-txt(page, fmtChf(Math.round(annual / 12)), col1, 382, 10, bold, C.dark);
+page.drawRectangle({
+  x: savingsX,
+  y: savingsY,
+  width: savingsW,
+  height: savingsH,
+  color: C.light,
+  borderColor: C.border,
+  borderWidth: 0.6,
+});
 
-txt(page, "Pro Jahr", col2, 398, 7, font, C.muted);
-txt(page, fmtChf(annual), col2, 382, 10, bold, C.dark);
+txt(page, "Ersparnis", savingsX + 26, savingsY + 96, 11, bold, C.dark);
 
-txt(page, "In 20 Jahren", col1, 360, 7, font, C.muted);
-txt(page, fmtChf(annual * 20), col1, 345, 11, bold, C.green);
+const colYLabel = savingsY + 67;
+const colYValue = savingsY + 48;
+
+const col1X = savingsX + 26;
+const col2X = savingsX + 170;
+const col3X = savingsX + 314;
+
+txt(page, "Pro Monat", col1X, colYLabel, 7.5, font, C.muted);
+txt(page, fmtChf(Math.round(annual / 12)), col1X, colYValue, 11.5, bold, C.dark);
+
+txt(page, "Pro Jahr", col2X, colYLabel, 7.5, font, C.muted);
+txt(page, fmtChf(annual), col2X, colYValue, 11.5, bold, C.dark);
+
+txt(page, "In 20 Jahren", col3X, colYLabel, 7.5, font, C.muted);
+txt(page, fmtChf(annual * 20), col3X, colYValue, 11.5, bold, C.green);
 
   // Cashflow
   drawSectionTitle(page, "Kumulierter Cashflow über 25 Jahre", 44, 310, bold);
