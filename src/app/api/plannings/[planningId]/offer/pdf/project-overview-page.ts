@@ -1,4 +1,14 @@
-import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFPage,
+  PDFFont,
+  rgb,
+  pushGraphicsState,
+  popGraphicsState,
+  rectangle,
+  clip,
+  endPath,
+} from "pdf-lib";
 
 type ProjectOverviewData = {
   title?: string;
@@ -253,22 +263,32 @@ async function drawSnapshot(args: {
       ? await pdf.embedPng(bytes)
       : await pdf.embedJpg(bytes);
 
-   const innerPad = 12;
-const innerX = x + innerPad;
-const innerY = y + innerPad;
-const innerW = w - innerPad * 2;
-const innerH = h - innerPad * 2;
+const labelH = 36;
 
-const scale = Math.min(innerW / image.width, innerH / image.height);
-const imgW = image.width * scale;
-const imgH = image.height * scale;
+// area immagine: sotto la label "Modulbelegung"
+const imgX = x;
+const imgY = y;
+const imgWBox = w;
+const imgHBox = h;
+
+// cover: riempie tutto il box, anche se deve tagliare
+const dims = fitCover(image.width, image.height, imgWBox, imgHBox);
+
+page.pushOperators(
+  pushGraphicsState(),
+  rectangle(imgX, imgY, imgWBox, imgHBox),
+  clip(),
+  endPath()
+);
 
 page.drawImage(image, {
-  x: innerX + (innerW - imgW) / 2,
-  y: innerY + (innerH - imgH) / 2,
-  width: imgW,
-  height: imgH,
+  x: imgX + (imgWBox - dims.width) / 2,
+  y: imgY + (imgHBox - dims.height) / 2,
+  width: dims.width,
+  height: dims.height,
 });
+
+page.pushOperators(popGraphicsState());
 
     page.drawRectangle({
       x,
