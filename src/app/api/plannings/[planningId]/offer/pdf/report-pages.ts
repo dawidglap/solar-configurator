@@ -10,6 +10,10 @@ type ReportPagesData = {
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
 
+const CONTENT_LEFT = 44;
+const CONTENT_RIGHT = 551;
+const CONTENT_WIDTH = CONTENT_RIGHT - CONTENT_LEFT;
+
 const C = {
   dark: rgb(0.13, 0.22, 0.27),
   muted: rgb(0.45, 0.52, 0.56),
@@ -469,7 +473,7 @@ function addEnergieflussPage(
     `Der Autarkiegrad von ${fmtPct(r.autarkyPct)} zeigt, welchen Anteil des jährlichen Strombedarfs die Anlage rechnerisch abdecken kann. ` +
     `Ein hoher Eigenverbrauch reduziert den Netzstrombezug und verbessert die Wirtschaftlichkeit im Alltag.`;
 
-  drawParagraph(page, text, 44, 285, 108, 13, font);
+  drawParagraph(page, text, CONTENT_LEFT, 90, 105, 12, font);
 
   page.drawRectangle({
     x: 44,
