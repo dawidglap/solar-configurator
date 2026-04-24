@@ -253,14 +253,22 @@ async function drawSnapshot(args: {
       ? await pdf.embedPng(bytes)
       : await pdf.embedJpg(bytes);
 
-    const dims = fitCover(image.width, image.height, w, h);
+   const innerPad = 12;
+const innerX = x + innerPad;
+const innerY = y + innerPad;
+const innerW = w - innerPad * 2;
+const innerH = h - innerPad * 2;
 
-    page.drawImage(image, {
-      x: x + (w - dims.width) / 2,
-      y: y + (h - dims.height) / 2,
-      width: dims.width,
-      height: dims.height,
-    });
+const scale = Math.min(innerW / image.width, innerH / image.height);
+const imgW = image.width * scale;
+const imgH = image.height * scale;
+
+page.drawImage(image, {
+  x: innerX + (innerW - imgW) / 2,
+  y: innerY + (innerH - imgH) / 2,
+  width: imgW,
+  height: imgH,
+});
 
     page.drawRectangle({
       x,
