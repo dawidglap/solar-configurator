@@ -254,11 +254,31 @@ function drawBarChart(args: {
   mode?: "cashflow" | "saving";
 }) {
   const { page, values, labels = [], x, y, w, h, font, mode = "saving" } = args;
-  const maxAbs = Math.max(1, ...values.map((v) => Math.abs(v)));
-  const zeroY = mode === "cashflow" ? y + h * 0.45 : y + 25;
-  const plotX = x + 28;
-  const plotW = w - 42;
-  const barGap = 3;
+
+  const plotLeft = x + 46;
+  const plotRight = x + w - 18;
+  const plotBottom = y + 34;
+  const plotTop = y + h - 24;
+  const plotW = plotRight - plotLeft;
+  const plotH = plotTop - plotBottom;
+
+  const maxValRaw = Math.max(0, ...values);
+  const minValRaw = Math.min(0, ...values);
+
+  const niceMax = Math.ceil(maxValRaw / 10000) * 10000 || 10000;
+  const niceMin = mode === "cashflow"
+    ? Math.floor(minValRaw / 10000) * 10000
+    : 0;
+
+  const range = Math.max(1, niceMax - niceMin);
+
+  const yForValue = (v: number) => {
+    return plotBottom + ((v - niceMin) / range) * plotH;
+  };
+
+  const zeroY = yForValue(0);
+
+  const barGap = values.length > 18 ? 2 : 4;
   const barW = Math.max(3, (plotW - barGap * (values.length - 1)) / values.length);
 
   page.drawRectangle({
@@ -271,27 +291,44 @@ function drawBarChart(args: {
     borderWidth: 0.6,
   });
 
-  page.drawLine({
-    start: { x: plotX, y: zeroY },
-    end: { x: plotX + plotW, y: zeroY },
-    thickness: 0.6,
-    color: rgb(0.68, 0.72, 0.74),
-  });
+  // Y-axis grid + labels
+  const ticks = 5;
+  for (let i = 0; i <= ticks; i++) {
+    const val = niceMin + (range / ticks) * i;
+    const yy = yForValue(val);
+
+    page.drawLine({
+      start: { x: plotLeft, y: yy },
+      end: { x: plotRight, y: yy },
+      thickness: val === 0 ? 0.7 : 0.35,
+      color: val === 0 ? rgb(0.62, 0.66, 0.68) : rgb(0.86, 0.88, 0.89),
+    });
+
+    const label =
+      Math.abs(val) >= 1000
+        ? `${Math.round(val / 1000)}k`
+        : `${Math.round(val)}`;
+
+    rightTxt(page, label, plotLeft - 7, yy - 3, 6.5, font, C.muted);
+  }
 
   values.forEach((v, i) => {
-    const bh = Math.abs(v) / maxAbs * (h - 55);
-    const bx = plotX + i * (barW + barGap);
-    const by = v >= 0 ? zeroY : zeroY - bh;
+    const bx = plotLeft + i * (barW + barGap);
+    const vy = yForValue(v);
+
+    const by = v >= 0 ? zeroY : vy;
+    const bh = Math.max(1, Math.abs(vy - zeroY));
+
     page.drawRectangle({
       x: bx,
       y: by,
       width: barW,
-      height: Math.max(1, bh),
+      height: bh,
       color: v >= 0 ? C.green : C.red,
     });
 
     if (labels[i] && (values.length <= 12 || i % 5 === 0)) {
-      txt(page, labels[i], bx - 1, y + 9, 6.2, font, C.muted);
+      txt(page, labels[i], bx - 1, y + 12, 6.2, font, C.muted);
     }
   });
 }
