@@ -602,7 +602,7 @@ function hasEquivalentPart(items: NormalizedPartItem[], kind: "battery" | "wallb
 
 /* --------------------------- Main report builder -------------------------- */
 
-function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
+export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   const data = doc?.data ?? {};
   const planner = data?.planner ?? {};
   const ist = data?.ist ?? {};

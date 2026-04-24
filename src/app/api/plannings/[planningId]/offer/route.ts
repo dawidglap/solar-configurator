@@ -6,6 +6,7 @@ import { addCoverPage } from "./pdf/cover-page";
 import { addDetailPages } from "./pdf/detail-pages";
 import { addProjectOverviewPage } from "./pdf/project-overview-page";
 import { addReportPages } from "./pdf/report-pages";
+import { buildReportSummary } from "../report-summary/route";
 
 export const runtime = "nodejs";
 
@@ -225,33 +226,10 @@ export async function POST(
       })
       .toArray();
 
-      if (!reportSummary) {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "https://planner.helionic.ch";
+reportSummary = buildReportSummary(planning, catalogDocs);
 
-  const reportRes = await fetch(
-    `${baseUrl}/api/plannings/${planningId}/report-summary`,
-    {
-      method: "GET",
-      headers: {
-        cookie: req.headers.get("cookie") || "",
-        accept: "application/json",
-      },
-      cache: "no-store",
-    }
-  );
-
-  const reportJson = await reportRes.json().catch(() => null);
-
-  if (reportJson?.ok && reportJson?.reportSummary) {
-    reportSummary = reportJson.reportSummary;
-  }
-
-  console.log("OFFER LIVE REPORT SUMMARY:", reportSummary);
-}
+console.log("OFFER REPORT SUMMARY BUILT:", !!reportSummary);
+console.log("OFFER REPORT SUMMARY DATA:", reportSummary);
 
     const catalogById = new Map<string, any>();
     const catalogByCompositeKey = new Map<string, any>();
