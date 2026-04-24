@@ -5,6 +5,7 @@ import { getCorsHeaders } from "@/lib/cors";
 import { addCoverPage } from "./pdf/cover-page";
 import { addDetailPages } from "./pdf/detail-pages";
 import { addProjectOverviewPage } from "./pdf/project-overview-page";
+import { addReportPages } from "./pdf/report-pages";
 
 export const runtime = "nodejs";
 
@@ -632,6 +633,13 @@ const inverterLabel =
   ),
 
   companyName: offer.companyName,
+});
+
+await addReportPages(pdf, {
+  planningNumber: offer.planningNumber,
+  companyName: offer.companyName,
+  reportSummary,
+  offer,
 });
 
     const pdfBytes = await pdf.save();
