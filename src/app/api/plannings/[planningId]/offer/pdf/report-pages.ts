@@ -430,9 +430,10 @@ function addBerichtOverviewPage(
   const leftX = 44;
   const rightX = leftX + colW + gap;
 
-  const topY = 485;
-  const bottomY = 170;
-  const cardH = 245;
+  // ✅ più compatto: meno spazio vuoto tra sopra e sotto
+  const topY = 476;
+  const bottomY = 206;
+  const cardH = 254;
 
   const annual = n(r.annualBenefitChf);
   const investment = n(r.totalInvestmentChf ?? offer?.pricing?.totalInvestmentChf);
@@ -457,7 +458,7 @@ function addBerichtOverviewPage(
   drawMiniKpi({
     page,
     x: leftX + 12,
-    y: topY + 167,
+    y: topY + 176,
     w: 103,
     label: "Eigenverbrauch",
     value: fmtPct(r.selfUseSharePct),
@@ -469,7 +470,7 @@ function addBerichtOverviewPage(
   drawMiniKpi({
     page,
     x: leftX + 126,
-    y: topY + 167,
+    y: topY + 176,
     w: 103,
     label: "Autarkie",
     value: fmtPct(r.autarkyPct),
@@ -482,7 +483,7 @@ function addBerichtOverviewPage(
     page,
     data: monthlyEnergy(r),
     x: leftX + 10,
-    y: topY + 72,
+    y: topY + 82,
     w: colW - 20,
     h: 84,
     font,
@@ -492,11 +493,11 @@ function addBerichtOverviewPage(
     page,
     "Der grüne Verlauf zeigt die monatliche Solarproduktion. Die orange Linie zeigt den geschätzten Stromverbrauch. Je stärker sich beide Linien überschneiden, desto mehr Solarstrom kann direkt im Gebäude genutzt werden.",
     leftX + 12,
-    topY + 54,
+    topY + 61,
     54,
-    8.5,
+    8,
     font,
-    6.7,
+    6.5,
     C.dark
   );
 
@@ -514,7 +515,7 @@ function addBerichtOverviewPage(
   drawMiniKpi({
     page,
     x: rightX + 12,
-    y: topY + 167,
+    y: topY + 176,
     w: 68,
     label: "Break-even",
     value: r.breakEvenYears != null ? `${fmtNum(r.breakEvenYears, 1)} J.` : "—",
@@ -526,7 +527,7 @@ function addBerichtOverviewPage(
   drawMiniKpi({
     page,
     x: rightX + 88,
-    y: topY + 167,
+    y: topY + 176,
     w: 83,
     label: "Investition",
     value: fmtChf(investment),
@@ -537,7 +538,7 @@ function addBerichtOverviewPage(
   drawMiniKpi({
     page,
     x: rightX + 179,
-    y: topY + 167,
+    y: topY + 176,
     w: 50,
     label: "Rendite",
     value: r.roiPct != null ? fmtPct(r.roiPct) : "—",
@@ -548,7 +549,7 @@ function addBerichtOverviewPage(
 
   page.drawRectangle({
     x: rightX + 12,
-    y: topY + 132,
+    y: topY + 141,
     width: colW - 24,
     height: 24,
     color: C.soft,
@@ -556,8 +557,8 @@ function addBerichtOverviewPage(
     borderWidth: 0.45,
   });
 
-  txt(page, "Förderbeiträge total", rightX + 22, topY + 142, 6.5, font, C.muted);
-  rightTxt(page, fmtChf(r.subsidyChf), rightX + colW - 22, topY + 142, 8, bold, C.green);
+  txt(page, "Förderbeiträge total", rightX + 22, topY + 151, 6.5, font, C.muted);
+  rightTxt(page, fmtChf(r.subsidyChf), rightX + colW - 22, topY + 151, 8, bold, C.green);
 
   const cashflow = Array.from({ length: 26 }, (_, i) =>
     Math.round(-investment + annual * i)
@@ -568,9 +569,9 @@ function addBerichtOverviewPage(
     values: cashflow,
     labels: Array.from({ length: 26 }, (_, i) => String(i)),
     x: rightX + 10,
-    y: topY + 54,
+    y: topY + 65,
     w: colW - 20,
-    h: 70,
+    h: 68,
     font,
     mode: "cashflow",
   });
@@ -579,11 +580,11 @@ function addBerichtOverviewPage(
     page,
     "Die Balken zeigen den kumulierten finanziellen Effekt über 25 Jahre. Am Anfang ist die Investition negativ. Sobald die jährlichen Vorteile die Investition ausgleichen, ist der rechnerische Break-even erreicht.",
     rightX + 12,
-    topY + 39,
+    topY + 45,
     54,
-    8.5,
+    8,
     font,
-    6.7,
+    6.5,
     C.dark
   );
 
@@ -602,7 +603,7 @@ function addBerichtOverviewPage(
     page,
     `${fmtNum(r.moduleCount)} × ${r.selectedPanelName || "PV Modul"}`,
     leftX + 12,
-    bottomY + 198,
+    bottomY + 207,
     7,
     font,
     C.muted
@@ -617,19 +618,19 @@ function addBerichtOverviewPage(
     ["Belegte Fläche", `${fmtNum(r.moduleAreaM2, 1)} m²`],
   ];
 
-  let py = bottomY + 177;
+  let py = bottomY + 184;
 
   prodRows.forEach((row, i) => {
     const x = i % 2 === 0 ? leftX + 12 : leftX + 132;
-    if (i % 2 === 0 && i > 0) py -= 31;
+    if (i % 2 === 0 && i > 0) py -= 30;
 
     txt(page, row[0], x, py, 6.7, font, C.muted);
     txt(page, row[1], x, py - 12, 8, bold, C.dark);
   });
 
   page.drawLine({
-    start: { x: leftX + 12, y: bottomY + 73 },
-    end: { x: leftX + colW - 12, y: bottomY + 73 },
+    start: { x: leftX + 12, y: bottomY + 84 },
+    end: { x: leftX + colW - 12, y: bottomY + 84 },
     thickness: 0.5,
     color: C.border,
   });
@@ -637,28 +638,29 @@ function addBerichtOverviewPage(
   drawDonut({
     page,
     x: leftX + 55,
-    y: bottomY + 45,
-    size: 22,
+    y: bottomY + 56,
+    size: 21,
     pct: selfUse,
     font,
     bold,
   });
 
-  txt(page, "Direkt genutzt", leftX + 95, bottomY + 54, 6.8, font, C.muted);
-  txt(page, fmtPct(selfUse), leftX + 95, bottomY + 41, 8.5, bold, C.dark);
+  txt(page, "Direkt genutzt", leftX + 95, bottomY + 65, 6.8, font, C.muted);
+  txt(page, fmtPct(selfUse), leftX + 95, bottomY + 52, 8.5, bold, C.dark);
 
-  txt(page, "Eingespeist", leftX + 165, bottomY + 54, 6.8, font, C.muted);
-  txt(page, fmtPct(feedIn), leftX + 165, bottomY + 41, 8.5, bold, C.dark);
+  txt(page, "Eingespeist", leftX + 165, bottomY + 65, 6.8, font, C.muted);
+  txt(page, fmtPct(feedIn), leftX + 165, bottomY + 52, 8.5, bold, C.dark);
 
+  // ✅ testo accorciato e alzato, niente overflow
   drawParagraph(
     page,
-    "Die Jahresproduktion ist die erwartete Strommenge der Anlage pro Jahr. Der spezifische Ertrag zeigt, wie effizient die installierte Leistung am Standort genutzt wird.",
+    "Die Jahresproduktion zeigt die erwartete Strommenge pro Jahr. Der spezifische Ertrag zeigt, wie effizient die Anlage am Standort arbeitet.",
     leftX + 12,
-    bottomY + 24,
-    54,
-    8.5,
+    bottomY + 31,
+    58,
+    7.4,
     font,
-    6.7,
+    6.35,
     C.dark
   );
 
@@ -676,7 +678,7 @@ function addBerichtOverviewPage(
   drawMiniKpi({
     page,
     x: rightX + 12,
-    y: bottomY + 167,
+    y: bottomY + 176,
     w: 68,
     label: "Pro Monat",
     value: fmtChf(Math.round(annual / 12)),
@@ -687,7 +689,7 @@ function addBerichtOverviewPage(
   drawMiniKpi({
     page,
     x: rightX + 88,
-    y: bottomY + 167,
+    y: bottomY + 176,
     w: 68,
     label: "Pro Jahr",
     value: fmtChf(annual),
@@ -698,7 +700,7 @@ function addBerichtOverviewPage(
   drawMiniKpi({
     page,
     x: rightX + 164,
-    y: bottomY + 167,
+    y: bottomY + 176,
     w: 65,
     label: "20 Jahre",
     value: fmtChf(annual * 20),
@@ -712,9 +714,9 @@ function addBerichtOverviewPage(
     values: savingValues,
     labels: savingLabels,
     x: rightX + 10,
-    y: bottomY + 66,
+    y: bottomY + 78,
     w: colW - 20,
-    h: 88,
+    h: 86,
     font,
     mode: "saving",
   });
@@ -723,11 +725,11 @@ function addBerichtOverviewPage(
     page,
     "Die monatliche Ersparnis entsteht durch weniger Strombezug aus dem Netz und durch die Vergütung für eingespeisten Solarstrom. In sonnenstarken Monaten ist der Nutzen typischerweise höher.",
     rightX + 12,
-    bottomY + 45,
+    bottomY + 50,
     54,
-    8.5,
+    8,
     font,
-    6.7,
+    6.5,
     C.dark
   );
 
