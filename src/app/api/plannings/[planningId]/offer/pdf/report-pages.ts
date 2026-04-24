@@ -550,99 +550,113 @@ function addWirtschaftlichkeitPage(pdf: PDFDocument, data: ReportPagesData, font
   footer(page, font, data.companyName);
 }
 
-function addProduktionErsparnisPage(pdf: PDFDocument, data: ReportPagesData, font: PDFFont, bold: PDFFont) {
+function addProduktionPage(pdf: PDFDocument, data: ReportPagesData, font: PDFFont, bold: PDFFont) {
   const r = data.reportSummary || {};
   const page = pdf.addPage([PAGE_W, PAGE_H]);
 
-  header(page, font, bold, "Produktion & Ersparnis", data.planningNumber);
+  header(page, font, bold, "Produktion", data.planningNumber);
 
-  txt(
-    page,
-    "Technische Kennzahlen der geplanten Anlage und erwarteter finanzieller Nutzen.",
-    44,
-    748,
-    9.5,
-    font,
-    C.muted
-  );
+  txt(page, "Technische Kennzahlen der geplanten Photovoltaikanlage.", 44, 748, 9.5, font, C.muted);
 
-  drawSectionTitle(page, "Produktion", 44, 715, bold);
+  drawKpi({ page, x: 44, y: 685, w: 155, h: 48, label: "Jahresproduktion", value: `${fmtNum(r.annualProductionKwh)} kWh`, font, bold, color: C.green });
+  drawKpi({ page, x: 219, y: 685, w: 155, h: 48, label: "Spez. Ertrag", value: `${fmtNum(r.yearlyYieldKwhPerKwp)} kWh/kWp`, font, bold });
+  drawKpi({ page, x: 396, y: 685, w: 155, h: 48, label: "Anlagenleistung", value: `${fmtNum(r.dcPowerKw, 2)} kWp`, font, bold });
 
-  const leftX = 44;
-  const rightX = 315;
-  const y0 = 680;
-  const rowH = 24;
+  drawSectionTitle(page, "Anlagendaten", 44, 630, bold);
 
   const rows = [
-    ["Jahresproduktion", `${fmtNum(r.annualProductionKwh)} kWh`, "Spez. Ertrag", `${fmtNum(r.yearlyYieldKwhPerKwp)} kWh/kWp`],
-    ["Modulleistung", `${fmtNum(r.selectedPanelWp)} Wp`, "Anzahl Module", `${fmtNum(r.moduleCount)} Stk.`],
-    ["Dachflächen", `${fmtNum(r.roofCount)} Fläche${n(r.roofCount) === 1 ? "" : "n"}`, "Belegte Fläche", `${fmtNum(r.moduleAreaM2, 1)} m²`],
+    ["Modulleistung", `${fmtNum(r.selectedPanelWp)} Wp`],
+    ["Anzahl Module", `${fmtNum(r.moduleCount)} Stk.`],
+    ["Dachflächen", `${fmtNum(r.roofCount)} Fläche${n(r.roofCount) === 1 ? "" : "n"}`],
+    ["Belegte Fläche", `${fmtNum(r.moduleAreaM2, 1)} m²`],
+    ["Durchschnittliche Dachneigung", `${fmtNum(r.avgRoofTiltDeg, 1)}°`],
   ];
 
-  rows.forEach((row, i) => {
-    const yy = y0 - i * rowH;
-    txt(page, row[0], leftX, yy, 8, font, C.muted);
-    rightTxt(page, row[1], 260, yy, 8.8, bold, C.dark);
-    txt(page, row[2], rightX, yy, 8, font, C.muted);
-    rightTxt(page, row[3], 551, yy, 8.8, bold, C.dark);
-
+  let y = 595;
+  rows.forEach(([label, value]) => {
+    txt(page, label, 44, y, 8.5, font, C.muted);
+    rightTxt(page, value, 551, y, 9.2, bold, C.dark);
     page.drawLine({
-      start: { x: leftX, y: yy - 8 },
-      end: { x: 551, y: yy - 8 },
+      start: { x: 44, y: y - 8 },
+      end: { x: 551, y: y - 8 },
       thickness: 0.45,
       color: C.border,
     });
+    y -= 28;
   });
+
+  drawSectionTitle(page, "Eigenverbrauch / Einspeisung", 44, 420, bold);
 
   page.drawRectangle({
     x: 44,
-    y: 455,
+    y: 230,
     width: 230,
-    height: 130,
+    height: 150,
     color: C.light,
     borderColor: C.border,
     borderWidth: 0.6,
   });
 
-  txt(page, "Eigenverbrauch / Einspeisung", 58, 560, 10, bold, C.dark);
   drawDonut({
     page,
-    x: 135,
-    y: 510,
-    size: 38,
+    x: 159,
+    y: 305,
+    size: 45,
     pct: n(r.selfUseSharePct),
     font,
     bold,
   });
 
-  txt(page, "Eigenverbrauch", 190, 520, 8, font, C.muted);
-  txt(page, fmtPct(r.selfUseSharePct), 190, 506, 10, bold, C.dark);
-  txt(page, "Einspeisung", 190, 488, 8, font, C.muted);
-  txt(page, fmtPct(100 - n(r.selfUseSharePct)), 190, 474, 10, bold, C.dark);
-
   page.drawRectangle({
     x: 296,
-    y: 455,
+    y: 230,
     width: 255,
-    height: 130,
+    height: 150,
     color: C.light,
     borderColor: C.border,
     borderWidth: 0.6,
   });
 
-  txt(page, "Nutzen", 310, 560, 10, bold, C.dark);
+  txt(page, "Eigenverbrauch", 316, 340, 8, font, C.muted);
+  txt(page, `${fmtNum(r.selfUseKwh)} kWh`, 316, 322, 14, bold, C.dark);
+  txt(page, fmtPct(r.selfUseSharePct), 445, 322, 14, bold, C.green);
+
+  txt(page, "Einspeisung", 316, 285, 8, font, C.muted);
+  txt(page, `${fmtNum(r.feedInKwh)} kWh`, 316, 267, 14, bold, C.dark);
+  txt(page, fmtPct(100 - n(r.selfUseSharePct)), 445, 267, 14, bold, C.gray);
+
+  drawSectionTitle(page, "Einordnung", 44, 185, bold);
+
+  drawParagraph(
+    page,
+    `Die Anlage erzeugt voraussichtlich ${fmtNum(r.annualProductionKwh)} kWh Solarstrom pro Jahr. Bei ${fmtNum(r.moduleCount)} Modulen ergibt sich eine Anlagenleistung von ${fmtNum(r.dcPowerKw, 2)} kWp. Der direkte Eigenverbrauch liegt bei rund ${fmtPct(r.selfUseSharePct)}.`,
+    44,
+    155,
+    105,
+    13,
+    font,
+    8.8,
+    C.dark
+  );
+
+  footer(page, font, data.companyName);
+}
+
+function addErsparnisPage(pdf: PDFDocument, data: ReportPagesData, font: PDFFont, bold: PDFFont) {
+  const r = data.reportSummary || {};
+  const page = pdf.addPage([PAGE_W, PAGE_H]);
 
   const annual = n(r.annualBenefitChf);
-  txt(page, "Pro Monat", 310, 535, 8, font, C.muted);
-  txt(page, fmtChf(Math.round(annual / 12)), 310, 518, 13, bold, C.dark);
 
-  txt(page, "Pro Jahr", 420, 535, 8, font, C.muted);
-  txt(page, fmtChf(annual), 420, 518, 13, bold, C.dark);
+  header(page, font, bold, "Ersparnis", data.planningNumber);
 
-  txt(page, "In 20 Jahren", 310, 490, 8, font, C.muted);
-  txt(page, fmtChf(annual * 20), 310, 472, 15, bold, C.green);
+  txt(page, "Erwarteter finanzieller Nutzen durch Eigenverbrauch und Einspeisung.", 44, 748, 9.5, font, C.muted);
 
-  drawSectionTitle(page, "Monatliche Ersparnis", 44, 410, bold);
+  drawKpi({ page, x: 44, y: 685, w: 155, h: 48, label: "Pro Monat", value: fmtChf(Math.round(annual / 12)), font, bold });
+  drawKpi({ page, x: 219, y: 685, w: 155, h: 48, label: "Pro Jahr", value: fmtChf(annual), font, bold });
+  drawKpi({ page, x: 396, y: 685, w: 155, h: 48, label: "In 20 Jahren", value: fmtChf(annual * 20), font, bold, color: C.green });
+
+  drawSectionTitle(page, "Monatliche Ersparnis", 44, 630, bold);
 
   const factors = [0.04, 0.05, 0.08, 0.1, 0.12, 0.13, 0.13, 0.12, 0.09, 0.07, 0.04, 0.03];
   const labels = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
@@ -653,33 +667,52 @@ function addProduktionErsparnisPage(pdf: PDFDocument, data: ReportPagesData, fon
     values,
     labels,
     x: 44,
-    y: 170,
+    y: 360,
     w: 507,
-    h: 205,
+    h: 235,
     font,
     mode: "saving",
   });
 
-  page.drawRectangle({
+  drawSectionTitle(page, "Zusammensetzung", 44, 305, bold);
+
+  drawKpi({
+    page,
     x: 44,
-    y: 88,
-    width: 507,
-    height: 52,
-    color: rgb(0.95, 0.98, 0.97),
-    borderColor: C.border,
-    borderWidth: 0.6,
+    y: 230,
+    w: 240,
+    h: 50,
+    label: "Ersparnis Eigenverbrauch",
+    value: fmtChf(r.annualSavingsChf),
+    font,
+    bold,
+    color: C.green,
   });
 
-  txt(page, "Zusammenfassung", 58, 119, 8.5, bold, C.teal);
+  drawKpi({
+    page,
+    x: 311,
+    y: 230,
+    w: 240,
+    h: 50,
+    label: "Einspeisevergütung",
+    value: fmtChf(r.annualFeedInRevenueChf),
+    font,
+    bold,
+    color: C.orange,
+  });
+
+  drawSectionTitle(page, "Einordnung", 44, 180, bold);
+
   drawParagraph(
     page,
-    `Die Anlage kombiniert eine erwartete Jahresproduktion von ${fmtNum(r.annualProductionKwh)} kWh mit einem jährlichen Nutzen von rund ${fmtChf(annual)}.`,
-    58,
-    104,
+    `Der jährliche Nutzen beträgt rechnerisch rund ${fmtChf(annual)}. Dieser setzt sich aus eingespartem Netzstrom durch Eigenverbrauch und Erlösen aus der Einspeisung zusammen. Über 20 Jahre ergibt sich daraus ein potenzieller Vorteil von rund ${fmtChf(annual * 20)}.`,
+    44,
+    150,
     105,
-    12,
+    13,
     font,
-    8,
+    8.8,
     C.dark
   );
 
@@ -695,5 +728,6 @@ export async function addReportPages(pdf: PDFDocument, data: ReportPagesData) {
 
   addEnergieflussPage(pdf, data, font, bold);
   addWirtschaftlichkeitPage(pdf, data, font, bold);
-  addProduktionErsparnisPage(pdf, data, font, bold);
+  addProduktionPage(pdf, data, font, bold);
+addErsparnisPage(pdf, data, font, bold);
 }
