@@ -758,3 +758,60 @@ export async function GET(
     await client.close().catch(() => {});
   }
 }
+
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ planningId: string }> },
+) {
+  const origin = req.headers.get("origin");
+  const { planningId } = await params;
+
+  const uri = process.env.MONGODB_URI;
+  const secret = process.env.SESSION_SECRET;
+
+  if (!uri) {
+    return jsonResponse(origin, { ok: false, error: "Missing MONGODB_URI" }, 500);
+  }
+
+  if (!secret) {
+    return jsonResponse(origin, { ok: false, error: "Missing SESSION_SECRET" }, 500);
+  }
+
+  const session = readSession(req, secret);
+  if (!session?.activeCompanyId) {
+    return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
+  }
+
+  const planningObjectId = toObjectIdOrNull(planningId);
+  if (!planningObjectId) {
+    return jsonResponse(origin, { ok: false, error: "Invalid planningId" }, 400);
+  }
+
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
+
+  try {
+    await client.connect();
+    const db = client.db();
+    const plannings = db.collection("plannings");
+
+    const res = await plannings.deleteOne({
+      _id: planningObjectId,
+      companyId: session.activeCompanyId,
+    });
+
+    if (res.deletedCount === 0) {
+      return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
+    }
+
+    return jsonResponse(origin, { ok: true }, 200);
+  } catch (e: any) {
+    console.error("DELETE PLANNING ERROR:", e);
+    return jsonResponse(
+      origin,
+      { ok: false, error: e?.message ?? "Unknown error" },
+      500
+    );
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
