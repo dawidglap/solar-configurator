@@ -120,7 +120,10 @@ function normalizeStageType(v: unknown): "open" | "won" | "lost" {
 }
 
 function isAllowedRole(session: any) {
-  const role = safeString(session?.role || session?.primaryRole).toLowerCase();
+  if (session?.isPlatformSuperAdmin === true) return true;
+
+  const role = safeString(session?.role || session?.primaryRole || session?.companyRole).toLowerCase();
+
   const roles = Array.isArray(session?.roles)
     ? session.roles.map((r: any) => safeString(r).toLowerCase())
     : [];
@@ -129,9 +132,13 @@ function isAllowedRole(session: any) {
     role === "inhaber" ||
     role === "owner" ||
     role === "admin" ||
+    role === "company_admin" ||
+    role === "manager" ||
     roles.includes("inhaber") ||
     roles.includes("owner") ||
-    roles.includes("admin")
+    roles.includes("admin") ||
+    roles.includes("company_admin") ||
+    roles.includes("manager")
   );
 }
 
@@ -220,7 +227,7 @@ export async function GET(req: Request) {
   }
 
   const session = readSession(req, secret);
-
+console.log("PIPELINE SESSION:", session);
   if (!session?.activeCompanyId) {
     return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
   }
