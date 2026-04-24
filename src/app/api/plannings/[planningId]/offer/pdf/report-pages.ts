@@ -265,8 +265,30 @@ function drawBarChart(args: {
   const maxValRaw = Math.max(0, ...values);
   const minValRaw = Math.min(0, ...values);
 
-  const niceMax = Math.ceil(maxValRaw / 10000) * 10000 || 10000;
-  const niceMin = mode === "cashflow"
+ function niceCeil(value: number) {
+  if (value <= 0) return 1000;
+
+  const rough = value * 1.25;
+  const pow = Math.pow(10, Math.floor(Math.log10(rough)));
+  const normalized = rough / pow;
+
+  let niceNormalized = 1;
+  if (normalized <= 1) niceNormalized = 1;
+  else if (normalized <= 2) niceNormalized = 2;
+  else if (normalized <= 2.5) niceNormalized = 2.5;
+  else if (normalized <= 5) niceNormalized = 5;
+  else niceNormalized = 10;
+
+  return niceNormalized * pow;
+}
+
+const niceMax =
+  mode === "saving"
+    ? niceCeil(maxValRaw)
+    : Math.ceil(maxValRaw / 10000) * 10000 || 10000;
+
+const niceMin =
+  mode === "cashflow"
     ? Math.floor(minValRaw / 10000) * 10000
     : 0;
 
