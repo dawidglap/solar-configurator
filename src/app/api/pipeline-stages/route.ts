@@ -122,7 +122,12 @@ function normalizeStageType(v: unknown): "open" | "won" | "lost" {
 function isAllowedRole(session: any) {
   if (session?.isPlatformSuperAdmin === true) return true;
 
-  const role = safeString(session?.role || session?.primaryRole || session?.companyRole).toLowerCase();
+  const role = safeString(
+    session?.activeRole ||
+    session?.role ||
+    session?.primaryRole ||
+    session?.companyRole
+  ).toLowerCase();
 
   const roles = Array.isArray(session?.roles)
     ? session.roles.map((r: any) => safeString(r).toLowerCase())
