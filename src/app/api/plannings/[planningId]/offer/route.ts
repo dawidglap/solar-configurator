@@ -457,7 +457,7 @@ console.log("OFFER REPORT SUMMARY DATA:", reportSummary);
         category: safeString(item?.category ?? item?.kategorie),
         brand: safeString(item?.brand ?? item?.marke),
         model: safeString(item?.model),
-        name: safeString(item?.name ?? item?.beschreibung),
+        name: safeString(item?.name ?? item?.label ?? item?.beschreibung),
         quantity: safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0),
         unit: safeString(item?.unit),
         unitLabel: safeString(item?.unitLabel),
@@ -479,7 +479,7 @@ console.log("OFFER REPORT SUMMARY DATA:", reportSummary);
         features: safeStringArray(item?.catalogFeatures),
         warranty: safeString(item?.catalogWarranty),
         compatibility: safeString(item?.catalogCompatibility),
-        notes: safeString(item?.catalogNotes),
+        notes: safeString(item?.notes) || safeString(item?.catalogNotes),
       })),
     };
 
