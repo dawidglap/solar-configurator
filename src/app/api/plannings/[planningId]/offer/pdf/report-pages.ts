@@ -17,10 +17,11 @@ const CONTENT_WIDTH = CONTENT_RIGHT - CONTENT_LEFT;
 const C = {
   dark: rgb(0.13, 0.22, 0.27),
   muted: rgb(0.45, 0.52, 0.56),
-  light: rgb(0.95, 0.97, 0.97),
+  light: rgb(1, 1, 1),
+  soft: rgb(0.97, 0.985, 0.98),
   border: rgb(0.84, 0.87, 0.88),
   teal: rgb(0.12, 0.32, 0.37),
-  green: rgb(0.22, 0.78, 0.64),
+  green: rgb(0.22, 0.72, 0.56),
   orange: rgb(0.95, 0.58, 0.16),
   red: rgb(0.92, 0.24, 0.22),
   gray: rgb(0.58, 0.62, 0.65),
@@ -104,32 +105,93 @@ function footer(page: PDFPage, font: PDFFont, companyName?: string) {
   txt(page, companyName || "HELIONIC", 44, 27, 7.5, font, C.muted);
 }
 
-function drawKpi(args: {
+function drawCard(args: {
   page: PDFPage;
   x: number;
   y: number;
   w: number;
   h: number;
-  label: string;
-  value: string;
-  font: PDFFont;
+  title: string;
   bold: PDFFont;
-  color?: any;
 }) {
-  const { page, x, y, w, h, label, value, font, bold, color = C.dark } = args;
+  const { page, x, y, w, h, title, bold } = args;
 
   page.drawRectangle({
     x,
     y,
     width: w,
     height: h,
-    color: C.light,
+    color: C.white,
     borderColor: C.border,
-    borderWidth: 0.6,
+    borderWidth: 0.7,
   });
 
-  txt(page, label, x + 9, y + h - 14, 6.3, font, C.muted);
-  txt(page, value, x + 9, y + 10, 9.5, bold, color);
+  txt(page, title, x + 12, y + h - 22, 11.5, bold, C.dark);
+
+  page.drawLine({
+    start: { x: x + 12, y: y + h - 31 },
+    end: { x: x + w - 12, y: y + h - 31 },
+    thickness: 0.5,
+    color: C.border,
+  });
+}
+
+function drawMiniKpi(args: {
+  page: PDFPage;
+  x: number;
+  y: number;
+  w: number;
+  label: string;
+  value: string;
+  font: PDFFont;
+  bold: PDFFont;
+  color?: any;
+}) {
+  const { page, x, y, w, label, value, font, bold, color = C.dark } = args;
+
+  page.drawRectangle({
+    x,
+    y,
+    width: w,
+    height: 35,
+    color: C.soft,
+    borderColor: C.border,
+    borderWidth: 0.45,
+  });
+
+  txt(page, label, x + 8, y + 21, 6.2, font, C.muted);
+  txt(page, value, x + 8, y + 8, 8.7, bold, color);
+}
+
+function drawParagraph(
+  page: PDFPage,
+  text: string,
+  x: number,
+  y: number,
+  maxChars: number,
+  lineHeight: number,
+  font: PDFFont,
+  size = 7.3,
+  color = C.dark
+) {
+  const words = text.split(/\s+/);
+  let line = "";
+  let yy = y;
+
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+
+    if (next.length > maxChars) {
+      txt(page, line, x, yy, size, font, color);
+      yy -= lineHeight;
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+
+  if (line) txt(page, line, x, yy, size, font, color);
+  return yy - lineHeight;
 }
 
 function niceCeil(value: number) {
@@ -183,20 +245,10 @@ function drawLineChart(args: {
   const rawMax = Math.max(1, ...data.flatMap((d) => [d.production, d.consumption]));
   const max = niceCeil(rawMax);
 
-  const plotX = x + 30;
-  const plotY = y + 22;
-  const plotW = w - 42;
-  const plotH = h - 45;
-
-  page.drawRectangle({
-    x,
-    y,
-    width: w,
-    height: h,
-    color: rgb(0.985, 0.99, 0.99),
-    borderColor: C.border,
-    borderWidth: 0.5,
-  });
+  const plotX = x + 34;
+  const plotY = y + 24;
+  const plotW = w - 46;
+  const plotH = h - 48;
 
   for (let i = 0; i <= 3; i++) {
     const value = (max / 3) * i;
@@ -218,13 +270,19 @@ function drawLineChart(args: {
   });
 
   for (let i = 0; i < data.length - 1; i++) {
-    const a = point(data[i].production, i);
-    const b = point(data[i + 1].production, i + 1);
-    page.drawLine({ start: a, end: b, thickness: 1.5, color: C.green });
+    page.drawLine({
+      start: point(data[i].production, i),
+      end: point(data[i + 1].production, i + 1),
+      thickness: 1.6,
+      color: C.green,
+    });
 
-    const c = point(data[i].consumption, i);
-    const d = point(data[i + 1].consumption, i + 1);
-    page.drawLine({ start: c, end: d, thickness: 1.5, color: C.orange });
+    page.drawLine({
+      start: point(data[i].consumption, i),
+      end: point(data[i + 1].consumption, i + 1),
+      thickness: 1.6,
+      color: C.orange,
+    });
   }
 
   data.forEach((d, i) => {
@@ -232,11 +290,11 @@ function drawLineChart(args: {
     txt(page, d.month, px - 1.5, y + 8, 5.4, font, C.muted);
   });
 
-  page.drawCircle({ x: x + 78, y: y + h - 14, size: 2.3, color: C.green });
-  txt(page, "Produktion", x + 84, y + h - 16, 5.8, font, C.muted);
+  page.drawCircle({ x: x + 76, y: y + h - 12, size: 2.3, color: C.green });
+  txt(page, "Produktion", x + 82, y + h - 14, 5.8, font, C.muted);
 
-  page.drawCircle({ x: x + 147, y: y + h - 14, size: 2.3, color: C.orange });
-  txt(page, "Verbrauch", x + 153, y + h - 16, 5.8, font, C.muted);
+  page.drawCircle({ x: x + 145, y: y + h - 12, size: 2.3, color: C.orange });
+  txt(page, "Verbrauch", x + 151, y + h - 14, 5.8, font, C.muted);
 }
 
 function drawBarChart(args: {
@@ -259,10 +317,10 @@ function drawBarChart(args: {
   const top = mode === "cashflow" ? limit : niceCeil(max);
   const bottom = mode === "cashflow" ? -limit : 0;
 
-  const plotX = x + 35;
-  const plotY = y + 22;
-  const plotW = w - 45;
-  const plotH = h - 45;
+  const plotX = x + 36;
+  const plotY = y + 23;
+  const plotW = w - 48;
+  const plotH = h - 47;
 
   const valueToY = (value: number) => {
     const range = top - bottom || 1;
@@ -270,16 +328,6 @@ function drawBarChart(args: {
   };
 
   const zeroY = valueToY(0);
-
-  page.drawRectangle({
-    x,
-    y,
-    width: w,
-    height: h,
-    color: rgb(0.985, 0.99, 0.99),
-    borderColor: C.border,
-    borderWidth: 0.5,
-  });
 
   for (let i = 0; i <= 3; i++) {
     const value = bottom + ((top - bottom) / 3) * i;
@@ -292,7 +340,7 @@ function drawBarChart(args: {
       color: rgb(0.86, 0.88, 0.89),
     });
 
-    rightTxt(page, fmtAxis(value), plotX - 6, yy - 2, 5.3, font, C.muted);
+    rightTxt(page, fmtAxis(value), plotX - 6, yy - 2, 5.2, font, C.muted);
   }
 
   page.drawLine({
@@ -369,7 +417,7 @@ function addBerichtOverviewPage(
 
   txt(
     page,
-    "Kompakte Übersicht der wichtigsten Kennzahlen zu Energiefluss, Wirtschaftlichkeit, Produktion und Ersparnis.",
+    "Die wichtigsten Ergebnisse der geplanten Photovoltaikanlage auf einen Blick.",
     44,
     748,
     9,
@@ -382,28 +430,35 @@ function addBerichtOverviewPage(
   const leftX = 44;
   const rightX = leftX + colW + gap;
 
+  const topY = 485;
+  const bottomY = 170;
+  const cardH = 245;
+
   const annual = n(r.annualBenefitChf);
   const investment = n(r.totalInvestmentChf ?? offer?.pricing?.totalInvestmentChf);
+  const selfUse = n(r.selfUseSharePct);
+  const feedIn = Math.max(0, 100 - selfUse);
+
+  const savingFactors = [0.04, 0.05, 0.08, 0.1, 0.12, 0.13, 0.13, 0.12, 0.09, 0.07, 0.04, 0.03];
+  const savingLabels = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+  const savingValues = savingFactors.map((f) => Math.round(annual * f));
 
   // Energiefluss
-  page.drawRectangle({
+  drawCard({
+    page,
     x: leftX,
-    y: 515,
-    width: colW,
-    height: 215,
-    color: C.light,
-    borderColor: C.border,
-    borderWidth: 0.6,
+    y: topY,
+    w: colW,
+    h: cardH,
+    title: "Energiefluss",
+    bold,
   });
 
-  txt(page, "Energiefluss", leftX + 12, 708, 11, bold, C.dark);
-
-  drawKpi({
+  drawMiniKpi({
     page,
     x: leftX + 12,
-    y: 665,
-    w: 102,
-    h: 36,
+    y: topY + 167,
+    w: 103,
     label: "Eigenverbrauch",
     value: fmtPct(r.selfUseSharePct),
     font,
@@ -411,12 +466,11 @@ function addBerichtOverviewPage(
     color: C.green,
   });
 
-  drawKpi({
+  drawMiniKpi({
     page,
-    x: leftX + 125,
-    y: 665,
-    w: 102,
-    h: 36,
+    x: leftX + 126,
+    y: topY + 167,
+    w: 103,
     label: "Autarkie",
     value: fmtPct(r.autarkyPct),
     font,
@@ -428,31 +482,40 @@ function addBerichtOverviewPage(
     page,
     data: monthlyEnergy(r),
     x: leftX + 10,
-    y: 530,
+    y: topY + 72,
     w: colW - 20,
-    h: 120,
+    h: 84,
     font,
   });
 
+  drawParagraph(
+    page,
+    "Der grüne Verlauf zeigt die monatliche Solarproduktion. Die orange Linie zeigt den geschätzten Stromverbrauch. Je stärker sich beide Linien überschneiden, desto mehr Solarstrom kann direkt im Gebäude genutzt werden.",
+    leftX + 12,
+    topY + 54,
+    54,
+    8.5,
+    font,
+    6.7,
+    C.dark
+  );
+
   // Wirtschaftlichkeit
-  page.drawRectangle({
+  drawCard({
+    page,
     x: rightX,
-    y: 515,
-    width: colW,
-    height: 215,
-    color: C.light,
-    borderColor: C.border,
-    borderWidth: 0.6,
+    y: topY,
+    w: colW,
+    h: cardH,
+    title: "Wirtschaftlichkeit",
+    bold,
   });
 
-  txt(page, "Wirtschaftlichkeit", rightX + 12, 708, 11, bold, C.dark);
-
-  drawKpi({
+  drawMiniKpi({
     page,
     x: rightX + 12,
-    y: 665,
+    y: topY + 167,
     w: 68,
-    h: 36,
     label: "Break-even",
     value: r.breakEvenYears != null ? `${fmtNum(r.breakEvenYears, 1)} J.` : "—",
     font,
@@ -460,24 +523,22 @@ function addBerichtOverviewPage(
     color: rgb(0.22, 0.48, 0.78),
   });
 
-  drawKpi({
+  drawMiniKpi({
     page,
     x: rightX + 88,
-    y: 665,
-    w: 82,
-    h: 36,
+    y: topY + 167,
+    w: 83,
     label: "Investition",
     value: fmtChf(investment),
     font,
     bold,
   });
 
-  drawKpi({
+  drawMiniKpi({
     page,
-    x: rightX + 178,
-    y: 665,
-    w: 57,
-    h: 36,
+    x: rightX + 179,
+    y: topY + 167,
+    w: 50,
     label: "Rendite",
     value: r.roiPct != null ? fmtPct(r.roiPct) : "—",
     font,
@@ -487,21 +548,16 @@ function addBerichtOverviewPage(
 
   page.drawRectangle({
     x: rightX + 12,
-    y: 626,
+    y: topY + 132,
     width: colW - 24,
-    height: 28,
-    color: rgb(0.95, 0.98, 0.97),
+    height: 24,
+    color: C.soft,
     borderColor: C.border,
-    borderWidth: 0.5,
+    borderWidth: 0.45,
   });
 
-  txt(page, "PV Einmalvergütung", rightX + 22, 642, 6.5, font, C.muted);
-  txt(page, fmtChf(r.automaticPvSubsidyChf), rightX + 105, 642, 7.2, bold, C.dark);
-
-  txt(page, "Weitere", rightX + 22, 631, 6.5, font, C.muted);
-  txt(page, fmtChf(r.manualAdditionalSubsidyChf), rightX + 105, 631, 7.2, bold, C.dark);
-
-  rightTxt(page, `Total ${fmtChf(r.subsidyChf)}`, rightX + colW - 20, 631, 7.5, bold, C.green);
+  txt(page, "Förderbeiträge total", rightX + 22, topY + 142, 6.5, font, C.muted);
+  rightTxt(page, fmtChf(r.subsidyChf), rightX + colW - 22, topY + 142, 8, bold, C.green);
 
   const cashflow = Array.from({ length: 26 }, (_, i) =>
     Math.round(-investment + annual * i)
@@ -512,31 +568,41 @@ function addBerichtOverviewPage(
     values: cashflow,
     labels: Array.from({ length: 26 }, (_, i) => String(i)),
     x: rightX + 10,
-    y: 530,
+    y: topY + 54,
     w: colW - 20,
-    h: 85,
+    h: 70,
     font,
     mode: "cashflow",
   });
 
-  // Produktion
-  page.drawRectangle({
-    x: leftX,
-    y: 300,
-    width: colW,
-    height: 195,
-    color: C.light,
-    borderColor: C.border,
-    borderWidth: 0.6,
-  });
+  drawParagraph(
+    page,
+    "Die Balken zeigen den kumulierten finanziellen Effekt über 25 Jahre. Am Anfang ist die Investition negativ. Sobald die jährlichen Vorteile die Investition ausgleichen, ist der rechnerische Break-even erreicht.",
+    rightX + 12,
+    topY + 39,
+    54,
+    8.5,
+    font,
+    6.7,
+    C.dark
+  );
 
-  txt(page, "Produktion", leftX + 12, 473, 11, bold, C.dark);
+  // Produktion
+  drawCard({
+    page,
+    x: leftX,
+    y: bottomY,
+    w: colW,
+    h: cardH,
+    title: "Produktion",
+    bold,
+  });
 
   txt(
     page,
     `${fmtNum(r.moduleCount)} × ${r.selectedPanelName || "PV Modul"}`,
     leftX + 12,
-    459,
+    bottomY + 198,
     7,
     font,
     C.muted
@@ -551,129 +617,143 @@ function addBerichtOverviewPage(
     ["Belegte Fläche", `${fmtNum(r.moduleAreaM2, 1)} m²`],
   ];
 
-  let py = 435;
+  let py = bottomY + 177;
 
   prodRows.forEach((row, i) => {
     const x = i % 2 === 0 ? leftX + 12 : leftX + 132;
-    if (i % 2 === 0 && i > 0) py -= 34;
+    if (i % 2 === 0 && i > 0) py -= 31;
 
-    txt(page, row[0], x, py, 6.8, font, C.muted);
-    txt(page, row[1], x, py - 13, 8.2, bold, C.dark);
+    txt(page, row[0], x, py, 6.7, font, C.muted);
+    txt(page, row[1], x, py - 12, 8, bold, C.dark);
   });
 
   page.drawLine({
-    start: { x: leftX + 12, y: 345 },
-    end: { x: leftX + colW - 12, y: 345 },
+    start: { x: leftX + 12, y: bottomY + 73 },
+    end: { x: leftX + colW - 12, y: bottomY + 73 },
     thickness: 0.5,
     color: C.border,
   });
 
   drawDonut({
     page,
-    x: leftX + 62,
-    y: 323,
-    size: 23,
-    pct: n(r.selfUseSharePct),
+    x: leftX + 55,
+    y: bottomY + 45,
+    size: 22,
+    pct: selfUse,
     font,
     bold,
   });
 
-  txt(page, "Eigenverbrauch", leftX + 105, 331, 6.8, font, C.muted);
-  txt(page, fmtPct(r.selfUseSharePct), leftX + 105, 318, 8.5, bold, C.dark);
+  txt(page, "Direkt genutzt", leftX + 95, bottomY + 54, 6.8, font, C.muted);
+  txt(page, fmtPct(selfUse), leftX + 95, bottomY + 41, 8.5, bold, C.dark);
 
-  txt(page, "Einspeisung", leftX + 170, 331, 6.8, font, C.muted);
-  txt(page, fmtPct(100 - n(r.selfUseSharePct)), leftX + 170, 318, 8.5, bold, C.dark);
+  txt(page, "Eingespeist", leftX + 165, bottomY + 54, 6.8, font, C.muted);
+  txt(page, fmtPct(feedIn), leftX + 165, bottomY + 41, 8.5, bold, C.dark);
+
+  drawParagraph(
+    page,
+    "Die Jahresproduktion ist die erwartete Strommenge der Anlage pro Jahr. Der spezifische Ertrag zeigt, wie effizient die installierte Leistung am Standort genutzt wird.",
+    leftX + 12,
+    bottomY + 24,
+    54,
+    8.5,
+    font,
+    6.7,
+    C.dark
+  );
 
   // Ersparnis
-  page.drawRectangle({
+  drawCard({
+    page,
     x: rightX,
-    y: 300,
-    width: colW,
-    height: 195,
-    color: C.light,
-    borderColor: C.border,
-    borderWidth: 0.6,
+    y: bottomY,
+    w: colW,
+    h: cardH,
+    title: "Ersparnis",
+    bold,
   });
 
-  txt(page, "Ersparnis", rightX + 12, 473, 11, bold, C.dark);
-
-  drawKpi({
+  drawMiniKpi({
     page,
     x: rightX + 12,
-    y: 435,
+    y: bottomY + 167,
     w: 68,
-    h: 36,
     label: "Pro Monat",
     value: fmtChf(Math.round(annual / 12)),
     font,
     bold,
   });
 
-  drawKpi({
+  drawMiniKpi({
     page,
     x: rightX + 88,
-    y: 435,
+    y: bottomY + 167,
     w: 68,
-    h: 36,
     label: "Pro Jahr",
     value: fmtChf(annual),
     font,
     bold,
   });
 
-  drawKpi({
+  drawMiniKpi({
     page,
     x: rightX + 164,
-    y: 435,
-    w: 71,
-    h: 36,
-    label: "In 20 Jahren",
+    y: bottomY + 167,
+    w: 65,
+    label: "20 Jahre",
     value: fmtChf(annual * 20),
     font,
     bold,
     color: C.green,
   });
 
-  const savingFactors = [0.04, 0.05, 0.08, 0.1, 0.12, 0.13, 0.13, 0.12, 0.09, 0.07, 0.04, 0.03];
-  const savingLabels = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
-  const savingValues = savingFactors.map((f) => Math.round(annual * f));
-
   drawBarChart({
     page,
     values: savingValues,
     labels: savingLabels,
     x: rightX + 10,
-    y: 315,
+    y: bottomY + 66,
     w: colW - 20,
-    h: 105,
+    h: 88,
     font,
     mode: "saving",
   });
 
-  // Monatliche Ersparnis Detail
+  drawParagraph(
+    page,
+    "Die monatliche Ersparnis entsteht durch weniger Strombezug aus dem Netz und durch die Vergütung für eingespeisten Solarstrom. In sonnenstarken Monaten ist der Nutzen typischerweise höher.",
+    rightX + 12,
+    bottomY + 45,
+    54,
+    8.5,
+    font,
+    6.7,
+    C.dark
+  );
+
   page.drawRectangle({
     x: 44,
-    y: 78,
+    y: 82,
     width: 507,
-    height: 200,
-    color: C.light,
+    height: 54,
+    color: C.soft,
     borderColor: C.border,
-    borderWidth: 0.6,
+    borderWidth: 0.5,
   });
 
-  txt(page, "Monatliche Ersparnis", 58, 256, 11, bold, C.dark);
+  txt(page, "Hinweis", 58, 115, 8, bold, C.teal);
 
-  drawBarChart({
+  drawParagraph(
     page,
-    values: savingValues,
-    labels: savingLabels,
-    x: 58,
-    y: 100,
-    w: 480,
-    h: 140,
+    "Alle Werte sind Prognosen. Die tatsächlichen Ergebnisse können je nach Wetter, Verbrauchsverhalten, Strompreis, Verschattung, Netzvergütung und Betriebsweise abweichen.",
+    58,
+    101,
+    108,
+    9,
     font,
-    mode: "saving",
-  });
+    7.2,
+    C.dark
+  );
 
   footer(page, font, data.companyName);
 }
