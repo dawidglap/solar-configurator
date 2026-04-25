@@ -211,10 +211,10 @@ export default function OverlayProgressStepper() {
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px" />
 
-      <div className="glass-topbar relative flex h-10 w-full items-center gap-3 rounded-tl-2xl border-l border-border/60 px-4">
-        <nav aria-label="Wizard progress" className="w-full">
-          <div className="relative mx-auto w-full" style={{ maxWidth: 1400 }}>
-            <ol className="relative flex w-full items-center justify-evenly gap-2">
+      <div className="glass-topbar relative flex h-10 w-full items-center justify-between gap-4 rounded-tl-2xl border-l border-border/60 px-4">
+        <nav aria-label="Wizard progress" className="min-w-0 flex-1 overflow-hidden">
+          <div className="relative flex w-full justify-start">
+            <ol className="relative flex w-auto items-center justify-start gap-2.5">
               {UI_STEPS.map((s, i) => {
                 const isActive = i === activeIndex;
 
@@ -250,18 +250,18 @@ export default function OverlayProgressStepper() {
                 };
 
                 const base =
-                  "relative z-[1] w-full px-2 py-2 text-center transition-colors select-none";
+                  "relative z-[1] flex-none px-0.5 py-1 text-left transition-colors select-none";
                 const labelCls =
-                  "text-[13px] md:text-[13px] font-medium tracking-wide whitespace-nowrap transition-colors";
-                const activeCls = "bg-primary/10 text-primary ring-1 ring-primary/30";
-                const completedCls = i < activeIndex ? "bg-success/15 text-success" : "";
+                  "text-[13px] md:text-[13px] font-medium whitespace-nowrap transition-colors";
+                const activeCls = "bg-primary text-primary-foreground shadow-[0_8px_24px_hsl(var(--primary)/0.18)]";
+                const completedCls = i < activeIndex ? "bg-primary/12 text-primary ring-1 ring-primary/20" : "";
                 const idleCls = "text-muted-foreground hover:text-foreground";
                 const disabledCls = "text-muted-foreground/60 cursor-default";
 
                 const displayText = !isActive ? s.short : s.label;
 
                 return (
-                  <li key={s.key} className="flex-1 min-w-0">
+                  <li key={s.key} className="min-w-0 flex-none">
                     {s.clickable ? (
                       <button
                         type="button"
@@ -272,7 +272,7 @@ export default function OverlayProgressStepper() {
                         title={s.label}
                       >
                         <span
-                          className={`${labelCls} inline-flex rounded-lg px-2.5 py-1 ${
+                          className={`${labelCls} inline-flex items-center rounded-2xl px-4 py-1.5 ${
                             isActive ? activeCls : completedCls || idleCls
                           } ${!isActive ? "group-hover:hidden" : ""}`}
                         >
@@ -283,7 +283,7 @@ export default function OverlayProgressStepper() {
 
                         {!isActive && !isRedirecting && (
                           <span
-                            className={`${labelCls} ${idleCls} hidden rounded-lg px-2.5 py-1 group-hover:inline`}
+                            className={`${labelCls} ${idleCls} hidden items-center rounded-2xl px-4 py-1.5 group-hover:inline-flex`}
                           >
                             {s.short}
                           </span>

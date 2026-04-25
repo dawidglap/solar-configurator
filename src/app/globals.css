@@ -52,67 +52,67 @@
 :root,
 :root[data-theme="default"] {
   --background: 214 46% 24%;
-  --foreground: 210 30% 95%;
+  --foreground: 210 34% 97%;
   --card: 214 52% 33%;
-  --card-foreground: 210 30% 95%;
+  --card-foreground: 210 34% 97%;
   --popover: 214 52% 33%;
-  --popover-foreground: 210 30% 95%;
+  --popover-foreground: 210 34% 97%;
   --primary: 168 65% 52%;
   --primary-foreground: 220 25% 8%;
   --secondary: 214 40% 28%;
-  --secondary-foreground: 210 28% 88%;
+  --secondary-foreground: 210 30% 92%;
   --muted: 214 34% 30%;
-  --muted-foreground: 214 18% 74%;
+  --muted-foreground: 214 20% 82%;
   --accent: 168 65% 52%;
   --accent-foreground: 220 25% 8%;
   --destructive: 0 72% 55%;
   --destructive-foreground: 210 20% 95%;
-  --border: 212 34% 44%;
+  --border: 212 36% 50%;
   --input: 214 44% 27%;
   --ring: 168 65% 52%;
   --radius: 0.75rem;
   --glass-bg: 214 50% 24%;
   --glass-border: 0 0% 100%;
   --glass-highlight: 0 0% 100%;
-  --glass-blur: 34px;
+  --glass-blur: 48px;
   --glass-opacity: 0.12;
   --success: 160 60% 45%;
   --warning: 38 92% 55%;
   --info: 210 80% 58%;
   --sidebar-background: 214 44% 23%;
-  --sidebar-foreground: 214 18% 78%;
+  --sidebar-foreground: 214 20% 84%;
   --sidebar-primary: 168 65% 52%;
   --sidebar-primary-foreground: 220 25% 8%;
   --sidebar-accent: 214 34% 30%;
-  --sidebar-accent-foreground: 210 30% 95%;
+  --sidebar-accent-foreground: 210 34% 97%;
   --sidebar-border: 212 28% 35%;
   --sidebar-ring: 168 65% 52%;
   --shell-bg: 214 52% 22%;
   --shell-image-opacity: 0.5;
   --shell-overlay-strength: 0.74;
   --surface-panel-bg: 214 56% 33%;
-  --surface-panel-bg-alpha: 0.56;
+  --surface-panel-bg-alpha: 0.62;
   --surface-panel-border: 0 0% 100%;
-  --surface-panel-border-alpha: 0.12;
-  --surface-panel-highlight-alpha: 0.08;
+  --surface-panel-border-alpha: 0.16;
+  --surface-panel-highlight-alpha: 0.12;
   --surface-panel-shadow: 0 0% 0%;
-  --surface-panel-shadow-alpha: 0.34;
-  --surface-panel-blur: 34px;
-  --surface-elevated-bg-alpha: 0.62;
-  --surface-elevated-border-alpha: 0.16;
-  --surface-elevated-shadow-alpha: 0.38;
-  --surface-elevated-blur: 38px;
+  --surface-panel-shadow-alpha: 0.4;
+  --surface-panel-blur: 48px;
+  --surface-elevated-bg-alpha: 0.7;
+  --surface-elevated-border-alpha: 0.2;
+  --surface-elevated-shadow-alpha: 0.44;
+  --surface-elevated-blur: 56px;
   --surface-sidebar-bg: 214 44% 23%;
   --surface-sidebar-bg-alpha: 0.74;
   --surface-sidebar-border-alpha: 0.1;
   --surface-topbar-bg: 214 48% 26%;
-  --surface-topbar-bg-alpha: 0.72;
+  --surface-topbar-bg-alpha: 0.78;
   --surface-topbar-border-alpha: 0.1;
-  --surface-input-bg-alpha: 0.74;
-  --surface-input-border-alpha: 0.08;
-  --surface-row-bg-alpha: 0.18;
-  --surface-row-hover-alpha: 0.28;
-  --surface-row-border-alpha: 0.08;
+  --surface-input-bg-alpha: 0.8;
+  --surface-input-border-alpha: 0.12;
+  --surface-row-bg-alpha: 0.24;
+  --surface-row-hover-alpha: 0.34;
+  --surface-row-border-alpha: 0.1;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -290,24 +290,24 @@
 
   .glass-panel {
     @apply rounded-xl;
-    backdrop-filter: blur(var(--surface-panel-blur)) saturate(1.3);
-    -webkit-backdrop-filter: blur(var(--surface-panel-blur)) saturate(1.3);
+    backdrop-filter: blur(var(--surface-panel-blur)) saturate(1.45);
+    -webkit-backdrop-filter: blur(var(--surface-panel-blur)) saturate(1.45);
     background: hsl(var(--surface-panel-bg) / var(--surface-panel-bg-alpha));
     border: 1px solid hsl(var(--surface-panel-border) / var(--surface-panel-border-alpha));
     box-shadow:
       inset 0 1px 0 0 hsl(0 0% 100% / var(--surface-panel-highlight-alpha)),
-      0 8px 32px -8px hsl(var(--surface-panel-shadow) / var(--surface-panel-shadow-alpha));
+      0 16px 48px -14px hsl(var(--surface-panel-shadow) / var(--surface-panel-shadow-alpha));
   }
 
   .glass-panel-elevated {
     @apply rounded-xl;
-    backdrop-filter: blur(var(--surface-elevated-blur)) saturate(1.4);
-    -webkit-backdrop-filter: blur(var(--surface-elevated-blur)) saturate(1.4);
+    backdrop-filter: blur(var(--surface-elevated-blur)) saturate(1.55);
+    -webkit-backdrop-filter: blur(var(--surface-elevated-blur)) saturate(1.55);
     background: hsl(var(--surface-panel-bg) / var(--surface-elevated-bg-alpha));
     border: 1px solid hsl(var(--surface-panel-border) / var(--surface-elevated-border-alpha));
     box-shadow:
       inset 0 1px 0 0 hsl(0 0% 100% / var(--surface-panel-highlight-alpha)),
-      0 16px 48px -12px hsl(var(--surface-panel-shadow) / var(--surface-elevated-shadow-alpha));
+      0 22px 56px -16px hsl(var(--surface-panel-shadow) / var(--surface-elevated-shadow-alpha));
   }
 
   .glass-sidebar {
@@ -321,20 +321,23 @@
   }
 
   .glass-topbar {
-    backdrop-filter: blur(var(--surface-panel-blur)) saturate(1.3);
-    -webkit-backdrop-filter: blur(var(--surface-panel-blur)) saturate(1.3);
+    backdrop-filter: blur(var(--surface-panel-blur)) saturate(1.45);
+    -webkit-backdrop-filter: blur(var(--surface-panel-blur)) saturate(1.45);
     background: hsl(var(--surface-topbar-bg) / var(--surface-topbar-bg-alpha));
     border-bottom: 1px solid hsl(var(--surface-panel-border) / var(--surface-topbar-border-alpha));
-    box-shadow: 0 4px 24px -4px hsl(var(--surface-panel-shadow) / 0.12);
+    box-shadow:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.08),
+      0 10px 30px -8px hsl(var(--surface-panel-shadow) / 0.22);
   }
 
   .glass-input {
     @apply rounded-lg px-3 py-2 text-sm transition-all duration-200;
     background: hsl(var(--input) / var(--surface-input-bg-alpha));
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(28px) saturate(1.3);
+    -webkit-backdrop-filter: blur(28px) saturate(1.3);
     border: 1px solid hsl(var(--border) / var(--surface-input-border-alpha));
     color: hsl(var(--foreground));
+    box-shadow: inset 0 1px 0 0 hsl(0 0% 100% / 0.05);
   }
 
   .glass-input:focus {
@@ -360,21 +363,22 @@
 
   .glass-button-secondary {
     @apply rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200;
-    background: hsl(var(--secondary));
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid hsl(var(--border));
+    background: hsl(var(--secondary) / 0.82);
+    backdrop-filter: blur(28px) saturate(1.35);
+    -webkit-backdrop-filter: blur(28px) saturate(1.35);
+    border: 1px solid hsl(var(--border) / 0.9);
     color: hsl(var(--foreground));
+    box-shadow: inset 0 1px 0 0 hsl(0 0% 100% / 0.04);
   }
 
   .glass-button-secondary:hover {
-    background: hsl(var(--muted));
-    border-color: hsl(var(--border));
+    background: hsl(var(--muted) / 0.9);
+    border-color: hsl(var(--border) / 1);
   }
 
   .glass-row {
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(28px) saturate(1.25);
+    -webkit-backdrop-filter: blur(28px) saturate(1.25);
     background: hsl(var(--surface-panel-bg) / var(--surface-row-bg-alpha));
     border-bottom: 1px solid hsl(var(--border) / var(--surface-row-border-alpha));
     transition: background 0.15s ease;
@@ -386,8 +390,8 @@
 
   .status-badge {
     @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(24px) saturate(1.3);
+    -webkit-backdrop-filter: blur(24px) saturate(1.3);
   }
 
   .status-badge-success {
@@ -447,8 +451,8 @@
   .theme-switcher {
     background: hsl(var(--secondary) / 0.6);
     border: 1px solid hsl(var(--border));
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(28px) saturate(1.35);
+    -webkit-backdrop-filter: blur(28px) saturate(1.35);
   }
 
   .theme-switcher-btn {
