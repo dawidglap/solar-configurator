@@ -7,6 +7,7 @@ import {
 } from "react-konva";
 import { usePlannerV2Store } from "../state/plannerV2Store"; // ⬅️ NEW
 import { rotatePolygon } from "@/components_v2/roofs/alignment"; // ⬅️ NEW
+import { plannerTheme } from "../theme/plannerTheme";
 
 type Pt = { x: number; y: number };
 export type RoofArea = {
@@ -51,8 +52,8 @@ export default function RoofsLayer({
   selectedId,
   onSelect,
   mppImage,
-  stroke = "#6ce5e8",
-  fill = "rgba(14,165,233,0.18)",
+  stroke = plannerTheme.roofStroke,
+  fill = plannerTheme.roofFill,
 }: {
   roofs: RoofArea[];
   selectedId?: string;
@@ -101,7 +102,7 @@ export default function RoofsLayer({
                 y={c.y}
                 text={label}
                 fontSize={12}
-                fill="#111"
+                fill={plannerTheme.textLight}
                 offsetX={18}
                 offsetY={-6}
                 listening={false}

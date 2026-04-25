@@ -12,6 +12,7 @@ import {
   Map,
   FileText,
 } from "lucide-react";
+import ThemeSwitcher from "../theme/ThemeSwitcher";
 
 type StoreKey =
   | "profile"
@@ -118,8 +119,6 @@ const UI_STEPS: UiStep[] = [
   },
 ];
 
-const ACTIVE = "#6ce5e8";
-
 export default function OverlayProgressStepper() {
   const step = usePlannerV2Store((s) => s.step);
   const setStep = usePlannerV2Store((s) => s.setStep);
@@ -207,12 +206,12 @@ export default function OverlayProgressStepper() {
   return (
     <div
       ref={barRef}
-      className="fixed left-0 right-0 top-0 z-[200] planner-topbar text-white"
+      className="fixed left-0 right-0 top-0 z-[200] planner-topbar text-foreground"
       style={{ paddingLeft: "var(--sb, 64px)" }}
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px" />
 
-      <div className="relative flex h-10 w-full items-center px-4 bg-black/35 backdrop-blur-md border-t border-l border-b border-[#7E8B97] rounded-tl-2xl">
+      <div className="glass-topbar relative flex h-10 w-full items-center gap-3 rounded-tl-2xl border-l border-border/60 px-4">
         <nav aria-label="Wizard progress" className="w-full">
           <div className="relative mx-auto w-full" style={{ maxWidth: 1400 }}>
             <ol className="relative flex w-full items-center justify-evenly gap-2">
@@ -254,9 +253,10 @@ export default function OverlayProgressStepper() {
                   "relative z-[1] w-full px-2 py-2 text-center transition-colors select-none";
                 const labelCls =
                   "text-[13px] md:text-[13px] font-medium tracking-wide whitespace-nowrap transition-colors";
-                const activeCls = "text-[var(--active)]";
-                const idleCls = "text-white/75 hover:text-white";
-                const disabledCls = "text-white/45 cursor-default";
+                const activeCls = "bg-primary/10 text-primary ring-1 ring-primary/30";
+                const completedCls = i < activeIndex ? "bg-success/15 text-success" : "";
+                const idleCls = "text-muted-foreground hover:text-foreground";
+                const disabledCls = "text-muted-foreground/60 cursor-default";
 
                 const displayText = !isActive ? s.short : s.label;
 
@@ -269,12 +269,11 @@ export default function OverlayProgressStepper() {
                         disabled={isRedirecting}
                         aria-current={isActive ? "step" : undefined}
                         className={`${base} focus:outline-none group cursor-pointer disabled:opacity-50 disabled:cursor-wait`}
-                        style={{ ["--active" as any]: ACTIVE }}
                         title={s.label}
                       >
                         <span
-                          className={`${labelCls} ${
-                            isActive ? activeCls : idleCls
+                          className={`${labelCls} inline-flex rounded-lg px-2.5 py-1 ${
+                            isActive ? activeCls : completedCls || idleCls
                           } ${!isActive ? "group-hover:hidden" : ""}`}
                         >
                           {isRedirecting && s.key === "parts"
@@ -284,7 +283,7 @@ export default function OverlayProgressStepper() {
 
                         {!isActive && !isRedirecting && (
                           <span
-                            className={`${labelCls} ${idleCls} hidden group-hover:inline`}
+                            className={`${labelCls} ${idleCls} hidden rounded-lg px-2.5 py-1 group-hover:inline`}
                           >
                             {s.short}
                           </span>
@@ -301,6 +300,7 @@ export default function OverlayProgressStepper() {
             </ol>
           </div>
         </nav>
+        <ThemeSwitcher />
       </div>
     </div>
   );

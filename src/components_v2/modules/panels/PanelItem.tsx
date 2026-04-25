@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { Image as KonvaImage, Rect } from 'react-konva';
+import { plannerTheme } from '../../theme/plannerTheme';
 
 export type PanelItemProps = {
   id: string;
@@ -126,7 +127,7 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
         {image ? (
           <KonvaImage image={image} opacity={1} {...(base as any)} />
         ) : (
-          <Rect fill="#0f172a" opacity={0.95} {...(base as any)} />
+          <Rect fill={plannerTheme.panelFill} opacity={0.95} {...(base as any)} />
         )}
 
         {selected && (
@@ -138,8 +139,11 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
             offsetX={wPx / 2}
             offsetY={hPx / 2}
             rotation={rotationDeg}
-            stroke="#60a5fa"
-            strokeWidth={0.5}
+            stroke={plannerTheme.panelSelected}
+            strokeWidth={0.8}
+            shadowColor={plannerTheme.primaryGlow}
+            shadowBlur={6}
+            shadowOpacity={0.55}
             listening={false}
           />
         )}

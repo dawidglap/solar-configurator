@@ -17,11 +17,11 @@ import GridRotationControl from "../modules/GridRotationControl";
 type Pt = { x: number; y: number };
 
 const inputBase =
-  "w-full h-8 rounded-xl border border-white/80 bg-transparent px-2 text-white text-[11px] leading-none outline-none " +
-  "focus:ring-1 focus:ring-white focus:border-white transition";
+  "glass-input h-8 w-full rounded-lg px-2 py-0 text-[11px] leading-none " +
+  "focus:ring-1 focus:ring-primary/40 transition";
 
 const labelSm =
-  "block text-[10px] font-medium uppercase tracking-wide text-neutral-200";
+  "block text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
 
 // Piccola icona "tilt": triangolo + arco di angolo
 function IconTilt(props: React.SVGProps<SVGSVGElement>) {
@@ -243,7 +243,7 @@ export default function ModulesPanel() {
   );
 
   return (
-    <div className="w-full max-w-[240px] space-y-4 p-2 text-white ">
+    <div className="w-full max-w-[240px] space-y-4 p-2 text-foreground">
       {/* === EBENEN (tabella compatta) === */}
       <div className="px-0">
         <div className={`${labelSm} mb-2`}>
@@ -252,7 +252,7 @@ export default function ModulesPanel() {
 
         {detected?.length > 0 && (
           <div className="mb-2">
-            <div className="mb-1 text-[10px] font-medium text-neutral-200">
+            <div className="mb-1 text-[10px] font-medium text-muted-foreground">
               Erkannte Dächer
             </div>
             <DetectedRoofsImport />
@@ -260,13 +260,13 @@ export default function ModulesPanel() {
         )}
 
         {layers.length === 0 ? (
-          <p className="px-1 py-1 text-[11px] text-neutral-200">
+          <p className="px-1 py-1 text-[11px] text-muted-foreground">
             Noch keine Ebenen.
           </p>
         ) : (
           <div className="text-[10px]">
             {/* Header (7 colonne, griglia aggiornata) */}
-            <div className="grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-6 text-[10px] text-neutral-200">
+            <div className="grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-6 text-[10px] text-muted-foreground">
               <div className="font-medium">D</div>
               <div className="flex items-center justify-center">
                 <MdViewModule className="h-3 w-3" />
@@ -290,7 +290,7 @@ export default function ModulesPanel() {
             </div>
 
             {/* Righe (monolinea) */}
-            <ul className="divide-y divide-neutral-500">
+            <ul className="divide-y divide-border/70">
               {layers.map((l, i) => {
                 const roofId = l.id;
                 const active = selectedId === roofId;
@@ -347,8 +347,8 @@ export default function ModulesPanel() {
                       className={[
                         "grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-8",
                         active
-                          ? "bg-white/35 text-white"
-                          : "hover:bg-neutral-900/60 text-neutral-100",
+                          ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                          : "glass-row text-foreground",
                       ].join(" ")}
                     >
                       {/* D1/D2 */}
@@ -512,8 +512,8 @@ export default function ModulesPanel() {
                             className={[
                               "inline-flex  h-[14px] min-w-[14px] items-center justify-center rounded-sm px-[4px] text-[9px]",
                               active
-                                ? "bg-blue-800 text-white"
-                                : "bg-neutral-800 text-neutral-300",
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-secondary text-muted-foreground",
                             ].join(" ")}
                             title={srcBadge === "S" ? "Sonnendach" : "Manuell"}
                           >
@@ -538,7 +538,7 @@ export default function ModulesPanel() {
                               ? "opacity-30 cursor-not-allowed"
                               : active
                                 ? "opacity-90 hover:opacity-100"
-                                : "opacity-60 hover:opacity-100 hover:text-red-400",
+                                : "opacity-60 hover:opacity-100 hover:text-destructive",
                           ].join(" ")}
                         >
                           ✕
@@ -569,7 +569,7 @@ export default function ModulesPanel() {
               aria-label="Randabstand (m)"
             />
           </div>
-          <span className="pb-1 text-[10px] text-neutral-200">m</span>
+          <span className="pb-1 text-[10px] text-muted-foreground">m</span>
         </div>
         {/* Abstand tra pannelli rimane 0,02 interno/non visibile */}
       </section>
@@ -607,7 +607,7 @@ export default function ModulesPanel() {
         <label className={labelSm}>Unterkonstruktion</label>
         <select
           disabled
-          className={`${inputBase} cursor-not-allowed bg-neutral-900 text-neutral-500 border-neutral-800`}
+          className={`${inputBase} cursor-not-allowed opacity-55`}
         >
           <option>System auswählen</option>
         </select>
@@ -639,10 +639,10 @@ export default function ModulesPanel() {
             step={1}
             value={0}
             disabled
-            className={`${inputBase} cursor-not-allowed bg-neutral-900 text-neutral-500 border-neutral-800`}
+            className={`${inputBase} cursor-not-allowed opacity-55`}
             aria-label="Modulneigung (%)"
           />
-          <span className="pb-1 text-[10px] text-neutral-200">%</span>
+          <span className="pb-1 text-[10px] text-muted-foreground">%</span>
         </div>
       </section>
 
@@ -651,7 +651,7 @@ export default function ModulesPanel() {
         <label className={labelSm}>Wechselrichter</label>
         <select
           disabled
-          className={`${inputBase} cursor-not-allowed bg-neutral-900 text-neutral-500 border-neutral-800`}
+          className={`${inputBase} cursor-not-allowed opacity-55`}
         >
           <option>Auswählen</option>
         </select>

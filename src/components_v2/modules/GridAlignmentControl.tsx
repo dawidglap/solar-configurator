@@ -34,15 +34,15 @@ export default function GridAlignmentControl() {
 
   return (
     <fieldset className="space-y-3">
-      <label className="block text-[10px] font-medium uppercase tracking-wide text-neutral-600">
+      <label className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         Raster-Ausrichtung
       </label>
 
       {/* Vertikal (Zeilen) */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-neutral-600">Vertikal (Zeilen)</span>
-          <span className="text-[10px] text-neutral-400">
+          <span className="text-[10px] text-muted-foreground">Vertikal (Zeilen)</span>
+          <span className="text-[10px] text-muted-foreground/70">
             {labelFor(gridAnchorY as any)} · {gridPhaseY.toFixed(2)}
           </span>
         </div>
@@ -56,10 +56,10 @@ export default function GridAlignmentControl() {
             const { anchor, phase } = fromSlider(Number(e.target.value));
             setModules({ gridAnchorY: anchor as any, gridPhaseY: phase });
           }}
-          className="w-full"
+          className="w-full accent-primary"
           aria-label="Vertikale Rasterausrichtung"
         />
-        <div className="flex justify-between text-[9px] text-neutral-400 -mt-1">
+        <div className="flex justify-between text-[9px] text-muted-foreground/70 -mt-1">
           <span>Start</span><span>Mitte</span><span>Ende</span>
         </div>
       </div>
@@ -67,8 +67,8 @@ export default function GridAlignmentControl() {
       {/* Horizontal (Spalten) */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-neutral-600">Horizontal (Spalten)</span>
-          <span className="text-[10px] text-neutral-400">
+          <span className="text-[10px] text-muted-foreground">Horizontal (Spalten)</span>
+          <span className="text-[10px] text-muted-foreground/70">
             {labelFor(gridAnchorX as any)} · {gridPhaseX.toFixed(2)}
           </span>
         </div>
@@ -82,10 +82,10 @@ export default function GridAlignmentControl() {
             const { anchor, phase } = fromSlider(Number(e.target.value));
             setModules({ gridAnchorX: anchor as any, gridPhaseX: phase });
           }}
-          className="w-full"
+          className="w-full accent-primary"
           aria-label="Horizontale Rasterausrichtung"
         />
-        <div className="flex justify-between text-[9px] text-neutral-400 -mt-1">
+        <div className="flex justify-between text-[9px] text-muted-foreground/70 -mt-1">
           <span>Start</span><span>Mitte</span><span>Ende</span>
         </div>
       </div>

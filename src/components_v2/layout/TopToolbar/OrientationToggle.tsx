@@ -17,8 +17,8 @@ function Keycap({ children }: { children: React.ReactNode }) {
     <span
       className="
       inline-flex h-5 min-w-[20px] items-center justify-center
-      rounded-[6px] border border-neutral-700/70 bg-neutral-800
-      px-1 text-[10px] font-medium leading-none text-white/90
+      rounded-[6px] border border-border bg-secondary
+      px-1 text-[10px] font-medium leading-none text-foreground
       shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_1px_6px_rgba(0,0,0,0.4)]
     "
     >
@@ -51,7 +51,7 @@ function PortalTooltip({
         zIndex: 100000,
         pointerEvents: "none",
       }}
-      className="rounded-md border border-neutral-800 bg-neutral-900/98 px-2.5 py-2 text-xs text-white shadow-xl whitespace-nowrap"
+      className="glass-panel-elevated rounded-md px-2.5 py-2 text-xs text-foreground shadow-xl whitespace-nowrap"
     >
       <div className="font-medium">{label}</div>
       {keys?.length ? (
@@ -153,7 +153,7 @@ export default function OrientationToggle({
 
   return (
     <div
-      className="ml-1 inline-flex items-center gap-0 rounded-full border border-white/80 bg-transparent  text-white"
+      className="ml-1 inline-flex items-center gap-0 rounded-lg border border-border bg-secondary/40 text-foreground"
       aria-label="Ausrichtung"
     >
       {/* Portrait */}
@@ -168,8 +168,8 @@ export default function OrientationToggle({
           onBlur={portraitTip.hide}
           className={`${baseBtn} ${
             orientation === "portrait"
-              ? "bg-white text-black rounded-l-full"
-              : "text-neutral-200 hover:bg-neutral-600  rounded-l-full"
+              ? "bg-primary text-primary-foreground rounded-l-lg"
+              : "text-muted-foreground hover:bg-secondary hover:text-foreground rounded-l-lg"
           }`}
           aria-label="Portrait (vertikal)"
         >
@@ -195,8 +195,8 @@ export default function OrientationToggle({
           onBlur={landscapeTip.hide}
           className={`${baseBtn} ${
             orientation === "landscape"
-              ? "bg-white text-black rounded-r-full"
-              : "text-neutral-200 hover:bg-neutral-600 rounded-r-full"
+              ? "bg-primary text-primary-foreground rounded-r-lg"
+              : "text-muted-foreground hover:bg-secondary hover:text-foreground rounded-r-lg"
           }`}
           aria-label="Landscape (horizontal)"
         >

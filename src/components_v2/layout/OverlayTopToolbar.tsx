@@ -14,7 +14,7 @@ export default function OverlayTopToolbar() {
       className="pointer-events-none absolute left-0 right-0 z-[200] w-full px-0"
       style={{ top: "var(--tb, 48px)" }} // fallback 56px, così resta sotto la topbar
     >
-      <div className="pointer-events-auto relative mx-auto max-w-full  bg-[#404F5A]/65 backdrop-blur-md shadow-sm border-l border-[#7E8B97] ">
+      <div className="glass-topbar pointer-events-auto relative mx-auto max-w-full border-l border-border/60">
         <TopToolbar />
       </div>
     </div>

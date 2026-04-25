@@ -90,20 +90,20 @@ export default function DetectedRoofsImport() {
     <section className=" rounded-lg text-[12px]">
       {/* Header + toggle all */}
       <div className="mb-2">
-        <div className="font-semibold text-neutral-900 leading-tight">
-          Erkannte Dächer <span className="text-neutral-500">({detected.length})</span>
+        <div className="font-semibold text-foreground leading-tight">
+          Erkannte Dächer <span className="text-muted-foreground">({detected.length})</span>
         </div>
         <button
           type="button"
           onClick={toggleAll}
-          className="mt-1 text-[11px] text-indigo-600 hover:text-indigo-700 cursor-pointer"
+          className="mt-1 cursor-pointer text-[11px] text-primary hover:brightness-110"
         >
           {allChecked ? 'Alle abwählen' : 'Alle auswählen'}
         </button>
 
         {/* mini summary */}
         {totalSel > 0 && (
-          <div className="mt-1 text-[11px] text-neutral-600">
+          <div className="mt-1 text-[11px] text-muted-foreground">
             Ausgewählt: <span className="tabular-nums">{totalSel}</span>
             {Number.isFinite(totalArea) && (
               <> &middot; Fläche ~ <span className="tabular-nums">{(totalArea / 1).toFixed(1)}</span> m²</>
@@ -119,7 +119,7 @@ export default function DetectedRoofsImport() {
             key={r.id}
             className={[
               'block rounded-md px-2 py-1.5 cursor-pointer',
-              'hover:bg-neutral-50 border border-transparent hover:border-neutral-200',
+              'glass-row border border-transparent hover:border-border',
             ].join(' ')}
           >
             <div className="flex items-start gap-2">
@@ -127,19 +127,19 @@ export default function DetectedRoofsImport() {
                 type="checkbox"
                 checked={selected.has(r.id)}
                 onChange={() => toggleOne(r.id)}
-                className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-primary"
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   {/* badge area a destra, tabular per allineare */}
-                  <div className="truncate text-neutral-800">
+                  <div className="truncate text-foreground">
                     {r.tiltDeg != null ? `${r.tiltDeg}°` : '–'} / {r.azimuthDeg != null ? `${r.azimuthDeg}°` : '–'}
                   </div>
-                  <div className="ml-auto rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] tabular-nums text-neutral-700">
+                  <div className="ml-auto rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">
                     {r.area != null ? `${r.area.toFixed(1)} m²` : '—'}
                   </div>
                 </div>
-                <div className="text-[11px] text-neutral-500">
+                <div className="text-[11px] text-muted-foreground">
                   Neigung / Ausrichtung
                 </div>
               </div>
@@ -155,9 +155,8 @@ export default function DetectedRoofsImport() {
           onClick={importSelected}
           disabled={selected.size === 0}
           className={[
-            'w-full rounded-md px-3 py-1.5 text-[12px] font-medium',
-            'border border-neutral-900 bg-neutral-900 text-white',
-            'disabled:cursor-not-allowed cursor-pointer disabled:border-neutral-200 disabled:bg-neutral-200',
+            'glass-button-primary w-full cursor-pointer rounded-md px-3 py-1.5 text-[12px] font-medium',
+            'disabled:cursor-not-allowed disabled:opacity-50',
           ].join(' ')}
           title="Ausgewählte Flächen als Ebenen hinzufügen"
         >
@@ -167,7 +166,7 @@ export default function DetectedRoofsImport() {
         <button
           type="button"
           onClick={() => clearDet()}
-          className="w-full cursor-pointer rounded-md border px-3 py-1.5 text-[12px] text-neutral-700 hover:bg-neutral-50"
+          className="glass-button-secondary w-full cursor-pointer rounded-md px-3 py-1.5 text-[12px]"
           title="Ergebnisliste verwerfen"
         >
           Liste verwerfen

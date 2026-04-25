@@ -15,6 +15,7 @@ import { rotateAround } from "@/components_v2/roofs/alignment";
 import { FaRotate } from "react-icons/fa6";
 import { history as plannerHistory } from "../state/history";
 import Konva from "konva";
+import { plannerTheme } from "../theme/plannerTheme";
 
 type Pt = { x: number; y: number };
 type LayerRoof = { id: string; points: Pt[]; azimuthDeg?: number };
@@ -452,11 +453,11 @@ export default function RoofShapesLayer({
         const multi = groupSel.length > 0;
         const inGroupOnly = !sel && groupSel.includes(r.id);
         const strokeColor = highlightAll
-          ? "#59AC77"
+          ? plannerTheme.primary
           : sel
             ? strokeSelected
             : inGroupOnly
-              ? "#59AC77"
+              ? plannerTheme.primary
               : stroke;
 
         const strokeW = highlightAll
@@ -504,22 +505,22 @@ export default function RoofShapesLayer({
                     width={12}
                     height={3}
                     cornerRadius={3.5}
-                    fill="#ffffff"
-                    stroke="#fff"
+                    fill={plannerTheme.textLight}
+                    stroke={plannerTheme.textLight}
                     strokeWidth={0.5}
                     shadowColor="rgba(0,0,0,0.25)"
                     shadowBlur={3}
                     shadowOpacity={0.9}
                     onMouseEnter={(ev) => {
                       const rect = ev.target as unknown as Konva.Rect;
-                      rect.fill("#6ce5e8");
-                      rect.stroke("#6ce5e8");
+                      rect.fill(plannerTheme.primary);
+                      rect.stroke(plannerTheme.primary);
                       rect.getLayer()?.batchDraw();
                     }}
                     onMouseLeave={(ev) => {
                       const rect = ev.target as unknown as Konva.Rect;
-                      rect.fill("#ffffff");
-                      rect.stroke("#fff");
+                      rect.fill(plannerTheme.textLight);
+                      rect.stroke(plannerTheme.textLight);
                       rect.getLayer()?.batchDraw();
                     }}
                     onMouseDown={(ev) => {
@@ -845,7 +846,7 @@ export default function RoofShapesLayer({
                             text={`${k.ref}°`}
                             fontSize={FONT_SIZE}
                             fontStyle="500"
-                            fill="#fff"
+                            fill={plannerTheme.textLight}
                           />
                         </KonvaGroup>
                       );
@@ -860,7 +861,7 @@ export default function RoofShapesLayer({
                 y={c.y}
                 text={label}
                 fontSize={12}
-                fill="#111"
+                fill={plannerTheme.textLight}
                 offsetX={18}
                 offsetY={-6}
                 listening={false}
@@ -978,8 +979,8 @@ export default function RoofShapesLayer({
                     <KonvaCircle
                       name="rotKnob"
                       radius={HANDLE_SZ / 2}
-                      fill="#ffffff"
-                      stroke="#565656"
+                      fill={plannerTheme.textLight}
+                      stroke={plannerTheme.panelStroke}
                       strokeWidth={0.5}
                       shadowColor="rgba(0,0,0,0.25)"
                       shadowBlur={4}
@@ -1008,7 +1009,7 @@ export default function RoofShapesLayer({
                             <KonvaPath
                               key={i}
                               data={d}
-                              fill="#545454"
+                              fill={plannerTheme.panelFill}
                               strokeEnabled={false}
                             />
                           ))}

@@ -72,7 +72,7 @@ export default function RoofAreaInfo({
   if (variant === 'text') {
     return (
       <span
-        className={`text-[11px] text-white whitespace-nowrap tabular-nums ${className}`}
+        className={`text-[11px] text-foreground whitespace-nowrap tabular-nums ${className}`}
         title={title}
       >
         {label}
@@ -83,8 +83,8 @@ export default function RoofAreaInfo({
   return (
     <span
       className={`
-        ml-2 inline-block rounded bg-neutral-100 px-1.5 py-0.5
-        text-[11px] font-medium text-neutral-700
+        ml-2 inline-block rounded border border-border bg-secondary px-1.5 py-0.5
+        text-[11px] font-medium text-muted-foreground
         whitespace-nowrap tabular-nums ${className}
       `}
       title={title}

@@ -30,7 +30,7 @@ export default function PlannerV2Page() {
   };
 
   return (
-    <main className="min-h-screen w-full">
+    <main className="app-shell min-h-screen w-full bg-background text-foreground">
       <ResponsiveGuard minWidth={900}>
         {!started ? (
           <PlannerWelcomeScreen onStartNew={handleStartNew} />

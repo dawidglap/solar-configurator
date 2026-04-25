@@ -5,6 +5,7 @@ import { Group as KonvaGroup, Line as KonvaLine } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import type { Pt } from '@/types/planner';
 import ZoneHandlesKonva from './ZoneHandlesKonva';
+import { plannerTheme } from '../theme/plannerTheme';
 
 function toFlatSafe(pts: Pt[]): number[] | null {
   if (!Array.isArray(pts) || pts.length < 3) return null;
@@ -44,10 +45,10 @@ export default function ZonesLayer({
   if (!zonesForRoof.length) return null;
 
   // --- Palette rosso pieno ---
-  const RED      = '#FF2D2D';              // bordo default
-  const RED_SEL  = '#DC2626';              // bordo selezionato
-  const FILL     = 'rgba(255,45,45,0.12)'; // riempimento leggero
-  const FILL_SEL = 'rgba(255,45,45,0.20)'; // riempimento selezionato
+  const RED      = plannerTheme.danger;
+  const RED_SEL  = plannerTheme.danger;
+  const FILL     = plannerTheme.dangerSoft;
+  const FILL_SEL = 'rgba(255, 95, 86, 0.24)';
   const W        = 0.25;                   // spessore bordo default
   const W_SEL    = 1;                      // spessore bordo selezionato
 

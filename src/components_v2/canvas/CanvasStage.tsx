@@ -53,6 +53,7 @@ import IstSituationStep from "../steps/IstSituationStep";
 import StucklisteScreen from "../steps/StucklisteScreen";
 import ReportScreen from "../steps/ReportScreen";
 import OfferScreen from "../steps/OfferScreen";
+import { plannerTheme } from "../theme/plannerTheme";
 
 // ——— ANGLES HELPERS ———
 function radToDeg(r: number) {
@@ -657,9 +658,9 @@ export default function CanvasStage() {
   });
 
   // stile tetti
-  const stroke = "#6ce5e8";
-  const strokeSelected = "#34bbbd";
-  const fill = "rgba(246, 240, 255, 0.12)";
+  const stroke = plannerTheme.roofStroke;
+  const strokeSelected = plannerTheme.roofStrokeSelected;
+  const fill = plannerTheme.roofFill;
   const strokeWidthNormal = 1;
   const strokeWidthSelected = 1.85;
 
@@ -768,9 +769,7 @@ export default function CanvasStage() {
   return (
     <div
       ref={containerRef}
-      className={`relative h-full w-full overflow-hidden ${
-        snap?.url ? "bg-neutral-50" : "bg-transparent"
-      }`}
+      className="relative h-full w-full overflow-hidden bg-background"
     >
       <OverlayProgressStepper />
       <OverlayTopToolbar />
@@ -984,7 +983,7 @@ export default function CanvasStage() {
                       <Line
                         key={sg.id}
                         points={[sg.p1.x, sg.p1.y, sg.p2.x, sg.p2.y]}
-                        stroke={isSel ? "#60a5fa" : "#38bdf8"}
+                        stroke={isSel ? plannerTheme.panelSelected : plannerTheme.primary}
                         strokeWidth={isSel ? 2 : 1}
                         lineCap="round"
                         lineJoin="round"
@@ -999,7 +998,7 @@ export default function CanvasStage() {
                         y={midY}
                         text={`${sg.lengthM?.toFixed(1)} m`}
                         fontSize={2}
-                        fill="#fff"
+                        fill={plannerTheme.textLight}
                         offsetX={6}
                         offsetY={-2}
                         listening={false}
@@ -1020,7 +1019,7 @@ export default function CanvasStage() {
                         mouseImg.x,
                         mouseImg.y,
                       ]}
-                      stroke="#38bdf8"
+                      stroke={plannerTheme.primary}
                       strokeWidth={1}
                       lineCap="round"
                       listening={false}
@@ -1039,7 +1038,7 @@ export default function CanvasStage() {
                         rectPreview[1].x,
                         rectPreview[1].y,
                       ]}
-                      stroke="#38bdf8"
+                      stroke={plannerTheme.primary}
                       strokeWidth={1}
                       lineCap="round"
                       listening={false}
@@ -1055,7 +1054,7 @@ export default function CanvasStage() {
                       <Line
                         points={fillDraft.poly.flatMap((p) => [p.x, p.y])}
                         closed
-                        stroke="rgba(255,255,255,0.9)"
+                        stroke={plannerTheme.guideLine}
                         strokeWidth={0.8}
                         dash={[6, 4]}
                         opacity={0.6}
@@ -1118,7 +1117,7 @@ export default function CanvasStage() {
             visible={showUiGrid} // o true
             step={36}
             alpha={0.35}
-            rgb="38,38,38"
+            rgb="64,217,200"
             zIndex={100}
             dashed
             dash="2 4" // oppure [6, 6]
@@ -1183,14 +1182,14 @@ export default function CanvasStage() {
       {/* ORIENTATION HUD — STEALTH (improved) */}
       <div className="fixed right-3 bottom-6 z-[600] group pointer-events-none">
         <div
-          className="pointer-events-auto relative rounded-lg border border-neutral-700/60 bg-neutral-900/70 text-neutral-300 shadow
+          className="glass-panel pointer-events-auto relative rounded-lg text-muted-foreground shadow
                backdrop-blur px-1.5 py-1 flex items-center gap-1.5 transition-all duration-150
                scale-90 opacity-70 group-hover:scale-100 group-hover:opacity-100"
           style={{ WebkitBackdropFilter: "blur(6px)" }}
         >
           {/* -10 */}
           <button
-            className="h-6 min-w-6 rounded-md border border-neutral-700/60 hover:bg-neutral-800 text-[11px] px-1"
+            className="glass-button-secondary h-6 min-w-6 px-1 text-[11px]"
             onClick={() => bumpRotation(-10)}
             title="Drehen -10° (Shift+[)"
           >
@@ -1199,7 +1198,7 @@ export default function CanvasStage() {
 
           {/* -1 */}
           <button
-            className="h-6 min-w-6 rounded-md border border-neutral-700/60 hover:bg-neutral-800 text-[11px] px-1"
+            className="glass-button-secondary h-6 min-w-6 px-1 text-[11px]"
             onClick={() => bumpRotation(-1)}
             title="Drehen -1° ([)"
           >
@@ -1214,20 +1213,20 @@ export default function CanvasStage() {
             step={0.5}
             value={rotateDeg}
             onChange={(e) => setRotateDeg(wrapDeg(parseFloat(e.target.value)))}
-            className="w-36 h-1.5 mx-1 accent-neutral-200"
+            className="w-36 h-1.5 mx-1 accent-primary"
             style={{
               WebkitAppearance: "none",
               appearance: "none",
               borderRadius: 9999,
               // track: base scura + progress chiaro fino a sliderPct
-              background: `linear-gradient(to right, #a3a3a3 ${sliderPct}%, #3f3f46 ${sliderPct}%)`,
+              background: `linear-gradient(to right, ${plannerTheme.primary} ${sliderPct}%, rgba(234,246,255,0.22) ${sliderPct}%)`,
             }}
             title="Ziehe, um zu drehen"
           />
 
           {/* +1 */}
           <button
-            className="h-6 min-w-6 rounded-md border border-neutral-700/60 hover:bg-neutral-800 text-[11px] px-1"
+            className="glass-button-secondary h-6 min-w-6 px-1 text-[11px]"
             onClick={() => bumpRotation(+1)}
             title="Drehen +1° (])"
           >
@@ -1236,7 +1235,7 @@ export default function CanvasStage() {
 
           {/* +10 */}
           <button
-            className="h-6 min-w-6 rounded-md border border-neutral-700/60 hover:bg-neutral-800 text-[11px] px-1"
+            className="glass-button-secondary h-6 min-w-6 px-1 text-[11px]"
             onClick={() => bumpRotation(+10)}
             title="Drehen +10° (Shift+])"
           >
@@ -1248,7 +1247,7 @@ export default function CanvasStage() {
             <input
               type="text"
               inputMode="decimal"
-              className="w-11 h-6 px-1 rounded-md border border-neutral-700/60 bg-neutral-900/60 text-right text-[11px]"
+              className="glass-input h-6 w-11 px-1 py-0 text-right text-[11px]"
               value={rotInput}
               onChange={(e) => {
                 const v = e.target.value.replace(",", ".");
@@ -1258,11 +1257,11 @@ export default function CanvasStage() {
               }}
               title="Grad (dreht in Echtzeit)"
             />
-            <span className="text-[10px] text-neutral-500">°</span>
+            <span className="text-[10px] text-muted-foreground">°</span>
 
             {/* Reset */}
             <button
-              className="h-6 w-6 rounded-md border border-neutral-700/60 hover:bg-neutral-800 grid place-items-center"
+              className="glass-button-secondary grid h-6 w-6 place-items-center p-0"
               onClick={() => {
                 setRotateDeg(0);
                 setRotInput("0");
@@ -1275,7 +1274,7 @@ export default function CanvasStage() {
 
           {/* PILL hint (DE) sotto all'HUD */}
           <div className="absolute right-0 translate-y-full mt-1 pointer-events-none">
-            <span className="px-2 py-0.5 rounded-full text-[10px] bg-neutral-800/80 border border-neutral-700/60 text-neutral-400">
+            <span className="status-badge-neutral px-2 py-0.5 text-[10px]">
               Raster ein-/ausblenden: <strong>G</strong>
             </span>
           </div>

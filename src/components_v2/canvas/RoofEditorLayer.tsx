@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Circle as KonvaCircle } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
+import { plannerTheme } from '../theme/plannerTheme';
 
 type Pt = { x: number; y: number };
 
@@ -41,8 +42,8 @@ export default function RoofEditorLayer() {
           x={p.x}   // posizioni in coordinate "immagine" (locali al Group)
           y={p.y}
           radius={5}
-          fill="#ffffff"
-          stroke="#0ea5e9"
+          fill={plannerTheme.textLight}
+          stroke={plannerTheme.primary}
           strokeWidth={1.5}
           draggable
           onDragStart={() => {
@@ -107,7 +108,7 @@ export default function RoofEditorLayer() {
           hitStrokeWidth={14}
           perfectDrawEnabled={false}
           shadowBlur={2}
-          shadowColor="#ffffff"
+          shadowColor={plannerTheme.primaryGlow}
           shadowOpacity={0.9}
         />
       ))}

@@ -15,7 +15,7 @@ export default function GridCoverageControl() {
 
   return (
     <fieldset className="space-y-1.5">
-      <label className="block text-[10px] font-medium uppercase tracking-wide text-neutral-600">
+      <label className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         Abdeckung (Zeilen)
       </label>
 
@@ -26,10 +26,10 @@ export default function GridCoverageControl() {
         step={0.01}
         value={val}
         onChange={e => setModules({ coverageRatio: snap(Number(e.target.value)) as any })}
-        className="w-full"
+        className="w-full accent-primary"
         aria-label="Abdeckung des Dachs (Zeilen)"
       />
-      <div className="flex justify-between text-[10px] text-neutral-600">
+      <div className="flex justify-between text-[10px] text-muted-foreground">
         <span>½ Dach</span>
         <span>¾ Dach</span>
         <span>Ganzes Dach</span>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Circle as KonvaCircle, Line as KonvaLine } from 'react-konva';
+import { plannerTheme } from '../theme/plannerTheme';
 
 type Pt = { x: number; y: number };
 
@@ -82,7 +83,7 @@ export default function ZoneHandlesKonva({
       <KonvaLine
         points={flat}
         closed
-        stroke="#ff2d55"
+        stroke={plannerTheme.danger}
         strokeWidth={1}
         dash={[6, 6]}
         listening={false}
@@ -93,8 +94,8 @@ export default function ZoneHandlesKonva({
           x={p.x}
           y={p.y}
           radius={3}
-          fill="#fff"
-          stroke="#ff2d55"
+          fill={plannerTheme.textLight}
+          stroke={plannerTheme.danger}
           strokeWidth={1}
           onMouseDown={(e) => startDrag(i, e)}
           onTouchStart={(e) => startDrag(i, e)}

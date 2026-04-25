@@ -23,20 +23,20 @@ export default function ResponsiveGuard({
   // Evita flash SSR: finché width è null, non blocchiamo
   if (width !== null && width < minWidth) {
     return (
-      <div className="flex min-h-[calc(100vh-0px)] w-full items-center justify-center bg-neutral-50">
-        <div className="mx-4 max-w-xl rounded-2xl border bg-white p-6 text-center shadow">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100">
-            <FiMonitor className="h-6 w-6 text-neutral-700" />
+      <div className="flex min-h-[calc(100vh-0px)] w-full items-center justify-center bg-background">
+        <div className="glass-panel-elevated mx-4 max-w-xl p-6 text-center shadow">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <FiMonitor className="h-6 w-6" />
           </div>
-          <h2 className="mb-2 text-lg font-semibold text-neutral-900">
+          <h2 className="mb-2 text-lg font-semibold text-foreground">
             Dieses Planungswerkzeug ist nur auf Tablet & Desktop verfügbar
           </h2>
-          <p className="mx-auto mb-4 max-w-md text-sm text-neutral-600">
+          <p className="mx-auto mb-4 max-w-md text-sm text-muted-foreground">
             Bitte verwenden Sie ein größeres Display (≥ {minWidth}px Breite), um den PV-Editor zu öffnen.
           </p>
           <Link
             href="/"
-            className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm text-neutral-800 hover:bg-neutral-50"
+            className="glass-button-secondary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm"
             title="Zur Startseite"
           >
             Zur Startseite <FiChevronRight />

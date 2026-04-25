@@ -1,15 +1,15 @@
 // src/app/layout.tsx
 import type { Metadata } from "next";
-import { Montserrat } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 
 import { Toaster } from "react-hot-toast";
 import { headers } from "next/headers";
 
-const montserrat = Montserrat({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-montserrat",
+  variable: "--font-inter",
 });
 
 export const metadata: Metadata = {
@@ -27,13 +27,28 @@ export default async function RootLayout({
   const isLoginPage = pathname.startsWith("/login");
 
   return (
-    <html lang="de">
+    <html lang="de" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                var t = localStorage.getItem('sola-theme') || 'default';
+                document.documentElement.setAttribute('data-theme', t);
+                if (t !== 'light') document.documentElement.classList.add('dark');
+                else document.documentElement.classList.remove('dark');
+                document.documentElement.style.colorScheme = t === 'light' ? 'light' : 'dark';
+              } catch(e) {}
+            `,
+          }}
+        />
+      </head>
       <body
         className={[
-          montserrat.className,
+          inter.className,
           "flex h-screen overflow-hidden",
           // niente bg-white: il bg lo gestiamo noi con hero.webp
-          "text-white",
+          "bg-background text-foreground",
         ].join(" ")}
       >
         {/* Background globale: hero.webp + blur + overlay */}

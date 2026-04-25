@@ -5,6 +5,7 @@ import React, { useMemo } from 'react';
 import { Group, Rect, Line, Image as KonvaImage } from 'react-konva';
 import { computeAutoLayoutRects } from './layout';      // ← stessa cartella
 import { overlapsReservedRect, overlapsSnowGuard } from '../zones/utils';
+import { plannerTheme } from '../theme/plannerTheme';
 
 type Pt = { x: number; y: number };
 type Anchor = 'start' | 'center' | 'end';
@@ -279,8 +280,8 @@ export default function ModulesPreview({
         <Line
           key={`g-${i}`}
           points={g.points}
-          stroke="#0769e9"
-          opacity={0.3}
+          stroke={plannerTheme.gridLine}
+          opacity={1}
           strokeWidth={0.35}
           listening={false}
         />
@@ -312,7 +313,7 @@ export default function ModulesPreview({
             offsetX={r.wPx / 2}
             offsetY={r.hPx / 2}
             rotation={r.angleDeg}
-            fill="#2b4b7c"
+            fill={plannerTheme.panelFill}
             opacity={0.85}
             listening={false}
           />

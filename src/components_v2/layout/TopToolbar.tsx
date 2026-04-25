@@ -31,7 +31,7 @@ import TopbarAddressSearch from "./TopbarAddressSearch";
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex h-5 min-w-[20px] z-[101] items-center justify-center rounded-[6px] border border-neutral-700/70 bg-neutral-800 px-1 text-[10px] font-medium leading-none text-white/90 shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_1px_6px_rgba(0,0,0,0.4)]">
+    <span className="inline-flex h-5 min-w-[20px] z-[101] items-center justify-center rounded-[6px] border border-border bg-secondary px-1 text-[10px] font-medium leading-none text-foreground shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_1px_6px_rgba(0,0,0,0.4)]">
       {children}
     </span>
   );
@@ -64,7 +64,7 @@ function PortalTooltip({
         zIndex: 100000,
         pointerEvents: "none",
       }}
-      className="rounded-md border border-neutral-800 bg-neutral-900/98 px-2.5 py-2 text-xs text-white shadow-xl whitespace-nowrap"
+      className="glass-panel-elevated rounded-md px-2.5 py-2 text-xs text-foreground shadow-xl whitespace-nowrap"
     >
       <div className="mb-1 font-medium">{label}</div>
       <div className="flex items-center justify-center gap-1">
@@ -259,19 +259,19 @@ export default function TopToolbar() {
     const base =
       "inline-flex h-8 w-8 items-center justify-center rounded-full " +
       "transition ring-0 border border-transparent " +
-      "focus:outline-none focus:ring-2 focus:ring-white/10";
+      "focus:outline-none focus:ring-2 focus:ring-primary/25";
 
     // Inattivo cliccabile: icona bianca; il cerchio appare SOLO su hover
     const clickable =
-      "text-white hover:bg-neutral-800/70 hover:border-neutral-700";
+      "text-muted-foreground hover:bg-secondary/70 hover:border-border hover:text-foreground";
 
     // Attivo: “icona accesa dentro un cerchio”
     const activeCls =
-      "bg-white text-neutral-900 border-white shadow " +
-      "hover:bg-white hover:border-white";
+      "bg-primary text-primary-foreground border-primary shadow shadow-primary/20 " +
+      "hover:bg-primary hover:border-primary";
 
     // Disabled: grigio, niente hover
-    const disabledCls = "text-neutral-500 opacity-60 cursor-not-allowed";
+    const disabledCls = "text-muted-foreground/50 opacity-60 cursor-not-allowed";
 
     const cls = [
       base,
@@ -329,12 +329,12 @@ export default function TopToolbar() {
     const base =
       "inline-flex h-8 w-8 items-center justify-center rounded-full " +
       "transition ring-0 border border-transparent " +
-      "focus:outline-none focus:ring-2 focus:ring-white/10";
+      "focus:outline-none focus:ring-2 focus:ring-primary/25";
 
     const clickable =
-      "text-white hover:bg-neutral-800/70 hover:border-neutral-700";
+      "text-muted-foreground hover:bg-secondary/70 hover:border-border hover:text-foreground";
 
-    const disabledCls = "text-neutral-500 opacity-60 cursor-not-allowed";
+    const disabledCls = "text-muted-foreground/50 opacity-60 cursor-not-allowed";
 
     const cls = [base, disabled ? disabledCls : clickable].join(" ");
 
@@ -530,7 +530,7 @@ export default function TopToolbar() {
   }
 
   return (
-    <div className="flex h-10  items-center justify-between gap-2 px-2 overflow-x-auto overscroll-x-contain scrollbar-thin scrollbar-thumb-transparent scrollbar-track-transparent bg-transparent text-white ">
+    <div className="flex h-10 items-center justify-between gap-2 overflow-x-auto overscroll-x-contain bg-transparent px-2 text-foreground scrollbar-thin scrollbar-track-transparent scrollbar-thumb-transparent">
       {/* SX: sequenza unica — Auswählen + icone 1–6 + controlli moduli */}
       <div className=" flex min-w-0 items-center gap-2">
         <TopbarAddressSearch />
@@ -599,7 +599,7 @@ export default function TopToolbar() {
           tooltipKeys={["F"]}
         />
 
-        <div className="mx-1 h-6 w-px bg-neutral-600" />
+        <div className="mx-1 h-6 w-px bg-border" />
 
         {/* 6) Schneefang (linea) — placeholder */}
         {/* Schneefang / Protezione neve */}
@@ -626,7 +626,7 @@ export default function TopToolbar() {
             tooltipLabel="Schneefang – Kalkulation"
             tooltipKeys={["Preis"]}
           />
-          <span className="text-[11px] text-neutral-200 whitespace-nowrap">
+          <span className="whitespace-nowrap text-[11px] text-muted-foreground">
             {totalSnowM.toFixed(1)} m · {totalSnowChf.toFixed(2)} CHF
           </span>
         </div>
@@ -704,7 +704,7 @@ export default function TopToolbar() {
         />
       </div>
 
-      <div className="mx-1 h-6 w-px bg-neutral-600" />
+      <div className="mx-1 h-6 w-px bg-border" />
 
       {/* DX: Undo/Redo (icon-only) */}
       <div className="flex shrink-0 items-center gap-2 pl-2">
@@ -724,7 +724,7 @@ export default function TopToolbar() {
           tooltipKeys={isMac ? ["⇧", "⌘", "Z"] : ["Ctrl", "Y"]}
           disabled={!canRedo}
         />
-        <div className="mx-1 h-6 w-px bg-neutral-600" />
+        <div className="mx-1 h-6 w-px bg-border" />
 
         <ProjectStatsBar />
 

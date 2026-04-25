@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Line as KonvaLine, Circle as KonvaCircle, Text as KonvaText } from 'react-konva';
+import { plannerTheme } from '../theme/plannerTheme';
 
 type Pt = { x: number; y: number };
 
@@ -116,10 +117,10 @@ export default function DrawingOverlay({
   areaLabel: (pts: Pt[]) => string | null;
 }) {
   // colori UI (Canva-like)
-  const PREVIEW = '#7c3aed';     // viola (segmento in movimento)
-  const ACCEPT  = '#16a34a';     // verde (segmenti confermati)
-  const GUIDE   = '#a78bfa';     // guida più chiara
-  const HANDLE_BG = '#ffffff';
+  const PREVIEW = plannerTheme.primary;
+  const ACCEPT  = plannerTheme.roofStrokeSelected;
+  const GUIDE   = plannerTheme.guideLine;
+  const HANDLE_BG = plannerTheme.textLight;
 
   const SNAP_TOL_DEG = 12;
   const CLOSE_RADIUS = 12; // px per magnete sul primo punto
@@ -228,7 +229,7 @@ export default function DrawingOverlay({
             y={centroid(pts).y}
             text={areaLabel(pts) ?? ''}
             fontSize={12}
-            fill="#fff"
+            fill={plannerTheme.textLight}
             offsetX={18}
             offsetY={-6}
             listening={false}
@@ -254,7 +255,7 @@ export default function DrawingOverlay({
             x={rectDraft[0].x}
             y={rectDraft[0].y}
             radius={3.2}
-            fill="#fff"
+            fill={plannerTheme.textLight}
             stroke={stroke}
             strokeWidth={1.2}
           />
@@ -290,7 +291,7 @@ export default function DrawingOverlay({
                     y={centroid(preview).y}
                     text={areaLabel(preview) ?? ''}
                     fontSize={12}
-                    fill="#fff"
+                    fill={plannerTheme.textLight}
                     offsetX={18}
                     offsetY={-6}
                     listening={false}

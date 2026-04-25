@@ -210,19 +210,19 @@ export default function TopbarAddressSearch() {
           planner-topbar
           relative z-[1000000]
           flex min-w-[260px] max-w-[260px] items-center gap-2
-          h-9 rounded-full border border-white/80 bg-transparent pl-2 pr-2 text-white
-          focus-within:ring-1 focus-within:ring-white/10
+          h-9 rounded-lg border border-border bg-secondary/40 pl-2 pr-2 text-foreground
+          focus-within:ring-1 focus-within:ring-primary/30
           overflow-visible text-xs
         `}
         aria-busy={loading ? "true" : "false"}
       >
-        <Search className="h-3 w-3 text-white/80 shrink-0" />
+        <Search className="h-3 w-3 text-muted-foreground shrink-0" />
 
         <div className="relative flex-1">
           {loading && (
             <div className="absolute inset-0 z-10 cursor-wait rounded-full bg-transparent" />
           )}
-          <div className="[&_input]:h-7 [&_input]:w-full [&_input]:bg-transparent [&_input]:border-0 [&_input]:outline-none [&_input]:text-sm [&_input]:placeholder:text-neutral-400">
+          <div className="[&_input]:h-7 [&_input]:w-full [&_input]:bg-transparent [&_input]:border-0 [&_input]:outline-none [&_input]:text-sm [&_input]:text-foreground [&_input]:placeholder:text-muted-foreground">
             <AddressSearchOSM
               placeholder="Adresse suchen…"
               value={addressText}
@@ -241,9 +241,9 @@ export default function TopbarAddressSearch() {
         </div>
 
         {loading && (
-          <Loader2 className="h-4 w-4 animate-spin text-neutral-500" />
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         )}
-        {!!err && <span className="ml-1 text-[10px] text-red-600">{err}</span>}
+        {!!err && <span className="ml-1 text-[10px] text-destructive">{err}</span>}
       </div>
 
       <style>{`

@@ -27,11 +27,11 @@ export default function PlannerEmptyState() {
           style={{ transform: "translateX(calc(var(--propW, 280px) / 2))" }}
         >
           {/* glow morbido dietro al pill */}
-          <div className="absolute -inset-1 rounded-full bg-indigo-400/30 blur-md animate-pulse" />
+          <div className="absolute -inset-1 rounded-full bg-primary/30 blur-md animate-pulse" />
           {/* pill */}
-          <div className="relative z-10 flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm text-neutral-900 shadow-xl ring-2 ring-slate-800/60">
-            <span className="text-neutral-200 text-base leading-none">↖</span>
-            <span className="font-medium text-neutral-200 ">
+          <div className="glass-panel-elevated relative z-10 flex items-center gap-2 rounded-full px-5 py-2 text-sm shadow-xl ring-1 ring-primary/25">
+            <span className="text-primary text-base leading-none">↖</span>
+            <span className="font-medium text-foreground">
               Um zu starten, gib links oben deine Adresse ein
             </span>
           </div>

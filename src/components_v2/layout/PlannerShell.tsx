@@ -21,7 +21,7 @@ export default function PlannerShell() {
 
   return (
     <PageContainer>
-      <div className="h-[calc(100vh-0px)] w-full bg-neutral-100 overflow-hidden">
+      <div className="h-[calc(100vh-0px)] w-full overflow-hidden bg-background">
         {!snap?.url && <PlannerEmptyState />}
         <CanvasStage />
       </div>

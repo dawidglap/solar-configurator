@@ -10,6 +10,7 @@ import {
 } from 'react-konva';
 
 import { snapParallelPerp, isNear, Pt } from './utils/snap';
+import { plannerTheme } from '../theme/plannerTheme';
 
 function rectFrom3(A: Pt, B: Pt, C: Pt): Pt[] {
   const vx = B.x - A.x;
@@ -236,9 +237,9 @@ export default function DrawingOverlays({
   canvasRotateDeg?: number;
 }) {
   // palette UI essenziale
-  const PREVIEW = '#7c3aed';
-  const ACCEPT  = '#16a34a';
-  const GUIDE   = 'rgba(255,255,255,0.75)';
+  const PREVIEW = plannerTheme.primary;
+  const ACCEPT  = plannerTheme.roofStrokeSelected;
+  const GUIDE   = plannerTheme.guideLine;
 
   const SNAP_TOL_DEG = 4;
   const CLOSE_RADIUS = 4;
@@ -357,7 +358,7 @@ const renderDrawRoof = () => {
           x={p.x}
           y={p.y}
           radius={1.6}
-          fill="#ffffff"
+          fill={plannerTheme.textLight}
           stroke={ACCEPT}
           strokeWidth={1.0}
           listening={false}
@@ -369,10 +370,10 @@ const renderDrawRoof = () => {
           x={pts[0].x}
           y={pts[0].y}
           radius={3.2}
-          fill="#ffffff"
-          stroke={'#9ca3af'}
+          fill={plannerTheme.textLight}
+          stroke={plannerTheme.panelStroke}
           strokeWidth={1}
-          shadowColor="rgba(0,0,0,0.25)"
+          shadowColor={plannerTheme.primaryGlow}
           shadowBlur={2}
           shadowOpacity={0.8}
           listening={false}
@@ -385,7 +386,7 @@ const renderDrawRoof = () => {
           y={polygonCentroid(pts).y}
           text={areaLabel(pts) ?? ''}
           fontSize={6}
-          fill="#fff"
+          fill={plannerTheme.textLight}
           offsetX={18}
           offsetY={-6}
           listening={false}
@@ -435,7 +436,7 @@ const renderDrawRect = () => {
           x={rectDraft[0].x}
           y={rectDraft[0].y}
           radius={3.2}
-          fill="#fff"
+          fill={plannerTheme.textLight}
           stroke={stroke}
           strokeWidth={1.2}
         />
@@ -445,7 +446,7 @@ const renderDrawRect = () => {
         <>
           <KonvaLine
             points={toFlat(rectDraft)}
-            stroke="#39BDF8"
+            stroke={plannerTheme.primary}
 
             strokeWidth={1.5}
             dash={[3, 3]}
@@ -496,7 +497,7 @@ const renderDrawRect = () => {
         y={polygonCentroid(preview).y}
         text={areaLabel(preview) ?? ''}
         fontSize={12}
-        fill="#fff"
+        fill={plannerTheme.textLight}
         offsetX={18}
         offsetY={-6}
         listening={false}
@@ -560,8 +561,8 @@ if (mouseImg) {
     }
 
     // stile minimal
-    const STROKE_CONF = '#22c55e';    // segmenti confermati
-    const STROKE_ACT  = '#ef4444';    // segmento attivo
+    const STROKE_CONF = plannerTheme.roofStrokeSelected;    // segmenti confermati
+    const STROKE_ACT  = plannerTheme.danger;    // segmento attivo
     const STROKE_W    = 1;
 
     return (
@@ -608,7 +609,7 @@ if (mouseImg) {
             points={toFlat([...pts, snapped])}
             closed
             stroke="transparent"
-            fill="rgba(239,68,68,0.10)" // rosso tenue 10%
+            fill={plannerTheme.dangerSoft}
             listening={false}
           />
         )}
@@ -622,8 +623,8 @@ if (mouseImg) {
             width={6}
             height={6}
             cornerRadius={2}
-            fill="#ffffff"
-            stroke="rgba(0,0,0,0.35)"
+            fill={plannerTheme.textLight}
+            stroke={plannerTheme.panelStroke}
             strokeWidth={0.5}
             listening={false}
           />

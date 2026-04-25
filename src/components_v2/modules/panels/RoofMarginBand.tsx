@@ -2,13 +2,14 @@
 
 import React from "react";
 import { Group, Line as KonvaLine } from "react-konva";
+import { plannerTheme } from "../../theme/plannerTheme";
 
 type Pt = { x: number; y: number };
 
 export function RoofMarginBand({
   polygon,
   marginPx,
-  color = "rgba(220, 38, 39, 0.75)", // rosso tenue
+  color = plannerTheme.marginBand,
 }: {
   polygon: Pt[];
   marginPx: number; // in px immagine

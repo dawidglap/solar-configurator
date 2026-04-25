@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Line as KonvaLine } from 'react-konva';
+import { plannerTheme } from '../../theme/plannerTheme';
 
 export const Guides: React.FC<{
   hintU: number[] | null;
@@ -12,7 +13,7 @@ export const Guides: React.FC<{
       {hintU && (
         <KonvaLine
           points={hintU}
-          stroke="#D3DAD9"
+          stroke={plannerTheme.guideLine}
           dash={[1, 1]}
           strokeWidth={0.3}
           opacity={0.6}
@@ -22,7 +23,7 @@ export const Guides: React.FC<{
       {hintV && (
         <KonvaLine
           points={hintV}
-          stroke="#D3DAD9"
+          stroke={plannerTheme.guideLine}
           dash={[1, 1]}
           strokeWidth={0.3}
           opacity={0.6}

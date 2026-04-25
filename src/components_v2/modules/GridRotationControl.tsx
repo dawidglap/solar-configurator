@@ -121,16 +121,16 @@ export default function GridRotationControl() {
     <fieldset className="space-y-1.5">
       {/* titolo + valore attuale */}
       <div className="flex items-center justify-between">
-        <label className="block text-[10px] font-medium uppercase tracking-wide text-white/80">
+        <label className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           Modulrotation (Auswahl)
         </label>
-        <span className="text-[10px] text-neutral-300 tabular-nums">
+        <span className="text-[10px] text-muted-foreground tabular-nums">
           {hasSelection ? `${sliderAngle}°` : "—"}
         </span>
       </div>
 
       {/* box controlli */}
-      <div className="rounded-xl border border-white/80 bg-transparent px-2.5 py-2 space-y-1.5">
+      <div className="glass-panel px-2.5 py-2 space-y-1.5">
         <div className="flex items-center gap-2">
           {/* -1° */}
           <button
@@ -138,8 +138,8 @@ export default function GridRotationControl() {
             disabled={!hasSelection}
             className={`h-7 px-2 rounded-full text-[10px] leading-none border transition ${
               hasSelection
-                ? "border-white/70 text-neutral-100 hover:bg-neutral-800"
-                : "border-white/80 text-neutral-600 cursor-not-allowed"
+                ? "border-border bg-secondary/50 text-foreground hover:bg-secondary"
+                : "border-border text-muted-foreground/50 cursor-not-allowed"
             }`}
             onClick={stepMinus}
             title="-1°"
@@ -157,11 +157,11 @@ export default function GridRotationControl() {
               step={1}
               value={hasSelection ? sliderAngle : 0}
               onChange={handleSliderChange}
-              className="w-full accent-neutral-200 disabled:opacity-40"
+              className="w-full accent-primary disabled:opacity-40"
               aria-label="Rotationswinkel der ausgewählten Module (°)"
               disabled={!hasSelection}
             />
-            <div className="flex justify-between text-[9px] text-white/80 tabular-nums">
+            <div className="flex justify-between text-[9px] text-muted-foreground tabular-nums">
               <span>-90°</span>
               <span>0°</span>
               <span>+90°</span>
@@ -174,8 +174,8 @@ export default function GridRotationControl() {
             disabled={!hasSelection}
             className={`h-7 px-2 rounded-full text-[10px] leading-none border transition ${
               hasSelection
-                ? "border-white/70 text-neutral-100 hover:bg-neutral-800"
-                : "border-white/80 text-neutral-600 cursor-not-allowed"
+                ? "border-border bg-secondary/50 text-foreground hover:bg-secondary"
+                : "border-border text-muted-foreground/50 cursor-not-allowed"
             }`}
             onClick={stepPlus}
             title="+1°"
@@ -186,7 +186,7 @@ export default function GridRotationControl() {
         </div>
 
         {/* helper text + reset */}
-        <div className="flex items-center justify-between gap-2 text-[9px] text-neutral-200">
+        <div className="flex items-center justify-between gap-2 text-[9px] text-muted-foreground">
           <span className="leading-snug">
             {hasSelection
               ? "Dreht alle ausgewählten Module um einen gemeinsamen Mittelpunkt."
@@ -198,8 +198,8 @@ export default function GridRotationControl() {
             disabled={!hasSelection}
             className={
               hasSelection
-                ? "h-6 px-2 rounded-full border border-white/70 text-[9px] leading-none text-neutral-100 hover:bg-neutral-800"
-                : "h-6 px-2 rounded-full border border-white/80 text-[9px] leading-none text-neutral-600 cursor-not-allowed"
+                ? "h-6 px-2 rounded-lg border border-border bg-secondary/50 text-[9px] leading-none text-foreground hover:bg-secondary"
+                : "h-6 px-2 rounded-lg border border-border text-[9px] leading-none text-muted-foreground/50 cursor-not-allowed"
             }
             onClick={resetZero}
             title="Rotation der ausgewählten Module auf 0° zurücksetzen"

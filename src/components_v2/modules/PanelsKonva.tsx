@@ -12,6 +12,7 @@ import { PanelItem } from './panels/PanelItem';
 import { Guides } from './panels/Guides';
 import { RoofMarginBand } from './panels/RoofMarginBand';
 import { isInReservedZone } from '../zones/utils';
+import { plannerTheme } from '../theme/plannerTheme';
 
 const SNAP_STAGE_PX = 6;            // snap forza (px schermo)
 const HANDLE_STAGE_PX = 24;         // lato handle (px schermo)
@@ -493,23 +494,23 @@ const startMultiDrag = React.useCallback((e: any) => {
           width={HANDLE_STAGE_PX * invScale}
           height={HANDLE_STAGE_PX * invScale}
           cornerRadius={8 * invScale}
-          fill="rgba(255,255,255,0.95)"
-          stroke="rgba(0,0,0,0.08)"
+          fill={plannerTheme.textLight}
+          stroke={plannerTheme.panelStroke}
           strokeWidth={1 * invScale}
-          shadowColor="black"
+          shadowColor={plannerTheme.primaryGlow}
           shadowBlur={12 * invScale}
           shadowOpacity={0.18}
           shadowOffsetY={2 * invScale}
         />
         <Line
           points={[ -(6 * invScale), 0, (6 * invScale), 0 ]}
-          stroke="rgba(20,20,20,0.9)"
+          stroke={plannerTheme.panelFill}
           strokeWidth={1.5 * invScale}
           listening={false}
         />
         <Line
           points={[ 0, -(6 * invScale), 0, (6 * invScale) ]}
-          stroke="rgba(20,20,20,0.9)"
+          stroke={plannerTheme.panelFill}
           strokeWidth={1.5 * invScale}
           listening={false}
         />

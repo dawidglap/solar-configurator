@@ -1,6 +1,7 @@
 'use client';
 import { Rect, Group } from 'react-konva';
 import { usePanelTexture } from './PanelTexture';
+import { plannerTheme } from '../theme/plannerTheme';
 
 type Props = {
   x: number; y: number;               // centro modulo in px immagine
@@ -22,9 +23,9 @@ export default function ModuleSprite({ x, y, w, h, rotationDeg = 0, textureUrl, 
       <Rect
         x={0} y={0} width={w} height={h}
         cornerRadius={2}
-        stroke={selected ? '#ef4444' : '#111'}
+        stroke={selected ? plannerTheme.panelSelected : plannerTheme.panelStroke}
         strokeWidth={selected ? 1.2 : 0.6}
-        fill={!hasTex ? 'rgba(17,17,17,0.92)' : undefined}
+        fill={!hasTex ? plannerTheme.panelFill : undefined}
         // texture: no-repeat e scala per coprire esattamente il rettangolo
         fillPatternImage={img ?? undefined}
         fillPatternScaleX={img ? (w / img.naturalWidth) : undefined}
@@ -34,8 +35,8 @@ export default function ModuleSprite({ x, y, w, h, rotationDeg = 0, textureUrl, 
       {/* sottili “celle” per dare profondità anche senza texture */}
       {!hasTex && (
         <>
-          <Rect x={4} y={4} width={w-8} height={h-8} stroke="rgba(255,255,255,0.08)" strokeWidth={0.6}/>
-          <Rect x={8} y={8} width={w-16} height={h-16} stroke="rgba(255,255,255,0.06)" strokeWidth={0.5}/>
+          <Rect x={4} y={4} width={w-8} height={h-8} stroke={plannerTheme.panelStroke} strokeWidth={0.6}/>
+          <Rect x={8} y={8} width={w-16} height={h-16} stroke={plannerTheme.primarySoft} strokeWidth={0.5}/>
         </>
       )}
     </Group>

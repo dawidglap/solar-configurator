@@ -5,9 +5,9 @@ import ModulesPanel from "../panels/ModulesPanel";
 
 export default function RightPropertiesPanelOverlay() {
   return (
-    <div className="w-[var(--propW,264px)] max-w-[92vw] h-full min-h-0 bg-[#404F5A]/35 backdrop-blur-xl shadow-xl flex flex-col overflow-hidden border-l border-[#7E8B97] rounded-bl-2xl ">
-      <div className="flex items-center justify-between px-3 pt-2 ">
-        <h3 className="text-xs font-medium ps-1 text-white">EBENEN</h3>
+    <div className="glass-panel-elevated w-[var(--propW,264px)] max-w-[92vw] h-full min-h-0 flex flex-col overflow-hidden rounded-bl-2xl rounded-tl-none border-l border-border/70">
+      <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+        <h3 className="ps-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Ebenen</h3>
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 text-sm">
