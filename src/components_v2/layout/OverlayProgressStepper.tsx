@@ -155,8 +155,8 @@ export default function OverlayProgressStepper() {
     };
   }, []);
 
-  const goToLovableStep = async (
-    target: "stueckliste" | "bericht" | "angebot",
+  const goToPlanningStep = async (
+    target: "profile" | "ist" | "stueckliste" | "bericht" | "angebot",
   ) => {
     if (!planningId || isRedirecting) return;
 
@@ -221,28 +221,33 @@ export default function OverlayProgressStepper() {
                 const onClick = async () => {
                   if (!s.clickable || isRedirecting) return;
 
-                  if (
-                    s.key === "profile" ||
-                    s.key === "ist" ||
-                    s.key === "building" ||
-                    s.key === "modules"
-                  ) {
+                  if (s.key === "building" || s.key === "modules") {
                     setStep(s.key);
                     return;
                   }
 
+                  if (s.key === "profile") {
+                    await goToPlanningStep("profile");
+                    return;
+                  }
+
+                  if (s.key === "ist") {
+                    await goToPlanningStep("ist");
+                    return;
+                  }
+
                   if (s.key === "parts") {
-                    await goToLovableStep("stueckliste");
+                    await goToPlanningStep("stueckliste");
                     return;
                   }
 
                   if (s.key === "report") {
-                    await goToLovableStep("bericht");
+                    await goToPlanningStep("bericht");
                     return;
                   }
 
                   if (s.key === "offer") {
-                    await goToLovableStep("angebot");
+                    await goToPlanningStep("angebot");
                     return;
                   }
 
