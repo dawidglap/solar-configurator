@@ -207,7 +207,7 @@ export default function OverlayProgressStepper() {
     <div
       ref={barRef}
       className="fixed left-0 right-0 top-0 z-[200] planner-topbar text-foreground"
-      style={{ paddingLeft: "var(--sb, 64px)" }}
+      style={{ paddingLeft: "var(--sb, 0px)" }}
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px" />
 

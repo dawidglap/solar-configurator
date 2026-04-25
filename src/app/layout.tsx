@@ -25,6 +25,7 @@ export default async function RootLayout({
   const h = await headers();
   const pathname = h.get("x-pathname") || h.get("x-invoke-path") || "/";
   const isLoginPage = pathname.startsWith("/login");
+  const isPlannerPage = pathname.startsWith("/planner-v2");
 
   return (
     <html lang="de" suppressHydrationWarning>
@@ -50,6 +51,13 @@ export default async function RootLayout({
           // niente bg-white: il bg lo gestiamo noi con hero.webp
           "bg-background text-foreground",
         ].join(" ")}
+        style={
+          isPlannerPage
+            ? ({
+                ["--sb" as string]: "0px",
+              } as React.CSSProperties)
+            : undefined
+        }
       >
         {/* Background globale: hero.webp + blur + overlay */}
         {!isLoginPage && (
@@ -65,8 +73,8 @@ export default async function RootLayout({
           </div>
         )}
 
-        {/* Sidebar visibile ovunque tranne /login */}
-        {!isLoginPage && <Sidebar />}
+        {/* Sidebar intentionally disabled on planner-v2 */}
+        {!isLoginPage && !isPlannerPage && <Sidebar />}
 
         <div className="flex flex-col flex-1 overflow-hidden">
           <main className="flex-1 overflow-auto relative">{children}</main>

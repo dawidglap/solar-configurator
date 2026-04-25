@@ -32,7 +32,7 @@ export default function OverlayRightToggle() {
       "
       style={{
         // appena a destra della sidebar (sia chiusa che aperta)
-        left: 'calc(var(--sb, 64px) -18px)',
+        left: 'calc(var(--sb, 0px) -18px)',
         // sotto la topbar/stepper
         top: 'calc(var(--tb, 48px) + 48px)',
       }}

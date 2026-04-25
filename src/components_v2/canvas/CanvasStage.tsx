@@ -783,7 +783,7 @@ export default function CanvasStage() {
       <div
         className="fixed z-[310] pointer-events-auto"
         style={{
-          left: "calc(var(--sb, 64px) -2px)", // subito a destra della sidebar
+          left: "calc(var(--sb, 0px) -2px)", // planner senza sidebar CRM
           top: "calc(var(--tb, 48px) + 40px)", // sotto la topbar
           bottom: "0px",
           width: "var(--propW, 280px)",

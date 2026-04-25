@@ -4,7 +4,7 @@
 export default function PageContainer({ children }: { children: React.ReactNode }) {
   return (
     <div
-      style={{ paddingLeft: 'var(--sb, 64px)' }}
+      style={{ paddingLeft: 'var(--sb, 0px)' }}
       className="min-h-dvh"
     >
       {children}
