@@ -59,12 +59,90 @@ import type { ZonesSlice } from './slices/zonesSlice';
 import { createZonesSlice } from './slices/zonesSlice';
 
 import type { PartsSlice } from './slices/partsSlice';
-import { createPartsSlice } from './slices/partsSlice';
+import {
+  createPartsSlice,
+  defaultParts,
+  defaultPartsView,
+} from './slices/partsSlice';
 
 type RoofAlign = {
   rotDeg: number;
   pivotPx?: { x: number; y: number };
 };
+
+const DEFAULT_VIEW: View = {
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+  fitScale: 1,
+};
+
+const DEFAULT_UI = {
+  stepperOpen: true,
+  rightPanelOpen: false,
+  leftPanelOpen: false,
+  searchOpen: false,
+};
+
+function createDefaultModules(): ModulesConfig {
+  return {
+    orientation: 'portrait',
+    spacingM: 0.02,
+    marginM: 0.0,
+    showGrid: true,
+    placingSingle: false,
+    gridAngleDeg: 0,
+    gridPhaseX: 0,
+    gridPhaseY: 0,
+    gridAnchorX: 'start',
+    gridAnchorY: 'start',
+    coverageRatio: 1,
+    perRoofAngles: {},
+  };
+}
+
+function createDefaultIstState() {
+  return {
+    ...defaultIst,
+    checklist: { ...defaultIst.checklist },
+  };
+}
+
+function createInitialPlannerState() {
+  return {
+    step: 'profile' as PlannerStep,
+    snapshot: {} as Snapshot,
+    snapshotScale: 2 as 1 | 2 | 3,
+    view: { ...DEFAULT_VIEW },
+    tool: 'select' as Tool,
+
+    catalogPanels: PANEL_CATALOG,
+    selectedPanelId: PANEL_CATALOG[0]?.id ?? '',
+    modules: createDefaultModules(),
+
+    detectedRoofs: [] as DetectedRoof[],
+    roofAlign: { rotDeg: 0, pivotPx: undefined } as RoofAlign,
+
+    snowGuards: [] as SnowGuard[],
+    selectedSnowGuardId: undefined as string | undefined,
+
+    ui: { ...DEFAULT_UI },
+
+    layers: [],
+    selectedId: undefined as string | undefined,
+
+    panels: [],
+    selectedPanelIds: [] as string[],
+
+    zones: [],
+    selectedZoneId: undefined as string | undefined,
+
+    profile: { ...defaultProfile },
+    ist: createDefaultIstState(),
+    partsView: defaultPartsView,
+    parts: { items: [...defaultParts.items] },
+  };
+}
 
 type PlannerV2State = {
   step: PlannerStep;
@@ -73,6 +151,7 @@ type PlannerV2State = {
   setSnapshot: (s: Partial<Snapshot>) => void;
 
   resetForNewAddress: (snap: Partial<Snapshot>) => void;
+  resetPlanner: () => void;
 
   snapshotScale: 1 | 2 | 3;
   setSnapshotScale: (n: 1 | 2 | 3) => void;
@@ -121,7 +200,7 @@ type PlannerV2State = {
 export const usePlannerV2Store = create<PlannerV2State>()(
   persist(
     (set, get, api) => ({
-      step: 'profile',
+      ...createInitialPlannerState(),
 
       setStep: (s) =>
         set((st) => {
@@ -146,13 +225,14 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         set((s) => ({
           snapshot: { ...s.snapshot, ...snap },
 
-          view: { scale: 1, offsetX: 0, offsetY: 0, fitScale: 1 },
+          view: { ...DEFAULT_VIEW },
           tool: 'select',
           step: 'building',
           roofAlign: { rotDeg: 0, pivotPx: undefined },
 
           selectedId: undefined,
           selectedZoneId: undefined,
+          selectedPanelIds: [],
 
           layers: [],
           zones: [],
@@ -174,6 +254,11 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         history.clear();
       },
 
+      resetPlanner: () => {
+        set(() => createInitialPlannerState());
+        history.clear();
+      },
+
       exportState: () => {
         const s = get();
         return {
@@ -185,6 +270,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           layers: s.layers,
           zones: s.zones,
           panels: s.panels,
+          detectedRoofs: s.detectedRoofs,
 
           modules: s.modules,
           roofAlign: s.roofAlign,
@@ -203,32 +289,43 @@ export const usePlannerV2Store = create<PlannerV2State>()(
       importState: (saved: any) => {
         if (!saved || typeof saved !== 'object') return;
 
+        const defaults = createInitialPlannerState();
+
         set((s) => ({
-          ...s,
-          step: saved.step ?? s.step,
-          view: saved.view ?? s.view,
-          tool: saved.tool ?? s.tool,
-          snapshotScale: saved.snapshotScale ?? s.snapshotScale,
+          step: saved.step ?? defaults.step,
+          view: saved.view ?? defaults.view,
+          tool: saved.tool ?? defaults.tool,
+          snapshotScale: saved.snapshotScale ?? defaults.snapshotScale,
 
-          layers: Array.isArray(saved.layers) ? saved.layers : s.layers,
-          zones: Array.isArray(saved.zones) ? saved.zones : s.zones,
-          panels: Array.isArray(saved.panels) ? saved.panels : s.panels,
+          layers: Array.isArray(saved.layers) ? saved.layers : [],
+          selectedId: undefined,
 
-          modules: saved.modules ?? s.modules,
-          roofAlign: saved.roofAlign ?? s.roofAlign,
+          zones: Array.isArray(saved.zones) ? saved.zones : [],
+          selectedZoneId: undefined,
 
-          snowGuards: Array.isArray(saved.snowGuards)
-            ? saved.snowGuards
-            : s.snowGuards,
+          panels: Array.isArray(saved.panels) ? saved.panels : [],
+          selectedPanelIds: [],
 
-          selectedPanelId: saved.selectedPanelId ?? s.selectedPanelId,
+          detectedRoofs: Array.isArray(saved.detectedRoofs)
+            ? saved.detectedRoofs
+            : [],
+
+          modules: saved.modules ?? defaults.modules,
+          roofAlign: saved.roofAlign ?? defaults.roofAlign,
+
+          snowGuards: Array.isArray(saved.snowGuards) ? saved.snowGuards : [],
+          selectedSnowGuardId: undefined,
+
+          selectedPanelId: saved.selectedPanelId ?? defaults.selectedPanelId,
           catalogPanels:
             Array.isArray(saved.catalogPanels) && saved.catalogPanels.length > 0
               ? saved.catalogPanels
               : s.catalogPanels,
 
-          profile: saved.profile ?? s.profile,
-          ist: saved.ist ?? s.ist,
+          profile: saved.profile ?? defaults.profile,
+          ist: saved.ist ?? defaults.ist,
+          parts: saved.parts ?? defaults.parts,
+          partsView: saved.partsView ?? defaults.partsView,
         }));
 
         history.clear();
@@ -237,7 +334,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
       snapshotScale: 2,
       setSnapshotScale: (n) => set({ snapshotScale: n }),
 
-      view: { scale: 1, offsetX: 0, offsetY: 0, fitScale: 1 },
+      view: { ...DEFAULT_VIEW },
       setView: (v) => set((st) => ({ view: { ...st.view, ...v } })),
 
       tool: 'select',
@@ -260,20 +357,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         return catalogPanels.find((p) => p.id === selectedPanelId);
       },
 
-      modules: {
-        orientation: 'portrait',
-        spacingM: 0.02,
-        marginM: 0.0,
-        showGrid: true,
-        placingSingle: false,
-        gridAngleDeg: 0,
-        gridPhaseX: 0,
-        gridPhaseY: 0,
-        gridAnchorX: 'start',
-        gridAnchorY: 'start',
-        coverageRatio: 1,
-        perRoofAngles: {},
-      },
+      modules: createDefaultModules(),
       setModules: (patch) =>
         set((s) => {
           const prev = s.modules || {};

@@ -203,6 +203,7 @@ export function usePlanningLoad() {
   const planningId = sp.get("planningId");
 
   const setStep = usePlannerV2Store((s) => s.setStep);
+  const resetPlanner = usePlannerV2Store((s) => s.resetPlanner);
   const setProfile = usePlannerV2Store((s) => s.setProfile);
   const setIstAll = usePlannerV2Store((s) => s.setIstAll);
   const importState = usePlannerV2Store((s) => s.importState);
@@ -230,10 +231,10 @@ export function usePlanningLoad() {
       const planning = json.planning;
       const data = planning?.data ?? {};
 
-      // 1) step
-      setStep(mapDbStepToStoreStep(planning?.currentStep));
+      await usePlannerV2Store.persist.clearStorage();
+      resetPlanner();
 
-      // 2) profile
+      // 1) profile
       if (data.profile && typeof data.profile === "object") {
         const profileToStore = looksLikeStoreProfile(data.profile)
           ? data.profile
@@ -242,19 +243,19 @@ export function usePlanningLoad() {
         setProfile(profileToStore);
       }
 
-      // 3) ist
+      // 2) ist
       if (data.ist && typeof data.ist === "object") {
         setIstAll(data.ist);
       } else {
         setIstAll(defaultIst);
       }
 
-      // 4) planner state
+      // 3) planner state
       if (data.planner && typeof data.planner === "object") {
         importState(data.planner);
       }
 
-      // 5) snapshot re-hydration + rebuild image if needed
+      // 4) snapshot re-hydration + rebuild image if needed
       let snapshot = buildSnapshotFromPlanning(planning);
       snapshot = await rebuildSnapshotIfNeeded(snapshot);
       // ✅ set address nello store (per searchbar)
@@ -276,6 +277,9 @@ if (snapshot?.address) {
         setSnapshot(snapshot);
       }
 
+      // 5) current step wins over any saved planner payload
+      setStep(mapDbStepToStoreStep(planning?.currentStep));
+
       // 6) clear undo/redo
       try {
         const h: any = (await import("./history")).history;
@@ -292,6 +296,7 @@ if (snapshot?.address) {
     setProfile,
     setIstAll,
     setStep,
+    resetPlanner,
     importState,
     setSnapshot,
     setAddress,
