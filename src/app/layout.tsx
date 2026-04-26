@@ -2,7 +2,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
+// import Sidebar from "@/components/Sidebar";
 
 import { Toaster } from "react-hot-toast";
 import { headers } from "next/headers";
@@ -73,8 +73,10 @@ export default async function RootLayout({
           </div>
         )}
 
-        {/* Sidebar intentionally disabled on planner-v2 */}
-        {!isLoginPage && !isPlannerPage && <Sidebar />}
+        {/* Sidebar completamente nascosta nel progetto.
+            Se dovesse servire di nuovo, ripristinare l'import sopra e questa riga:
+            {!isLoginPage && !isPlannerPage && <Sidebar />} */}
+        {/* {!isLoginPage && !isPlannerPage && <Sidebar />} */}
 
         <div className="flex flex-col flex-1 overflow-hidden">
           <main className="flex-1 overflow-auto relative">{children}</main>
