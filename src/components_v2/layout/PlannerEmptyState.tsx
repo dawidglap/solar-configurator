@@ -9,11 +9,11 @@ export default function PlannerEmptyState() {
       {/* background immagine con fade-top bianco */}
       <div className="absolute inset-0">
         <Image
-          src="/images/hero.webp" // placeholder: sostituire quando hai l’immagine finale
+          src="/hero-helionic.jpeg"
           alt=""
           fill
           priority
-          className="object-cover object-bottom-right"
+          className="object-cover object-center"
         />
         {/* <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white to-transparent" /> */}
       </div>
