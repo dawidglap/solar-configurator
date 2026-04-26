@@ -298,3 +298,79 @@ export async function PATCH(
     await client.close().catch(() => {});
   }
 }
+
+/* --------------------------------- DELETE -------------------------------- */
+
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ customerId: string }> },
+) {
+  const origin = req.headers.get("origin");
+  const { customerId } = await params;
+
+  const uri = process.env.MONGODB_URI;
+  const secret = process.env.SESSION_SECRET;
+
+  if (!uri || !secret) {
+    return jsonResponse(origin, { ok: false, error: "Missing env" }, 500);
+  }
+
+  const session = readSession(req, secret);
+  if (!session?.activeCompanyId) {
+    return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
+  }
+
+  const customerObjectId = toObjectIdOrNull(customerId);
+  if (!customerObjectId) {
+    return jsonResponse(origin, { ok: false, error: "Invalid customerId" }, 400);
+  }
+
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
+
+  try {
+    await client.connect();
+    const db = client.db();
+
+    const customers = db.collection("customers");
+    const plannings = db.collection("plannings");
+
+    const linkedPlanningsCount = await plannings.countDocuments({
+      companyId: session.activeCompanyId,
+      customerId,
+    });
+
+    if (linkedPlanningsCount > 0) {
+      return jsonResponse(
+        origin,
+        {
+          ok: false,
+          error: "customer_has_plannings",
+          message:
+            "Dieser Kunde kann nicht gelöscht werden, weil noch Projekte/Offerten damit verknüpft sind.",
+          linkedPlanningsCount,
+        },
+        400
+      );
+    }
+
+    const res = await customers.deleteOne({
+      _id: customerObjectId,
+      companyId: session.activeCompanyId,
+    });
+
+    if (res.deletedCount === 0) {
+      return jsonResponse(origin, { ok: false, error: "Customer not found" }, 404);
+    }
+
+    return jsonResponse(origin, { ok: true, deletedCustomerId: customerId }, 200);
+  } catch (e: any) {
+    console.error("DELETE CUSTOMER ERROR:", e);
+    return jsonResponse(
+      origin,
+      { ok: false, error: e?.message ?? "Unknown error" },
+      500
+    );
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
