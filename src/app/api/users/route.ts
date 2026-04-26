@@ -48,6 +48,24 @@ function safeString(v: unknown) {
   return typeof v === "string" ? v.trim() : "";
 }
 
+function objectIdOrNull(v: unknown) {
+  try {
+    const s = safeString(v);
+    if (!s) return null;
+    return new ObjectId(s);
+  } catch {
+    return null;
+  }
+}
+
+function mongoIdToString(v: any) {
+  if (!v) return "";
+  if (typeof v === "string") return v;
+  if (v?.$oid) return String(v.$oid);
+  if (typeof v?.toString === "function") return v.toString();
+  return "";
+}
+
 function jsonResponse(origin: string | null, body: any, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -60,25 +78,29 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
 
 function normalizeUser(doc: any, activeCompanyId: string) {
   const memberships = Array.isArray(doc?.memberships) ? doc.memberships : [];
-  const membership = memberships.find(
-    (m: any) => String(m?.companyId) === String(activeCompanyId)
-  );
+
+  const membership = memberships.find((m: any) => {
+    const companyId = mongoIdToString(m?.companyId);
+    return companyId === String(activeCompanyId);
+  });
 
   const firstName = safeString(doc?.firstName);
   const lastName = safeString(doc?.lastName);
   const fallbackName = safeString(doc?.name);
 
   const fullName =
-    [firstName, lastName].filter(Boolean).join(" ") || fallbackName || safeString(doc?.email);
+    [firstName, lastName].filter(Boolean).join(" ") ||
+    fallbackName ||
+    safeString(doc?.email);
 
   return {
-    id: String(doc?._id ?? ""),
+    id: mongoIdToString(doc?._id),
     firstName,
     lastName,
     name: fullName,
     email: safeString(doc?.email),
     role: safeString(membership?.role) || "",
-    status: safeString(membership?.status) || "active",
+    status: safeString(membership?.status) || safeString(doc?.status) || "active",
     isPlatformSuperAdmin: !!doc?.isPlatformSuperAdmin,
     createdAt: doc?.createdAt ?? null,
     updatedAt: doc?.updatedAt ?? null,
@@ -107,6 +129,7 @@ export async function GET(req: Request) {
   }
 
   const activeCompanyId = String(session.activeCompanyId);
+  const activeCompanyObjectId = objectIdOrNull(activeCompanyId);
 
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
@@ -115,20 +138,36 @@ export async function GET(req: Request) {
     const db = client.db();
     const users = db.collection("users");
 
-    const docs = await users
-      .find({
+    const companyMatchers: any[] = [
+      {
         memberships: {
           $elemMatch: {
             companyId: activeCompanyId,
           },
         },
+      },
+    ];
+
+    if (activeCompanyObjectId) {
+      companyMatchers.push({
+        memberships: {
+          $elemMatch: {
+            companyId: activeCompanyObjectId,
+          },
+        },
+      });
+    }
+
+    const docs = await users
+      .find({
+        $or: companyMatchers,
       })
       .sort({ createdAt: -1 })
       .toArray();
 
     const items = docs.map((doc) => normalizeUser(doc, activeCompanyId));
 
-    return jsonResponse(origin, { ok: true, users: items }, 200);
+    return jsonResponse(origin, { ok: true, users: items, items }, 200);
   } catch (e: any) {
     console.error("GET USERS ERROR:", e);
     return jsonResponse(
