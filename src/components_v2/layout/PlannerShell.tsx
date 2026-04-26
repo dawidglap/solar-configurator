@@ -4,7 +4,6 @@
 import { useEffect } from "react";
 import CanvasStage from "../canvas/CanvasStage";
 import PageContainer from "../layout/PageContainer";
-import PlannerEmptyState from "../layout/PlannerEmptyState";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 
 export default function PlannerShell() {
@@ -21,8 +20,7 @@ export default function PlannerShell() {
 
   return (
     <PageContainer>
-      <div className="h-[calc(100vh-0px)] w-full overflow-hidden bg-background">
-        {!snap?.url && <PlannerEmptyState />}
+      <div className="relative h-[calc(100vh-0px)] w-full overflow-hidden bg-background">
         <CanvasStage />
       </div>
     </PageContainer>

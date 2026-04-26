@@ -54,6 +54,7 @@ import StucklisteScreen from "../steps/StucklisteScreen";
 import ReportScreen from "../steps/ReportScreen";
 import OfferScreen from "../steps/OfferScreen";
 import { plannerTheme } from "../theme/plannerTheme";
+import PlannerEmptyState from "../layout/PlannerEmptyState";
 
 // ——— ANGLES HELPERS ———
 function radToDeg(r: number) {
@@ -771,6 +772,8 @@ export default function CanvasStage() {
       ref={containerRef}
       className="relative h-full w-full overflow-hidden bg-background"
     >
+      {!img && <PlannerEmptyState />}
+
       <OverlayProgressStepper />
       <OverlayTopToolbar />
 
