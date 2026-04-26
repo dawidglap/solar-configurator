@@ -4,6 +4,7 @@
 import { useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { usePlannerV2Store } from "./plannerV2Store";
+import { normalizePlannerStep } from "./normalizePlannerStep";
 import { defaultIst } from "./slices/istSlice";
 import {
   buildTiledSnapshot,
@@ -70,22 +71,6 @@ function looksLikeStoreProfile(p: any) {
     "customerStatus" in p ||
     "customerType" in p
   );
-}
-
-function mapDbStepToStoreStep(stepFromDb: any) {
-  if (
-    stepFromDb === "profile" ||
-    stepFromDb === "ist" ||
-    stepFromDb === "building" ||
-    stepFromDb === "modules" ||
-    stepFromDb === "strings" ||
-    stepFromDb === "parts" ||
-    stepFromDb === "report" ||
-    stepFromDb === "offer"
-  ) {
-    return stepFromDb;
-  }
-  return "profile";
 }
 
 function buildSnapshotFromPlanning(planning: any) {
@@ -201,6 +186,10 @@ export function usePlanningLoad() {
   const sp = useSearchParams();
   const router = useRouter();
   const planningId = sp.get("planningId");
+  const plannerStep = sp.get("plannerStep");
+  const initialStep = sp.get("initialStep");
+  const stepParam = sp.get("step");
+  const currentStepParam = sp.get("currentStep");
 
   const setStep = usePlannerV2Store((s) => s.setStep);
   const resetPlanner = usePlannerV2Store((s) => s.resetPlanner);
@@ -230,6 +219,17 @@ export function usePlanningLoad() {
 
       const planning = json.planning;
       const data = planning?.data ?? {};
+      const requestedStepFromUrl =
+        normalizePlannerStep(plannerStep) ||
+        normalizePlannerStep(initialStep) ||
+        normalizePlannerStep(stepParam) ||
+        normalizePlannerStep(currentStepParam);
+      const requestedStep =
+        requestedStepFromUrl ||
+        normalizePlannerStep(planning?.currentStep) ||
+        normalizePlannerStep(data?.step) ||
+        normalizePlannerStep(data?.planner?.step) ||
+        "building";
 
       await usePlannerV2Store.persist.clearStorage();
       resetPlanner();
@@ -277,8 +277,8 @@ if (snapshot?.address) {
         setSnapshot(snapshot);
       }
 
-      // 5) current step wins over any saved planner payload
-      setStep(mapDbStepToStoreStep(planning?.currentStep));
+      // 5) URL-requested step wins over persisted planner/backend step
+      setStep(requestedStep);
 
       // 6) clear undo/redo
       try {
@@ -292,6 +292,10 @@ if (snapshot?.address) {
     };
   }, [
     planningId,
+    plannerStep,
+    initialStep,
+    stepParam,
+    currentStepParam,
     router,
     setProfile,
     setIstAll,

@@ -7,12 +7,19 @@ import PlannerShell from "@/components_v2/layout/PlannerShell";
 import ResponsiveGuard from "@/components_v2/layout/ResponsiveGuard";
 import PlannerWelcomeScreen from "@/components_v2/layout/PlannerWelcomeScreen";
 import { usePlannerV2Store } from "@/components_v2/state/plannerV2Store";
+import { normalizePlannerStep } from "@/components_v2/state/normalizePlannerStep";
 import { usePlanningLoad } from "@/components_v2/state/usePlanningLoad";
 import { useAutoSave } from "@/components_v2/state/planning/useAutoSave";
 
 export default function PlannerV2Page() {
   const sp = useSearchParams();
   const planningId = sp.get("planningId");
+  const requestedStep =
+    normalizePlannerStep(sp.get("plannerStep")) ||
+    normalizePlannerStep(sp.get("initialStep")) ||
+    normalizePlannerStep(sp.get("step")) ||
+    normalizePlannerStep(sp.get("currentStep")) ||
+    "building";
 
   usePlanningLoad();
   useAutoSave();
@@ -21,11 +28,13 @@ export default function PlannerV2Page() {
   const [started, setStarted] = useState(false);
 
   useEffect(() => {
-    if (planningId) setStarted(true);
-  }, [planningId]);
+    if (!planningId) return;
+    setStep(requestedStep);
+    setStarted(true);
+  }, [planningId, requestedStep, setStep]);
 
   const handleStartNew = () => {
-    setStep("profile");
+    setStep("building");
     setStarted(true);
   };
 

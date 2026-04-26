@@ -5,32 +5,21 @@ import { useSearchParams } from "next/navigation";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { savePlannerToDb } from "../state/planning/savePlanning";
 import {
-  User,
   Home,
   ListChecks,
   BadgeCheck,
-  Map,
   FileText,
 } from "lucide-react";
 import ThemeSwitcher from "../theme/ThemeSwitcher";
 
 type StoreKey =
-  | "profile"
-  | "ist"
   | "building"
   | "modules"
-  | "strings"
-  | "parts";
+  | "parts"
+  | "report"
+  | "offer";
 
 type UiStep =
-  | {
-      key: "profile";
-      label: string;
-      short: string;
-      Icon: any;
-      clickable: boolean;
-    }
-  | { key: "ist"; label: string; short: string; Icon: any; clickable: boolean }
   | {
       key: "building";
       label: string;
@@ -68,20 +57,6 @@ type UiStep =
     };
 
 const UI_STEPS: UiStep[] = [
-  {
-    key: "profile",
-    label: "Profil",
-    short: "Profil",
-    Icon: User,
-    clickable: true,
-  },
-  {
-    key: "ist",
-    label: "IST-Situation",
-    short: "IST",
-    Icon: Map,
-    clickable: true,
-  },
   {
     key: "building",
     label: "Gebäudeplanung",
@@ -156,7 +131,7 @@ export default function OverlayProgressStepper() {
   }, []);
 
   const goToPlanningStep = async (
-    target: "profile" | "ist" | "stueckliste" | "bericht" | "angebot",
+    target: "stueckliste" | "bericht" | "angebot",
   ) => {
     if (!planningId || isRedirecting) return;
 
@@ -223,16 +198,6 @@ export default function OverlayProgressStepper() {
 
                   if (s.key === "building" || s.key === "modules") {
                     setStep(s.key);
-                    return;
-                  }
-
-                  if (s.key === "profile") {
-                    await goToPlanningStep("profile");
-                    return;
-                  }
-
-                  if (s.key === "ist") {
-                    await goToPlanningStep("ist");
                     return;
                   }
 
