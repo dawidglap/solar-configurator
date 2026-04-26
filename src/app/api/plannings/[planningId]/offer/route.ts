@@ -377,6 +377,22 @@ console.log("OFFER REPORT SUMMARY DATA:", reportSummary);
       safeString(profile?.companyName) ||
       "—";
 
+      const customerSalutation = safeString(
+  profile?.salutation ||
+    profile?.title ||
+    profile?.gender
+).toLowerCase();
+
+const customerLastName = safeString(
+  profile?.lastName ||
+    profile?.contactLastName
+);
+
+const customerType = safeString(
+  profile?.type ||
+    profile?.customerType
+).toLowerCase();
+
     const batteryItems = items.filter((item: any) => {
       const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
       return category === "batterie" || category === "battery" || category === "speicher";
@@ -551,6 +567,10 @@ const inverterLabel =
       kWp: offer.pv.dcPowerKw,
       customerName: offer.customer.name,
       companyName: offer.companyName,
+
+      customerSalutation,
+customerLastName,
+customerType,
 
       netSystemPriceChf: offer.pricing.netSystemPriceChf,
       discountChf: offer.pricing.discountChf,

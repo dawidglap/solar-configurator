@@ -9,6 +9,10 @@ type OfferCoverData = {
   customerName: string;
   companyName: string;
 
+  customerSalutation?: string;
+  customerLastName?: string;
+  customerType?: string;
+
   netSystemPriceChf: number;
   vatRatePct: number;
   vatAmountChf: number;
@@ -126,6 +130,28 @@ function drawLine(
 function truncate(text: string, max = 52) {
   if (!text) return "";
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function buildGreeting(data: OfferCoverData) {
+  const salutation = String(data.customerSalutation || "").toLowerCase();
+  const customerType = String(data.customerType || "").toLowerCase();
+
+  const fullName = data.customerName || "—";
+  const lastName = data.customerLastName || data.customerName || "—";
+
+  if (customerType === "company") {
+    return "Sehr geehrte Damen und Herren";
+  }
+
+  if (salutation === "frau") {
+    return `Sehr geehrte Frau ${lastName}`;
+  }
+
+  if (salutation === "herr") {
+    return `Sehr geehrter Herr ${lastName}`;
+  }
+
+  return `Guten Tag ${fullName}`;
 }
 
 function drawPricingRows(args: {
@@ -296,7 +322,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
 
   let y = 500;
 
-  drawText(page, `Herr ${data.customerName || "—"}`, pageMarginX, y, 12.5, bold, textDark);
+  drawText(page, buildGreeting(data), pageMarginX, y, 12.5, bold, textDark);
   y -= 22;
 
   const introLines = [
