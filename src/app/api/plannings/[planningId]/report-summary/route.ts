@@ -4,6 +4,8 @@ import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 /* ----------------------------- Session helpers ---------------------------- */
 
@@ -76,6 +78,9 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
       ...getCorsHeaders(origin),
     },
   });
@@ -198,6 +203,7 @@ function inferRoofWeight(roof: any, roofId: string, panelsOnRoof: any[]) {
     roof?.areaM2 ?? roof?.flaeche ?? roof?.fläche,
     NaN
   );
+
   if (Number.isFinite(explicitArea) && explicitArea > 0) {
     return explicitArea;
   }
@@ -229,7 +235,10 @@ function getUsedRoofs(layers: any[], panels: any[]) {
     return layers;
   }
 
-  const filtered = layers.filter((roof) => usedRoofIds.has(safeString(roof?.id)));
+  const filtered = layers.filter((roof) =>
+    usedRoofIds.has(safeString(roof?.id))
+  );
+
   return filtered.length ? filtered : layers;
 }
 
@@ -263,19 +272,16 @@ function inferYieldPerKwpFromRoofs(layers: any[], panels: any[]) {
         entry.weight > 0
     );
 
-  if (!values.length) {
-    return 950;
-  }
+  if (!values.length) return 950;
 
   const weightedSum = values.reduce(
     (sum, entry) => sum + entry.specificYield * entry.weight,
     0
   );
+
   const totalWeight = values.reduce((sum, entry) => sum + entry.weight, 0);
 
-  if (totalWeight <= 0) {
-    return 950;
-  }
+  if (totalWeight <= 0) return 950;
 
   return Math.round(weightedSum / totalWeight);
 }
@@ -302,11 +308,8 @@ function estimateSelfConsumptionPct(args: {
   }
 
   const ratio = yearlyConsumptionKwh / annualProductionKwh;
-
-  // base self-consumption without extras
   let pct = 0.28;
 
-  // consumption vs production balance
   if (ratio >= 1.5) pct += 0.12;
   else if (ratio >= 1.2) pct += 0.09;
   else if (ratio >= 1.0) pct += 0.07;
@@ -314,26 +317,15 @@ function estimateSelfConsumptionPct(args: {
   else if (ratio >= 0.6) pct += 0.01;
   else pct -= 0.03;
 
-  // battery has the strongest impact on self-consumption
   if (hasBattery) {
     pct += 0.18;
-
-    // if production is relatively high, battery adds even more benefit
     if (ratio <= 1.0) pct += 0.04;
     if (ratio <= 0.8) pct += 0.03;
   }
 
-  // EV typically helps shift solar energy into useful consumption
-  if (hasEv) {
-    pct += 0.06;
-  }
+  if (hasEv) pct += 0.06;
+  if (hasHeatPump) pct += 0.07;
 
-  // heat pump also increases on-site usage
-  if (hasHeatPump) {
-    pct += 0.07;
-  }
-
-  // realistic bounds
   return clamp(pct, 0.18, 0.88);
 }
 
@@ -380,12 +372,7 @@ function normalizeCatalogItem(item: any): NormalizedCatalogItem {
 }
 
 function normalizePartItem(item: any): NormalizedPartItem {
-  const quantity = safeNumber(
-    item?.quantity ??
-      item?.qty ??
-      item?.stk,
-    0
-  );
+  const quantity = safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0);
 
   const unitPriceNet = safeNumber(
     item?.unitPriceNet ??
@@ -463,20 +450,18 @@ function normalizeReportOptions(raw: any) {
     heatPump,
     selectedBatteryItemId: safeString(
       raw?.selectedBatteryItemId ??
-      raw?.batteryItemId ??
-      raw?.selectedBatteryId
+        raw?.batteryItemId ??
+        raw?.selectedBatteryId
     ),
     selectedWallboxItemId: safeString(
       raw?.selectedWallboxItemId ??
-      raw?.wallboxItemId ??
-      raw?.selectedWallboxId
+        raw?.wallboxItemId ??
+        raw?.selectedWallboxId
     ),
     discountChf: parseMoneyLike(raw?.discountChf ?? raw?.rabattChf, 0),
     discountPct: parseMoneyLike(raw?.discountPct ?? raw?.rabattPct, 0),
     subsidyChf: parseMoneyLike(
-      raw?.subsidyChf ??
-      raw?.subsidy ??
-      raw?.foerderungen,
+      raw?.subsidyChf ?? raw?.subsidy ?? raw?.foerderungen,
       0
     ),
     skontoPct: parseMoneyLike(raw?.skontoPct ?? raw?.skonto, 0),
@@ -510,17 +495,9 @@ function shouldIncludePartItem(
 ) {
   const category = item.category.toLowerCase();
 
-  if (isBatteryCategory(category) && options.battery === false) {
-    return false;
-  }
-
-  if (isWallboxCategory(category) && options.charging === false) {
-    return false;
-  }
-
-  if (isHeatPumpCategory(category) && options.heatPump === false) {
-    return false;
-  }
+  if (isBatteryCategory(category) && options.battery === false) return false;
+  if (isWallboxCategory(category) && options.charging === false) return false;
+  if (isHeatPumpCategory(category) && options.heatPump === false) return false;
 
   return true;
 }
@@ -531,9 +508,7 @@ function getNormalizedIncludedParts(
 ) {
   const rawItems = getRawPartsItemsFromPlanning(doc);
 
-  if (!Array.isArray(rawItems)) {
-    return [] as NormalizedPartItem[];
-  }
+  if (!Array.isArray(rawItems)) return [] as NormalizedPartItem[];
 
   return rawItems
     .map(normalizePartItem)
@@ -580,21 +555,23 @@ function inferEnergyFlagsFromIncludedParts(args: {
 
   const hasBattery =
     hasBatteryFromParts ||
-    (typeof reportOptions.battery === "boolean" ? reportOptions.battery : !!ist?.hasBattery);
+    (typeof reportOptions.battery === "boolean"
+      ? reportOptions.battery
+      : !!ist?.hasBattery);
 
   const hasEv =
     hasEvFromParts ||
-    (typeof reportOptions.charging === "boolean" ? reportOptions.charging : !!ist?.hasEV);
+    (typeof reportOptions.charging === "boolean"
+      ? reportOptions.charging
+      : !!ist?.hasEV);
 
   const hasHeatPump =
     hasHeatPumpFromParts ||
-    (typeof reportOptions.heatPump === "boolean" ? reportOptions.heatPump : !!ist?.hasHeatPump);
+    (typeof reportOptions.heatPump === "boolean"
+      ? reportOptions.heatPump
+      : !!ist?.hasHeatPump);
 
-  return {
-    hasBattery,
-    hasEv,
-    hasHeatPump,
-  };
+  return { hasBattery, hasEv, hasHeatPump };
 }
 
 function getCatalogItemById(items: NormalizedCatalogItem[], id?: string | null) {
@@ -625,7 +602,7 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
 
   const panels = Array.isArray(planner?.panels) ? planner.panels : [];
   const layers = Array.isArray(planner?.layers) ? planner.layers : [];
-  
+
   const catalogPanels = Array.isArray(planner?.catalogPanels)
     ? planner.catalogPanels
     : Array.isArray(data?.catalogPanels)
@@ -670,11 +647,28 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   const roofCount = layers.length;
   const usedRoofs = getUsedRoofs(layers, panels);
   const usedRoofCount = Array.isArray(usedRoofs) ? usedRoofs.length : 0;
-  const avgRoofTiltDeg = round1(averageRoofTiltDeg(usedRoofs.length ? usedRoofs : layers));
+  const avgRoofTiltDeg = round1(
+    averageRoofTiltDeg(usedRoofs.length ? usedRoofs : layers)
+  );
 
   const yearlyConsumptionKwh = safeNumber(ist?.electricityUsageKwh, 0);
-  const yearlyYieldKwhPerKwp = inferYieldPerKwpFromRoofs(layers, panels);
-  
+
+  const rawYearlyYieldKwhPerKwp = inferYieldPerKwpFromRoofs(layers, panels);
+
+  const isFlatRoof =
+    avgRoofTiltDeg <= 3 ||
+    usedRoofs.some((r: any) =>
+      String(r?.roofShape ?? r?.shape ?? r?.type ?? r?.roofType ?? "")
+        .toLowerCase()
+        .includes("flach")
+    ) ||
+    safeString(ist?.roofType).toLowerCase().includes("flach");
+
+  const yearlyYieldKwhPerKwp =
+    isFlatRoof && rawYearlyYieldKwhPerKwp < 850
+      ? 1050
+      : rawYearlyYieldKwhPerKwp;
+
   const annualProductionKwh =
     dcPowerKw > 0 ? Math.round(dcPowerKw * yearlyYieldKwhPerKwp) : 0;
 
@@ -747,23 +741,19 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   const feedInKwh = Math.max(0, annualProductionKwh - selfUseKwh);
 
   const selfUseSharePct =
-    annualProductionKwh > 0
-      ? round1((selfUseKwh / annualProductionKwh) * 100)
-      : 0;
+    annualProductionKwh > 0 ? round1((selfUseKwh / annualProductionKwh) * 100) : 0;
 
   const autarkyPct =
-    yearlyConsumptionKwh > 0
-      ? round1((selfUseKwh / yearlyConsumptionKwh) * 100)
-      : 0;
+    yearlyConsumptionKwh > 0 ? round1((selfUseKwh / yearlyConsumptionKwh) * 100) : 0;
 
- const discountPct = round2(clamp(reportOptions.discountPct, 0, 100));
-const discountChf = round2(Math.max(0, reportOptions.discountChf));
+  const discountPct = round2(clamp(reportOptions.discountPct, 0, 100));
+  const discountChf = round2(Math.max(0, reportOptions.discountChf));
 
-const automaticPvSubsidyChf = calculatePvSubsidyChf(dcPowerKw);
-const manualAdditionalSubsidyChf = round2(Math.max(0, reportOptions.subsidyChf));
-const subsidyChf = round2(automaticPvSubsidyChf + manualAdditionalSubsidyChf);
+  const automaticPvSubsidyChf = calculatePvSubsidyChf(dcPowerKw);
+  const manualAdditionalSubsidyChf = round2(Math.max(0, reportOptions.subsidyChf));
+  const subsidyChf = round2(automaticPvSubsidyChf + manualAdditionalSubsidyChf);
 
-const skontoPct = round2(clamp(reportOptions.skontoPct, 0, 100));
+  const skontoPct = round2(clamp(reportOptions.skontoPct, 0, 100));
 
   const discountFromPctChf = round2((grossInvestmentChf * discountPct) / 100);
   const totalDiscountChf = round2(discountFromPctChf + discountChf);
@@ -824,20 +814,20 @@ const skontoPct = round2(clamp(reportOptions.skontoPct, 0, 100));
     modulesTotalChf,
     partsTotalChf,
 
-   grossInvestmentChf,
-discountChf,
-discountPct,
-discountFromPctChf,
-totalDiscountChf,
+    grossInvestmentChf,
+    discountChf,
+    discountPct,
+    discountFromPctChf,
+    totalDiscountChf,
 
-automaticPvSubsidyChf,
-manualAdditionalSubsidyChf,
-subsidyChf,
+    automaticPvSubsidyChf,
+    manualAdditionalSubsidyChf,
+    subsidyChf,
 
-netInvestmentBeforeSubsidyChf,
-skontoPct,
-skontoValueChf,
-totalInvestmentChf,
+    netInvestmentBeforeSubsidyChf,
+    skontoPct,
+    skontoValueChf,
+    totalInvestmentChf,
 
     annualSavingsChf,
     annualFeedInRevenueChf,
@@ -863,6 +853,33 @@ totalInvestmentChf,
 
     lastCalculatedAt: new Date().toISOString(),
     calculationMode: "mvp_estimated",
+
+    debugVersion: "report-summary-flat-roof-fix-v4",
+    rawYearlyYieldKwhPerKwp,
+    isFlatRoof,
+    debugYield: {
+      istRoofType: ist?.roofType ?? null,
+      avgRoofTiltDeg,
+      usedRoofs: usedRoofs.map((r: any) => ({
+        id: r?.id,
+        tiltDeg: r?.tiltDeg,
+        azimuthDeg: r?.azimuthDeg,
+        roofType: r?.roofType,
+        roofShape: r?.roofShape,
+        shape: r?.shape,
+        type: r?.type,
+        specificYieldKwhKw: r?.specificYieldKwhKw,
+        specificYield: r?.specificYield,
+        spezErtrag: r?.spezErtrag,
+        eignung: r?.eignung,
+        suitability: r?.suitability,
+        dachEignung: r?.dachEignung,
+        irradiationKwhM2: r?.irradiationKwhM2,
+        globalstrahlung: r?.globalstrahlung,
+        strahlung: r?.strahlung,
+        inferred: inferRoofSpecificYield(r),
+      })),
+    },
   };
 }
 
@@ -870,9 +887,15 @@ totalInvestmentChf,
 
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
+
   return new Response(null, {
     status: 204,
-    headers: getCorsHeaders(origin),
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+      ...getCorsHeaders(origin),
+    },
   });
 }
 
@@ -880,7 +903,7 @@ export async function OPTIONS(req: Request) {
 
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ planningId: string }> },
+  { params }: { params: Promise<{ planningId: string }> }
 ) {
   const origin = req.headers.get("origin");
   const { planningId } = await params;
@@ -914,6 +937,7 @@ export async function GET(
 
   try {
     await client.connect();
+
     const db = client.db();
     const plannings = db.collection("plannings");
     const catalogItems = db.collection("catalogItems");
@@ -947,6 +971,7 @@ export async function GET(
     );
   } catch (e: any) {
     console.error("GET REPORT SUMMARY ERROR:", e);
+
     return jsonResponse(
       origin,
       { ok: false, error: e?.message ?? "Unknown error" },
