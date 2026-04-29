@@ -398,23 +398,29 @@ function estimateSpecificYieldFromRoofData(args: {
 }): number | undefined {
   const { irradiationKwhM2, eignung, tiltDeg, azimuthDeg } = args;
 
-  // 1) priorità all'irraggiamento reale
-  if (typeof irradiationKwhM2 === 'number' && irradiationKwhM2 > 0) {
-    // conversione prudente irraggiamento → specific yield
-    // volutamente conservativa per preventivi rapidi
-    return round1(Math.max(650, Math.min(1250, irradiationKwhM2 * 0.72)));
+  const e = (eignung || '').toLowerCase();
+  const isSehrGut = e.includes('sehr gut') || e.includes('sehrgut');
+  const isGut = e.includes('gut');
+
+  // 1) Se Sonnendach dice "sehr gut", non permettere mai 700
+  if (isSehrGut) {
+    return 1100;
   }
 
-  // 2) fallback su classe sonnendach
-  const e = (eignung || '').toLowerCase();
+  if (isGut) {
+    return 1020;
+  }
 
-  if (e.includes('sehr gut') || e.includes('sehrgut')) return 1120;
-  if (e.includes('gut')) return 1020;
+  // 2) Se abbiamo irraggiamento reale, usa conversione meno distruttiva
+  if (typeof irradiationKwhM2 === 'number' && irradiationKwhM2 > 0) {
+    return round1(Math.max(800, Math.min(1200, irradiationKwhM2 * 0.95)));
+  }
+
   if (e.includes('mittel')) return 900;
   if (e.includes('genügend') || e.includes('genuegend')) return 800;
   if (e.includes('schlecht')) return 720;
 
-  // 3) fallback finale su tilt + azimuth
+  // fallback tilt + azimuth invariato
   if (typeof tiltDeg === 'number' || typeof azimuthDeg === 'number') {
     const tilt = typeof tiltDeg === 'number' ? tiltDeg : 20;
     const az = typeof azimuthDeg === 'number' ? azimuthDeg : 0;
@@ -439,7 +445,6 @@ function estimateSpecificYieldFromRoofData(args: {
 
   return undefined;
 }
-
 // ─────────────────────────────────────────────────────────────
 // FETCH + POST-FETCH
 // ─────────────────────────────────────────────────────────────
@@ -485,6 +490,9 @@ export async function fetchRoofPolysForSnapshot(
     if (!rings) continue;
 
     const attrs = res?.attributes ?? {};
+
+    console.log('SONNENDACH RAW RESULT', res);
+console.log('SONNENDACH ATTRIBUTES', attrs);
 
     if (DEBUG_ATTRS) {
       console.log('SONNENDACH ATTRS', attrs);
