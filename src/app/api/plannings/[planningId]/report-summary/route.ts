@@ -151,6 +151,10 @@ function estimateSpecificYieldFromAzimuthTilt(roof: any) {
 }
 
 function inferRoofSpecificYield(roof: any) {
+  const suitabilityBased = estimateSpecificYieldFromSuitability(
+    roof?.eignung ?? roof?.suitability ?? roof?.dachEignung
+  );
+
   const explicitSpecificYield = safeNumber(
     roof?.specificYieldKwhKw ??
       roof?.specificYield ??
@@ -160,12 +164,16 @@ function inferRoofSpecificYield(roof: any) {
   );
 
   if (Number.isFinite(explicitSpecificYield) && explicitSpecificYield > 0) {
+    if (
+      explicitSpecificYield < 850 &&
+      typeof suitabilityBased === "number" &&
+      suitabilityBased >= 1000
+    ) {
+      return suitabilityBased;
+    }
+
     return Math.round(explicitSpecificYield);
   }
-
-  const suitabilityBased = estimateSpecificYieldFromSuitability(
-    roof?.eignung ?? roof?.suitability ?? roof?.dachEignung
-  );
 
   if (typeof suitabilityBased === "number") {
     return suitabilityBased;
