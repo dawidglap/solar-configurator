@@ -158,8 +158,17 @@ function inferRoofSpecificYield(roof: any) {
       roof?.spez_ertrag,
     NaN
   );
+
   if (Number.isFinite(explicitSpecificYield) && explicitSpecificYield > 0) {
     return Math.round(explicitSpecificYield);
+  }
+
+  const suitabilityBased = estimateSpecificYieldFromSuitability(
+    roof?.eignung ?? roof?.suitability ?? roof?.dachEignung
+  );
+
+  if (typeof suitabilityBased === "number") {
+    return suitabilityBased;
   }
 
   const irradiation = safeNumber(
@@ -168,15 +177,9 @@ function inferRoofSpecificYield(roof: any) {
       roof?.strahlung,
     NaN
   );
-  if (Number.isFinite(irradiation) && irradiation > 0) {
-    return clamp(Math.round(irradiation * 0.72), 650, 1250);
-  }
 
-  const suitabilityBased = estimateSpecificYieldFromSuitability(
-    roof?.eignung ?? roof?.suitability ?? roof?.dachEignung
-  );
-  if (typeof suitabilityBased === "number") {
-    return suitabilityBased;
+  if (Number.isFinite(irradiation) && irradiation > 0) {
+    return clamp(Math.round(irradiation * 0.95), 800, 1200);
   }
 
   return estimateSpecificYieldFromAzimuthTilt(roof);
@@ -614,6 +617,7 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
 
   const panels = Array.isArray(planner?.panels) ? planner.panels : [];
   const layers = Array.isArray(planner?.layers) ? planner.layers : [];
+  
   const catalogPanels = Array.isArray(planner?.catalogPanels)
     ? planner.catalogPanels
     : Array.isArray(data?.catalogPanels)
@@ -662,6 +666,7 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
 
   const yearlyConsumptionKwh = safeNumber(ist?.electricityUsageKwh, 0);
   const yearlyYieldKwhPerKwp = inferYieldPerKwpFromRoofs(layers, panels);
+  
   const annualProductionKwh =
     dcPowerKw > 0 ? Math.round(dcPowerKw * yearlyYieldKwhPerKwp) : 0;
 
