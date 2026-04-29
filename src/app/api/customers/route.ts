@@ -2,6 +2,14 @@
 import { MongoClient } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import {
+  buildCustomerDedupFilter,
+  ensureCustomerIndexes,
+  normalizeCustomerDoc,
+  normalizeStoredCustomerEmail,
+  normalizeStoredCustomerString,
+  safeCustomerString,
+} from "@/lib/customers";
 
 export const runtime = "nodejs";
 
@@ -34,7 +42,7 @@ function readSession(req: Request, secret: string) {
 }
 
 function safeString(v: any) {
-  return typeof v === "string" ? v.trim() : "";
+  return safeCustomerString(v);
 }
 
 /* -------------------------------- OPTIONS -------------------------------- */
@@ -76,10 +84,14 @@ export async function GET(req: Request) {
     await client.connect();
     const db = client.db();
     const customers = db.collection("customers");
+    await ensureCustomerIndexes(db);
 
     const docs = await customers
       .find(
-        { companyId: session.activeCompanyId },
+        {
+          companyId: session.activeCompanyId,
+          duplicateOfCustomerId: null,
+        },
         {
           projection: {
             _id: 1,
@@ -102,24 +114,7 @@ export async function GET(req: Request) {
       .toArray();
 
     const items = docs.map((d: any) => ({
-      id: String(d._id),
-      type: d.type ?? "private",
-      name:
-        safeString(d.name) ||
-        safeString(d.companyName) ||
-        [safeString(d.firstName), safeString(d.lastName)]
-          .filter(Boolean)
-          .join(" ")
-          .trim(),
-      firstName: d.firstName ?? "",
-      lastName: d.lastName ?? "",
-      companyName: d.companyName ?? "",
-      email: d.email ?? "",
-      phone: d.phone ?? "",
-      address: d.address ?? "",
-      notes: d.notes ?? "",
-      createdAt: d.createdAt ?? null,
-      updatedAt: d.updatedAt ?? null,
+      ...normalizeCustomerDoc(d),
     }));
 
     return new Response(JSON.stringify({ ok: true, items }), {
@@ -168,16 +163,48 @@ export async function POST(req: Request) {
     companyId: session.activeCompanyId,
     type,
     name: safeString(body?.name),
-    firstName: safeString(body?.firstName),
-    lastName: safeString(body?.lastName),
-    companyName: safeString(body?.companyName),
-    email: safeString(body?.email),
+    firstName: normalizeStoredCustomerString(body?.firstName),
+    lastName: normalizeStoredCustomerString(body?.lastName),
+    companyName: normalizeStoredCustomerString(body?.companyName),
+    email: normalizeStoredCustomerEmail(body?.email),
     phone: safeString(body?.phone),
     address: safeString(body?.address),
     notes: safeString(body?.notes),
-    createdAt: new Date(),
     updatedAt: new Date(),
   };
+
+  const dedupTarget = buildCustomerDedupFilter({
+    companyId: session.activeCompanyId,
+    type,
+    email: doc.email,
+    companyName: doc.companyName,
+    firstName: doc.firstName,
+    lastName: doc.lastName,
+  });
+
+  if (dedupTarget.key === "companyName" && !doc.companyName) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "Missing companyName for company customer",
+      }),
+      { status: 400, headers: getCorsHeaders(origin) }
+    );
+  }
+
+  if (
+    dedupTarget.key === "personName" &&
+    !doc.firstName &&
+    !doc.lastName
+  ) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "Missing firstName/lastName for private customer without email",
+      }),
+      { status: 400, headers: getCorsHeaders(origin) }
+    );
+  }
 
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
@@ -185,18 +212,64 @@ export async function POST(req: Request) {
     await client.connect();
     const db = client.db();
     const customers = db.collection("customers");
+    await ensureCustomerIndexes(db);
 
-    const res = await customers.insertOne(doc);
+    const now = new Date();
+    const result = await customers.findOneAndUpdate(
+      dedupTarget.filter,
+      {
+        $setOnInsert: {
+          ...doc,
+          createdAt: now,
+        },
+        $set: {
+          updatedAt: now,
+        },
+      },
+      {
+        upsert: true,
+        returnDocument: "after",
+        includeResultMetadata: true,
+      }
+    );
+
+    const customer = result.value;
+
+    if (!customer) {
+      throw new Error("Customer upsert did not return a document");
+    }
 
     return new Response(
       JSON.stringify({
         ok: true,
-        customerId: res.insertedId.toString(),
+        customer: normalizeCustomerDoc(customer),
+        deduped: !!result.lastErrorObject?.updatedExisting,
       }),
       { status: 200, headers: getCorsHeaders(origin) }
     );
   } catch (e: any) {
     console.error("CREATE CUSTOMER ERROR:", e);
+    if (e?.code === 11000) {
+      try {
+        const existing = await client
+          .db()
+          .collection("customers")
+          .findOne(dedupTarget.filter);
+
+        if (existing) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              customer: normalizeCustomerDoc(existing),
+              deduped: true,
+            }),
+            { status: 200, headers: getCorsHeaders(origin) }
+          );
+        }
+      } catch (lookupError) {
+        console.error("CREATE CUSTOMER DUPLICATE LOOKUP ERROR:", lookupError);
+      }
+    }
     return new Response(
       JSON.stringify({ ok: false, error: e?.message ?? "Unknown error" }),
       { status: 500, headers: getCorsHeaders(origin) }

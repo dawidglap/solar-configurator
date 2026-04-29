@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "audit:customer-duplicates": "node scripts/audit-customer-duplicates.js",
+    "audit:customer-duplicates:mark": "node scripts/audit-customer-duplicates.js --mark",
+    "ensure:customer-indexes": "node scripts/ensure-customer-indexes.js"
   },
   "dependencies": {
     "@radix-ui/react-toggle": "^1.1.9",

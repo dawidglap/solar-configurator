@@ -2,6 +2,12 @@
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import {
+  normalizeCustomerDoc,
+  normalizeStoredCustomerEmail,
+  normalizeStoredCustomerString,
+  safeCustomerString,
+} from "@/lib/customers";
 
 export const runtime = "nodejs";
 
@@ -36,7 +42,7 @@ function readSession(req: Request, secret: string) {
 /* -------------------------------- Helpers -------------------------------- */
 
 function safeString(v: any) {
-  return typeof v === "string" ? v.trim() : "";
+  return safeCustomerString(v);
 }
 
 function toObjectIdOrNull(v: any) {
@@ -46,29 +52,6 @@ function toObjectIdOrNull(v: any) {
   } catch {
     return null;
   }
-}
-
-function normalizeCustomer(doc: any) {
-  return {
-    id: String(doc._id),
-    type: doc.type ?? "private",
-    name:
-      safeString(doc.name) ||
-      safeString(doc.companyName) ||
-      [safeString(doc.firstName), safeString(doc.lastName)]
-        .filter(Boolean)
-        .join(" ")
-        .trim(),
-    firstName: doc.firstName ?? "",
-    lastName: doc.lastName ?? "",
-    companyName: doc.companyName ?? "",
-    email: doc.email ?? "",
-    phone: doc.phone ?? "",
-    address: doc.address ?? "",
-    notes: doc.notes ?? "",
-    createdAt: doc.createdAt ?? null,
-    updatedAt: doc.updatedAt ?? null,
-  };
 }
 
 function jsonResponse(origin: string | null, body: any, status = 200) {
@@ -153,7 +136,7 @@ export async function GET(
 
     return jsonResponse(origin, {
       ok: true,
-      customer: normalizeCustomer(doc),
+      customer: normalizeCustomerDoc(doc),
     });
   } catch (e: any) {
     console.error("GET CUSTOMER ERROR:", e);
@@ -208,19 +191,19 @@ export async function PATCH(
   }
 
   if ("firstName" in body) {
-    setObj.firstName = safeString(body?.firstName);
+    setObj.firstName = normalizeStoredCustomerString(body?.firstName);
   }
 
   if ("lastName" in body) {
-    setObj.lastName = safeString(body?.lastName);
+    setObj.lastName = normalizeStoredCustomerString(body?.lastName);
   }
 
   if ("companyName" in body) {
-    setObj.companyName = safeString(body?.companyName);
+    setObj.companyName = normalizeStoredCustomerString(body?.companyName);
   }
 
   if ("email" in body) {
-    setObj.email = safeString(body?.email);
+    setObj.email = normalizeStoredCustomerEmail(body?.email);
   }
 
   if ("phone" in body) {
@@ -285,10 +268,17 @@ export async function PATCH(
 
     return jsonResponse(origin, {
       ok: true,
-      customer: normalizeCustomer(updated),
+      customer: normalizeCustomerDoc(updated),
     });
   } catch (e: any) {
     console.error("PATCH CUSTOMER ERROR:", e);
+    if (e?.code === 11000) {
+      return jsonResponse(
+        origin,
+        { ok: false, error: "Customer identity already exists" },
+        409
+      );
+    }
     return jsonResponse(
       origin,
       { ok: false, error: e?.message ?? "Unknown error" },
