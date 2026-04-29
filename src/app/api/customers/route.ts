@@ -170,7 +170,6 @@ export async function POST(req: Request) {
     phone: safeString(body?.phone),
     address: safeString(body?.address),
     notes: safeString(body?.notes),
-    updatedAt: new Date(),
   };
 
   const dedupTarget = buildCustomerDedupFilter({
