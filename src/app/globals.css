@@ -261,7 +261,7 @@
     position: fixed;
     inset: 0;
     z-index: 0;
-    background: url('/images/hero.webp') center center / cover no-repeat;
+    background: url('/hero-helionic.jpeg') center center / cover no-repeat;
     opacity: var(--shell-image-opacity);
     pointer-events: none;
     transition: opacity 0.3s ease;

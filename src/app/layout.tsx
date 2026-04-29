@@ -64,12 +64,16 @@ export default async function RootLayout({
           <div className="pointer-events-none fixed inset-0 -z-10">
             <div
               className="absolute inset-0 bg-center bg-cover"
-              style={{ backgroundImage: "url(/images/hero.webp)" }}
+              style={{
+                backgroundImage: isPlannerPage
+                  ? "none"
+                  : "url(/hero-helionic.jpeg)",
+              }}
             />
             {/* blur leggero */}
-            <div className="absolute inset-0 backdrop-blur-xs" />
+            {!isPlannerPage && <div className="absolute inset-0 backdrop-blur-xs" />}
             {/* overlay per contrasto */}
-            <div className="absolute inset-0 bg-black/35" />
+            {!isPlannerPage && <div className="absolute inset-0 bg-black/35" />}
           </div>
         )}
 
