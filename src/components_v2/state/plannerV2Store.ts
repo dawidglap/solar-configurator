@@ -130,6 +130,7 @@ function createInitialPlannerState() {
     view: { ...DEFAULT_VIEW },
     tool: 'select' as Tool,
     address: createDefaultAddress(),
+    hydrationReady: false,
 
     catalogPanels: PANEL_CATALOG,
     selectedPanelId: PANEL_CATALOG[0]?.id ?? '',
@@ -166,6 +167,8 @@ type PlannerV2State = {
   setSnapshot: (s: Partial<Snapshot>) => void;
   address: PlannerAddress;
   setAddress: (address: Partial<PlannerAddress> | null | undefined) => void;
+  hydrationReady: boolean;
+  setHydrationReady: (ready: boolean) => void;
 
   resetForNewAddress: (snap: Partial<Snapshot>) => void;
   resetPlanner: () => void;
@@ -246,6 +249,8 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             ...(address ?? {}),
           },
         })),
+
+      setHydrationReady: (ready) => set({ hydrationReady: ready }),
 
       resetForNewAddress: (snap: Partial<Snapshot>) => {
         const nextAddress =

@@ -198,92 +198,103 @@ export function usePlanningLoad() {
   const importState = usePlannerV2Store((s) => s.importState);
   const setSnapshot = usePlannerV2Store((s) => s.setSnapshot);
   const setAddress = usePlannerV2Store((s) => s.setAddress);
+  const setHydrationReady = usePlannerV2Store((s) => s.setHydrationReady);
 
   useEffect(() => {
-    if (!planningId) return;
+    if (!planningId) {
+      setHydrationReady(true);
+      return;
+    }
 
     let cancelled = false;
+    setHydrationReady(false);
 
     (async () => {
-      const res = await fetch(`/api/plannings/${planningId}`, {
-        credentials: "include",
-      });
-
-      if (res.status === 401) {
-        router.push("/login");
-        return;
-      }
-
-      const json = await res.json().catch(() => null);
-      if (!json?.ok || cancelled) return;
-
-      const planning = json.planning;
-      const data = planning?.data ?? {};
-      const requestedStepFromUrl =
-        normalizePlannerStep(plannerStep) ||
-        normalizePlannerStep(initialStep) ||
-        normalizePlannerStep(stepParam) ||
-        normalizePlannerStep(currentStepParam);
-      const requestedStep =
-        requestedStepFromUrl ||
-        normalizePlannerStep(planning?.currentStep) ||
-        normalizePlannerStep(data?.step) ||
-        normalizePlannerStep(data?.planner?.step) ||
-        "building";
-
-      await usePlannerV2Store.persist.clearStorage();
-      resetPlanner();
-
-      // 1) profile
-      if (data.profile && typeof data.profile === "object") {
-        const profileToStore = looksLikeStoreProfile(data.profile)
-          ? data.profile
-          : mapLegacyApiProfileToStore(data.profile);
-
-        setProfile(profileToStore);
-      }
-
-      // 2) ist
-      if (data.ist && typeof data.ist === "object") {
-        setIstAll(data.ist);
-      } else {
-        setIstAll(defaultIst);
-      }
-
-      // 3) planner state
-      if (data.planner && typeof data.planner === "object") {
-        importState(data.planner);
-      }
-
-      // 4) snapshot re-hydration + rebuild image if needed
-      let snapshot = buildSnapshotFromPlanning(planning);
-      snapshot = await rebuildSnapshotIfNeeded(snapshot);
-      if (snapshot?.address) {
-        setAddress({
-          label: snapshot.address,
-          lat: snapshot?.center?.lat ?? null,
-          lon: snapshot?.center?.lon ?? null,
-        });
-      }
-
-      if (
-        snapshot?.url ||
-        snapshot?.width ||
-        snapshot?.height ||
-        snapshot?.mppImage ||
-        snapshot?.address
-      ) {
-        setSnapshot(snapshot);
-      }
-
-      // 5) URL-requested step wins over persisted planner/backend step
-      setStep(requestedStep);
-
-      // 6) clear undo/redo
       try {
-        const h: any = (await import("./history")).history;
-        h?.clear?.();
-      } catch {}
+        const res = await fetch(`/api/plannings/${planningId}`, {
+          credentials: "include",
+        });
+
+        if (res.status === 401) {
+          router.push("/login");
+          return;
+        }
+
+        const json = await res.json().catch(() => null);
+        if (!json?.ok || cancelled) return;
+
+        const planning = json.planning;
+        const data = planning?.data ?? {};
+        const requestedStepFromUrl =
+          normalizePlannerStep(plannerStep) ||
+          normalizePlannerStep(initialStep) ||
+          normalizePlannerStep(stepParam) ||
+          normalizePlannerStep(currentStepParam);
+        const requestedStep =
+          requestedStepFromUrl ||
+          normalizePlannerStep(planning?.currentStep) ||
+          normalizePlannerStep(data?.step) ||
+          normalizePlannerStep(data?.planner?.step) ||
+          "building";
+
+        await usePlannerV2Store.persist.clearStorage();
+        resetPlanner();
+
+        // 1) profile
+        if (data.profile && typeof data.profile === "object") {
+          const profileToStore = looksLikeStoreProfile(data.profile)
+            ? data.profile
+            : mapLegacyApiProfileToStore(data.profile);
+
+          setProfile(profileToStore);
+        }
+
+        // 2) ist
+        if (data.ist && typeof data.ist === "object") {
+          setIstAll(data.ist);
+        } else {
+          setIstAll(defaultIst);
+        }
+
+        // 3) planner state
+        if (data.planner && typeof data.planner === "object") {
+          importState(data.planner);
+        }
+
+        // 4) snapshot re-hydration + rebuild image if needed
+        let snapshot = buildSnapshotFromPlanning(planning);
+        snapshot = await rebuildSnapshotIfNeeded(snapshot);
+        if (snapshot?.address) {
+          setAddress({
+            label: snapshot.address,
+            lat: snapshot?.center?.lat ?? null,
+            lon: snapshot?.center?.lon ?? null,
+          });
+        }
+
+        if (
+          snapshot?.url ||
+          snapshot?.width ||
+          snapshot?.height ||
+          snapshot?.mppImage ||
+          snapshot?.address
+        ) {
+          setSnapshot(snapshot);
+        }
+
+        // 5) URL-requested step wins over persisted planner/backend step
+        setStep(requestedStep);
+
+        // 6) clear undo/redo
+        try {
+          const h: any = (await import("./history")).history;
+          h?.clear?.();
+        } catch {}
+      } finally {
+        if (!cancelled) {
+          setHydrationReady(true);
+        }
+      }
     })();
 
     return () => {
@@ -303,5 +314,6 @@ export function usePlanningLoad() {
     importState,
     setSnapshot,
     setAddress,
+    setHydrationReady,
   ]);
 }
