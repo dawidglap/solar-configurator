@@ -70,6 +70,12 @@ type RoofAlign = {
   pivotPx?: { x: number; y: number };
 };
 
+type PlannerAddress = {
+  label: string;
+  lat: number | null;
+  lon: number | null;
+};
+
 const DEFAULT_VIEW: View = {
   scale: 1,
   offsetX: 0,
@@ -108,6 +114,14 @@ function createDefaultIstState() {
   };
 }
 
+function createDefaultAddress(): PlannerAddress {
+  return {
+    label: '',
+    lat: null,
+    lon: null,
+  };
+}
+
 function createInitialPlannerState() {
   return {
     step: 'profile' as PlannerStep,
@@ -115,6 +129,7 @@ function createInitialPlannerState() {
     snapshotScale: 2 as 1 | 2 | 3,
     view: { ...DEFAULT_VIEW },
     tool: 'select' as Tool,
+    address: createDefaultAddress(),
 
     catalogPanels: PANEL_CATALOG,
     selectedPanelId: PANEL_CATALOG[0]?.id ?? '',
@@ -149,6 +164,8 @@ type PlannerV2State = {
   setStep: (s: PlannerStep) => void;
   snapshot: Snapshot;
   setSnapshot: (s: Partial<Snapshot>) => void;
+  address: PlannerAddress;
+  setAddress: (address: Partial<PlannerAddress> | null | undefined) => void;
 
   resetForNewAddress: (snap: Partial<Snapshot>) => void;
   resetPlanner: () => void;
@@ -221,9 +238,36 @@ export const usePlannerV2Store = create<PlannerV2State>()(
       setSnapshot: (s) =>
         set((st) => ({ snapshot: { ...st.snapshot, ...s } })),
 
+      setAddress: (address) =>
+        set((state) => ({
+          address: {
+            ...state.address,
+            ...createDefaultAddress(),
+            ...(address ?? {}),
+          },
+        })),
+
       resetForNewAddress: (snap: Partial<Snapshot>) => {
+        const nextAddress =
+          snap as Partial<Snapshot> & {
+            address?: string | null;
+            center?: { lat?: number; lon?: number };
+          };
+
         set((s) => ({
           snapshot: { ...s.snapshot, ...snap },
+          address: {
+            label:
+              typeof nextAddress.address === 'string' ? nextAddress.address : '',
+            lat:
+              typeof nextAddress.center?.lat === 'number'
+                ? nextAddress.center.lat
+                : null,
+            lon:
+              typeof nextAddress.center?.lon === 'number'
+                ? nextAddress.center.lon
+                : null,
+          },
 
           view: { ...DEFAULT_VIEW },
           tool: 'select',
@@ -283,6 +327,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           profile: s.profile,
           ist: s.ist,
           parts: s.parts,
+          address: s.address,
         };
       },
 
@@ -296,6 +341,41 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           view: saved.view ?? defaults.view,
           tool: saved.tool ?? defaults.tool,
           snapshotScale: saved.snapshotScale ?? defaults.snapshotScale,
+          address:
+            saved.address && typeof saved.address === 'object'
+              ? {
+                  label:
+                    typeof saved.address.label === 'string'
+                      ? saved.address.label
+                      : typeof saved.snapshot?.address === 'string'
+                        ? saved.snapshot.address
+                        : defaults.address.label,
+                  lat:
+                    typeof saved.address.lat === 'number'
+                      ? saved.address.lat
+                      : typeof saved.snapshot?.center?.lat === 'number'
+                        ? saved.snapshot.center.lat
+                        : defaults.address.lat,
+                  lon:
+                    typeof saved.address.lon === 'number'
+                      ? saved.address.lon
+                      : typeof saved.snapshot?.center?.lon === 'number'
+                        ? saved.snapshot.center.lon
+                        : defaults.address.lon,
+                }
+              : typeof saved.snapshot?.address === 'string'
+                ? {
+                    label: saved.snapshot.address,
+                    lat:
+                      typeof saved.snapshot?.center?.lat === 'number'
+                        ? saved.snapshot.center.lat
+                        : defaults.address.lat,
+                    lon:
+                      typeof saved.snapshot?.center?.lon === 'number'
+                        ? saved.snapshot.center.lon
+                        : defaults.address.lon,
+                  }
+                : defaults.address,
 
           layers: Array.isArray(saved.layers) ? saved.layers : [],
           selectedId: undefined,
@@ -501,6 +581,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         tool: s.tool,
         layers: s.layers,
         selectedId: s.selectedId,
+        address: s.address,
         snapshotScale: s.snapshotScale,
         catalogPanels: s.catalogPanels,
         selectedPanelId: s.selectedPanelId,

@@ -108,8 +108,8 @@ export default function TopbarAddressSearch() {
   const setStep = usePlannerV2Store((s) => s.setStep);
 
   // persistenza address
-  const address = usePlannerV2Store((s) => (s as any).address);
-  const setAddress = usePlannerV2Store((s) => (s as any).setAddress);
+  const address = usePlannerV2Store((s) => s.address);
+  const setAddress = usePlannerV2Store((s) => s.setAddress);
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -120,7 +120,7 @@ export default function TopbarAddressSearch() {
   );
 
   useEffect(() => {
-    if (address?.label) setAddressText(address.label);
+    setAddressText(address?.label ?? "");
   }, [address?.label]);
 
   const startFromAddress = async (lat: number, lon: number, label: string) => {

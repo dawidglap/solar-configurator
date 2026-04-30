@@ -197,7 +197,7 @@ export function usePlanningLoad() {
   const setIstAll = usePlannerV2Store((s) => s.setIstAll);
   const importState = usePlannerV2Store((s) => s.importState);
   const setSnapshot = usePlannerV2Store((s) => s.setSnapshot);
-  const setAddress = usePlannerV2Store((s) => (s as any).setAddress);
+  const setAddress = usePlannerV2Store((s) => s.setAddress);
 
   useEffect(() => {
     if (!planningId) return;
@@ -258,14 +258,13 @@ export function usePlanningLoad() {
       // 4) snapshot re-hydration + rebuild image if needed
       let snapshot = buildSnapshotFromPlanning(planning);
       snapshot = await rebuildSnapshotIfNeeded(snapshot);
-      // ✅ set address nello store (per searchbar)
-if (snapshot?.address) {
-  setAddress?.({
-    label: snapshot.address,
-    lat: snapshot?.center?.lat ?? null,
-    lon: snapshot?.center?.lon ?? null,
-  });
-}
+      if (snapshot?.address) {
+        setAddress({
+          label: snapshot.address,
+          lat: snapshot?.center?.lat ?? null,
+          lon: snapshot?.center?.lon ?? null,
+        });
+      }
 
       if (
         snapshot?.url ||
