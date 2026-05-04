@@ -1,4 +1,5 @@
 import type { Db } from "mongodb";
+import { activeDocumentFilter } from "@/lib/trash";
 
 type CustomerType = "private" | "company";
 
@@ -63,7 +64,7 @@ export function buildCustomerDedupFilter(input: {
         companyId,
         email,
         duplicateOfCustomerId: null,
-        deletedAt: { $exists: false },
+        ...activeDocumentFilter(),
       },
       key: "email" as const,
     };
@@ -75,7 +76,7 @@ export function buildCustomerDedupFilter(input: {
         companyId,
         companyName,
         duplicateOfCustomerId: null,
-        deletedAt: { $exists: false },
+        ...activeDocumentFilter(),
       },
       key: "companyName" as const,
     };
@@ -87,7 +88,7 @@ export function buildCustomerDedupFilter(input: {
       firstName,
       lastName,
       duplicateOfCustomerId: null,
-      deletedAt: { $exists: false },
+      ...activeDocumentFilter(),
     },
     key: "personName" as const,
   };

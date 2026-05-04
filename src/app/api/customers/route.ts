@@ -10,6 +10,7 @@ import {
   normalizeStoredCustomerString,
   safeCustomerString,
 } from "@/lib/customers";
+import { activeDocumentFilter } from "@/lib/trash";
 
 export const runtime = "nodejs";
 
@@ -91,7 +92,7 @@ export async function GET(req: Request) {
         {
           companyId: session.activeCompanyId,
           duplicateOfCustomerId: null,
-          deletedAt: { $exists: false },
+          ...activeDocumentFilter(),
         },
         {
           projection: {

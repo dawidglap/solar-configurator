@@ -3,6 +3,7 @@ import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { defaultStoreData } from "@/components_v2/state/defaultStoreData";
 import { getCorsHeaders } from "@/lib/cors";
+import { activeDocumentFilter } from "@/lib/trash";
 
 export const runtime = "nodejs";
 
@@ -308,7 +309,7 @@ export async function GET(req: Request) {
 
     const filter: any = {
       companyId: session.activeCompanyId,
-      deletedAt: { $exists: false },
+      ...activeDocumentFilter(),
     };
 
     const customerId = safeString(searchParams.get("customerId"));
