@@ -53,6 +53,11 @@ export default function OverlayProgressStepper() {
 
   const sp = useSearchParams();
   const planningId = sp.get("planningId");
+  const requestedReturnStep =
+    sp.get("plannerStep") ||
+    sp.get("initialStep") ||
+    sp.get("step") ||
+    sp.get("currentStep");
 
   const [isRedirecting, setIsRedirecting] = useState(false);
 
@@ -117,8 +122,38 @@ export default function OverlayProgressStepper() {
     }
   };
 
+  const mapReturnTab = (value?: string | null) => {
+    const normalized = String(value || step || "").toLowerCase();
+
+    if (["building", "gebaeude", "gebäude", "gebaeudeplanung", "gebäudeplanung", "modules", "module", "modulplanung", "moduleplanung"].includes(normalized)) {
+      return "planung";
+    }
+    if (["parts", "stueckliste", "stückliste", "stuckliste"].includes(normalized)) {
+      return "stueckliste";
+    }
+    if (["report", "bericht"].includes(normalized)) {
+      return "bericht";
+    }
+    if (["offer", "angebot"].includes(normalized)) {
+      return "angebot";
+    }
+    if (["ist"].includes(normalized)) {
+      return "ist";
+    }
+    if (["overview", "uebersicht", "übersicht", "profile", "profil"].includes(normalized)) {
+      return "uebersicht";
+    }
+
+    return "planung";
+  };
+
   const redirectToProjectsOverview = () => {
-    const targetUrl = "https://app.helionic.ch/projekte";
+    const params = new URLSearchParams();
+    if (planningId) {
+      params.set("project", planningId);
+    }
+    params.set("tab", mapReturnTab(requestedReturnStep));
+    const targetUrl = `https://app.helionic.ch/projekte?${params.toString()}`;
 
     try {
       if (window.top) {
