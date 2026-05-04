@@ -6,18 +6,13 @@ import { usePlannerV2Store } from "../state/plannerV2Store";
 import { savePlannerToDb } from "../state/planning/savePlanning";
 import {
   Home,
-  ListChecks,
-  BadgeCheck,
-  FileText,
+  ArrowLeft,
 } from "lucide-react";
 import ThemeSwitcher from "../theme/ThemeSwitcher";
 
 type StoreKey =
   | "building"
-  | "modules"
-  | "parts"
-  | "report"
-  | "offer";
+  | "modules";
 
 type UiStep =
   | {
@@ -29,27 +24,6 @@ type UiStep =
     }
   | {
       key: "modules";
-      label: string;
-      short: string;
-      Icon: any;
-      clickable: boolean;
-    }
-  | {
-      key: "parts";
-      label: string;
-      short: string;
-      Icon: any;
-      clickable: boolean;
-    }
-  | {
-      key: "report";
-      label: string;
-      short: string;
-      Icon: any;
-      clickable: boolean;
-    }
-  | {
-      key: "offer";
       label: string;
       short: string;
       Icon: any;
@@ -69,27 +43,6 @@ const UI_STEPS: UiStep[] = [
     label: "Modulplanung",
     short: "Module",
     Icon: Home,
-    clickable: true,
-  },
-  {
-    key: "parts",
-    label: "Stückliste",
-    short: "Stückliste",
-    Icon: ListChecks,
-    clickable: true,
-  },
-  {
-    key: "report",
-    label: "Bericht",
-    short: "Bericht",
-    Icon: FileText,
-    clickable: true,
-  },
-  {
-    key: "offer",
-    label: "Angebot",
-    short: "Angebot",
-    Icon: BadgeCheck,
     clickable: true,
   },
 ];
@@ -130,49 +83,65 @@ export default function OverlayProgressStepper() {
     };
   }, []);
 
-  const goToPlanningStep = async (
-    target: "stueckliste" | "bericht" | "angebot",
-  ) => {
+  const uploadModuleSnapshotIfAvailable = async () => {
+    if (!planningId || step !== "modules") return;
+
+    try {
+      const snapshotDataUrl =
+        await window.__helionicCaptureProjectSnapshot?.();
+
+      if (!snapshotDataUrl) {
+        console.warn("[Planner] No snapshot captured");
+        return;
+      }
+
+      await fetch(
+        `https://planner.helionic.ch/api/plannings/${planningId}/snapshot-cache`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            snapshotDataUrl,
+            type: "module-layout",
+            createdAt: new Date().toISOString(),
+          }),
+        },
+      );
+
+      console.log("[Planner] Snapshot uploaded to temporary cache");
+    } catch (err) {
+      console.warn("[Planner] Snapshot upload failed:", err);
+    }
+  };
+
+  const redirectToProjectsOverview = () => {
+    const targetUrl = "https://app.helionic.ch/projekte";
+
+    try {
+      if (window.top) {
+        window.top.location.href = targetUrl;
+        return;
+      }
+    } catch (err) {
+      console.warn("[Planner] Top-level redirect failed, falling back:", err);
+    }
+
+    window.location.href = targetUrl;
+  };
+
+  const goBackToOverview = async () => {
     if (!planningId || isRedirecting) return;
 
     try {
       setIsRedirecting(true);
-
-      if (target === "stueckliste" && step === "modules") {
-        try {
-          const snapshotDataUrl =
-            await window.__helionicCaptureProjectSnapshot?.();
-
-          if (snapshotDataUrl) {
-            await fetch(
-              `https://planner.helionic.ch/api/plannings/${planningId}/snapshot-cache`,
-              {
-                method: "POST",
-                credentials: "include",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  snapshotDataUrl,
-                  type: "module-layout",
-                  createdAt: new Date().toISOString(),
-                }),
-              },
-            );
-
-            console.log("[Planner] Snapshot uploaded to temporary cache");
-          } else {
-            console.warn("[Planner] No snapshot captured");
-          }
-        } catch (err) {
-          console.warn("[Planner] Snapshot upload failed:", err);
-        }
-      }
-
+      await uploadModuleSnapshotIfAvailable();
       await savePlannerToDb(planningId);
-      window.location.href = `https://app.helionic.ch/planung/${planningId}/${target}`;
+      redirectToProjectsOverview();
     } catch (err) {
-      console.error(`Failed to save before redirecting to ${target}:`, err);
+      console.error("Failed to save before returning to overview:", err);
       alert("Speichern fehlgeschlagen. Bitte erneut versuchen.");
       setIsRedirecting(false);
     }
@@ -188,7 +157,7 @@ export default function OverlayProgressStepper() {
 
       <div className="glass-topbar relative flex h-10 w-full items-center justify-between gap-4 rounded-tl-2xl border-l border-border/60 px-4">
         <nav aria-label="Wizard progress" className="min-w-0 flex-1 overflow-hidden">
-          <div className="relative flex w-full justify-start">
+          <div className="relative flex w-full items-center justify-start gap-3">
             <ol className="relative flex w-auto items-center justify-start gap-2.5">
               {UI_STEPS.map((s, i) => {
                 const isActive = i === activeIndex;
@@ -198,21 +167,6 @@ export default function OverlayProgressStepper() {
 
                   if (s.key === "building" || s.key === "modules") {
                     setStep(s.key);
-                    return;
-                  }
-
-                  if (s.key === "parts") {
-                    await goToPlanningStep("stueckliste");
-                    return;
-                  }
-
-                  if (s.key === "report") {
-                    await goToPlanningStep("bericht");
-                    return;
-                  }
-
-                  if (s.key === "offer") {
-                    await goToPlanningStep("angebot");
                     return;
                   }
 
@@ -246,9 +200,7 @@ export default function OverlayProgressStepper() {
                             isActive ? activeCls : completedCls || idleCls
                           } ${!isActive ? "group-hover:hidden" : ""}`}
                         >
-                          {isRedirecting && s.key === "parts"
-                            ? "Speichert..."
-                            : displayText}
+                          {displayText}
                         </span>
 
                         {!isActive && !isRedirecting && (
@@ -268,6 +220,17 @@ export default function OverlayProgressStepper() {
                 );
               })}
             </ol>
+
+            <button
+              type="button"
+              onClick={goBackToOverview}
+              disabled={isRedirecting}
+              className="inline-flex flex-none items-center gap-2 rounded-2xl px-4 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground focus:outline-none disabled:cursor-wait disabled:opacity-50"
+              title="Zurück zur Übersicht"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>{isRedirecting ? "Speichert..." : "Zurück zur Übersicht"}</span>
+            </button>
           </div>
         </nav>
         <ThemeSwitcher />

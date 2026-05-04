@@ -187,7 +187,7 @@ function LeadRowItem({
             type="button"
             className="w-full px-5 py-4 text-left text-[18px] text-black/75 hover:bg-black/5 transition"
           >
-            Löschen
+            In Papierkorb verschieben
           </button>
         </div>
       )}

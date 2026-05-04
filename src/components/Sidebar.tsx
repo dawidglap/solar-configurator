@@ -17,7 +17,10 @@ import {
   FiHelpCircle,
   FiChevronLeft,
   FiChevronRight,
+  FiTrash2,
 } from "react-icons/fi";
+import { useMe } from "@/hooks/useMe";
+import { isAdminLikeRole } from "@/lib/planner-api";
 
 // “chiusa” = compatta con icone (w-14) | “espansa” = icone + testo (w-56)
 const W_COMPACT = 56; // px  (w-14)
@@ -26,6 +29,11 @@ const W_EXPANDED = 224; // px  (w-56)
 export default function Sidebar() {
   const pathname = usePathname();
   const isPlannerV2 = pathname?.startsWith("/planner-v2") ?? false;
+  const meQuery = useMe();
+  const canViewTrash = isAdminLikeRole({
+    session: meQuery.data?.session,
+    user: meQuery.data?.user,
+  });
 
   // 🔹 Nascondi completamente la sidebar sulla pagina di login
   if (pathname === "/login") return null;
@@ -58,6 +66,7 @@ export default function Sidebar() {
       { href: "/umsatz", label: "Statistik", icon: <FiBarChart2 /> },
       { href: "/leads", label: "Leads", icon: <FiUser /> }, // se non esiste ancora, resta placeholder
       { href: "/aufgaben", label: "Aufgaben", icon: <FiBell /> },
+      { href: "/papierkorb", label: "Papierkorb", icon: <FiTrash2 /> },
       { href: "/ausfuehrung", label: "Ausführung", icon: <FiSettings /> }, // placeholder
       { href: "/produkte", label: "Marktplatz", icon: <FiBox /> },
     ],
@@ -94,7 +103,9 @@ export default function Sidebar() {
         {/* Menu principale */}
         <nav>
           <ul className="flex flex-col gap-2">
-            {items.map((it) => (
+            {items
+              .filter((it) => it.href !== "/papierkorb" || canViewTrash)
+              .map((it) => (
               <li key={it.href}>
                 <SidebarLink
                   href={it.href}

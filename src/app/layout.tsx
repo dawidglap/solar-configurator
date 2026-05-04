@@ -6,6 +6,7 @@ import "./globals.css";
 
 import { Toaster } from "react-hot-toast";
 import { headers } from "next/headers";
+import QueryProvider from "@/components/providers/QueryProvider";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -82,16 +83,18 @@ export default async function RootLayout({
             {!isLoginPage && !isPlannerPage && <Sidebar />} */}
         {/* {!isLoginPage && !isPlannerPage && <Sidebar />} */}
 
-        <div className="flex flex-col flex-1 overflow-hidden">
-          <main className="flex-1 overflow-auto relative">{children}</main>
-        </div>
+        <QueryProvider>
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <main className="flex-1 overflow-auto relative">{children}</main>
+          </div>
 
-        <Toaster
-          position="bottom-right"
-          toastOptions={{
-            duration: 2000,
-          }}
-        />
+          <Toaster
+            position="bottom-right"
+            toastOptions={{
+              duration: 2000,
+            }}
+          />
+        </QueryProvider>
       </body>
     </html>
   );
