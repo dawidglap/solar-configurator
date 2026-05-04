@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import { readSession, safeString, toObjectIdOrNull } from "@/lib/api-session";
+import { activeDocumentFilter, buildSoftDeleteFields } from "@/lib/trash";
 import {
   ensureTaskIndexes,
   getCompanyMemberById,
@@ -66,6 +67,7 @@ export async function PATCH(
     const existing = await tasks.findOne({
       _id: taskObjectId,
       companyId: activeCompanyId,
+      ...activeDocumentFilter(),
     });
 
     if (!existing) {
@@ -185,13 +187,14 @@ export async function PATCH(
     });
 
     await tasks.updateOne(
-      { _id: taskObjectId, companyId: activeCompanyId },
+      { _id: taskObjectId, companyId: activeCompanyId, ...activeDocumentFilter() },
       { $set: setObj }
     );
 
     const updated = await tasks.findOne({
       _id: taskObjectId,
       companyId: activeCompanyId,
+      ...activeDocumentFilter(),
     });
 
     return jsonResponse(origin, { ok: true, task: normalizeTask(updated) }, 200);
@@ -235,12 +238,21 @@ export async function DELETE(
     const db = await getDb();
     await ensureTaskIndexes(db);
 
-    const result = await db.collection("tasks").deleteOne({
-      _id: taskObjectId,
-      companyId: String(session.activeCompanyId),
-    });
+    const result = await db.collection("tasks").updateOne(
+      {
+        _id: taskObjectId,
+        companyId: String(session.activeCompanyId),
+        ...activeDocumentFilter(),
+      },
+      {
+        $set: {
+          ...buildSoftDeleteFields(session as any),
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
 
-    if (!result.deletedCount) {
+    if (!result.matchedCount) {
       return jsonResponse(origin, { ok: false, error: "Task not found" }, 404);
     }
 
@@ -254,4 +266,3 @@ export async function DELETE(
     );
   }
 }
-

@@ -4,6 +4,7 @@ import {
   readSession,
   safeString,
 } from "@/lib/api-session";
+import { activeDocumentFilter } from "@/lib/trash";
 import {
   ensureTaskIndexes,
   getCompanyMemberById,
@@ -71,6 +72,7 @@ export async function GET(req: Request) {
 
   const filter: Record<string, any> = {
     companyId: activeCompanyId,
+    ...activeDocumentFilter(),
   };
 
   if (!permissions.canViewAll) {
@@ -210,4 +212,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

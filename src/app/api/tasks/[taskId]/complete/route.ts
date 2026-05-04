@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import { readSession, toObjectIdOrNull, safeString } from "@/lib/api-session";
+import { activeDocumentFilter } from "@/lib/trash";
 import {
   ensureTaskIndexes,
   getSessionUserId,
@@ -61,6 +62,7 @@ export async function POST(
     const existing = await tasks.findOne({
       _id: taskObjectId,
       companyId: String(session.activeCompanyId),
+      ...activeDocumentFilter(),
     });
 
     if (!existing) {
@@ -76,7 +78,11 @@ export async function POST(
 
     const completedAt = new Date().toISOString();
     await tasks.updateOne(
-      { _id: taskObjectId, companyId: String(session.activeCompanyId) },
+      {
+        _id: taskObjectId,
+        companyId: String(session.activeCompanyId),
+        ...activeDocumentFilter(),
+      },
       {
         $set: {
           status: "done",
@@ -91,6 +97,7 @@ export async function POST(
     const updated = await tasks.findOne({
       _id: taskObjectId,
       companyId: String(session.activeCompanyId),
+      ...activeDocumentFilter(),
     });
 
     return jsonResponse(origin, { ok: true, task: normalizeTask(updated) }, 200);
@@ -103,4 +110,3 @@ export async function POST(
     );
   }
 }
-

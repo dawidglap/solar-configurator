@@ -2,6 +2,7 @@
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import { activeDocumentFilter, buildSoftDeleteFields } from "@/lib/trash";
 
 export const runtime = "nodejs";
 
@@ -378,6 +379,7 @@ export async function PATCH(
     const existingPlanning = await plannings.findOne({
       _id: planningObjectId,
       companyId: session.activeCompanyId,
+      ...activeDocumentFilter(),
     });
 
     if (!existingPlanning) {
@@ -624,7 +626,7 @@ if (ist && typeof ist === "object") {
     }
 
     const res = await plannings.updateOne(
-      { _id: planningObjectId, companyId: session.activeCompanyId },
+      { _id: planningObjectId, companyId: session.activeCompanyId, ...activeDocumentFilter() },
       { $set: setObj },
     );
 
@@ -635,6 +637,7 @@ if (ist && typeof ist === "object") {
     const updated = await plannings.findOne({
       _id: planningObjectId,
       companyId: session.activeCompanyId,
+      ...activeDocumentFilter(),
     });
 
     if (!updated) {
@@ -721,6 +724,7 @@ export async function GET(
     const doc = await plannings.findOne({
       _id: planningObjectId,
       companyId: session.activeCompanyId,
+      ...activeDocumentFilter(),
     });
 
     if (!doc) {
@@ -794,12 +798,18 @@ export async function DELETE(
     const db = client.db();
     const plannings = db.collection("plannings");
 
-    const res = await plannings.deleteOne({
-      _id: planningObjectId,
-      companyId: session.activeCompanyId,
-    });
+    const res = await plannings.updateOne(
+      {
+        _id: planningObjectId,
+        companyId: session.activeCompanyId,
+        ...activeDocumentFilter(),
+      },
+      {
+        $set: buildSoftDeleteFields(session as any),
+      }
+    );
 
-    if (res.deletedCount === 0) {
+    if (res.matchedCount === 0) {
       return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
     }
 

@@ -91,6 +91,7 @@ export async function GET(req: Request) {
         {
           companyId: session.activeCompanyId,
           duplicateOfCustomerId: null,
+          deletedAt: { $exists: false },
         },
         {
           projection: {

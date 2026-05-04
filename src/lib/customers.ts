@@ -59,7 +59,12 @@ export function buildCustomerDedupFilter(input: {
 
   if (email) {
     return {
-      filter: { companyId, email, duplicateOfCustomerId: null },
+      filter: {
+        companyId,
+        email,
+        duplicateOfCustomerId: null,
+        deletedAt: { $exists: false },
+      },
       key: "email" as const,
     };
   }
@@ -70,6 +75,7 @@ export function buildCustomerDedupFilter(input: {
         companyId,
         companyName,
         duplicateOfCustomerId: null,
+        deletedAt: { $exists: false },
       },
       key: "companyName" as const,
     };
@@ -81,6 +87,7 @@ export function buildCustomerDedupFilter(input: {
       firstName,
       lastName,
       duplicateOfCustomerId: null,
+      deletedAt: { $exists: false },
     },
     key: "personName" as const,
   };
@@ -92,6 +99,16 @@ export function ensureCustomerIndexes(db: Db) {
   if (!ensureCustomerIndexesPromise) {
     ensureCustomerIndexesPromise = (async () => {
       const customers = db.collection("customers");
+
+      for (const indexName of [
+        "uniq_company_email_nonempty",
+        "uniq_company_private_name_without_email",
+        "uniq_company_company_name",
+      ]) {
+        try {
+          await customers.dropIndex(indexName);
+        } catch {}
+      }
 
       await customers.updateMany({ email: "" }, { $set: { email: null } });
       await customers.updateMany(
@@ -110,10 +127,11 @@ export function ensureCustomerIndexes(db: Db) {
       await customers.createIndex(
         { companyId: 1, email: 1 },
         {
-          name: "uniq_company_email_nonempty",
+          name: "uniq_company_email_active_v2",
           unique: true,
           partialFilterExpression: {
             duplicateOfCustomerId: null,
+            deletedAt: { $exists: false },
             email: { $type: "string" },
           },
         }
@@ -122,10 +140,11 @@ export function ensureCustomerIndexes(db: Db) {
       await customers.createIndex(
         { companyId: 1, firstName: 1, lastName: 1 },
         {
-          name: "uniq_company_private_name_without_email",
+          name: "uniq_company_private_name_without_email_active_v2",
           unique: true,
           partialFilterExpression: {
             duplicateOfCustomerId: null,
+            deletedAt: { $exists: false },
             type: "private",
             email: null,
             firstName: { $type: "string" },
@@ -137,10 +156,11 @@ export function ensureCustomerIndexes(db: Db) {
       await customers.createIndex(
         { companyId: 1, companyName: 1 },
         {
-          name: "uniq_company_company_name",
+          name: "uniq_company_company_name_active_v2",
           unique: true,
           partialFilterExpression: {
             duplicateOfCustomerId: null,
+            deletedAt: { $exists: false },
             type: "company",
             companyName: { $type: "string" },
           },

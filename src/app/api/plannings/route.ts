@@ -308,6 +308,7 @@ export async function GET(req: Request) {
 
     const filter: any = {
       companyId: session.activeCompanyId,
+      deletedAt: { $exists: false },
     };
 
     const customerId = safeString(searchParams.get("customerId"));

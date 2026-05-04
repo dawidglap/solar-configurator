@@ -2,6 +2,7 @@
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import { activeDocumentFilter, buildSoftDeleteFields } from "@/lib/trash";
 import {
   normalizeCustomerDoc,
   normalizeStoredCustomerEmail,
@@ -111,6 +112,7 @@ export async function GET(
       {
         _id: customerObjectId,
         companyId: session.activeCompanyId,
+        ...activeDocumentFilter(),
       },
       {
         projection: {
@@ -229,6 +231,7 @@ export async function PATCH(
       {
         _id: customerObjectId,
         companyId: session.activeCompanyId,
+        ...activeDocumentFilter(),
       },
       {
         $set: setObj,
@@ -243,6 +246,7 @@ export async function PATCH(
       {
         _id: customerObjectId,
         companyId: session.activeCompanyId,
+        ...activeDocumentFilter(),
       },
       {
         projection: {
@@ -324,33 +328,37 @@ export async function DELETE(
     const customers = db.collection("customers");
     const plannings = db.collection("plannings");
 
-    const linkedPlanningsCount = await plannings.countDocuments({
-      companyId: session.activeCompanyId,
-      customerId,
-    });
+    const deleteMeta = buildSoftDeleteFields(session as any);
 
-    if (linkedPlanningsCount > 0) {
-      return jsonResponse(
-        origin,
-        {
-          ok: false,
-          error: "customer_has_plannings",
-          message:
-            "Dieser Kunde kann nicht gelöscht werden, weil noch Projekte/Offerten damit verknüpft sind.",
-          linkedPlanningsCount,
-        },
-        400
-      );
-    }
+    const res = await customers.updateOne(
+      {
+        _id: customerObjectId,
+        companyId: session.activeCompanyId,
+        ...activeDocumentFilter(),
+      },
+      {
+        $set: deleteMeta,
+      }
+    );
 
-    const res = await customers.deleteOne({
-      _id: customerObjectId,
-      companyId: session.activeCompanyId,
-    });
-
-    if (res.deletedCount === 0) {
+    if (res.matchedCount === 0) {
       return jsonResponse(origin, { ok: false, error: "Customer not found" }, 404);
     }
+
+    await plannings.updateMany(
+      {
+        companyId: session.activeCompanyId,
+        customerId,
+        ...activeDocumentFilter(),
+      },
+      {
+        $set: {
+          ...deleteMeta,
+          deletedCascadeParentType: "customer",
+          deletedCascadeParentId: customerId,
+        },
+      }
+    );
 
     return jsonResponse(origin, { ok: true, deletedCustomerId: customerId }, 200);
   } catch (e: any) {
