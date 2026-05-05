@@ -105,12 +105,23 @@ export function ensureCustomerIndexes(db: Db) {
         "uniq_company_email_nonempty",
         "uniq_company_private_name_without_email",
         "uniq_company_company_name",
+        "uniq_company_email_active_v2",
+        "uniq_company_private_name_without_email_active_v2",
+        "uniq_company_company_name_active_v2",
       ]) {
         try {
           await customers.dropIndex(indexName);
         } catch {}
       }
 
+      await customers.updateMany(
+        { deletedAt: { $exists: false } },
+        { $set: { deletedAt: null } }
+      );
+      await customers.updateMany(
+        { duplicateOfCustomerId: { $exists: false } },
+        { $set: { duplicateOfCustomerId: null } }
+      );
       await customers.updateMany({ email: "" }, { $set: { email: null } });
       await customers.updateMany(
         { companyName: "" },
@@ -132,7 +143,7 @@ export function ensureCustomerIndexes(db: Db) {
           unique: true,
           partialFilterExpression: {
             duplicateOfCustomerId: null,
-            deletedAt: { $exists: false },
+            deletedAt: null,
             email: { $type: "string" },
           },
         }
@@ -145,7 +156,7 @@ export function ensureCustomerIndexes(db: Db) {
           unique: true,
           partialFilterExpression: {
             duplicateOfCustomerId: null,
-            deletedAt: { $exists: false },
+            deletedAt: null,
             type: "private",
             email: null,
             firstName: { $type: "string" },
@@ -161,7 +172,7 @@ export function ensureCustomerIndexes(db: Db) {
           unique: true,
           partialFilterExpression: {
             duplicateOfCustomerId: null,
-            deletedAt: { $exists: false },
+            deletedAt: null,
             type: "company",
             companyName: { $type: "string" },
           },
