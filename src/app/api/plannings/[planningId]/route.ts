@@ -3,6 +3,14 @@ import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { activeDocumentFilter, buildSoftDeleteFields } from "@/lib/trash";
+import {
+  buildInitialStageHistoryEntry,
+  buildStageHistoryForTransition,
+  ensurePlanningIndexes,
+  ensurePlanningStageHistoryMigration,
+  normalizeStageHistory,
+} from "@/lib/plannings";
+import { getSessionUserName } from "@/lib/tasks";
 
 export const runtime = "nodejs";
 
@@ -375,6 +383,8 @@ export async function PATCH(
     const db = client.db();
     const plannings = db.collection("plannings");
     const customers = db.collection("customers");
+    await ensurePlanningIndexes(db);
+    await ensurePlanningStageHistoryMigration(db);
 
     const existingPlanning = await plannings.findOne({
       _id: planningObjectId,
@@ -406,7 +416,13 @@ export async function PATCH(
 
     if (commercial && typeof commercial === "object") {
       if (typeof commercial.stage === "string") {
-        setObj["commercial.stage"] = safeString(commercial.stage) || "lead";
+        const nextStage = safeString(commercial.stage) || "lead";
+        setObj["commercial.stage"] = nextStage;
+        setObj["commercial.stageHistory"] = buildStageHistoryForTransition(
+          existingPlanning,
+          nextStage,
+          session as any,
+        );
       }
       if (typeof commercial.valueChf === "number") {
         setObj["commercial.valueChf"] = commercial.valueChf;
@@ -644,8 +660,9 @@ if (ist && typeof ist === "object") {
       return jsonResponse(origin, { ok: false, error: "Planning not found after update" }, 404);
     }
 
+    const { comments: _comments, ...updatedWithoutComments } = updated as any;
     const normalized = {
-      ...updated,
+      ...updatedWithoutComments,
       _id: String((updated as any)._id),
       summary: deriveSummaryFromPlanner(updated),
       title: safeString((updated as any)?.title) || "Unbenanntes Projekt",
@@ -659,6 +676,7 @@ if (ist && typeof ist === "object") {
         assignedToUserId: (updated as any)?.commercial?.assignedToUserId ?? null,
         source: safeString((updated as any)?.commercial?.source),
         label: safeString((updated as any)?.commercial?.label),
+        stageHistory: normalizeStageHistory((updated as any)?.commercial?.stageHistory),
       },
       customerId: (updated as any)?.customerId ?? null,
     };
@@ -720,6 +738,8 @@ export async function GET(
     await client.connect();
     const db = client.db();
     const plannings = db.collection("plannings");
+    await ensurePlanningIndexes(db);
+    await ensurePlanningStageHistoryMigration(db);
 
     const doc = await plannings.findOne({
       _id: planningObjectId,
@@ -731,8 +751,9 @@ export async function GET(
       return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
     }
 
+    const { comments: _comments, ...docWithoutComments } = doc as any;
     const normalized = {
-      ...doc,
+      ...docWithoutComments,
       _id: String((doc as any)._id),
       summary: deriveSummaryFromPlanner(doc),
       title: safeString((doc as any)?.title) || "Unbenanntes Projekt",
@@ -746,6 +767,7 @@ export async function GET(
         assignedToUserId: (doc as any)?.commercial?.assignedToUserId ?? null,
         source: safeString((doc as any)?.commercial?.source),
         label: safeString((doc as any)?.commercial?.label),
+        stageHistory: normalizeStageHistory((doc as any)?.commercial?.stageHistory),
       },
       customerId: (doc as any)?.customerId ?? null,
     };

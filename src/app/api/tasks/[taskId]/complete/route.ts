@@ -6,7 +6,9 @@ import {
   ensureTaskIndexes,
   getSessionUserId,
   getSessionUserName,
+  hydrateTaskAssignments,
   isAdminLikeRole,
+  isTaskAssignedToUser,
   jsonResponse,
   normalizeTask,
 } from "@/lib/tasks";
@@ -69,8 +71,7 @@ export async function POST(
       return jsonResponse(origin, { ok: false, error: "Task not found" }, 404);
     }
 
-    const isAssignedUser =
-      !!currentUserId && safeString(existing.assignedToUserId) === currentUserId;
+    const isAssignedUser = !!currentUserId && isTaskAssignedToUser(existing, currentUserId);
 
     if (!isAdmin && !isAssignedUser) {
       return jsonResponse(origin, { ok: false, error: "Forbidden" }, 403);
@@ -100,7 +101,13 @@ export async function POST(
       ...activeDocumentFilter(),
     });
 
-    return jsonResponse(origin, { ok: true, task: normalizeTask(updated) }, 200);
+    const [hydrated] = await hydrateTaskAssignments(
+      db,
+      String(session.activeCompanyId),
+      updated ? [updated] : [],
+    );
+
+    return jsonResponse(origin, { ok: true, task: normalizeTask(hydrated) }, 200);
   } catch (e: any) {
     console.error("COMPLETE TASK ERROR:", e);
     return jsonResponse(

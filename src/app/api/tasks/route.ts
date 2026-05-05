@@ -7,17 +7,19 @@ import {
 import { activeDocumentFilter } from "@/lib/trash";
 import {
   ensureTaskIndexes,
-  getCompanyMemberById,
   getSessionUserEmail,
   getSessionUserId,
   getSessionUserName,
   getTaskPermissions,
+  hydrateTaskAssignments,
   isAdminLikeRole,
+  isTaskAssignedToUser,
   jsonResponse,
   normalizeTask,
   normalizeTaskPriority,
   sortTasks,
   safeNumber,
+  validateAssignedTaskUsers,
 } from "@/lib/tasks";
 
 export const runtime = "nodejs";
@@ -76,21 +78,42 @@ export async function GET(req: Request) {
   };
 
   if (!permissions.canViewAll) {
-    filter.assignedToUserId = currentUserId;
+    filter.$and = [
+      {
+        $or: [
+          { assignedToUserIds: currentUserId },
+          { assignedToUserId: currentUserId },
+        ],
+      },
+    ];
   } else if (assignedToUserId) {
-    filter.assignedToUserId = assignedToUserId;
+    filter.$and = [
+      {
+        $or: [
+          { assignedToUserIds: assignedToUserId },
+          { assignedToUserId },
+        ],
+      },
+    ];
   }
 
   if (planningId) filter.planningId = planningId;
   if (customerId) filter.customerId = customerId;
   if (status) filter.status = status;
   if (q) {
-    filter.$or = [
-      { title: { $regex: q, $options: "i" } },
-      { description: { $regex: q, $options: "i" } },
-      { assignedToName: { $regex: q, $options: "i" } },
-      { assignedToEmail: { $regex: q, $options: "i" } },
-    ];
+    const searchFilter = {
+      $or: [
+        { title: { $regex: q, $options: "i" } },
+        { description: { $regex: q, $options: "i" } },
+        { assignedToName: { $regex: q, $options: "i" } },
+        { assignedToEmail: { $regex: q, $options: "i" } },
+      ],
+    };
+    if (Array.isArray(filter.$and)) {
+      filter.$and.push(searchFilter);
+    } else {
+      filter.$or = searchFilter.$or;
+    }
   }
 
   try {
@@ -98,9 +121,16 @@ export async function GET(req: Request) {
     await ensureTaskIndexes(db);
 
     const docs = await db.collection("tasks").find(filter).limit(limit * 3).toArray();
-    const items = sortTasks(docs.map((doc) => normalizeTask(doc))).slice(0, limit);
+    const hydratedDocs = await hydrateTaskAssignments(db, activeCompanyId, docs);
+    const items = sortTasks(hydratedDocs.map((doc) => normalizeTask(doc))).slice(0, limit);
+    const effectivePermissions = {
+      ...permissions,
+      canCompleteAssigned:
+        permissions.canEditAll ||
+        (!!currentUserId && items.some((item) => isTaskAssignedToUser(item, currentUserId))),
+    };
 
-    return jsonResponse(origin, { ok: true, items, permissions }, 200);
+    return jsonResponse(origin, { ok: true, items, permissions: effectivePermissions }, 200);
   } catch (e: any) {
     console.error("GET TASKS ERROR:", e);
     return jsonResponse(
@@ -145,34 +175,16 @@ export async function POST(req: Request) {
     const db = await getDb();
     await ensureTaskIndexes(db);
 
-    let assignedToUserId = safeString(body?.assignedToUserId);
-    let assignedToName = safeString(body?.assignedToName);
-    let assignedToEmail = safeString(body?.assignedToEmail);
-
-    if (assignedToUserId) {
-      const assignedUser = await getCompanyMemberById(
-        db,
-        activeCompanyId,
-        assignedToUserId
-      );
-
-      if (!assignedUser) {
-        return jsonResponse(
-          origin,
-          { ok: false, error: "Assigned user is not an active company member" },
-          400
-        );
-      }
-
-      assignedToUserId = safeString(assignedUser._id?.toString());
-      assignedToName =
-        [safeString(assignedUser.firstName), safeString(assignedUser.lastName)]
-          .filter(Boolean)
-          .join(" ") ||
-        safeString(assignedUser.name) ||
-        safeString(assignedUser.email);
-      assignedToEmail = safeString(assignedUser.email);
-    }
+    const requestedAssignedToUserIds = Array.isArray(body?.assignedToUserIds)
+      ? body.assignedToUserIds
+      : safeString(body?.assignedToUserId)
+        ? [safeString(body?.assignedToUserId)]
+        : [];
+    const assignment = await validateAssignedTaskUsers(
+      db,
+      activeCompanyId,
+      requestedAssignedToUserIds,
+    );
 
     const now = new Date().toISOString();
     const task = {
@@ -183,9 +195,11 @@ export async function POST(req: Request) {
       description: safeString(body?.description),
       status: "open",
       priority,
-      ...(assignedToUserId ? { assignedToUserId } : {}),
-      ...(assignedToName ? { assignedToName } : {}),
-      ...(assignedToEmail ? { assignedToEmail } : {}),
+      assignedToUserIds: assignment.assignedToUserIds,
+      assignedToUserId: assignment.assignedToUserId,
+      ...(assignment.assignedToName ? { assignedToName: assignment.assignedToName } : {}),
+      ...(assignment.assignedToEmail ? { assignedToEmail: assignment.assignedToEmail } : {}),
+      assignedToNames: assignment.assignedToNames,
       createdByUserId,
       createdByName,
       ...(createdByEmail ? { createdByEmail } : {}),

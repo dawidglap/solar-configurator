@@ -4,6 +4,13 @@ import crypto from "crypto";
 import { defaultStoreData } from "@/components_v2/state/defaultStoreData";
 import { getCorsHeaders } from "@/lib/cors";
 import { activeDocumentFilter } from "@/lib/trash";
+import {
+  buildInitialStageHistoryEntry,
+  ensurePlanningIndexes,
+  ensurePlanningStageHistoryMigration,
+  normalizeStageHistory,
+} from "@/lib/plannings";
+import { getSessionUserName } from "@/lib/tasks";
 
 export const runtime = "nodejs";
 
@@ -220,6 +227,7 @@ export async function POST(req: Request) {
       companyId: session.activeCompanyId,
       customerId,
       createdByUserId: session.userId,
+      createdByName: getSessionUserName(session as any) || "unknown",
 
       status: "draft",
       currentStep: "profile",
@@ -233,6 +241,14 @@ export async function POST(req: Request) {
         assignedToUserId: commercialAssignedToUserId,
         source: commercialSource,
         label: commercialLabel,
+        stageHistory: [
+          buildInitialStageHistoryEntry({
+            commercial: { stage: commercialStage },
+            createdAt: now,
+            createdByUserId: session.userId,
+            createdByName: getSessionUserName(session as any) || "unknown",
+          }),
+        ],
       },
 
       summary: {
@@ -306,6 +322,8 @@ export async function GET(req: Request) {
     await client.connect();
     const db = client.db();
     const plannings = db.collection("plannings");
+    await ensurePlanningIndexes(db);
+    await ensurePlanningStageHistoryMigration(db);
 
     const filter: any = {
       companyId: session.activeCompanyId,
@@ -372,6 +390,7 @@ export async function GET(req: Request) {
           assignedToUserId: d?.commercial?.assignedToUserId ?? null,
           source: safeString(d?.commercial?.source),
           label: safeString(d?.commercial?.label),
+          stageHistory: normalizeStageHistory(d?.commercial?.stageHistory),
         },
         summary,
         customerName,

@@ -4,14 +4,16 @@ import { readSession, safeString, toObjectIdOrNull } from "@/lib/api-session";
 import { activeDocumentFilter, buildSoftDeleteFields } from "@/lib/trash";
 import {
   ensureTaskIndexes,
-  getCompanyMemberById,
   getSessionUserId,
   getSessionUserName,
+  hydrateTaskAssignments,
   isAdminLikeRole,
+  isTaskAssignedToUser,
   jsonResponse,
   normalizeTask,
   normalizeTaskPriority,
   normalizeTaskStatus,
+  validateAssignedTaskUsers,
 } from "@/lib/tasks";
 
 export const runtime = "nodejs";
@@ -74,8 +76,7 @@ export async function PATCH(
       return jsonResponse(origin, { ok: false, error: "Task not found" }, 404);
     }
 
-    const isAssignedUser =
-      !!currentUserId && safeString(existing.assignedToUserId) === currentUserId;
+    const isAssignedUser = !!currentUserId && isTaskAssignedToUser(existing, currentUserId);
 
     if (!isAdmin && !isAssignedUser) {
       return jsonResponse(origin, { ok: false, error: "Forbidden" }, 403);
@@ -143,37 +144,22 @@ export async function PATCH(
         }
       }
 
-      if ("assignedToUserId" in body) {
-        const assignedToUserId = safeString(body?.assignedToUserId);
-
-        if (!assignedToUserId) {
-          setObj.assignedToUserId = undefined;
-          setObj.assignedToName = safeString(body?.assignedToName);
-          setObj.assignedToEmail = safeString(body?.assignedToEmail);
-        } else {
-          const assignedUser = await getCompanyMemberById(
-            db,
-            activeCompanyId,
-            assignedToUserId
-          );
-
-          if (!assignedUser) {
-            return jsonResponse(
-              origin,
-              { ok: false, error: "Assigned user is not an active company member" },
-              400
-            );
-          }
-
-          setObj.assignedToUserId = assignedUser._id.toString();
-          setObj.assignedToName =
-            [safeString(assignedUser.firstName), safeString(assignedUser.lastName)]
-              .filter(Boolean)
-              .join(" ") ||
-            safeString(assignedUser.name) ||
-            safeString(assignedUser.email);
-          setObj.assignedToEmail = safeString(assignedUser.email);
-        }
+      if ("assignedToUserIds" in body || "assignedToUserId" in body) {
+        const requestedAssignedToUserIds = Array.isArray(body?.assignedToUserIds)
+          ? body.assignedToUserIds
+          : safeString(body?.assignedToUserId)
+            ? [safeString(body?.assignedToUserId)]
+            : [];
+        const assignment = await validateAssignedTaskUsers(
+          db,
+          activeCompanyId,
+          requestedAssignedToUserIds,
+        );
+        setObj.assignedToUserIds = assignment.assignedToUserIds;
+        setObj.assignedToUserId = assignment.assignedToUserId;
+        setObj.assignedToName = assignment.assignedToName || null;
+        setObj.assignedToEmail = assignment.assignedToEmail || null;
+        setObj.assignedToNames = assignment.assignedToNames;
       } else {
         if ("assignedToName" in body) setObj.assignedToName = safeString(body?.assignedToName);
         if ("assignedToEmail" in body) setObj.assignedToEmail = safeString(body?.assignedToEmail);
@@ -197,7 +183,8 @@ export async function PATCH(
       ...activeDocumentFilter(),
     });
 
-    return jsonResponse(origin, { ok: true, task: normalizeTask(updated) }, 200);
+    const [hydrated] = await hydrateTaskAssignments(db, activeCompanyId, updated ? [updated] : []);
+    return jsonResponse(origin, { ok: true, task: normalizeTask(hydrated) }, 200);
   } catch (e: any) {
     console.error("PATCH TASK ERROR:", e);
     return jsonResponse(
