@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test:checklist": "npx tsx scripts/test-checklist-patch.ts",
     "audit:customer-duplicates": "node scripts/audit-customer-duplicates.js",
     "audit:customer-duplicates:mark": "node scripts/audit-customer-duplicates.js --mark",
     "ensure:customer-indexes": "node scripts/ensure-customer-indexes.js"

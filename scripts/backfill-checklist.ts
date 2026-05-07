@@ -4,18 +4,18 @@ import { MongoClient } from "mongodb";
 const CHECKLIST_KEYS = [
   "projekt_geprueft",
   "baumeldung_eingereicht",
-  "tag_eingereicht",
-  "installationsanzeige_eingereicht",
-  "pronovo_foerderung_angemeldet",
+  "baumeldung_genehmigt",
+  "netzanschlussgesuch_eingereicht",
+  "netzanschlussgesuch_genehmigt",
+  "material_bestellt",
+  "material_geliefert",
   "montage_geplant",
-  "montage_ausgefuehrt",
-  "elektroinstallation_geplant",
-  "elektroinstallation_ausgefuehrt",
-  "anlage_in_betrieb",
-  "sina_kontrolle_abgeschlossen",
-  "pronovo_foerderung_eingereicht",
-  "unterlagen_an_ew_zugestellt",
-  "technische_dokumentation_gesendet",
+  "montage_durchgefuehrt",
+  "elektroinstallation_durchgefuehrt",
+  "inbetriebnahme",
+  "abnahme_kunde",
+  "abnahme_ewz",
+  "schlussrechnung_versendet",
   "projekt_abgeschlossen",
 ] as const;
 
@@ -58,26 +58,25 @@ async function main() {
     const plannings = db.collection("plannings");
 
     const docs = await plannings
-      .find(
-        {
-          $or: [
-            { checklist: { $exists: false } },
-            { checklist: null },
-            { "checklist.items": { $exists: false } },
-            { "checklist.items": { $size: 0 } },
-          ],
-        },
-        { projection: { _id: 1, createdAt: 1 } },
-      )
+      .find({}, { projection: { _id: 1, createdAt: 1, checklist: 1 } })
       .toArray();
 
-    if (!docs.length) {
+    const docsNeedingBackfill = docs.filter((doc: any) => {
+      const items = Array.isArray(doc?.checklist?.items) ? doc.checklist.items : [];
+      if (!items.length) return true;
+      if (items.length !== CHECKLIST_KEYS.length) return true;
+      return CHECKLIST_KEYS.some((key) => {
+        return !items.some((item: any) => safeString(item?.key) === key);
+      });
+    });
+
+    if (!docsNeedingBackfill.length) {
       console.log("No plannings required checklist backfill.");
       return;
     }
 
     const result = await plannings.bulkWrite(
-      docs.map((doc: any) => ({
+      docsNeedingBackfill.map((doc: any) => ({
         updateOne: {
           filter: { _id: doc._id },
           update: {
@@ -90,7 +89,7 @@ async function main() {
     );
 
     console.log(
-      `Backfilled checklist on ${result.modifiedCount} planning(s) out of ${docs.length}.`,
+      `Backfilled checklist on ${result.modifiedCount} planning(s) out of ${docsNeedingBackfill.length}.`,
     );
   } finally {
     await client.close();
