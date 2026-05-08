@@ -37,6 +37,7 @@ export const PLANNING_FILE_TYPES = [
 
 type PlanningFileCategory = (typeof PLANNING_FILE_CATEGORIES)[number];
 type PlanningFileType = (typeof PLANNING_FILE_TYPES)[number];
+type PlanningFileDeliveryType = "upload" | "private" | "authenticated";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -90,6 +91,22 @@ export function getPlanningFileCloudinaryResourceType(
   return mimeType.startsWith("image/") ? "image" : "raw";
 }
 
+export function inferPlanningFileCloudinaryDeliveryType(doc: any): PlanningFileDeliveryType {
+  const explicit = safeString(doc?.cloudinaryDeliveryType).toLowerCase();
+  if (explicit === "upload" || explicit === "private" || explicit === "authenticated") {
+    return explicit;
+  }
+
+  const url = safeString(doc?.cloudinarySecureUrl) || safeString(doc?.cloudinaryUrl);
+  const match = url.match(/\/(?:image|raw|video)\/([^/]+)\//i);
+  const candidate = safeString(match?.[1]).toLowerCase();
+  if (candidate === "upload" || candidate === "private" || candidate === "authenticated") {
+    return candidate;
+  }
+
+  return "upload";
+}
+
 export function sanitizeFilenameBase(value: string) {
   return (
     safeString(value)
@@ -105,6 +122,37 @@ export function sanitizeFilenameBase(value: string) {
 export function stripFileExtension(value: string) {
   const name = safeString(value);
   return name.replace(/\.[^.]+$/, "") || name;
+}
+
+export function getOriginalFileExtension(originalFileName: string, mimeType?: string) {
+  const name = safeString(originalFileName);
+  const match = name.match(/\.([^.]+)$/);
+  if (match?.[1]) {
+    return safeString(match[1]).toLowerCase();
+  }
+
+  const normalizedMimeType = safeString(mimeType).toLowerCase();
+  if (normalizedMimeType === "application/pdf") return "pdf";
+  if (normalizedMimeType === "image/jpeg") return "jpg";
+  if (normalizedMimeType === "image/png") return "png";
+  if (normalizedMimeType === "image/webp") return "webp";
+  if (normalizedMimeType === "image/heic") return "heic";
+  if (normalizedMimeType === "image/heif") return "heif";
+  if (normalizedMimeType === "application/msword") return "doc";
+  if (
+    normalizedMimeType ===
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    return "docx";
+  }
+  if (normalizedMimeType === "application/vnd.ms-excel") return "xls";
+  if (
+    normalizedMimeType ===
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  ) {
+    return "xlsx";
+  }
+  return "";
 }
 
 export function buildCloudinaryFolder(
@@ -239,6 +287,38 @@ export function createPlanningFileJsonResponse(origin: string | null, body: any,
   return jsonResponse(origin, body, status);
 }
 
+export function buildPlanningFileDownloadUrl(
+  doc: any,
+  disposition: "inline" | "attachment" = "attachment",
+) {
+  if (!hasCloudinaryEnv()) {
+    throw new Error("Missing Cloudinary environment variables");
+  }
+
+  const publicId = safeString(doc?.cloudinaryPublicId);
+  if (!publicId) {
+    throw new Error("Missing cloudinaryPublicId");
+  }
+
+  const resourceType =
+    (safeString(doc?.cloudinaryResourceType) || "raw") as "image" | "raw" | "video";
+  const deliveryType = inferPlanningFileCloudinaryDeliveryType(doc);
+  const originalFileName = safeString(doc?.originalFileName) || "download";
+  const extension = getOriginalFileExtension(originalFileName, safeString(doc?.mimeType));
+  const expiresAt = Math.floor(Date.now() / 1000) + 5 * 60;
+  const sdk = getCloudinary();
+
+  return sdk.url(publicId, {
+    secure: true,
+    sign_url: true,
+    expires_at: expiresAt,
+    resource_type: resourceType,
+    type: deliveryType,
+    ...(extension ? { format: extension } : {}),
+    ...(disposition === "attachment" ? { attachment: originalFileName } : {}),
+  });
+}
+
 export function getPlanningFileSessionUser(session: SessionPayload | null | undefined) {
   return {
     userId: getSessionUserId(session),
@@ -308,6 +388,7 @@ export async function parseAndUploadPlanningFile(input: {
     sizeBytes: input.file.size,
     cloudinaryPublicId: safeString(upload?.public_id),
     cloudinaryResourceType: resourceType,
+    cloudinaryDeliveryType: safeString(upload?.type) || "upload",
     cloudinaryUrl: safeString(upload?.url),
     cloudinarySecureUrl: safeString(upload?.secure_url),
     thumbnailUrl: buildThumbnailUrl(upload, resourceType),
@@ -380,4 +461,3 @@ export function buildPlanningFileDeletePatch(session: SessionPayload) {
     updatedAt: now,
   };
 }
-
