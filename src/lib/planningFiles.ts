@@ -320,7 +320,7 @@ export function createPlanningFileJsonResponse(origin: string | null, body: any,
 
 export function buildPlanningFileDownloadUrl(
   doc: any,
-  disposition: "inline" | "attachment" = "attachment",
+  _disposition: "inline" | "attachment" = "attachment",
 ) {
   if (!hasCloudinaryEnv()) {
     throw new Error("Missing Cloudinary environment variables");
@@ -334,25 +334,28 @@ export function buildPlanningFileDownloadUrl(
   const resourceType =
     (safeString(doc?.cloudinaryResourceType) || "raw") as "image" | "raw" | "video";
   const deliveryType = inferPlanningFileCloudinaryDeliveryType(doc);
-  const originalFileName = safeString(doc?.originalFileName) || "download";
   const { publicId, format, publicIdWithExtension } = splitPlanningFilePublicIdAndFormat(doc);
   const expiresAt = Math.floor(Date.now() / 1000) + 5 * 60;
   const sdk = getCloudinary();
 
-  if (deliveryType === "upload") {
-    return sdk.url(publicIdWithExtension || publicId, {
-      secure: true,
-      resource_type: resourceType,
-      type: "upload",
-      ...(disposition === "attachment" ? ({ attachment: originalFileName } as any) : {}),
+  if (resourceType === "raw") {
+    const rawPublicId = publicIdWithExtension || safeString(doc?.cloudinaryPublicId) || publicId;
+    const rawFormat = rawPublicId === publicIdWithExtension ? "" : format;
+
+    return sdk.utils.private_download_url(rawPublicId, rawFormat, {
+      resource_type: "raw",
+      type: deliveryType,
+      expires_at: expiresAt,
     });
   }
 
-  return sdk.utils.private_download_url(publicId, format, {
+  return sdk.url(publicId, {
+    secure: true,
+    sign_url: deliveryType !== "upload",
+    expires_at: deliveryType !== "upload" ? expiresAt : undefined,
     resource_type: resourceType,
     type: deliveryType,
-    expires_at: expiresAt,
-    ...(disposition === "attachment" ? ({ attachment: originalFileName } as any) : {}),
+    ...(format ? { format } : {}),
   });
 }
 
