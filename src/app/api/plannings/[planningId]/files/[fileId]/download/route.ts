@@ -18,6 +18,29 @@ export const revalidate = 0;
 
 type Params = { params: Promise<{ planningId: string; fileId: string }> };
 
+function buildContentDisposition(
+  disposition: "inline" | "attachment",
+  originalFileName: string,
+) {
+  const fallback = originalFileName.replace(/["\r\n]/g, "") || "download";
+  const encoded = encodeURIComponent(fallback);
+  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
+function bytesToHexPrefix(buffer: Uint8Array, count = 8) {
+  return Array.from(buffer.slice(0, count))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join(" ");
+}
+
+function bytesToTextSnippet(buffer: Uint8Array, count = 200) {
+  try {
+    return new TextDecoder("utf-8", { fatal: false }).decode(buffer.slice(0, count));
+  } catch {
+    return "";
+  }
+}
+
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
   return new Response(null, {
@@ -59,12 +82,28 @@ export async function GET(req: Request, { params }: Params) {
         ? "inline"
         : "attachment";
 
-    const signedUrl = buildPlanningFileDownloadUrl(fileDoc, disposition);
+    const downloadUrl = buildPlanningFileDownloadUrl(fileDoc, disposition);
     const resourceType =
       (safeString(fileDoc?.cloudinaryResourceType) || "raw") as "image" | "raw" | "video";
     const deliveryType = inferPlanningFileCloudinaryDeliveryType(fileDoc);
     const originalFileName = safeString(fileDoc?.originalFileName) || "download";
     const { publicId, format, publicIdWithExtension } = splitPlanningFilePublicIdAndFormat(fileDoc);
+    const mimeType = safeString(fileDoc?.mimeType) || "application/octet-stream";
+
+    const upstream = await fetch(downloadUrl, {
+      method: "GET",
+      redirect: "follow",
+      cache: "no-store",
+    });
+    const upstreamContentType = safeString(upstream.headers.get("content-type")).toLowerCase();
+    const upstreamContentLength = safeString(upstream.headers.get("content-length"));
+    const bodyBuffer = new Uint8Array(await upstream.arrayBuffer());
+    const pdfSignature = bodyBuffer.slice(0, 5);
+    const isPdfPayload =
+      pdfSignature.length === 5 &&
+      String.fromCharCode(...pdfSignature) === "%PDF-";
+    const shouldValidatePdf = mimeType === "application/pdf";
+    const nonPdfSnippet = !isPdfPayload ? bytesToTextSnippet(bodyBuffer) : "";
 
     console.info("PLANNING FILE DOWNLOAD URL", {
       planningId,
@@ -76,13 +115,68 @@ export async function GET(req: Request, { params }: Params) {
       resourceType,
       deliveryType,
       originalFileName,
-      mimeType: safeString(fileDoc?.mimeType),
-      generatedUrl: signedUrl,
+      mimeType,
+      generatedUrl: downloadUrl,
       disposition,
-      inferredExtension: getOriginalFileExtension(originalFileName, safeString(fileDoc?.mimeType)),
+      inferredExtension: getOriginalFileExtension(originalFileName, mimeType),
+      upstreamStatus: upstream.status,
+      upstreamContentType,
+      upstreamContentLength,
+      pdfSignatureHex: bytesToHexPrefix(bodyBuffer),
+      ...(shouldValidatePdf && !isPdfPayload
+        ? { upstreamSnippet: nonPdfSnippet }
+        : {}),
     });
 
-    return Response.redirect(signedUrl, 302);
+    if (!upstream.ok) {
+      return createPlanningFileJsonResponse(
+        origin,
+        {
+          ok: false,
+          error: `Cloudinary download failed with status ${upstream.status}`,
+        },
+        upstream.status === 401 || upstream.status === 403 || upstream.status === 404
+          ? upstream.status
+          : 502,
+      );
+    }
+
+    if (
+      upstreamContentType.includes("text/html") ||
+      upstreamContentType.includes("application/json") ||
+      upstreamContentType.includes("application/xml") ||
+      upstreamContentType.includes("text/xml")
+    ) {
+      return createPlanningFileJsonResponse(
+        origin,
+        {
+          ok: false,
+          error: "Cloudinary returned a non-file response",
+        },
+        502,
+      );
+    }
+
+    if (shouldValidatePdf && !isPdfPayload) {
+      return createPlanningFileJsonResponse(
+        origin,
+        {
+          ok: false,
+          error: "Downloaded asset is not a valid PDF",
+        },
+        502,
+      );
+    }
+
+    return new Response(bodyBuffer, {
+      status: 200,
+      headers: {
+        ...createPlanningFileNoStoreHeaders(origin),
+        "Content-Type": mimeType,
+        "Content-Disposition": buildContentDisposition(disposition, originalFileName),
+        ...(upstreamContentLength ? { "Content-Length": upstreamContentLength } : {}),
+      },
+    });
   } catch (e: any) {
     console.error("DOWNLOAD PLANNING FILE ERROR:", e);
     return createPlanningFileJsonResponse(
