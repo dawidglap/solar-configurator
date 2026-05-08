@@ -155,6 +155,37 @@ export function getOriginalFileExtension(originalFileName: string, mimeType?: st
   return "";
 }
 
+export function splitPlanningFilePublicIdAndFormat(doc: any) {
+  const rawPublicId = safeString(doc?.cloudinaryPublicId);
+  const extension = getOriginalFileExtension(
+    safeString(doc?.originalFileName),
+    safeString(doc?.mimeType),
+  );
+
+  if (!rawPublicId || !extension) {
+    return {
+      publicId: rawPublicId,
+      format: extension,
+      publicIdWithExtension: rawPublicId,
+    };
+  }
+
+  const suffix = `.${extension}`;
+  if (rawPublicId.toLowerCase().endsWith(suffix.toLowerCase())) {
+    return {
+      publicId: rawPublicId.slice(0, -suffix.length),
+      format: extension,
+      publicIdWithExtension: rawPublicId,
+    };
+  }
+
+  return {
+    publicId: rawPublicId,
+    format: extension,
+    publicIdWithExtension: `${rawPublicId}.${extension}`,
+  };
+}
+
 export function buildCloudinaryFolder(
   companyId: string,
   planningId: string,
@@ -295,8 +326,8 @@ export function buildPlanningFileDownloadUrl(
     throw new Error("Missing Cloudinary environment variables");
   }
 
-  const publicId = safeString(doc?.cloudinaryPublicId);
-  if (!publicId) {
+  const rawPublicId = safeString(doc?.cloudinaryPublicId);
+  if (!rawPublicId) {
     throw new Error("Missing cloudinaryPublicId");
   }
 
@@ -304,18 +335,24 @@ export function buildPlanningFileDownloadUrl(
     (safeString(doc?.cloudinaryResourceType) || "raw") as "image" | "raw" | "video";
   const deliveryType = inferPlanningFileCloudinaryDeliveryType(doc);
   const originalFileName = safeString(doc?.originalFileName) || "download";
-  const extension = getOriginalFileExtension(originalFileName, safeString(doc?.mimeType));
+  const { publicId, format, publicIdWithExtension } = splitPlanningFilePublicIdAndFormat(doc);
   const expiresAt = Math.floor(Date.now() / 1000) + 5 * 60;
   const sdk = getCloudinary();
 
-  return sdk.url(publicId, {
-    secure: true,
-    sign_url: true,
-    expires_at: expiresAt,
+  if (deliveryType === "upload") {
+    return sdk.url(publicIdWithExtension || publicId, {
+      secure: true,
+      resource_type: resourceType,
+      type: "upload",
+      ...(disposition === "attachment" ? ({ attachment: originalFileName } as any) : {}),
+    });
+  }
+
+  return sdk.utils.private_download_url(publicId, format, {
     resource_type: resourceType,
     type: deliveryType,
-    ...(extension ? { format: extension } : {}),
-    ...(disposition === "attachment" ? { attachment: originalFileName } : {}),
+    expires_at: expiresAt,
+    ...(disposition === "attachment" ? ({ attachment: originalFileName } as any) : {}),
   });
 }
 

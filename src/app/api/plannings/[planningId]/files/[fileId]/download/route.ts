@@ -4,8 +4,11 @@ import {
   buildPlanningFileDownloadUrl,
   createPlanningFileJsonResponse,
   createPlanningFileNoStoreHeaders,
+  inferPlanningFileCloudinaryDeliveryType,
   getPlanningFileDbAndSession,
   getPlanningFilesCollection,
+  getOriginalFileExtension,
+  splitPlanningFilePublicIdAndFormat,
 } from "@/lib/planningFiles";
 import { safeString } from "@/lib/api-session";
 
@@ -57,6 +60,28 @@ export async function GET(req: Request, { params }: Params) {
         : "attachment";
 
     const signedUrl = buildPlanningFileDownloadUrl(fileDoc, disposition);
+    const resourceType =
+      (safeString(fileDoc?.cloudinaryResourceType) || "raw") as "image" | "raw" | "video";
+    const deliveryType = inferPlanningFileCloudinaryDeliveryType(fileDoc);
+    const originalFileName = safeString(fileDoc?.originalFileName) || "download";
+    const { publicId, format, publicIdWithExtension } = splitPlanningFilePublicIdAndFormat(fileDoc);
+
+    console.info("PLANNING FILE DOWNLOAD URL", {
+      planningId,
+      fileId,
+      cloudinaryPublicId: safeString(fileDoc?.cloudinaryPublicId),
+      normalizedPublicId: publicId,
+      publicIdWithExtension,
+      format,
+      resourceType,
+      deliveryType,
+      originalFileName,
+      mimeType: safeString(fileDoc?.mimeType),
+      generatedUrl: signedUrl,
+      disposition,
+      inferredExtension: getOriginalFileExtension(originalFileName, safeString(fileDoc?.mimeType)),
+    });
+
     return Response.redirect(signedUrl, 302);
   } catch (e: any) {
     console.error("DOWNLOAD PLANNING FILE ERROR:", e);
