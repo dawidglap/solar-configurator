@@ -4,6 +4,14 @@ import { getCorsHeaders } from "@/lib/cors";
 
 export const runtime = "nodejs";
 
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin");
+  return new Response(null, {
+    status: 204,
+    headers: getCorsHeaders(origin),
+  });
+}
+
 /* ----------------------------- Session helpers ---------------------------- */
 
 function sign(payload: string, secret: string) {

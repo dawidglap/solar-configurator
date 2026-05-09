@@ -1,10 +1,23 @@
 import { MongoClient } from "mongodb";
 import bcrypt from "bcryptjs";
+import { getCorsHeaders } from "@/lib/cors";
 
-export async function POST() {
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin");
+  return new Response(null, {
+    status: 204,
+    headers: getCorsHeaders(origin),
+  });
+}
+
+export async function POST(req: Request) {
+  const origin = req.headers.get("origin");
   const uri = process.env.MONGODB_URI;
   if (!uri) {
-    return Response.json({ ok: false, error: "Missing MONGODB_URI" }, { status: 500 });
+    return Response.json(
+      { ok: false, error: "Missing MONGODB_URI" },
+      { status: 500, headers: getCorsHeaders(origin) }
+    );
   }
 
   // ⚠️ Cambia questi 3 valori come vuoi (per test)
@@ -28,7 +41,7 @@ export async function POST() {
         ok: false,
         error: "Owner already exists",
         email: OWNER_EMAIL,
-      }, { status: 400 });
+      }, { status: 400, headers: getCorsHeaders(origin) });
     }
 
     const companyRes = await companies.insertOne({
@@ -55,11 +68,11 @@ export async function POST() {
       ownerUserId: userRes.insertedId.toString(),
       ownerEmail: OWNER_EMAIL,
       ownerPassword: OWNER_PASSWORD, // solo per test; dopo lo togliamo
-    });
+    }, { headers: getCorsHeaders(origin) });
   } catch (e: any) {
     return Response.json(
       { ok: false, message: e?.message ?? "Unknown error" },
-      { status: 500 }
+      { status: 500, headers: getCorsHeaders(origin) }
     );
   } finally {
     await client.close();

@@ -1,6 +1,25 @@
 import { MongoClient } from "mongodb";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { getCorsHeaders } from "@/lib/cors";
+
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin");
+  return new Response(null, {
+    status: 204,
+    headers: getCorsHeaders(origin),
+  });
+}
+
+function jsonResponse(origin: string | null, body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      ...getCorsHeaders(origin),
+    },
+  });
+}
 
 function sign(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
@@ -29,14 +48,15 @@ function readSession(req: Request, secret: string) {
 }
 
 export async function POST(req: Request) {
+  const origin = req.headers.get("origin");
   const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
-  if (!uri) return Response.json({ ok: false, error: "Missing MONGODB_URI" }, { status: 500 });
-  if (!secret) return Response.json({ ok: false, error: "Missing SESSION_SECRET" }, { status: 500 });
+  if (!uri) return jsonResponse(origin, { ok: false, error: "Missing MONGODB_URI" }, 500);
+  if (!secret) return jsonResponse(origin, { ok: false, error: "Missing SESSION_SECRET" }, 500);
 
   const session = readSession(req, secret);
-  if (!session) return Response.json({ ok: false, error: "Not logged in" }, { status: 401 });
+  if (!session) return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
 
   const body = await req.json().catch(() => ({}));
   const email = String(body.email ?? "").toLowerCase().trim();
@@ -45,20 +65,21 @@ export async function POST(req: Request) {
   const tempPassword = String(body.tempPassword ?? "").trim();
 
   if (!email || !tempPassword) {
-    return Response.json(
+    return jsonResponse(
+      origin,
       { ok: false, error: "Missing email or tempPassword" },
-      { status: 400 }
+      400
     );
   }
 
   const allowedRoles = new Set(["owner", "admin", "sales", "planner", "viewer"]);
   if (!allowedRoles.has(role)) {
-    return Response.json({ ok: false, error: "Invalid role" }, { status: 400 });
+    return jsonResponse(origin, { ok: false, error: "Invalid role" }, 400);
   }
 
   const activeCompanyId = session.activeCompanyId;
   if (!activeCompanyId) {
-    return Response.json({ ok: false, error: "Missing activeCompanyId" }, { status: 400 });
+    return jsonResponse(origin, { ok: false, error: "Missing activeCompanyId" }, 400);
   }
 
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
@@ -73,12 +94,12 @@ export async function POST(req: Request) {
     const currentRole = currentUser?.memberships?.find((m: any) => String(m.companyId) === String(activeCompanyId))?.role;
 
     if (!currentRole || (currentRole !== "owner" && currentRole !== "admin")) {
-      return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
+      return jsonResponse(origin, { ok: false, error: "Forbidden" }, 403);
     }
 
     const existing = await users.findOne({ email });
     if (existing) {
-      return Response.json({ ok: false, error: "User already exists" }, { status: 400 });
+      return jsonResponse(origin, { ok: false, error: "User already exists" }, 400);
     }
 
     const passwordHash = await bcrypt.hash(tempPassword, 10);
@@ -92,7 +113,7 @@ export async function POST(req: Request) {
       updatedAt: new Date(),
     });
 
-    return Response.json({
+    return jsonResponse(origin, {
       ok: true,
       userId: res.insertedId.toString(),
       email,
@@ -101,7 +122,7 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("CREATE USER ERROR:", e);
-    return Response.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
+    return jsonResponse(origin, { ok: false, error: e?.message ?? "Unknown error" }, 500);
   } finally {
     await client.close().catch(() => {});
   }
