@@ -22,9 +22,16 @@ function buildContentDisposition(
   disposition: "inline" | "attachment",
   originalFileName: string,
 ) {
-  const fallback = originalFileName.replace(/["\r\n]/g, "") || "download";
-  const encoded = encodeURIComponent(fallback);
-  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+  const encodedSource = originalFileName.replace(/["\r\n]/g, "").trim() || "download";
+  const asciiFallback =
+    encodedSource
+      .normalize("NFKD")
+      .replace(/[^\x20-\x7E]/g, "_")
+      .replace(/["\\]/g, "_")
+      .replace(/\s+/g, " ")
+      .trim() || "download";
+  const encoded = encodeURIComponent(encodedSource);
+  return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
 }
 
 function bytesToHexPrefix(buffer: Uint8Array, count = 8) {
