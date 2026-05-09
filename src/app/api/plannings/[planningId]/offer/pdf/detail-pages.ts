@@ -139,6 +139,29 @@ function wrapText(text: string, maxWidth: number, font: PDFFont, size: number) {
   return lines;
 }
 
+function fitHeaderTitle(text: string, maxWidth: number, font: PDFFont) {
+  const clean = safeString(text) || "Photovoltaik-Angebot";
+  const candidates = [15, 14, 13, 12];
+
+  for (const size of candidates) {
+    const lines = wrapText(clean, maxWidth, font, size);
+    if (lines.length <= 3) {
+      return { size, lines };
+    }
+  }
+
+  const size = 12;
+  const lines = wrapText(clean, maxWidth, font, size);
+  if (lines.length <= 3) {
+    return { size, lines };
+  }
+
+  const clipped = [...lines.slice(0, 3)];
+  const last = clipped[2] || "";
+  clipped[2] = last.length > 2 ? `${last.slice(0, Math.max(1, last.length - 2))}…` : "…";
+  return { size, lines: clipped };
+}
+
 function normalizeSection(section: string) {
   const s = safeString(section).toLowerCase();
   if (!s) return "allgemein";
@@ -354,22 +377,31 @@ function createPage(
   });
 
   // Header
-  drawText(page, args.offerTitle, MARGIN_X, PAGE_H - 36, 15, args.bold, COLOR_TEXT);
-
-  const topRight = [
+  const headerRight = [
     args.planningNumber ? `Offerte Nr. ${args.planningNumber}` : "",
     `Seite ${args.pageNumber}`,
   ]
     .filter(Boolean)
     .join(" · ");
+  const headerRightW = args.font.widthOfTextAtSize(headerRight, 9.2);
+  const headerGap = 18;
+  const headerMaxWidth = Math.max(180, PAGE_W - MARGIN_X * 2 - headerRightW - headerGap);
+  const titleWrap = fitHeaderTitle(args.offerTitle, headerMaxWidth, args.bold);
+  const titleLineHeight = titleWrap.size + 2;
+  let titleY = PAGE_H - 36;
+  for (const line of titleWrap.lines) {
+    drawText(page, line, MARGIN_X, titleY, titleWrap.size, args.bold, COLOR_TEXT);
+    titleY -= titleLineHeight;
+  }
 
-  const topRightW = args.font.widthOfTextAtSize(topRight, 9.2);
-  drawText(page, topRight, PAGE_W - MARGIN_X - topRightW, PAGE_H - 33, 9.2, args.font, COLOR_MUTED);
+  drawText(page, headerRight, PAGE_W - MARGIN_X - headerRightW, PAGE_H - 33, 9.2, args.font, COLOR_MUTED);
 
-  drawLine(page, MARGIN_X, PAGE_H - 46, PAGE_W - MARGIN_X, PAGE_H - 46, 1.4, COLOR_ACCENT);
+  const headerLineY = titleY - 7;
+
+  drawLine(page, MARGIN_X, headerLineY, PAGE_W - MARGIN_X, headerLineY, 1.4, COLOR_ACCENT);
 
   // Table head
-  const headY = PAGE_H - 68;
+  const headY = headerLineY - 22;
   page.drawRectangle({
     x: MARGIN_X,
     y: headY - 14,
@@ -402,7 +434,7 @@ function createPage(
 
   return {
     page,
-    cursorY: PAGE_H - 102,
+    cursorY: headY - 34,
   };
 }
 

@@ -132,6 +132,55 @@ function truncate(text: string, max = 52) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+function wrapText(text: string, maxWidth: number, font: PDFFont, size: number) {
+  const clean = safeText(text).replace(/\s+/g, " ").trim();
+  if (!clean) return [];
+
+  const words = clean.split(" ");
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const trial = current ? `${current} ${word}` : word;
+    if (font.widthOfTextAtSize(trial, size) <= maxWidth) {
+      current = trial;
+      continue;
+    }
+
+    if (current) lines.push(current);
+    current = word;
+  }
+
+  if (current) lines.push(current);
+  return lines;
+}
+
+function safeText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function fitWrappedTitle(text: string, font: PDFFont, maxWidth: number) {
+  const candidates = [15.5, 14.5, 13.5, 12.5, 11.5];
+
+  for (const size of candidates) {
+    const lines = wrapText(text, maxWidth, font, size);
+    if (lines.length <= 3) {
+      return { size, lines };
+    }
+  }
+
+  const size = 11.5;
+  const lines = wrapText(text, maxWidth, font, size);
+  if (lines.length <= 3) {
+    return { size, lines };
+  }
+
+  const clipped = [...lines.slice(0, 3)];
+  const last = clipped[2] || "";
+  clipped[2] = last.length > 2 ? `${last.slice(0, Math.max(1, last.length - 2))}…` : "…";
+  return { size, lines: clipped };
+}
+
 function buildGreeting(data: OfferCoverData) {
   const salutation = String(data.customerSalutation || "").toLowerCase();
   const customerType = String(data.customerType || "").toLowerCase();
@@ -280,11 +329,13 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
 
   const title = data.title || "Photovoltaik-Anlage";
   const bigKwText = `${money(data.kWp)} kWp`;
-
-  const titleFontSize =
-    title.length > 48 ? 13.5 : title.length > 40 ? 14.5 : 15.5;
-
-  drawText(page, title, titleBoxX + 16, titleBoxY + 74, titleFontSize, font, textDark);
+  const titleWrap = fitWrappedTitle(title, font, titleBoxW - 32);
+  const titleLineHeight = titleWrap.size + 2.5;
+  let titleY = titleBoxY + 82;
+  for (const line of titleWrap.lines) {
+    drawText(page, line, titleBoxX + 16, titleY, titleWrap.size, font, textDark);
+    titleY -= titleLineHeight;
+  }
   drawText(page, bigKwText, titleBoxX + 16, titleBoxY + 38, 21.5, bold, textDark);
 
   drawLine(
