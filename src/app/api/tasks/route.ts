@@ -3,6 +3,7 @@ import { getCorsHeaders } from "@/lib/cors";
 import {
   readSession,
   safeString,
+  toObjectIdOrNull,
 } from "@/lib/api-session";
 import { activeDocumentFilter } from "@/lib/trash";
 import {
@@ -163,6 +164,8 @@ export async function POST(req: Request) {
   const createdByName = getSessionUserName(session);
   const createdByEmail = getSessionUserEmail(session);
   const body = await req.json().catch(() => ({} as any));
+  console.log("[tasks.create] session", { userId: createdByUserId, companyId: activeCompanyId });
+  console.log("[tasks.create] payload", body);
 
   const title = safeString(body?.title);
   if (!title) {
@@ -185,12 +188,40 @@ export async function POST(req: Request) {
       activeCompanyId,
       requestedAssignedToUserIds,
     );
+    const requestedPlanningId = safeString(body?.planningId);
+    const requestedCustomerId = safeString(body?.customerId);
+    let planningTitle = "";
+
+    if (requestedPlanningId) {
+      const planningId = toObjectIdOrNull(requestedPlanningId);
+      if (planningId) {
+        const planning = await db.collection("plannings").findOne(
+          {
+            _id: planningId,
+            companyId: activeCompanyId,
+            ...activeDocumentFilter(),
+          },
+          {
+            projection: {
+              title: 1,
+              planningNumber: 1,
+              summary: 1,
+            },
+          },
+        );
+        planningTitle =
+          safeString(planning?.title) ||
+          safeString((planning as any)?.summary?.customerName) ||
+          safeString((planning as any)?.planningNumber);
+      }
+    }
 
     const now = new Date().toISOString();
     const task = {
       companyId: activeCompanyId,
-      ...(safeString(body?.planningId) ? { planningId: safeString(body?.planningId) } : {}),
-      ...(safeString(body?.customerId) ? { customerId: safeString(body?.customerId) } : {}),
+      ...(requestedPlanningId ? { planningId: requestedPlanningId } : {}),
+      ...(planningTitle ? { planningTitle } : {}),
+      ...(requestedCustomerId ? { customerId: requestedCustomerId } : {}),
       title,
       description: safeString(body?.description),
       status: "open",
@@ -212,9 +243,11 @@ export async function POST(req: Request) {
     };
 
     const result = await db.collection("tasks").insertOne(task);
+    console.log("[tasks.create] inserted", result.insertedId);
+    const normalized = normalizeTask({ ...task, _id: result.insertedId });
     return jsonResponse(
       origin,
-      { ok: true, task: normalizeTask({ ...task, _id: result.insertedId }) },
+      { ok: true, task: normalized, item: normalized },
       200
     );
   } catch (e: any) {

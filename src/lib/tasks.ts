@@ -7,6 +7,7 @@ import {
   toObjectIdOrNull,
   type SessionPayload,
 } from "@/lib/api-session";
+import { activeDocumentFilter } from "@/lib/trash";
 
 export const TASK_STATUSES = ["open", "in_progress", "done"] as const;
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
@@ -159,6 +160,7 @@ export function normalizeTask(doc: any) {
     id: mongoIdToString(doc?._id),
     companyId: safeString(doc?.companyId),
     ...(safeString(doc?.planningId) ? { planningId: safeString(doc?.planningId) } : {}),
+    ...(safeString(doc?.planningTitle) ? { planningTitle: safeString(doc?.planningTitle) } : {}),
     ...(safeString(doc?.customerId) ? { customerId: safeString(doc?.customerId) } : {}),
     title: safeString(doc?.title),
     description: safeString(doc?.description),
@@ -378,6 +380,46 @@ export async function hydrateTaskAssignments(
     members.map((member: any) => [mongoIdToString(member?._id), member]),
   );
 
+  const planningIds = Array.from(
+    new Set(
+      docs
+        .map((doc) => safeString(doc?.planningId))
+        .filter(Boolean),
+    ),
+  );
+  const planningDocs = planningIds.length
+    ? await db
+        .collection("plannings")
+        .find(
+          {
+            _id: {
+              $in: planningIds
+                .map((planningId) => toObjectIdOrNull(planningId))
+                .filter((value): value is ObjectId => !!value),
+            },
+            companyId: activeCompanyId,
+            ...activeDocumentFilter(),
+          },
+          {
+            projection: {
+              title: 1,
+              planningNumber: 1,
+              summary: 1,
+            },
+          },
+        )
+        .toArray()
+    : [];
+  const planningMap = new Map(
+    planningDocs.map((planning: any) => {
+      const title =
+        safeString(planning?.title) ||
+        safeString(planning?.summary?.customerName) ||
+        safeString(planning?.planningNumber);
+      return [mongoIdToString(planning?._id), title];
+    }),
+  );
+
   return docs.map((doc) => {
     const assignedToUserIds = normalizeAssignedToUserIds(doc);
     const assignedToNames = assignedToUserIds
@@ -400,6 +442,10 @@ export async function hydrateTaskAssignments(
       assignedToNames,
       assignedToUserId: assignedToUserIds[0] || safeString(doc?.assignedToUserId) || null,
       assignedToName: assignedToNames[0] || safeString(doc?.assignedToName),
+      planningTitle:
+        safeString(doc?.planningTitle) ||
+        safeString(planningMap.get(safeString(doc?.planningId))) ||
+        "",
       assignedToEmail:
         safeString(memberMap.get(assignedToUserIds[0] || "")?.email) ||
         safeString(doc?.assignedToEmail),
