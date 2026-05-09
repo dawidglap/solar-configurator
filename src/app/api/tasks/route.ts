@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import {
+  mongoIdToString,
   readSession,
   safeString,
   toObjectIdOrNull,
@@ -26,6 +27,16 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+const TASKS_DEBUG_VERSION = "tasks-create-2026-05-09-v2";
+
+function normalizeActiveCompanyId(value: unknown) {
+  return mongoIdToString(value) || safeString(value);
+}
+
+function buildCompanyIdFilter(activeCompanyId: string) {
+  const objectId = toObjectIdOrNull(activeCompanyId);
+  return objectId ? { $in: [activeCompanyId, objectId] } : activeCompanyId;
+}
 
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
@@ -53,7 +64,7 @@ export async function GET(req: Request) {
     return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
   }
 
-  const activeCompanyId = String(session.activeCompanyId);
+  const activeCompanyId = normalizeActiveCompanyId(session.activeCompanyId);
   const currentUserId = getSessionUserId(session);
   const permissions = getTaskPermissions(session);
 
@@ -74,7 +85,7 @@ export async function GET(req: Request) {
   const limit = Math.min(Math.max(safeNumber(url.searchParams.get("limit"), 200), 1), 500);
 
   const filter: Record<string, any> = {
-    companyId: activeCompanyId,
+    companyId: buildCompanyIdFilter(activeCompanyId),
     ...activeDocumentFilter(),
   };
 
@@ -120,8 +131,19 @@ export async function GET(req: Request) {
   try {
     const db = await getDb();
     await ensureTaskIndexes(db);
+    const tasks = db.collection("tasks");
+    console.log("[tasks.list] request", {
+      method: req.method,
+      url: req.url,
+      userId: currentUserId,
+      companyId: activeCompanyId,
+      db: db.databaseName,
+      collection: tasks.collectionName,
+      filter,
+      debugVersion: TASKS_DEBUG_VERSION,
+    });
 
-    const docs = await db.collection("tasks").find(filter).limit(limit * 3).toArray();
+    const docs = await tasks.find(filter).limit(limit * 3).toArray();
     const hydratedDocs = await hydrateTaskAssignments(db, activeCompanyId, docs);
     const items = sortTasks(hydratedDocs.map((doc) => normalizeTask(doc))).slice(0, limit);
     const effectivePermissions = {
@@ -131,7 +153,7 @@ export async function GET(req: Request) {
         (!!currentUserId && items.some((item) => isTaskAssignedToUser(item, currentUserId))),
     };
 
-    return jsonResponse(origin, { ok: true, items, permissions: effectivePermissions }, 200);
+    return jsonResponse(origin, { ok: true, items, permissions: effectivePermissions, debugVersion: TASKS_DEBUG_VERSION }, 200);
   } catch (e: any) {
     console.error("GET TASKS ERROR:", e);
     return jsonResponse(
@@ -159,11 +181,12 @@ export async function POST(req: Request) {
     return jsonResponse(origin, { ok: false, error: "Forbidden" }, 403);
   }
 
-  const activeCompanyId = String(session.activeCompanyId);
+  const activeCompanyId = normalizeActiveCompanyId(session.activeCompanyId);
   const createdByUserId = getSessionUserId(session);
   const createdByName = getSessionUserName(session);
   const createdByEmail = getSessionUserEmail(session);
   const body = await req.json().catch(() => ({} as any));
+  console.log("[tasks.create] request", { method: req.method, url: req.url, debugVersion: TASKS_DEBUG_VERSION });
   console.log("[tasks.create] session", { userId: createdByUserId, companyId: activeCompanyId });
   console.log("[tasks.create] payload", body);
 
@@ -177,6 +200,12 @@ export async function POST(req: Request) {
   try {
     const db = await getDb();
     await ensureTaskIndexes(db);
+    const tasks = db.collection("tasks");
+    console.log("[tasks.create] target", {
+      db: db.databaseName,
+      collection: tasks.collectionName,
+      companyIdFilter: buildCompanyIdFilter(activeCompanyId),
+    });
 
     const requestedAssignedToUserIds = Array.isArray(body?.assignedToUserIds)
       ? body.assignedToUserIds
@@ -198,7 +227,7 @@ export async function POST(req: Request) {
         const planning = await db.collection("plannings").findOne(
           {
             _id: planningId,
-            companyId: activeCompanyId,
+            companyId: buildCompanyIdFilter(activeCompanyId),
             ...activeDocumentFilter(),
           },
           {
@@ -241,13 +270,54 @@ export async function POST(req: Request) {
       createdAt: now,
       updatedAt: now,
     };
+    console.log("[tasks.create] document", task);
 
-    const result = await db.collection("tasks").insertOne(task);
-    console.log("[tasks.create] inserted", result.insertedId);
-    const normalized = normalizeTask({ ...task, _id: result.insertedId });
+    const result = await tasks.insertOne(task);
+    console.log("[tasks.create] inserted", result);
+    if (!result?.acknowledged || !result?.insertedId) {
+      return jsonResponse(
+        origin,
+        {
+          ok: false,
+          error: "Task insert was not acknowledged",
+          debugVersion: TASKS_DEBUG_VERSION,
+        },
+        500
+      );
+    }
+
+    const insertedCount = await tasks.countDocuments({ _id: result.insertedId });
+    const saved = await tasks.findOne({
+      _id: result.insertedId,
+      companyId: buildCompanyIdFilter(activeCompanyId),
+    });
+    console.log("[tasks.create] readAfterWrite", {
+      insertedId: result.insertedId,
+      insertedCount,
+      saved,
+    });
+
+    if (!saved) {
+      return jsonResponse(
+        origin,
+        {
+          ok: false,
+          message: "Task insert acknowledged but not readable after insert",
+          debugVersion: TASKS_DEBUG_VERSION,
+        },
+        500
+      );
+    }
+
+    const normalized = normalizeTask(saved);
     return jsonResponse(
       origin,
-      { ok: true, task: normalized, item: normalized },
+      {
+        ok: true,
+        task: normalized,
+        item: normalized,
+        debugVersion: TASKS_DEBUG_VERSION,
+      },
       200
     );
   } catch (e: any) {
