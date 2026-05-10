@@ -11,6 +11,7 @@ export const COMPANY_PLANS = [
 ] as const;
 
 export const COMPANY_SUBSCRIPTION_STATUSES = [
+  "trial",
   "active",
   "expiring_soon",
   "suspended",
@@ -60,7 +61,7 @@ export function isPlatformSuperAdmin(session: SessionPayload | null | undefined)
 export function buildNewCompanySubscriptionDefaults(now = new Date()) {
   return {
     plan: "starter" as const,
-    subscriptionStatus: "active" as const,
+    subscriptionStatus: "trial" as const,
     validUntil: addDays(now, 30),
     maxUsers: 5,
     notes: "",
@@ -69,10 +70,10 @@ export function buildNewCompanySubscriptionDefaults(now = new Date()) {
 
 export function buildExistingCompanyMigrationDefaults(now = new Date()) {
   return {
-    plan: "professional" as const,
-    subscriptionStatus: "active" as const,
-    validUntil: addDays(now, 365),
-    maxUsers: 20,
+    plan: "starter" as const,
+    subscriptionStatus: "trial" as const,
+    validUntil: addDays(now, 30),
+    maxUsers: 5,
     notes: "",
   };
 }
@@ -137,8 +138,22 @@ export function buildCompanySubscriptionResponse(company: any) {
     status: normalized.subscriptionStatus,
     validUntil: normalized.validUntil.toISOString(),
     maxUsers: normalized.maxUsers,
+    suspended: normalized.subscriptionStatus === "suspended",
+    notes: normalized.notes,
     daysRemaining: computeDaysRemaining(normalized.validUntil),
   };
+}
+
+export function hasStoredCompanySubscription(company: any) {
+  return (
+    isValidCompanyPlan(company?.plan) &&
+    isValidCompanySubscriptionStatus(company?.subscriptionStatus) &&
+    company?.validUntil instanceof Date &&
+    !Number.isNaN(company.validUntil.getTime()) &&
+    typeof company?.maxUsers === "number" &&
+    Number.isFinite(company.maxUsers) &&
+    company.maxUsers >= 1
+  );
 }
 
 export function buildCompanyIdVariants(companyId: string) {
@@ -238,6 +253,12 @@ export async function getCompanyById(db: Db, companyId: string) {
 
   if (!company) return null;
   return ensureCompanySubscriptionFields(db, company);
+}
+
+export function buildActiveCompanyFilter() {
+  return {
+    $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }],
+  };
 }
 
 export async function enforceAdminRateLimit(
@@ -354,6 +375,13 @@ export async function countCompanyUsers(db: Db, companyId: string) {
   return users.length;
 }
 
+export async function countCompanyProjects(db: Db, companyId: string) {
+  return db.collection("plannings").countDocuments({
+    ...buildActiveDocumentFilterCompat(),
+    companyId: { $in: buildCompanyIdVariants(companyId) },
+  });
+}
+
 export function normalizeAdminCompanyListItem(company: any, userCount: number) {
   const subscription = normalizeCompanySubscription(company);
   return {
@@ -369,6 +397,12 @@ export function normalizeAdminCompanyListItem(company: any, userCount: number) {
         ? company.createdAt.toISOString()
         : company?.createdAt ?? null,
     notes: subscription.notes,
+  };
+}
+
+function buildActiveDocumentFilterCompat() {
+  return {
+    $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }],
   };
 }
 

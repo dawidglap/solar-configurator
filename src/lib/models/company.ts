@@ -4,7 +4,7 @@ export type Company = {
   name: string;
   slug: string;
 
-  subscriptionStatus: "active" | "expiring_soon" | "suspended";
+  subscriptionStatus: "trial" | "active" | "expiring_soon" | "suspended";
   plan: "starter" | "professional" | "business" | "enterprise";
 
   maxUsers: number;

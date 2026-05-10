@@ -3,12 +3,15 @@ import { getCorsHeaders } from "@/lib/cors";
 import { getDb } from "@/lib/db";
 import { mongoIdToString, readSession, safeString } from "@/lib/api-session";
 import {
+  buildActiveCompanyFilter,
   buildDeactivateUsersUpdate,
   buildMembershipCompanyQuery,
-  buildCompanyDeletePatch,
   buildCompanySubscriptionResponse,
+  buildCompanyDeletePatch,
+  countCompanyProjects,
   countCompanyUsers,
   enforceAdminRateLimit,
+  hasStoredCompanySubscription,
   requirePlatformSuperAdmin,
 } from "@/lib/subscription";
 
@@ -84,7 +87,7 @@ export async function GET(
     const db = await getDb();
     const company = await db.collection("companies").findOne({
       _id: companyObjectId,
-      deletedAt: { $exists: false },
+      ...buildActiveCompanyFilter(),
     });
 
     if (!company) {
@@ -97,27 +100,50 @@ export async function GET(
       .find(buildMembershipCompanyQuery(companyId))
       .sort({ createdAt: -1 })
       .toArray();
+    const normalizedUsers = users.map((user) => normalizeCompanyUser(user, companyId));
+    const owner = normalizedUsers.find((user) => user.role === "owner");
+    const usersCount = await countCompanyUsers(db, companyId);
+    const projectsCount = await countCompanyProjects(db, companyId);
+
+    const companyPayload = {
+      id: companyId,
+      name: safeString(company?.name),
+      slug: safeString(company?.slug),
+      createdAt:
+        company?.createdAt instanceof Date
+          ? company.createdAt.toISOString()
+          : company?.createdAt ?? null,
+      deletedAt:
+        company?.deletedAt instanceof Date
+          ? company.deletedAt.toISOString()
+          : company?.deletedAt ?? null,
+      updatedAt:
+        company?.updatedAt instanceof Date
+          ? company.updatedAt.toISOString()
+          : company?.updatedAt ?? null,
+      ownerEmail: safeString(owner?.email) || null,
+      ownerFirstName: safeString(owner?.firstName) || null,
+      ownerLastName: safeString(owner?.lastName) || null,
+      usersCount,
+      projectsCount,
+      subscription: hasStoredCompanySubscription(company)
+        ? buildCompanySubscriptionResponse(company)
+        : null,
+    };
 
     return jsonResponse(origin, {
       ok: true,
+      company: {
+        ...companyPayload,
+        users: normalizedUsers,
+      },
+      users: normalizedUsers,
       data: {
         company: {
-          id: companyId,
-          name: safeString(company?.name),
-          slug: safeString(company?.slug),
+          ...companyPayload,
           notes: safeString(company?.notes),
-          createdAt:
-            company?.createdAt instanceof Date
-              ? company.createdAt.toISOString()
-              : company?.createdAt ?? null,
-          updatedAt:
-            company?.updatedAt instanceof Date
-              ? company.updatedAt.toISOString()
-              : company?.updatedAt ?? null,
-          subscription: buildCompanySubscriptionResponse(company),
-          userCount: await countCompanyUsers(db, companyId),
         },
-        users: users.map((user) => normalizeCompanyUser(user, companyId)),
+        users: normalizedUsers,
       },
     });
   } catch (e: any) {
@@ -157,7 +183,7 @@ export async function DELETE(
     const users = db.collection("users");
     const company = await companies.findOne({
       _id: companyObjectId,
-      deletedAt: { $exists: false },
+      ...buildActiveCompanyFilter(),
     });
 
     if (!company) {

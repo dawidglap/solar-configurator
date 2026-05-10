@@ -1,17 +1,20 @@
 import bcrypt from "bcryptjs";
 import { getCorsHeaders } from "@/lib/cors";
 import { getDb } from "@/lib/db";
-import { readSession, safeString } from "@/lib/api-session";
+import { mongoIdToString, readSession, safeString } from "@/lib/api-session";
 import {
+  buildActiveCompanyFilter,
+  buildCompanyIdVariants,
+  buildCompanySubscriptionResponse,
   buildDefaultOwnerPassword,
   buildNewCompanySubscriptionDefaults,
   buildUniqueCompanySlug,
   countCompanyUsers,
-  createCompanyBackfillMigration,
+  countCompanyProjects,
   enforceAdminRateLimit,
   ensureCompanySubscriptionIndexes,
+  hasStoredCompanySubscription,
   isValidCompanyPlan,
-  normalizeAdminCompanyListItem,
   parseFutureDateInput,
   requirePlatformSuperAdmin,
 } from "@/lib/subscription";
@@ -55,21 +58,68 @@ export async function GET(req: Request) {
   try {
     const db = await getDb();
     await ensureCompanySubscriptionIndexes(db);
-    await createCompanyBackfillMigration(db);
-
-    const companies = await db
-      .collection("companies")
-      .find({ deletedAt: { $exists: false } })
+    const companiesCol = db.collection("companies");
+    const usersCol = db.collection("users");
+    const companies = await companiesCol
+      .find(buildActiveCompanyFilter())
       .sort({ createdAt: -1 })
       .toArray();
 
-    const data = await Promise.all(
-      companies.map(async (company) =>
-        normalizeAdminCompanyListItem(company, await countCompanyUsers(db, String(company._id))),
-      ),
+    const normalizedCompanies = await Promise.all(
+      companies.map(async (company) => {
+        const companyId = mongoIdToString(company?._id);
+        const [usersCount, projectsCount, owner] = await Promise.all([
+          countCompanyUsers(db, companyId),
+          countCompanyProjects(db, companyId),
+          usersCol.findOne(
+            {
+              status: { $ne: "inactive" },
+              memberships: {
+                $elemMatch: {
+                  companyId: { $in: buildCompanyIdVariants(companyId) },
+                  role: "owner",
+                  status: "active",
+                },
+              },
+            },
+            {
+              projection: {
+                email: 1,
+                firstName: 1,
+                lastName: 1,
+              },
+            },
+          ),
+        ]);
+
+        return {
+          id: companyId,
+          name: safeString(company?.name),
+          createdAt:
+            company?.createdAt instanceof Date
+              ? company.createdAt.toISOString()
+              : company?.createdAt ?? null,
+          deletedAt:
+            company?.deletedAt instanceof Date
+              ? company.deletedAt.toISOString()
+              : company?.deletedAt ?? null,
+          ownerEmail: safeString(owner?.email) || null,
+          ownerFirstName: safeString(owner?.firstName) || null,
+          ownerLastName: safeString(owner?.lastName) || null,
+          usersCount,
+          projectsCount,
+          subscription: hasStoredCompanySubscription(company)
+            ? buildCompanySubscriptionResponse(company)
+            : null,
+        };
+      }),
     );
 
-    return jsonResponse(origin, { ok: true, data });
+    return jsonResponse(origin, {
+      ok: true,
+      companies: normalizedCompanies,
+      data: normalizedCompanies,
+    });
   } catch (e: any) {
     console.error("ADMIN COMPANIES GET ERROR:", e);
     return jsonResponse(origin, { ok: false, message: e?.message || "Unknown error" }, 500);
@@ -132,7 +182,7 @@ export async function POST(req: Request) {
       name,
       slug,
       plan,
-      subscriptionStatus: "active" as const,
+      subscriptionStatus: companyDefaults.subscriptionStatus,
       validUntil,
       maxUsers: Math.floor(maxUsers),
       notes: notes || companyDefaults.notes,
@@ -170,10 +220,21 @@ export async function POST(req: Request) {
     return jsonResponse(origin, {
       ok: true,
       data: {
-        company: normalizeAdminCompanyListItem(
-          { _id: companyRes.insertedId, ...companyDoc },
-          1,
-        ),
+        company: {
+          id: companyRes.insertedId.toString(),
+          name,
+          createdAt: now.toISOString(),
+          deletedAt: null,
+          ownerEmail,
+          ownerFirstName,
+          ownerLastName,
+          usersCount: 1,
+          projectsCount: 0,
+          subscription: buildCompanySubscriptionResponse({
+            ...companyDoc,
+            validUntil,
+          }),
+        },
         owner: {
           email: ownerEmail,
           defaultPassword,

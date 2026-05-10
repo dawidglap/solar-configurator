@@ -1,5 +1,6 @@
 import { getCorsHeaders } from "@/lib/cors";
 import { getDb } from "@/lib/db";
+import { buildActiveCompanyFilter, normalizeCompanySubscription } from "@/lib/subscription";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,8 +39,9 @@ export async function POST(req: Request) {
   try {
     const db = await getDb();
     const companies = db.collection("companies");
-    const docs = await companies.find({ deletedAt: { $exists: false } }).project({
+    const docs = await companies.find(buildActiveCompanyFilter()).project({
       subscriptionStatus: 1,
+      plan: 1,
       validUntil: 1,
     }).toArray();
 
@@ -47,10 +49,11 @@ export async function POST(req: Request) {
     let updated = 0;
 
     for (const company of docs) {
-      const validUntil = company?.validUntil instanceof Date ? company.validUntil : new Date(company?.validUntil);
-      if (Number.isNaN(validUntil.getTime())) continue;
+      const normalized = normalizeCompanySubscription(company);
+      const validUntil = normalized.validUntil;
 
-      let nextStatus: "active" | "expiring_soon" | "suspended" = "active";
+      let nextStatus: "trial" | "active" | "expiring_soon" | "suspended" =
+        normalized.subscriptionStatus === "trial" ? "trial" : "active";
       if (validUntil.getTime() <= now) {
         nextStatus = "suspended";
       } else if (validUntil.getTime() - now <= 7 * 24 * 60 * 60 * 1000) {

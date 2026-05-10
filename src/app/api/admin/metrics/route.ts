@@ -3,8 +3,10 @@ import { getDb } from "@/lib/db";
 import { readSession } from "@/lib/api-session";
 import {
   COMPANY_PLANS,
+  buildActiveCompanyFilter,
   buildActiveMembershipCompanyQuery,
   enforceAdminRateLimit,
+  normalizeCompanySubscription,
   requirePlatformSuperAdmin,
 } from "@/lib/subscription";
 import { activeDocumentFilter } from "@/lib/trash";
@@ -52,19 +54,28 @@ export async function GET(req: Request) {
     const planningsCol = db.collection("plannings");
 
     const companies = await companiesCol
-      .find({ deletedAt: { $exists: false } })
-      .project({ plan: 1, subscriptionStatus: 1, _id: 1 })
+      .find(buildActiveCompanyFilter())
+      .project({ plan: 1, subscriptionStatus: 1, validUntil: 1, _id: 1 })
       .toArray();
 
+    const now = Date.now();
+    const normalizedCompanies = companies.map((company) => normalizeCompanySubscription(company));
     const totalCompanies = companies.length;
-    const activeCompanies = companies.filter((company) => company.subscriptionStatus === "active").length;
-    const expiringSoon = companies.filter((company) => company.subscriptionStatus === "expiring_soon").length;
-    const suspendedCompanies = companies.filter((company) => company.subscriptionStatus === "suspended").length;
+    const activeCompanies = normalizedCompanies.filter((company) => company.subscriptionStatus === "active").length;
+    const suspendedCompanies = normalizedCompanies.filter((company) => company.subscriptionStatus === "suspended").length;
+    const expiredCompanies = normalizedCompanies.filter(
+      (company) => company.validUntil.getTime() <= now,
+    ).length;
+    const trialCompanies = normalizedCompanies.filter((company) => company.subscriptionStatus === "trial").length;
+    const expiringSoon = normalizedCompanies.filter((company) => {
+      const delta = company.validUntil.getTime() - now;
+      return delta > 0 && delta <= 14 * 24 * 60 * 60 * 1000;
+    }).length;
 
-    const byPlan = Object.fromEntries(COMPANY_PLANS.map((plan) => [plan, 0])) as Record<string, number>;
-    for (const company of companies) {
-      if (company.plan && byPlan[company.plan] !== undefined) {
-        byPlan[company.plan] += 1;
+    const planDistribution = Object.fromEntries(COMPANY_PLANS.map((plan) => [plan, 0])) as Record<string, number>;
+    for (const company of normalizedCompanies) {
+      if (company.plan && planDistribution[company.plan] !== undefined) {
+        planDistribution[company.plan] += 1;
       }
     }
 
@@ -93,11 +104,14 @@ export async function GET(req: Request) {
       data: {
         totalCompanies,
         activeCompanies,
-        expiringSoon,
         suspendedCompanies,
+        expiredCompanies,
+        trialCompanies,
         totalUsers,
         totalProjects,
-        byPlan,
+        expiringSoon,
+        planDistribution,
+        byPlan: planDistribution,
       },
     });
   } catch (e: any) {
