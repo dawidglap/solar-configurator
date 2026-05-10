@@ -2,6 +2,7 @@ import { MongoClient } from "mongodb";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import { enforceActiveSubscription } from "@/lib/subscription";
 
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
@@ -87,6 +88,8 @@ export async function POST(req: Request) {
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const users = db.collection("users");
 
     // check current user role (must be owner/admin)

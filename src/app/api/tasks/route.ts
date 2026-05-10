@@ -23,6 +23,7 @@ import {
   safeNumber,
   validateAssignedTaskUsers,
 } from "@/lib/tasks";
+import { enforceActiveSubscription } from "@/lib/subscription";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -130,6 +131,8 @@ export async function GET(req: Request) {
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     await ensureTaskIndexes(db);
     const tasks = db.collection("tasks");
     console.log("[tasks.list] request", {
@@ -199,6 +202,8 @@ export async function POST(req: Request) {
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     await ensureTaskIndexes(db);
     const tasks = db.collection("tasks");
     console.log("[tasks.create] target", {

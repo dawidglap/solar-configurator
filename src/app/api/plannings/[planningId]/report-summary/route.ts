@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { getDb } from "@/lib/db";
+import { enforceActiveSubscription } from "@/lib/subscription";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -1117,6 +1118,20 @@ export async function GET(
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) {
+      logReportSummaryRequest({
+        method: req.method,
+        pathname,
+        planningId,
+        userId,
+        companyId,
+        origin,
+        durationMs: Date.now() - startedAt,
+        status: 403,
+      });
+      return subscriptionError;
+    }
     const plannings = db.collection("plannings");
     const catalogItems = db.collection("catalogItems");
 

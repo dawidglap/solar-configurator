@@ -1,6 +1,7 @@
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import { enforceActiveSubscription } from "@/lib/subscription";
 
 export const runtime = "nodejs";
 
@@ -131,6 +132,8 @@ export async function POST(
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
 
     await ensureIndexes(db);
 

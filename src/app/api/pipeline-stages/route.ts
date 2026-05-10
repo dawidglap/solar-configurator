@@ -1,6 +1,7 @@
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import { enforceActiveSubscription } from "@/lib/subscription";
 
 export const runtime = "nodejs";
 
@@ -249,6 +250,8 @@ console.log("PIPELINE SESSION:", session);
     await client.connect();
 
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const companies = db.collection("companies");
 
     const company = await companies.findOne({
@@ -332,6 +335,8 @@ export async function PUT(req: Request) {
     await client.connect();
 
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const companies = db.collection("companies");
     const plannings = db.collection("plannings");
 

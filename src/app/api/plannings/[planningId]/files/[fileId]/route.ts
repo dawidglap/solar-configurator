@@ -8,6 +8,7 @@ import {
   getPlanningFilesCollection,
   getPlanningFileDbAndSession,
 } from "@/lib/planningFiles";
+import { enforceActiveSubscription } from "@/lib/subscription";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,8 @@ export async function DELETE(req: Request, { params }: Params) {
   if (!context.ok) return context.response;
 
   const { origin, db, session, companyId } = context;
+  const subscriptionError = await enforceActiveSubscription(db, origin, session);
+  if (subscriptionError) return subscriptionError;
   const { planningId, fileId } = await params;
   const permissions = getPlanningFilePermissions(session);
 

@@ -3,6 +3,7 @@ import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { getDb } from "@/lib/db";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import { activeDocumentFilter, buildSoftDeleteFields } from "@/lib/trash";
 import {
   normalizeCustomerDoc,
@@ -267,6 +268,8 @@ export async function GET(
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const customers = db.collection("customers");
 
     const doc = await customers.findOne(
@@ -426,6 +429,8 @@ export async function PATCH(
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const customers = db.collection("customers");
 
     const res = await customers.updateOne(
@@ -526,6 +531,8 @@ export async function DELETE(
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
 
     const customers = db.collection("customers");
     const plannings = db.collection("plannings");

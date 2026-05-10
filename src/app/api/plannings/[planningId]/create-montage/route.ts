@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   jsonResponse,
   mongoIdToString,
@@ -56,6 +57,8 @@ export async function POST(
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     await ensureMontageIndexes(db);
 
     const planning = await assertCompanyScopedPlanning(db, planningId, activeCompanyId);
@@ -150,4 +153,3 @@ export async function POST(
     );
   }
 }
-

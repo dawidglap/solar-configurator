@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db";
 import { readSession, safeString } from "@/lib/api-session";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   TRASH_TYPES,
   deletedDocumentFilter,
@@ -72,6 +73,8 @@ export async function GET(req: Request) {
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     const companyId = String(session.activeCompanyId);
 
     const groups = await Promise.all(

@@ -11,6 +11,7 @@ import {
   isUserInstallerForCompany,
   normalizeInstaller,
 } from "@/lib/montages";
+import { enforceActiveSubscription } from "@/lib/subscription";
 
 export const runtime = "nodejs";
 
@@ -43,6 +44,8 @@ export async function GET(req: Request) {
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     await ensureMontageIndexes(db);
 
     const users = getUsersCollection(db);

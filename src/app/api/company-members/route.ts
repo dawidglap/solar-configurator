@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import { readSession } from "@/lib/api-session";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   ensureTaskIndexes,
   isActiveCompanyMember,
@@ -42,6 +43,8 @@ export async function GET(req: Request) {
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     await ensureTaskIndexes(db);
 
     const docs = await db
@@ -64,4 +67,3 @@ export async function GET(req: Request) {
     );
   }
 }
-

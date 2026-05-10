@@ -3,6 +3,7 @@ import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { defaultStoreData } from "@/components_v2/state/defaultStoreData";
 import { getCorsHeaders } from "@/lib/cors";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import { activeDocumentFilter } from "@/lib/trash";
 import {
   buildInitialStageHistoryEntry,
@@ -179,6 +180,8 @@ export async function POST(req: Request) {
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const plannings = db.collection("plannings");
     const customers = db.collection("customers");
 
@@ -321,6 +324,8 @@ export async function GET(req: Request) {
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const plannings = db.collection("plannings");
     await ensurePlanningIndexes(db);
     await ensurePlanningStageHistoryMigration(db);

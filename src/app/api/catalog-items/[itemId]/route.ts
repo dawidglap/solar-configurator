@@ -2,6 +2,7 @@
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import { enforceActiveSubscription } from "@/lib/subscription";
 
 export const runtime = "nodejs";
 
@@ -142,6 +143,8 @@ export async function GET(
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const collection = db.collection("catalogItems");
 
     const doc = await collection.findOne({
@@ -224,6 +227,8 @@ export async function PATCH(
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const collection = db.collection("catalogItems");
 
     const res = await collection.updateOne(

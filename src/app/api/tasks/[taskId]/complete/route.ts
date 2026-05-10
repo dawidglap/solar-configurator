@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import { readSession, toObjectIdOrNull, safeString } from "@/lib/api-session";
 import { activeDocumentFilter } from "@/lib/trash";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   ensureTaskIndexes,
   getSessionUserId,
@@ -58,6 +59,8 @@ export async function POST(
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     await ensureTaskIndexes(db);
 
     const tasks = db.collection("tasks");

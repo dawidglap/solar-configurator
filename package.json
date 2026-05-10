@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test:checklist": "npx tsx scripts/test-checklist-patch.ts",
+    "backfill:company-subscriptions": "npx tsx scripts/backfill-company-subscriptions.ts",
     "audit:customer-duplicates": "node scripts/audit-customer-duplicates.js",
     "audit:customer-duplicates:mark": "node scripts/audit-customer-duplicates.js --mark",
     "ensure:customer-indexes": "node scripts/ensure-customer-indexes.js"

@@ -5,6 +5,15 @@ import { getCorsHeaders } from "@/lib/cors";
 export type SessionPayload = {
   userId?: string | null;
   activeCompanyId?: string | null;
+  activeRole?: string | null;
+  role?: string | null;
+  activeCompanyRole?: string | null;
+  membershipRole?: string | null;
+  isPlatformSuperAdmin?: boolean;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  name?: string | null;
   [key: string]: unknown;
 };
 
@@ -68,4 +77,3 @@ export function jsonResponse(origin: string | null, body: any, status = 200) {
     },
   });
 }
-

@@ -29,6 +29,81 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Manual Subscription Management API
+
+The backend now supports manual subscription management for platform super admins.
+
+### New endpoints
+
+- `GET /api/admin/companies`
+- `POST /api/admin/companies`
+- `GET /api/admin/companies/:id`
+- `PATCH /api/admin/companies/:id/subscription`
+- `DELETE /api/admin/companies/:id`
+- `GET /api/admin/metrics`
+- `POST /api/cron/subscription-status`
+
+### Curl examples
+
+List companies:
+
+```bash
+curl 'https://planner.helionic.ch/api/admin/companies' \
+  -H 'Origin: https://app.helionic.ch' \
+  --cookie 'session=YOUR_SESSION_COOKIE'
+```
+
+Create a company:
+
+```bash
+curl 'https://planner.helionic.ch/api/admin/companies' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: https://app.helionic.ch' \
+  --cookie 'session=YOUR_SESSION_COOKIE' \
+  -d '{
+    "name": "Neue Firma AG",
+    "ownerEmail": "owner@neuefirma.ch",
+    "ownerFirstName": "Max",
+    "ownerLastName": "Muster",
+    "plan": "professional",
+    "validUntil": "2027-05-10T00:00:00.000Z",
+    "maxUsers": 20,
+    "notes": "Manuell angelegt"
+  }'
+```
+
+Patch subscription:
+
+```bash
+curl 'https://planner.helionic.ch/api/admin/companies/COMPANY_ID/subscription' \
+  -X PATCH \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: https://app.helionic.ch' \
+  --cookie 'session=YOUR_SESSION_COOKIE' \
+  -d '{
+    "plan": "business",
+    "validUntil": "2027-12-31T00:00:00.000Z",
+    "maxUsers": 50
+  }'
+```
+
+Run subscription status cron:
+
+```bash
+curl 'https://planner.helionic.ch/api/cron/subscription-status' \
+  -X POST \
+  -H 'x-cron-secret: YOUR_CRON_SECRET'
+```
+
+### Migration
+
+Backfill existing companies with subscription defaults:
+
+```bash
+npm run backfill:company-subscriptions
+```
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

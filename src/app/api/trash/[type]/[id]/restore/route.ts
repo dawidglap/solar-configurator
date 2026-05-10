@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db";
 import { readSession } from "@/lib/api-session";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   buildRestoreUnsetFields,
   getCollectionForType,
@@ -57,6 +58,8 @@ export async function POST(
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     const collection = getCollectionForType(db, type);
 
     const result = await collection.updateOne(filter, {

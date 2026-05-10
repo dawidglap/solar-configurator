@@ -11,6 +11,7 @@ import {
   splitPlanningFilePublicIdAndFormat,
 } from "@/lib/planningFiles";
 import { safeString } from "@/lib/api-session";
+import { enforceActiveSubscription } from "@/lib/subscription";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,7 +61,9 @@ export async function GET(req: Request, { params }: Params) {
   const context = await getPlanningFileDbAndSession(req);
   if (!context.ok) return context.response;
 
-  const { origin, db, companyId } = context;
+  const { origin, db, companyId, session } = context;
+  const subscriptionError = await enforceActiveSubscription(db, origin, session);
+  if (subscriptionError) return subscriptionError;
   const { planningId, fileId } = await params;
 
   if (!ObjectId.isValid(planningId) || !ObjectId.isValid(fileId)) {

@@ -1,6 +1,7 @@
 import { MongoClient } from "mongodb";
 import bcrypt from "bcryptjs";
 import { getCorsHeaders } from "@/lib/cors";
+import { buildNewCompanySubscriptionDefaults, buildUniqueCompanySlug } from "@/lib/subscription";
 
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
@@ -44,10 +45,14 @@ export async function POST(req: Request) {
       }, { status: 400, headers: getCorsHeaders(origin) });
     }
 
+    const now = new Date();
+    const subscriptionDefaults = buildNewCompanySubscriptionDefaults(now);
     const companyRes = await companies.insertOne({
       name: COMPANY_NAME,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      slug: await buildUniqueCompanySlug(db, COMPANY_NAME),
+      ...subscriptionDefaults,
+      createdAt: now,
+      updatedAt: now,
     });
 
     const passwordHash = await bcrypt.hash(OWNER_PASSWORD, 10);
@@ -55,11 +60,13 @@ export async function POST(req: Request) {
     const userRes = await users.insertOne({
       email: OWNER_EMAIL,
       passwordHash,
+      mustChangePassword: false,
+      status: "active",
       memberships: [
-        { companyId: companyRes.insertedId, role: "owner", status: "active" },
+        { companyId: companyRes.insertedId, role: "owner", status: "active", isDefault: true },
       ],
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: now,
+      updatedAt: now,
     });
 
     return Response.json({

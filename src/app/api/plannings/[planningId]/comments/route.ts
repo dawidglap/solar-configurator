@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import { readSession, safeString } from "@/lib/api-session";
 import { activeDocumentFilter } from "@/lib/trash";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   buildPlanningComment,
   normalizePlanningComments,
@@ -60,6 +61,8 @@ export async function GET(req: Request, { params }: Params) {
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     const planning = await db.collection("plannings").findOne({
       _id: new ObjectId(planningId),
       companyId: String(session.activeCompanyId),
@@ -106,6 +109,8 @@ export async function POST(req: Request, { params }: Params) {
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     const comment = buildPlanningComment(text, session as any);
     const result = await db.collection("plannings").updateOne(
       {

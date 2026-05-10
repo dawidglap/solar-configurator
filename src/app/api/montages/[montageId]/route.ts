@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   jsonResponse,
   mongoIdToString,
@@ -110,6 +111,8 @@ export async function GET(
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     await ensureMontageIndexes(db);
 
     const doc = await getMontagesCollection(db).findOne({
@@ -165,6 +168,8 @@ export async function PATCH(
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     await ensureMontageIndexes(db);
 
     const existing = await getMontagesCollection(db).findOne({
@@ -344,6 +349,8 @@ export async function DELETE(
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     await ensureMontageIndexes(db);
 
     const result = await getMontagesCollection(db).deleteOne({

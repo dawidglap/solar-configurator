@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import { readSession, safeString } from "@/lib/api-session";
 import { activeDocumentFilter } from "@/lib/trash";
 import { jsonResponse as taskJsonResponse, noStoreHeaders } from "@/lib/tasks";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   buildDefaultChecklist,
   ensurePlanningChecklistMigration,
@@ -109,6 +110,8 @@ export async function PATCH(req: Request, { params }: Params) {
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     const checklist = await ensureChecklistOnPlanning(
       db,
       planningId,

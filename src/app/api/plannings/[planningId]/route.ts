@@ -2,6 +2,7 @@
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import { activeDocumentFilter, buildSoftDeleteFields } from "@/lib/trash";
 import {
   buildInitialStageHistoryEntry,
@@ -381,6 +382,8 @@ export async function PATCH(
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const plannings = db.collection("plannings");
     const customers = db.collection("customers");
     await ensurePlanningIndexes(db);
@@ -737,6 +740,8 @@ export async function GET(
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const plannings = db.collection("plannings");
     await ensurePlanningIndexes(db);
     await ensurePlanningStageHistoryMigration(db);
@@ -818,6 +823,8 @@ export async function DELETE(
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const plannings = db.collection("plannings");
 
     const res = await plannings.updateOne(

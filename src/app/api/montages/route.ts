@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   jsonResponse,
   readSession,
@@ -191,6 +192,8 @@ export async function GET(req: Request) {
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     await ensureMontageIndexes(db);
 
     const docs = await getMontagesCollection(db)
@@ -272,6 +275,8 @@ export async function POST(req: Request) {
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     await ensureMontageIndexes(db);
 
     const planning = await assertCompanyScopedPlanning(db, planningId, activeCompanyId);

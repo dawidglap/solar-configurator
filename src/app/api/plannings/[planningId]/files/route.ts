@@ -14,6 +14,7 @@ import {
   parseAndUploadPlanningFile,
 } from "@/lib/planningFiles";
 import { safeString } from "@/lib/api-session";
+import { enforceActiveSubscription } from "@/lib/subscription";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,8 @@ export async function GET(req: Request, { params }: Params) {
   if (!context.ok) return context.response;
 
   const { origin, db, session, companyId } = context;
+  const subscriptionError = await enforceActiveSubscription(db, origin, session);
+  if (subscriptionError) return subscriptionError;
   const { planningId } = await params;
   const permissions = getPlanningFilePermissions(session);
 
@@ -94,6 +97,8 @@ export async function POST(req: Request, { params }: Params) {
   if (!context.ok) return context.response;
 
   const { origin, db, session, companyId } = context;
+  const subscriptionError = await enforceActiveSubscription(db, origin, session);
+  if (subscriptionError) return subscriptionError;
   const { planningId } = await params;
   const permissions = getPlanningFilePermissions(session);
 

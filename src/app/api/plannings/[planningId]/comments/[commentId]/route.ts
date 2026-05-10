@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import { readSession, safeString } from "@/lib/api-session";
 import { activeDocumentFilter } from "@/lib/trash";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import { canDeletePlanningComment, normalizePlanningComments } from "@/lib/plannings";
 import { isAdminLikeRole } from "@/lib/tasks";
 
@@ -73,6 +74,8 @@ export async function DELETE(req: Request, { params }: Params) {
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
     const planning = await db.collection("plannings").findOne({
       _id: new ObjectId(planningId),
       companyId: String(session.activeCompanyId),

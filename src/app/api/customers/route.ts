@@ -10,6 +10,7 @@ import {
   normalizeStoredCustomerString,
   safeCustomerString,
 } from "@/lib/customers";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import { activeDocumentFilter } from "@/lib/trash";
 
 export const runtime = "nodejs";
@@ -84,6 +85,8 @@ export async function GET(req: Request) {
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const customers = db.collection("customers");
     await ensureCustomerIndexes(db);
 
@@ -212,6 +215,8 @@ export async function POST(req: Request) {
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const customers = db.collection("customers");
     await ensureCustomerIndexes(db);
 

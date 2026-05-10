@@ -4,10 +4,13 @@ export type Company = {
   name: string;
   slug: string;
 
-  subscriptionStatus: "active" | "trial" | "suspended" | "cancelled";
-  plan: "free" | "pro" | "enterprise";
+  subscriptionStatus: "active" | "expiring_soon" | "suspended";
+  plan: "starter" | "professional" | "business" | "enterprise";
 
   maxUsers: number;
+  validUntil: Date;
+  notes: string;
+  deletedAt?: Date;
 
   createdAt: Date;
   updatedAt: Date;

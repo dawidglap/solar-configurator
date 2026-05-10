@@ -2,6 +2,7 @@ import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { PDFDocument } from "pdf-lib";
 import { getCorsHeaders } from "@/lib/cors";
+import { enforceActiveSubscription } from "@/lib/subscription";
 import { addCoverPage } from "./pdf/cover-page";
 import { addDetailPages } from "./pdf/detail-pages";
 import { addProjectOverviewPage } from "./pdf/project-overview-page";
@@ -168,6 +169,8 @@ export async function POST(
   try {
     await client.connect();
     const db = client.db();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
 
     const plannings = db.collection("plannings");
     const companies = db.collection("companies");
