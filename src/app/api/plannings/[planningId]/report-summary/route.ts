@@ -1,11 +1,32 @@
 // src/app/api/plannings/[planningId]/report-summary/route.ts
-import { MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import { getDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+const REPORT_SUMMARY_CACHE_TTL_MS = 120_000;
+const REPORT_SUMMARY_RATE_GUARD_MS = 1_500;
+
+// Vercel Observability showed repeated loops on this route too.
+// Protect it with:
+// - browser-private cache
+// - per-instance micro-cache
+// - per-user/planning rate guard
+const reportSummaryCache = new Map<
+  string,
+  {
+    body: {
+      ok: true;
+      planningId: string;
+      reportSummary: ReturnType<typeof buildReportSummary>;
+    };
+    expiresAt: number;
+  }
+>();
+const reportSummaryLastRequestAt = new Map<string, number>();
 
 /* ----------------------------- Session helpers ---------------------------- */
 
@@ -84,6 +105,71 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
       ...getCorsHeaders(origin),
     },
   });
+}
+
+function getDebugLoggingEnabled() {
+  return process.env.NODE_ENV === "development" || process.env.API_DEBUG === "true";
+}
+
+function getCachedReportSummaryHeaders(origin: string | null) {
+  return {
+    "Content-Type": "application/json",
+    ...getCorsHeaders(origin),
+    "Cache-Control": "private, max-age=300, stale-while-revalidate=600",
+    Vary: "Origin, Cookie",
+  };
+}
+
+function jsonCachedReportSummaryResponse(origin: string | null, body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: getCachedReportSummaryHeaders(origin),
+  });
+}
+
+function normalizeCompanyId(value: unknown) {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if ((value as any)?.$oid) return String((value as any).$oid);
+  if (typeof (value as any)?.toString === "function") return (value as any).toString();
+  return "";
+}
+
+function buildPlanningCompanyFilter(companyId: string) {
+  const objectId = toObjectIdOrNull(companyId);
+  return objectId ? { $in: [companyId, objectId] } : companyId;
+}
+
+function getCacheKey(companyId: string, planningId: string) {
+  return `${companyId}::${planningId}`;
+}
+
+function getRateGuardKey(companyId: string, userId: string, planningId: string) {
+  return `${companyId}::${userId || "anonymous"}::${planningId}`;
+}
+
+function pruneReportSummaryCache(now = Date.now()) {
+  for (const [key, value] of reportSummaryCache.entries()) {
+    if (value.expiresAt <= now) {
+      reportSummaryCache.delete(key);
+    }
+  }
+}
+
+function logReportSummaryRequest(args: {
+  method: string;
+  pathname: string;
+  planningId: string;
+  userId: string;
+  companyId: string;
+  origin: string | null;
+  durationMs: number;
+  status: number;
+}) {
+  if (!getDebugLoggingEnabled()) return;
+  console.log(
+    `[API] ${args.method} ${args.pathname} planning=${args.planningId} company=${args.companyId || "-"} user=${args.userId || "-"} origin=${args.origin || "-"} duration=${args.durationMs}ms status=${args.status}`,
+  );
 }
 
 function parseMoneyLike(value: any, fallback = 0) {
@@ -905,79 +991,204 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ planningId: string }> }
 ) {
+  const startedAt = Date.now();
   const origin = req.headers.get("origin");
   const { planningId } = await params;
+  const pathname = new URL(req.url).pathname;
 
-  const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
-  if (!uri) {
-    return jsonResponse(origin, { ok: false, error: "Missing MONGODB_URI" }, 500);
-  }
-
   if (!secret) {
-    return jsonResponse(origin, { ok: false, error: "Missing SESSION_SECRET" }, 500);
+    const status = 500;
+    logReportSummaryRequest({
+      method: req.method,
+      pathname,
+      planningId,
+      userId: "",
+      companyId: "",
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonResponse(origin, { ok: false, error: "Missing SESSION_SECRET" }, status);
   }
 
   const session = readSession(req, secret);
   if (!session) {
-    return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
+    const status = 401;
+    logReportSummaryRequest({
+      method: req.method,
+      pathname,
+      planningId,
+      userId: "",
+      companyId: "",
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonResponse(origin, { ok: false, error: "Not logged in" }, status);
+  }
+  const companyId = normalizeCompanyId((session as any).activeCompanyId);
+  const userId = normalizeCompanyId((session as any).userId);
+  if (!companyId) {
+    const status = 401;
+    logReportSummaryRequest({
+      method: req.method,
+      pathname,
+      planningId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonResponse(origin, { ok: false, error: "No active company" }, status);
   }
 
   if (!planningId) {
-    return jsonResponse(origin, { ok: false, error: "Missing planningId" }, 400);
+    const status = 400;
+    logReportSummaryRequest({
+      method: req.method,
+      pathname,
+      planningId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonResponse(origin, { ok: false, error: "Missing planningId" }, status);
   }
 
   const planningObjectId = toObjectIdOrNull(planningId);
   if (!planningObjectId) {
-    return jsonResponse(origin, { ok: false, error: "Invalid planningId" }, 400);
+    const status = 400;
+    logReportSummaryRequest({
+      method: req.method,
+      pathname,
+      planningId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonResponse(origin, { ok: false, error: "Invalid planningId" }, status);
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
+  const cacheKey = getCacheKey(companyId, planningId);
+  const rateGuardKey = getRateGuardKey(companyId, userId, planningId);
+  const now = Date.now();
+  pruneReportSummaryCache(now);
+  const cached = reportSummaryCache.get(cacheKey);
+  const lastRequestedAt = reportSummaryLastRequestAt.get(rateGuardKey) ?? 0;
+
+  if (cached && cached.expiresAt > now && now - lastRequestedAt < REPORT_SUMMARY_RATE_GUARD_MS) {
+    reportSummaryLastRequestAt.set(rateGuardKey, now);
+    const status = 200;
+    logReportSummaryRequest({
+      method: req.method,
+      pathname,
+      planningId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonCachedReportSummaryResponse(origin, cached.body, status);
+  }
+
+  if (cached && cached.expiresAt > now) {
+    reportSummaryLastRequestAt.set(rateGuardKey, now);
+    const status = 200;
+    logReportSummaryRequest({
+      method: req.method,
+      pathname,
+      planningId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonCachedReportSummaryResponse(origin, cached.body, status);
+  }
 
   try {
-    await client.connect();
-
-    const db = client.db();
+    const db = await getDb();
     const plannings = db.collection("plannings");
     const catalogItems = db.collection("catalogItems");
 
     const doc = await plannings.findOne({
       _id: planningObjectId,
-      companyId: session.activeCompanyId,
+      companyId: buildPlanningCompanyFilter(companyId),
     });
 
     if (!doc) {
-      return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
+      const status = 404;
+      logReportSummaryRequest({
+        method: req.method,
+        pathname,
+        planningId,
+        userId,
+        companyId,
+        origin,
+        durationMs: Date.now() - startedAt,
+        status,
+      });
+      return jsonCachedReportSummaryResponse(origin, { ok: false, error: "Planning not found" }, status);
     }
 
     const catalogDocs = await catalogItems
       .find({
-        companyId: session.activeCompanyId,
+        companyId: buildPlanningCompanyFilter(companyId),
         isActive: true,
       })
       .toArray();
 
     const reportSummary = buildReportSummary(doc, catalogDocs);
-
-    return jsonResponse(
+    const body = {
+      ok: true as const,
+      planningId: String((doc as any)._id),
+      reportSummary,
+    };
+    reportSummaryCache.set(cacheKey, {
+      body,
+      expiresAt: now + REPORT_SUMMARY_CACHE_TTL_MS,
+    });
+    reportSummaryLastRequestAt.set(rateGuardKey, now);
+    const status = 200;
+    logReportSummaryRequest({
+      method: req.method,
+      pathname,
+      planningId,
+      userId,
+      companyId,
       origin,
-      {
-        ok: true,
-        planningId: String((doc as any)._id),
-        reportSummary,
-      },
-      200
-    );
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+
+    return jsonCachedReportSummaryResponse(origin, body, status);
   } catch (e: any) {
     console.error("GET REPORT SUMMARY ERROR:", e);
+    const status = 500;
+    logReportSummaryRequest({
+      method: req.method,
+      pathname,
+      planningId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
 
     return jsonResponse(
       origin,
       { ok: false, error: e?.message ?? "Unknown error" },
-      500
+      status
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }
