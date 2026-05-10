@@ -2,6 +2,7 @@
 import { MongoClient, ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import { getDb } from "@/lib/db";
 import { activeDocumentFilter, buildSoftDeleteFields } from "@/lib/trash";
 import {
   normalizeCustomerDoc,
@@ -11,6 +12,23 @@ import {
 } from "@/lib/customers";
 
 export const runtime = "nodejs";
+const CUSTOMER_DETAIL_CACHE_TTL_MS = 120_000;
+const CUSTOMER_DETAIL_RATE_GUARD_MS = 1_500;
+
+// Vercel Observability showed ~30k invocations on this route in 12h.
+// Keep this endpoint lean and resilient against frontend loops by using:
+// - lightweight projections
+// - browser-private caching
+// - per-instance micro-cache
+// - per-user/customer rate guard
+const customerDetailCache = new Map<
+  string,
+  {
+    body: ReturnType<typeof normalizeCustomerDoc>;
+    expiresAt: number;
+  }
+>();
+const customerDetailLastRequestAt = new Map<string, number>();
 
 /* ----------------------------- Session helpers ---------------------------- */
 
@@ -65,6 +83,63 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
   });
 }
 
+function getDebugLoggingEnabled() {
+  return process.env.NODE_ENV === "development" || process.env.API_DEBUG === "true";
+}
+
+function getCachedCustomerHeaders(origin: string | null) {
+  return {
+    "Content-Type": "application/json",
+    ...getCorsHeaders(origin),
+    "Cache-Control": "private, max-age=300, stale-while-revalidate=600",
+    Vary: "Origin, Cookie",
+  };
+}
+
+function jsonCachedCustomerResponse(origin: string | null, body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: getCachedCustomerHeaders(origin),
+  });
+}
+
+function buildCustomerCompanyFilter(companyId: string) {
+  const objectId = toObjectIdOrNull(companyId);
+  return objectId ? { $in: [companyId, objectId] } : companyId;
+}
+
+function getCacheKey(companyId: string, customerId: string) {
+  return `${companyId}::${customerId}`;
+}
+
+function getRateGuardKey(companyId: string, userId: string, customerId: string) {
+  return `${companyId}::${userId || "anonymous"}::${customerId}`;
+}
+
+function pruneCustomerDetailCache(now = Date.now()) {
+  for (const [key, value] of customerDetailCache.entries()) {
+    if (value.expiresAt <= now) {
+      customerDetailCache.delete(key);
+    }
+  }
+}
+
+function logCustomerDetailRequest(args: {
+  method: string;
+  pathname: string;
+  customerId: string;
+  userId: string;
+  companyId: string;
+  origin: string | null;
+  durationMs: number;
+  status: number;
+}) {
+  if (!getDebugLoggingEnabled()) return;
+  console.log(
+    `[API] ${args.method} ${args.pathname} customer=${args.customerId} company=${args.companyId || "-"} user=${args.userId || "-"} origin=${args.origin || "-"} duration=${args.durationMs}ms status=${args.status}`,
+  );
+}
+
 /* -------------------------------- OPTIONS -------------------------------- */
 
 export async function OPTIONS(req: Request) {
@@ -81,42 +156,129 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ customerId: string }> },
 ) {
+  const startedAt = Date.now();
   const origin = req.headers.get("origin");
   const { customerId } = await params;
+  const pathname = new URL(req.url).pathname;
 
-  const uri = process.env.MONGODB_URI;
   const secret = process.env.SESSION_SECRET;
 
-  if (!uri || !secret) {
-    return jsonResponse(origin, { ok: false, error: "Missing env" }, 500);
+  if (!secret) {
+    const status = 500;
+    logCustomerDetailRequest({
+      method: req.method,
+      pathname,
+      customerId,
+      userId: "",
+      companyId: "",
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonResponse(origin, { ok: false, error: "Missing env" }, status);
   }
 
   const session = readSession(req, secret);
   if (!session) {
-    return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
+    const status = 401;
+    logCustomerDetailRequest({
+      method: req.method,
+      pathname,
+      customerId,
+      userId: "",
+      companyId: "",
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonResponse(origin, { ok: false, error: "Not logged in" }, status);
+  }
+  const companyId = safeString(session.activeCompanyId);
+  const userId = safeString(session.userId);
+  if (!companyId) {
+    const status = 401;
+    logCustomerDetailRequest({
+      method: req.method,
+      pathname,
+      customerId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonResponse(origin, { ok: false, error: "No active company" }, status);
   }
 
   const customerObjectId = toObjectIdOrNull(customerId);
   if (!customerObjectId) {
-    return jsonResponse(origin, { ok: false, error: "Invalid customerId" }, 400);
+    const status = 400;
+    logCustomerDetailRequest({
+      method: req.method,
+      pathname,
+      customerId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonResponse(origin, { ok: false, error: "Invalid customerId" }, status);
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
+  const cacheKey = getCacheKey(companyId, customerId);
+  const rateGuardKey = getRateGuardKey(companyId, userId, customerId);
+  const now = Date.now();
+  pruneCustomerDetailCache(now);
+  const cached = customerDetailCache.get(cacheKey);
+  const lastRequestedAt = customerDetailLastRequestAt.get(rateGuardKey) ?? 0;
+
+  if (cached && cached.expiresAt > now && now - lastRequestedAt < CUSTOMER_DETAIL_RATE_GUARD_MS) {
+    customerDetailLastRequestAt.set(rateGuardKey, now);
+    const status = 200;
+    logCustomerDetailRequest({
+      method: req.method,
+      pathname,
+      customerId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonCachedCustomerResponse(origin, { ok: true, customer: cached.body }, status);
+  }
+
+  if (cached && cached.expiresAt > now) {
+    customerDetailLastRequestAt.set(rateGuardKey, now);
+    const status = 200;
+    logCustomerDetailRequest({
+      method: req.method,
+      pathname,
+      customerId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+    return jsonCachedCustomerResponse(origin, { ok: true, customer: cached.body }, status);
+  }
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const customers = db.collection("customers");
 
     const doc = await customers.findOne(
       {
         _id: customerObjectId,
-        companyId: session.activeCompanyId,
+        companyId: buildCustomerCompanyFilter(companyId),
         ...activeDocumentFilter(),
       },
       {
         projection: {
           _id: 1,
+          companyId: 1,
           type: 1,
           name: 1,
           firstName: 1,
@@ -133,22 +295,61 @@ export async function GET(
     );
 
     if (!doc) {
-      return jsonResponse(origin, { ok: false, error: "Customer not found" }, 404);
+      const status = 404;
+      logCustomerDetailRequest({
+        method: req.method,
+        pathname,
+        customerId,
+        userId,
+        companyId,
+        origin,
+        durationMs: Date.now() - startedAt,
+        status,
+      });
+      return jsonCachedCustomerResponse(origin, { ok: false, error: "Customer not found" }, status);
     }
 
-    return jsonResponse(origin, {
-      ok: true,
-      customer: normalizeCustomerDoc(doc),
+    const customer = normalizeCustomerDoc(doc);
+    customerDetailCache.set(cacheKey, {
+      body: customer,
+      expiresAt: now + CUSTOMER_DETAIL_CACHE_TTL_MS,
     });
+    customerDetailLastRequestAt.set(rateGuardKey, now);
+
+    const status = 200;
+    logCustomerDetailRequest({
+      method: req.method,
+      pathname,
+      customerId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
+
+    return jsonCachedCustomerResponse(origin, {
+      ok: true,
+      customer,
+    }, status);
   } catch (e: any) {
     console.error("GET CUSTOMER ERROR:", e);
+    const status = 500;
+    logCustomerDetailRequest({
+      method: req.method,
+      pathname,
+      customerId,
+      userId,
+      companyId,
+      origin,
+      durationMs: Date.now() - startedAt,
+      status,
+    });
     return jsonResponse(
       origin,
       { ok: false, error: e?.message ?? "Unknown error" },
-      500
+      status
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }
 
@@ -289,6 +490,7 @@ export async function PATCH(
       500
     );
   } finally {
+    customerDetailCache.delete(getCacheKey(safeString(session.activeCompanyId), customerId));
     await client.close().catch(() => {});
   }
 }
@@ -369,6 +571,7 @@ export async function DELETE(
       500
     );
   } finally {
+    customerDetailCache.delete(getCacheKey(safeString(session.activeCompanyId), customerId));
     await client.close().catch(() => {});
   }
 }

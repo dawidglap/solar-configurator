@@ -24,6 +24,7 @@ export function normalizeStoredCustomerEmail(v: unknown) {
 export function normalizeCustomerDoc(doc: any) {
   return {
     id: String(doc._id),
+    companyId: safeCustomerString(doc.companyId),
     type: doc.type ?? "private",
     name:
       safeCustomerString(doc.name) ||
