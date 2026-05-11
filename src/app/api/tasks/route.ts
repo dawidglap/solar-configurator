@@ -30,7 +30,8 @@ import { enforceActiveSubscription } from "@/lib/subscription";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-const TASKS_DEBUG_VERSION = "tasks-create-2026-05-09-v2";
+const TASKS_CREATE_DEBUG_VERSION = "tasks-create-2026-05-09-v2";
+const TASKS_GET_DEBUG_VERSION = "tasks-get-2026-05-11-v1";
 
 function normalizeActiveCompanyId(value: unknown) {
   return mongoIdToString(value) || safeString(value);
@@ -71,6 +72,12 @@ export async function GET(req: Request) {
   const currentUserId = getSessionUserId(session);
   const permissions = getTaskPermissions(session);
   const currentUserIdVariants = currentUserId ? buildIdVariants(currentUserId) : [];
+  const role =
+    safeString((session as any)?.activeCompanyRole) ||
+    safeString((session as any)?.activeRole) ||
+    safeString((session as any)?.role) ||
+    safeString((session as any)?.membershipRole) ||
+    "";
 
   if (!permissions.canViewAll && !currentUserId) {
     return jsonResponse(
@@ -88,13 +95,22 @@ export async function GET(req: Request) {
   const q = safeString(url.searchParams.get("q"));
   const limit = Math.min(Math.max(safeNumber(url.searchParams.get("limit"), 200), 1), 500);
 
-  const filter: Record<string, any> = {
-    companyId: buildCompanyIdFilter(activeCompanyId),
-    ...activeDocumentFilter(),
+  const query: Record<string, any> = {
+    $and: [
+      {
+        $or: [
+          { companyId: activeCompanyId },
+          ...(toObjectIdOrNull(activeCompanyId)
+            ? [{ companyId: toObjectIdOrNull(activeCompanyId) }]
+            : []),
+        ],
+      },
+      activeDocumentFilter(),
+    ],
   };
 
   if (!permissions.canViewAll) {
-    filter.$and = [
+    query.$and.push(
       {
         $or: [
           { assignedToUserIds: { $in: currentUserIdVariants } },
@@ -102,35 +118,38 @@ export async function GET(req: Request) {
           { createdByUserId: { $in: currentUserIdVariants } },
         ],
       },
-    ];
+    );
   } else if (assignedToUserId) {
-    filter.$and = [
+    query.$and.push(
       {
         $or: [
           { assignedToUserIds: { $in: buildIdVariants(assignedToUserId) } },
           { assignedToUserId: { $in: buildIdVariants(assignedToUserId) } },
         ],
       },
-    ];
+    );
   }
 
-  if (planningId) filter.planningId = { $in: buildIdVariants(planningId) };
-  if (customerId) filter.customerId = { $in: buildIdVariants(customerId) };
-  if (status) filter.status = status;
+  if (planningId) {
+    query.$and.push({
+      $or: buildIdVariants(planningId).map((value) => ({ planningId: value })),
+    });
+  }
+  if (customerId) {
+    query.$and.push({
+      $or: buildIdVariants(customerId).map((value) => ({ customerId: value })),
+    });
+  }
+  if (status) query.$and.push({ status });
   if (q) {
-    const searchFilter = {
+    query.$and.push({
       $or: [
         { title: { $regex: q, $options: "i" } },
         { description: { $regex: q, $options: "i" } },
         { assignedToName: { $regex: q, $options: "i" } },
         { assignedToEmail: { $regex: q, $options: "i" } },
       ],
-    };
-    if (Array.isArray(filter.$and)) {
-      filter.$and.push(searchFilter);
-    } else {
-      filter.$or = searchFilter.$or;
-    }
+    });
   }
 
   try {
@@ -150,13 +169,13 @@ export async function GET(req: Request) {
       companyId: activeCompanyId,
       db: db.databaseName,
       collection: tasks.collectionName,
-      filter,
-      debugVersion: TASKS_DEBUG_VERSION,
+      query: JSON.stringify(query),
+      debugVersion: TASKS_GET_DEBUG_VERSION,
     });
 
-    const docs = await tasks.find(filter).limit(limit * 3).toArray();
+    const docs = await tasks.find(query).sort({ createdAt: -1 }).limit(limit).toArray();
     const hydratedDocs = await hydrateTaskAssignments(db, activeCompanyId, docs);
-    const items = sortTasks(hydratedDocs.map((doc) => normalizeTask(doc))).slice(0, limit);
+    const items = sortTasks(hydratedDocs.map((doc) => normalizeTask(doc)));
     const effectivePermissions = {
       ...permissions,
       canCompleteAssigned:
@@ -166,18 +185,13 @@ export async function GET(req: Request) {
     console.log("[GET /tasks]", {
       companyId: activeCompanyId,
       userId: currentUserId,
-      role:
-        (session as any)?.activeCompanyRole ||
-        (session as any)?.activeRole ||
-        (session as any)?.role ||
-        (session as any)?.membershipRole ||
-        null,
+      role: role || null,
       totalInCompany,
       returned: items.length,
       ids: items.map((item) => item.id),
     });
 
-    return jsonResponse(origin, { ok: true, items, permissions: effectivePermissions, debugVersion: TASKS_DEBUG_VERSION }, 200);
+    return jsonResponse(origin, { ok: true, items, permissions: effectivePermissions, debugVersion: TASKS_GET_DEBUG_VERSION }, 200);
   } catch (e: any) {
     console.error("GET TASKS ERROR:", e);
     return jsonResponse(
@@ -211,7 +225,7 @@ export async function POST(req: Request) {
   const createdByName = getSessionUserName(session);
   const createdByEmail = getSessionUserEmail(session);
   const body = await req.json().catch(() => ({} as any));
-  console.log("[tasks.create] request", { method: req.method, url: req.url, debugVersion: TASKS_DEBUG_VERSION });
+  console.log("[tasks.create] request", { method: req.method, url: req.url, debugVersion: TASKS_CREATE_DEBUG_VERSION });
   console.log("[tasks.create] session", { userId: createdByUserId, companyId: activeCompanyId });
   console.log("[tasks.create] payload", body);
 
@@ -329,7 +343,7 @@ export async function POST(req: Request) {
         {
           ok: false,
           error: "Task insert was not acknowledged",
-          debugVersion: TASKS_DEBUG_VERSION,
+          debugVersion: TASKS_CREATE_DEBUG_VERSION,
         },
         500
       );
@@ -352,7 +366,7 @@ export async function POST(req: Request) {
         {
           ok: false,
           message: "Task insert acknowledged but not readable after insert",
-          debugVersion: TASKS_DEBUG_VERSION,
+          debugVersion: TASKS_CREATE_DEBUG_VERSION,
         },
         500
       );
@@ -366,7 +380,7 @@ export async function POST(req: Request) {
         ok: true,
         task: normalized,
         item: normalized,
-        debugVersion: TASKS_DEBUG_VERSION,
+        debugVersion: TASKS_CREATE_DEBUG_VERSION,
       },
       200
     );

@@ -45,7 +45,9 @@ export function jsonResponse(origin: string | null, body: any, status = 200) {
 
 export function safeNumber(v: unknown, fallback = 0) {
   if (typeof v === "number" && Number.isFinite(v)) return v;
-  const parsed = Number(safeString(v));
+  const normalized = safeString(v);
+  if (!normalized) return fallback;
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
