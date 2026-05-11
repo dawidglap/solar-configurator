@@ -8,6 +8,7 @@ import {
 } from "@/lib/api-session";
 import { activeDocumentFilter } from "@/lib/trash";
 import {
+  buildIdVariants,
   ensureTaskIndexes,
   getSessionUserEmail,
   getSessionUserId,
@@ -21,6 +22,7 @@ import {
   normalizeTaskPriority,
   sortTasks,
   safeNumber,
+  toStoredObjectIdOrString,
   validateAssignedTaskUsers,
 } from "@/lib/tasks";
 import { enforceActiveSubscription } from "@/lib/subscription";
@@ -68,6 +70,7 @@ export async function GET(req: Request) {
   const activeCompanyId = normalizeActiveCompanyId(session.activeCompanyId);
   const currentUserId = getSessionUserId(session);
   const permissions = getTaskPermissions(session);
+  const currentUserIdVariants = currentUserId ? buildIdVariants(currentUserId) : [];
 
   if (!permissions.canViewAll && !currentUserId) {
     return jsonResponse(
@@ -94,9 +97,9 @@ export async function GET(req: Request) {
     filter.$and = [
       {
         $or: [
-          { assignedToUserIds: currentUserId },
-          { assignedToUserId: currentUserId },
-          { createdByUserId: currentUserId },
+          { assignedToUserIds: { $in: currentUserIdVariants } },
+          { assignedToUserId: { $in: currentUserIdVariants } },
+          { createdByUserId: { $in: currentUserIdVariants } },
         ],
       },
     ];
@@ -104,15 +107,15 @@ export async function GET(req: Request) {
     filter.$and = [
       {
         $or: [
-          { assignedToUserIds: assignedToUserId },
-          { assignedToUserId },
+          { assignedToUserIds: { $in: buildIdVariants(assignedToUserId) } },
+          { assignedToUserId: { $in: buildIdVariants(assignedToUserId) } },
         ],
       },
     ];
   }
 
-  if (planningId) filter.planningId = planningId;
-  if (customerId) filter.customerId = customerId;
+  if (planningId) filter.planningId = { $in: buildIdVariants(planningId) };
+  if (customerId) filter.customerId = { $in: buildIdVariants(customerId) };
   if (status) filter.status = status;
   if (q) {
     const searchFilter = {
@@ -136,6 +139,10 @@ export async function GET(req: Request) {
     if (subscriptionError) return subscriptionError;
     await ensureTaskIndexes(db);
     const tasks = db.collection("tasks");
+    const totalInCompany = await tasks.countDocuments({
+      companyId: buildCompanyIdFilter(activeCompanyId),
+      ...activeDocumentFilter(),
+    });
     console.log("[tasks.list] request", {
       method: req.method,
       url: req.url,
@@ -156,6 +163,19 @@ export async function GET(req: Request) {
         permissions.canEditAll ||
         (!!currentUserId && items.some((item) => isTaskAssignedToUser(item, currentUserId))),
     };
+    console.log("[GET /tasks]", {
+      companyId: activeCompanyId,
+      userId: currentUserId,
+      role:
+        (session as any)?.activeCompanyRole ||
+        (session as any)?.activeRole ||
+        (session as any)?.role ||
+        (session as any)?.membershipRole ||
+        null,
+      totalInCompany,
+      returned: items.length,
+      ids: items.map((item) => item.id),
+    });
 
     return jsonResponse(origin, { ok: true, items, permissions: effectivePermissions, debugVersion: TASKS_DEBUG_VERSION }, 200);
   } catch (e: any) {
@@ -186,6 +206,7 @@ export async function POST(req: Request) {
   }
 
   const activeCompanyId = normalizeActiveCompanyId(session.activeCompanyId);
+  const activeCompanyObjectId = toObjectIdOrNull(activeCompanyId);
   const createdByUserId = getSessionUserId(session);
   const createdByName = getSessionUserName(session);
   const createdByEmail = getSessionUserEmail(session);
@@ -212,12 +233,21 @@ export async function POST(req: Request) {
       collection: tasks.collectionName,
       companyIdFilter: buildCompanyIdFilter(activeCompanyId),
     });
+    if (!activeCompanyObjectId) {
+      return jsonResponse(origin, { ok: false, error: "Invalid activeCompanyId" }, 400);
+    }
 
-    const requestedAssignedToUserIds = Array.isArray(body?.assignedToUserIds)
+    const requestedAssignedToUserIdsRaw = Array.isArray(body?.assignedToUserIds)
       ? body.assignedToUserIds
       : safeString(body?.assignedToUserId)
         ? [safeString(body?.assignedToUserId)]
         : [];
+    const requestedAssignedToUserIds =
+      requestedAssignedToUserIdsRaw.length > 0
+        ? requestedAssignedToUserIdsRaw
+        : createdByUserId
+          ? [createdByUserId]
+          : [];
     const assignment = await validateAssignedTaskUsers(
       db,
       activeCompanyId,
@@ -225,48 +255,61 @@ export async function POST(req: Request) {
     );
     const requestedPlanningId = safeString(body?.planningId);
     const requestedCustomerId = safeString(body?.customerId);
+    let planningObjectId = null as ReturnType<typeof toObjectIdOrNull>;
+    let customerObjectId = null as ReturnType<typeof toObjectIdOrNull>;
     let planningTitle = "";
 
     if (requestedPlanningId) {
-      const planningId = toObjectIdOrNull(requestedPlanningId);
-      if (planningId) {
-        const planning = await db.collection("plannings").findOne(
-          {
-            _id: planningId,
-            companyId: buildCompanyIdFilter(activeCompanyId),
-            ...activeDocumentFilter(),
+      planningObjectId = toObjectIdOrNull(requestedPlanningId);
+      if (!planningObjectId) {
+        return jsonResponse(origin, { ok: false, error: "Invalid planningId" }, 400);
+      }
+      const planning = await db.collection("plannings").findOne(
+        {
+          _id: planningObjectId,
+          companyId: buildCompanyIdFilter(activeCompanyId),
+          ...activeDocumentFilter(),
+        },
+        {
+          projection: {
+            title: 1,
+            planningNumber: 1,
+            summary: 1,
           },
-          {
-            projection: {
-              title: 1,
-              planningNumber: 1,
-              summary: 1,
-            },
-          },
-        );
-        planningTitle =
-          safeString(planning?.title) ||
-          safeString((planning as any)?.summary?.customerName) ||
-          safeString((planning as any)?.planningNumber);
+        },
+      );
+      if (!planning) {
+        return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
+      }
+      planningTitle =
+        safeString(planning?.title) ||
+        safeString((planning as any)?.summary?.customerName) ||
+        safeString((planning as any)?.planningNumber);
+    }
+
+    if (requestedCustomerId) {
+      customerObjectId = toObjectIdOrNull(requestedCustomerId);
+      if (!customerObjectId) {
+        return jsonResponse(origin, { ok: false, error: "Invalid customerId" }, 400);
       }
     }
 
     const now = new Date().toISOString();
     const task = {
-      companyId: activeCompanyId,
-      ...(requestedPlanningId ? { planningId: requestedPlanningId } : {}),
+      companyId: activeCompanyObjectId,
+      ...(planningObjectId ? { planningId: planningObjectId } : {}),
       ...(planningTitle ? { planningTitle } : {}),
-      ...(requestedCustomerId ? { customerId: requestedCustomerId } : {}),
+      ...(customerObjectId ? { customerId: customerObjectId } : {}),
       title,
       description: safeString(body?.description),
       status: "open",
       priority,
-      assignedToUserIds: assignment.assignedToUserIds,
-      assignedToUserId: assignment.assignedToUserId,
+      assignedToUserIds: assignment.assignedToUserIds.map((value) => toStoredObjectIdOrString(value)),
+      assignedToUserId: assignment.assignedToUserId ? toStoredObjectIdOrString(assignment.assignedToUserId) : null,
       ...(assignment.assignedToName ? { assignedToName: assignment.assignedToName } : {}),
       ...(assignment.assignedToEmail ? { assignedToEmail: assignment.assignedToEmail } : {}),
       assignedToNames: assignment.assignedToNames,
-      createdByUserId,
+      createdByUserId: createdByUserId ? toStoredObjectIdOrString(createdByUserId) : null,
       createdByName,
       ...(createdByEmail ? { createdByEmail } : {}),
       ...(safeString(body?.dueDate) ? { dueDate: safeString(body?.dueDate) } : {}),

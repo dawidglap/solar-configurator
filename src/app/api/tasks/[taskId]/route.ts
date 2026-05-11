@@ -14,6 +14,7 @@ import {
   normalizeTask,
   normalizeTaskPriority,
   normalizeTaskStatus,
+  toStoredObjectIdOrString,
   validateAssignedTaskUsers,
 } from "@/lib/tasks";
 
@@ -132,35 +133,47 @@ export async function PATCH(
           setObj.planningId = null;
           setObj.planningTitle = null;
         } else {
-          setObj.planningId = requestedPlanningId;
           const planningObjectId = toObjectIdOrNull(requestedPlanningId);
-          let planningTitle = "";
-          if (planningObjectId) {
-            const planning = await db.collection("plannings").findOne(
-              {
-                _id: planningObjectId,
-                companyId: buildCompanyIdFilter(activeCompanyId),
-                ...activeDocumentFilter(),
-              },
-              {
-                projection: {
-                  title: 1,
-                  planningNumber: 1,
-                  summary: 1,
-                },
-              },
-            );
-            planningTitle =
-              safeString(planning?.title) ||
-              safeString((planning as any)?.summary?.customerName) ||
-              safeString((planning as any)?.planningNumber);
+          if (!planningObjectId) {
+            return jsonResponse(origin, { ok: false, error: "Invalid planningId" }, 400);
           }
+          setObj.planningId = planningObjectId;
+          let planningTitle = "";
+          const planning = await db.collection("plannings").findOne(
+            {
+              _id: planningObjectId,
+              companyId: buildCompanyIdFilter(activeCompanyId),
+              ...activeDocumentFilter(),
+            },
+            {
+              projection: {
+                title: 1,
+                planningNumber: 1,
+                summary: 1,
+              },
+            },
+          );
+          if (!planning) {
+            return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
+          }
+          planningTitle =
+            safeString(planning?.title) ||
+            safeString((planning as any)?.summary?.customerName) ||
+            safeString((planning as any)?.planningNumber);
           setObj.planningTitle = planningTitle || null;
         }
       }
       if ("customerId" in body) {
         const requestedCustomerId = body?.customerId === null ? null : safeString(body?.customerId);
-        setObj.customerId = requestedCustomerId || null;
+        if (!requestedCustomerId) {
+          setObj.customerId = null;
+        } else {
+          const customerObjectId = toObjectIdOrNull(requestedCustomerId);
+          if (!customerObjectId) {
+            return jsonResponse(origin, { ok: false, error: "Invalid customerId" }, 400);
+          }
+          setObj.customerId = customerObjectId;
+        }
       }
       if ("dueDate" in body) setObj.dueDate = safeString(body?.dueDate) || undefined;
 
@@ -201,8 +214,10 @@ export async function PATCH(
           activeCompanyId,
           requestedAssignedToUserIds,
         );
-        setObj.assignedToUserIds = assignment.assignedToUserIds;
-        setObj.assignedToUserId = assignment.assignedToUserId;
+        setObj.assignedToUserIds = assignment.assignedToUserIds.map((value) => toStoredObjectIdOrString(value));
+        setObj.assignedToUserId = assignment.assignedToUserId
+          ? toStoredObjectIdOrString(assignment.assignedToUserId)
+          : null;
         setObj.assignedToName = assignment.assignedToName || null;
         setObj.assignedToEmail = assignment.assignedToEmail || null;
         setObj.assignedToNames = assignment.assignedToNames;

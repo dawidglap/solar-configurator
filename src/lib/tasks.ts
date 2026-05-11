@@ -126,9 +126,9 @@ export function getTaskPermissions(
 
 export function normalizeAssignedToUserIds(doc: any) {
   const direct = Array.isArray(doc?.assignedToUserIds)
-    ? doc.assignedToUserIds.map((value: unknown) => safeString(value)).filter(Boolean)
+    ? doc.assignedToUserIds.map((value: unknown) => mongoIdToString(value) || safeString(value)).filter(Boolean)
     : [];
-  const legacy = safeString(doc?.assignedToUserId);
+  const legacy = mongoIdToString(doc?.assignedToUserId) || safeString(doc?.assignedToUserId);
   const values = direct.length > 0 ? direct : legacy ? [legacy] : [];
   return Array.from(new Set(values));
 }
@@ -158,10 +158,14 @@ export function normalizeTask(doc: any) {
 
   return {
     id: mongoIdToString(doc?._id),
-    companyId: safeString(doc?.companyId),
-    ...(safeString(doc?.planningId) ? { planningId: safeString(doc?.planningId) } : {}),
+    companyId: mongoIdToString(doc?.companyId) || safeString(doc?.companyId),
+    ...(mongoIdToString(doc?.planningId) || safeString(doc?.planningId)
+      ? { planningId: mongoIdToString(doc?.planningId) || safeString(doc?.planningId) }
+      : {}),
     ...(safeString(doc?.planningTitle) ? { planningTitle: safeString(doc?.planningTitle) } : {}),
-    ...(safeString(doc?.customerId) ? { customerId: safeString(doc?.customerId) } : {}),
+    ...(mongoIdToString(doc?.customerId) || safeString(doc?.customerId)
+      ? { customerId: mongoIdToString(doc?.customerId) || safeString(doc?.customerId) }
+      : {}),
     title: safeString(doc?.title),
     description: safeString(doc?.description),
     status: (normalizeTaskStatus(doc?.status) ?? "open") as TaskStatus,
@@ -175,8 +179,8 @@ export function normalizeTask(doc: any) {
     ...(safeString(doc?.assignedToEmail)
       ? { assignedToEmail: safeString(doc?.assignedToEmail) }
       : {}),
-    ...(safeString(doc?.createdByUserId)
-      ? { createdByUserId: safeString(doc?.createdByUserId) }
+    ...(mongoIdToString(doc?.createdByUserId) || safeString(doc?.createdByUserId)
+      ? { createdByUserId: mongoIdToString(doc?.createdByUserId) || safeString(doc?.createdByUserId) }
       : {}),
     ...(safeString(doc?.createdByName)
       ? { createdByName: safeString(doc?.createdByName) }
@@ -186,7 +190,7 @@ export function normalizeTask(doc: any) {
       : {}),
     ...(safeString(doc?.dueDate) ? { dueDate: safeString(doc?.dueDate) } : {}),
     completedAt: safeString(doc?.completedAt) || null,
-    completedByUserId: safeString(doc?.completedByUserId) || null,
+    completedByUserId: mongoIdToString(doc?.completedByUserId) || safeString(doc?.completedByUserId) || null,
     completedByName: safeString(doc?.completedByName) || null,
     createdAt: safeString(doc?.createdAt),
     updatedAt: safeString(doc?.updatedAt),
@@ -219,7 +223,7 @@ async function migrateLegacyTaskMultiAssignee(db: Db) {
         filter: { _id: doc._id },
         update: {
           $set: {
-            assignedToUserIds: [safeString(doc.assignedToUserId)],
+            assignedToUserIds: [doc.assignedToUserId],
           },
         },
       },
@@ -365,6 +369,15 @@ export async function validateAssignedTaskUsers(
   };
 }
 
+export function toStoredObjectIdOrString(value: string) {
+  return toObjectIdOrNull(value) || value;
+}
+
+export function buildIdVariants(value: string) {
+  const objectId = toObjectIdOrNull(value);
+  return objectId ? [value, objectId] : [value];
+}
+
 export async function hydrateTaskAssignments(
   db: Db,
   activeCompanyId: string,
@@ -383,7 +396,7 @@ export async function hydrateTaskAssignments(
   const planningIds = Array.from(
     new Set(
       docs
-        .map((doc) => safeString(doc?.planningId))
+        .map((doc) => mongoIdToString(doc?.planningId) || safeString(doc?.planningId))
         .filter(Boolean),
     ),
   );
@@ -397,7 +410,7 @@ export async function hydrateTaskAssignments(
                 .map((planningId) => toObjectIdOrNull(planningId))
                 .filter((value): value is ObjectId => !!value),
             },
-            companyId: activeCompanyId,
+            companyId: { $in: buildIdVariants(activeCompanyId) },
             ...activeDocumentFilter(),
           },
           {
