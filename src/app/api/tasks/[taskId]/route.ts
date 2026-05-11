@@ -1,6 +1,6 @@
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
-import { readSession, safeString, toObjectIdOrNull } from "@/lib/api-session";
+import { mongoIdToString, readSession, safeString, toObjectIdOrNull } from "@/lib/api-session";
 import { activeDocumentFilter, buildSoftDeleteFields } from "@/lib/trash";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import {
@@ -20,6 +20,15 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+function normalizeActiveCompanyId(value: unknown) {
+  return mongoIdToString(value) || safeString(value);
+}
+
+function buildCompanyIdFilter(activeCompanyId: string) {
+  const objectId = toObjectIdOrNull(activeCompanyId);
+  return objectId ? { $in: [activeCompanyId, objectId] } : activeCompanyId;
+}
 
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
@@ -56,7 +65,7 @@ export async function PATCH(
     return jsonResponse(origin, { ok: false, error: "Invalid taskId" }, 400);
   }
 
-  const activeCompanyId = String(session.activeCompanyId);
+  const activeCompanyId = normalizeActiveCompanyId(session.activeCompanyId);
   const currentUserId = getSessionUserId(session);
   const currentUserName = getSessionUserName(session);
   const isAdmin = isAdminLikeRole(session);
@@ -71,7 +80,7 @@ export async function PATCH(
     const tasks = db.collection("tasks");
     const existing = await tasks.findOne({
       _id: taskObjectId,
-      companyId: activeCompanyId,
+      companyId: buildCompanyIdFilter(activeCompanyId),
       ...activeDocumentFilter(),
     });
 
@@ -117,8 +126,42 @@ export async function PATCH(
     } else {
       if ("title" in body) setObj.title = safeString(body?.title);
       if ("description" in body) setObj.description = safeString(body?.description);
-      if ("planningId" in body) setObj.planningId = safeString(body?.planningId) || undefined;
-      if ("customerId" in body) setObj.customerId = safeString(body?.customerId) || undefined;
+      if ("planningId" in body) {
+        const requestedPlanningId = body?.planningId === null ? null : safeString(body?.planningId);
+        if (!requestedPlanningId) {
+          setObj.planningId = null;
+          setObj.planningTitle = null;
+        } else {
+          setObj.planningId = requestedPlanningId;
+          const planningObjectId = toObjectIdOrNull(requestedPlanningId);
+          let planningTitle = "";
+          if (planningObjectId) {
+            const planning = await db.collection("plannings").findOne(
+              {
+                _id: planningObjectId,
+                companyId: buildCompanyIdFilter(activeCompanyId),
+                ...activeDocumentFilter(),
+              },
+              {
+                projection: {
+                  title: 1,
+                  planningNumber: 1,
+                  summary: 1,
+                },
+              },
+            );
+            planningTitle =
+              safeString(planning?.title) ||
+              safeString((planning as any)?.summary?.customerName) ||
+              safeString((planning as any)?.planningNumber);
+          }
+          setObj.planningTitle = planningTitle || null;
+        }
+      }
+      if ("customerId" in body) {
+        const requestedCustomerId = body?.customerId === null ? null : safeString(body?.customerId);
+        setObj.customerId = requestedCustomerId || null;
+      }
       if ("dueDate" in body) setObj.dueDate = safeString(body?.dueDate) || undefined;
 
       if ("priority" in body) {
@@ -176,18 +219,19 @@ export async function PATCH(
     });
 
     await tasks.updateOne(
-      { _id: taskObjectId, companyId: activeCompanyId, ...activeDocumentFilter() },
+      { _id: taskObjectId, companyId: buildCompanyIdFilter(activeCompanyId), ...activeDocumentFilter() },
       { $set: setObj }
     );
 
     const updated = await tasks.findOne({
       _id: taskObjectId,
-      companyId: activeCompanyId,
+      companyId: buildCompanyIdFilter(activeCompanyId),
       ...activeDocumentFilter(),
     });
 
     const [hydrated] = await hydrateTaskAssignments(db, activeCompanyId, updated ? [updated] : []);
-    return jsonResponse(origin, { ok: true, task: normalizeTask(hydrated) }, 200);
+    const normalized = normalizeTask(hydrated);
+    return jsonResponse(origin, { ok: true, item: normalized, task: normalized }, 200);
   } catch (e: any) {
     console.error("PATCH TASK ERROR:", e);
     return jsonResponse(
@@ -218,6 +262,8 @@ export async function DELETE(
     return jsonResponse(origin, { ok: false, error: "Forbidden" }, 403);
   }
 
+  const activeCompanyId = normalizeActiveCompanyId(session.activeCompanyId);
+
   const { taskId } = await params;
   const taskObjectId = toObjectIdOrNull(taskId);
   if (!taskObjectId) {
@@ -233,7 +279,7 @@ export async function DELETE(
     const result = await db.collection("tasks").updateOne(
       {
         _id: taskObjectId,
-        companyId: String(session.activeCompanyId),
+        companyId: buildCompanyIdFilter(activeCompanyId),
         ...activeDocumentFilter(),
       },
       {

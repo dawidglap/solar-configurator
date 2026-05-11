@@ -96,6 +96,7 @@ export async function GET(req: Request) {
         $or: [
           { assignedToUserIds: currentUserId },
           { assignedToUserId: currentUserId },
+          { createdByUserId: currentUserId },
         ],
       },
     ];
@@ -314,7 +315,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const normalized = normalizeTask(saved);
+    const [hydrated] = await hydrateTaskAssignments(db, activeCompanyId, [saved]);
+    const normalized = normalizeTask(hydrated);
     return jsonResponse(
       origin,
       {
