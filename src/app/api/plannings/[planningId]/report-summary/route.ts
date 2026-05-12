@@ -845,16 +845,22 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   const discountFromPctChf = round2((grossInvestmentChf * discountPct) / 100);
   const totalDiscountChf = round2(discountFromPctChf + discountChf);
 
+  // Canonical order:
+  // gross investment -> discounts -> subsidy -> skonto
   const netInvestmentBeforeSubsidyChf = round2(
     Math.max(0, grossInvestmentChf - totalDiscountChf)
   );
 
-  const totalInvestmentChf = round2(
+  const afterSubsidyChf = round2(
     Math.max(0, netInvestmentBeforeSubsidyChf - subsidyChf)
   );
 
   const skontoValueChf = round2(
-    Math.max(0, netInvestmentBeforeSubsidyChf * (skontoPct / 100))
+    Math.max(0, afterSubsidyChf * (skontoPct / 100))
+  );
+
+  const totalInvestmentChf = round2(
+    Math.max(0, afterSubsidyChf - skontoValueChf)
   );
 
   const tariffConsumptionChfPerKwh = 0.277;
@@ -865,8 +871,10 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   const annualBenefitChf = round2(annualSavingsChf + annualFeedInRevenueChf);
 
   const breakEvenYears =
-    totalInvestmentChf > 0 && annualBenefitChf > 0
-      ? round1(totalInvestmentChf / annualBenefitChf)
+    annualBenefitChf > 0
+      ? totalInvestmentChf > 0
+        ? round1(totalInvestmentChf / annualBenefitChf)
+        : 0
       : null;
 
   const roiPct =
