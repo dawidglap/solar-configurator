@@ -19,6 +19,7 @@ const REPORT_SUMMARY_RATE_GUARD_MS = 1_500;
 const reportSummaryCache = new Map<
   string,
   {
+    planningUpdatedAt: string;
     body: {
       ok: true;
       planningId: string;
@@ -186,6 +187,20 @@ function parseMoneyLike(value: any, fallback = 0) {
 
   const n = Number(normalized);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function parseNumericReportOption(value: unknown) {
+  const n = typeof value === "string" ? parseFloat(value) : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function pickBoolean(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function averageRoofTiltDeg(layers: any[]) {
@@ -506,30 +521,24 @@ function getRawPartsItemsFromPlanning(doc: any) {
 }
 
 function normalizeReportOptions(raw: any) {
-  const battery =
-    typeof raw?.battery === "boolean"
-      ? raw.battery
-      : typeof raw?.hasBattery === "boolean"
-        ? raw.hasBattery
-        : typeof raw?.includeBattery === "boolean"
-          ? raw.includeBattery
-          : undefined;
+  const battery = pickBoolean(
+    raw?.includeBattery,
+    raw?.battery,
+    raw?.hasBattery,
+  );
 
-  const charging =
-    typeof raw?.charging === "boolean"
-      ? raw.charging
-      : typeof raw?.hasEv === "boolean"
-        ? raw.hasEv
-        : typeof raw?.includeWallbox === "boolean"
-          ? raw.includeWallbox
-          : undefined;
+  const charging = pickBoolean(
+    raw?.includeWallbox,
+    raw?.charging,
+    raw?.hasWallbox,
+    raw?.hasEv,
+  );
 
-  const heatPump =
-    typeof raw?.heatPump === "boolean"
-      ? raw.heatPump
-      : typeof raw?.hasHeatPump === "boolean"
-        ? raw.hasHeatPump
-        : undefined;
+  const heatPump = pickBoolean(
+    raw?.includeHeatPump,
+    raw?.heatPump,
+    raw?.hasHeatPump,
+  );
 
   return {
     battery,
@@ -545,14 +554,19 @@ function normalizeReportOptions(raw: any) {
         raw?.wallboxItemId ??
         raw?.selectedWallboxId
     ),
-    discountChf: parseMoneyLike(raw?.discountChf ?? raw?.rabattChf, 0),
-    discountPct: parseMoneyLike(raw?.discountPct ?? raw?.rabattPct, 0),
-    subsidyChf: parseMoneyLike(
-      raw?.subsidyChf ?? raw?.subsidy ?? raw?.foerderungen,
-      0
+    discountChf: parseNumericReportOption(raw?.discountChf ?? raw?.rabattChf),
+    discountPct: parseNumericReportOption(raw?.discountPct ?? raw?.rabattPct),
+    manualAdditionalSubsidyChf: parseNumericReportOption(
+      raw?.manualAdditionalSubsidyChf ??
+        raw?.additionalSubsidyChf ??
+        raw?.subsidyChf ??
+        raw?.subsidy ??
+        raw?.foerderungen,
     ),
-    skontoPct: parseMoneyLike(raw?.skontoPct ?? raw?.skonto, 0),
-    paymentTerms: safeString(raw?.paymentTerms ?? raw?.zahlungsbedingungen),
+    skontoPct: parseNumericReportOption(raw?.skontoPct ?? raw?.skonto),
+    paymentTerms:
+      safeString(raw?.paymentTerms ?? raw?.zahlungsbedingungen) ||
+      "30 Tage netto",
   };
 }
 
@@ -833,35 +847,29 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   const autarkyPct =
     yearlyConsumptionKwh > 0 ? round1((selfUseKwh / yearlyConsumptionKwh) * 100) : 0;
 
-  const discountPct = round2(clamp(reportOptions.discountPct, 0, 100));
   const discountChf = round2(Math.max(0, reportOptions.discountChf));
-
-  const automaticPvSubsidyChf = calculatePvSubsidyChf(dcPowerKw);
-  const manualAdditionalSubsidyChf = round2(Math.max(0, reportOptions.subsidyChf));
-  const subsidyChf = round2(automaticPvSubsidyChf + manualAdditionalSubsidyChf);
-
+  const discountPct = round2(clamp(reportOptions.discountPct, 0, 100));
+  const manualAdditionalSubsidyChf = round2(
+    Math.max(0, reportOptions.manualAdditionalSubsidyChf),
+  );
   const skontoPct = round2(clamp(reportOptions.skontoPct, 0, 100));
+  const automaticPvSubsidyChf = calculatePvSubsidyChf(dcPowerKw);
 
+  // Canonical financial order:
+  // gross -> percentage discount -> absolute discount -> PV subsidy -> manual subsidy
+  // skonto remains an explicit separate value derived from the post-subsidy total.
   const discountFromPctChf = round2((grossInvestmentChf * discountPct) / 100);
-  const totalDiscountChf = round2(discountFromPctChf + discountChf);
-
-  // Canonical order:
-  // gross investment -> discounts -> subsidy -> skonto
+  const totalDiscountChf = round2(discountChf + discountFromPctChf);
   const netInvestmentBeforeSubsidyChf = round2(
-    Math.max(0, grossInvestmentChf - totalDiscountChf)
+    grossInvestmentChf - totalDiscountChf,
   );
-
-  const afterSubsidyChf = round2(
-    Math.max(0, netInvestmentBeforeSubsidyChf - subsidyChf)
+  const totalSubsidyChf = round2(
+    automaticPvSubsidyChf + manualAdditionalSubsidyChf,
   );
-
-  const skontoValueChf = round2(
-    Math.max(0, afterSubsidyChf * (skontoPct / 100))
-  );
-
   const totalInvestmentChf = round2(
-    Math.max(0, afterSubsidyChf - skontoValueChf)
+    Math.max(0, netInvestmentBeforeSubsidyChf - totalSubsidyChf),
   );
+  const skontoValueChf = round2(totalInvestmentChf * (skontoPct / 100));
 
   const tariffConsumptionChfPerKwh = 0.277;
   const tariffFeedInChfPerKwh = 0.1;
@@ -917,7 +925,7 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
 
     automaticPvSubsidyChf,
     manualAdditionalSubsidyChf,
-    subsidyChf,
+    subsidyChf: totalSubsidyChf,
 
     netInvestmentBeforeSubsidyChf,
     skontoPct,
@@ -949,7 +957,7 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
     lastCalculatedAt: new Date().toISOString(),
     calculationMode: "mvp_estimated",
 
-    debugVersion: "report-summary-flat-roof-fix-v4",
+    debugVersion: "report-summary-finance-fix-v5",
     rawYearlyYieldKwhPerKwp,
     isFlatRoof,
     debugYield: {
@@ -1092,38 +1100,6 @@ export async function GET(
   const cached = reportSummaryCache.get(cacheKey);
   const lastRequestedAt = reportSummaryLastRequestAt.get(rateGuardKey) ?? 0;
 
-  if (cached && cached.expiresAt > now && now - lastRequestedAt < REPORT_SUMMARY_RATE_GUARD_MS) {
-    reportSummaryLastRequestAt.set(rateGuardKey, now);
-    const status = 200;
-    logReportSummaryRequest({
-      method: req.method,
-      pathname,
-      planningId,
-      userId,
-      companyId,
-      origin,
-      durationMs: Date.now() - startedAt,
-      status,
-    });
-    return jsonCachedReportSummaryResponse(origin, cached.body, status);
-  }
-
-  if (cached && cached.expiresAt > now) {
-    reportSummaryLastRequestAt.set(rateGuardKey, now);
-    const status = 200;
-    logReportSummaryRequest({
-      method: req.method,
-      pathname,
-      planningId,
-      userId,
-      companyId,
-      origin,
-      durationMs: Date.now() - startedAt,
-      status,
-    });
-    return jsonCachedReportSummaryResponse(origin, cached.body, status);
-  }
-
   try {
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
@@ -1142,6 +1118,50 @@ export async function GET(
     }
     const plannings = db.collection("plannings");
     const catalogItems = db.collection("catalogItems");
+
+    const docMeta = await plannings.findOne(
+      {
+        _id: planningObjectId,
+        companyId: buildPlanningCompanyFilter(companyId),
+      },
+      { projection: { _id: 1, updatedAt: 1 } },
+    );
+
+    if (!docMeta) {
+      const status = 404;
+      logReportSummaryRequest({
+        method: req.method,
+        pathname,
+        planningId,
+        userId,
+        companyId,
+        origin,
+        durationMs: Date.now() - startedAt,
+        status,
+      });
+      return jsonCachedReportSummaryResponse(origin, { ok: false, error: "Planning not found" }, status);
+    }
+
+    const planningUpdatedAt =
+      docMeta.updatedAt instanceof Date
+        ? docMeta.updatedAt.toISOString()
+        : safeString(docMeta.updatedAt);
+
+    if (cached && cached.expiresAt > now && cached.planningUpdatedAt === planningUpdatedAt) {
+      reportSummaryLastRequestAt.set(rateGuardKey, now);
+      const status = 200;
+      logReportSummaryRequest({
+        method: req.method,
+        pathname,
+        planningId,
+        userId,
+        companyId,
+        origin,
+        durationMs: Date.now() - startedAt,
+        status,
+      });
+      return jsonCachedReportSummaryResponse(origin, cached.body, status);
+    }
 
     const doc = await plannings.findOne({
       _id: planningObjectId,
@@ -1177,6 +1197,7 @@ export async function GET(
       reportSummary,
     };
     reportSummaryCache.set(cacheKey, {
+      planningUpdatedAt,
       body,
       expiresAt: now + REPORT_SUMMARY_CACHE_TTL_MS,
     });
