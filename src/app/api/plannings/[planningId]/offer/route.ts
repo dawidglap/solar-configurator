@@ -569,6 +569,7 @@ const inverterLabel =
       planningNumber: offer.planningNumber,
       kWp: offer.pv.dcPowerKw,
       customerName: offer.customer.name,
+      projectAddress,
       companyName: offer.companyName,
 
       customerSalutation,

@@ -7,6 +7,7 @@ type OfferCoverData = {
   planningNumber: string;
   kWp: number;
   customerName: string;
+  projectAddress?: string;
   companyName: string;
 
   customerSalutation?: string;
@@ -181,6 +182,28 @@ function fitWrappedTitle(text: string, font: PDFFont, maxWidth: number) {
   return { size, lines: clipped };
 }
 
+function fitWrappedSubtitle(text: string, font: PDFFont, maxWidth: number) {
+  const candidates = [13.5, 12.5, 11.5, 10.5];
+
+  for (const size of candidates) {
+    const lines = wrapText(text, maxWidth, font, size);
+    if (lines.length <= 2) {
+      return { size, lines };
+    }
+  }
+
+  const size = 10.5;
+  const lines = wrapText(text, maxWidth, font, size);
+  if (lines.length <= 2) {
+    return { size, lines };
+  }
+
+  const clipped = [...lines.slice(0, 2)];
+  const last = clipped[1] || "";
+  clipped[1] = last.length > 2 ? `${last.slice(0, Math.max(1, last.length - 2))}…` : "…";
+  return { size, lines: clipped };
+}
+
 function buildGreeting(data: OfferCoverData) {
   const salutation = String(data.customerSalutation || "").toLowerCase();
   const customerType = String(data.customerType || "").toLowerCase();
@@ -327,16 +350,28 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     color: softGray,
   });
 
-  const title = data.title || "Photovoltaik-Anlage";
-  const bigKwText = `${money(data.kWp)} kWp`;
+  const title =
+    [safeText("Angebot"), safeText(data.customerName)]
+      .filter(Boolean)
+      .join(" — ") || data.title || "Photovoltaik-Angebot";
+  const subtitle =
+    [safeText(data.projectAddress), data.kWp > 0 ? `${money(data.kWp)} kWp` : ""]
+      .filter(Boolean)
+      .join(" - ");
   const titleWrap = fitWrappedTitle(title, font, titleBoxW - 32);
+  const subtitleWrap = fitWrappedSubtitle(subtitle, font, titleBoxW - 32);
   const titleLineHeight = titleWrap.size + 2.5;
-  let titleY = titleBoxY + 82;
+  const subtitleLineHeight = subtitleWrap.size + 2.5;
+  let titleY = titleBoxY + 78;
   for (const line of titleWrap.lines) {
     drawText(page, line, titleBoxX + 16, titleY, titleWrap.size, font, textDark);
     titleY -= titleLineHeight;
   }
-  drawText(page, bigKwText, titleBoxX + 16, titleBoxY + 38, 21.5, bold, textDark);
+  let subtitleY = titleBoxY + 44;
+  for (const line of subtitleWrap.lines) {
+    drawText(page, line, titleBoxX + 16, subtitleY, subtitleWrap.size, font, textDark);
+    subtitleY -= subtitleLineHeight;
+  }
 
   drawLine(
     page,
