@@ -143,6 +143,53 @@ export async function ensureExecutionTaskIndexes(db: Db) {
   return ensureExecutionTaskIndexesPromise;
 }
 
+async function resolveCompanyWonStageKeys(db: Db, companyId: string) {
+  const companyObjectId = toObjectIdOrNull(companyId);
+  if (!companyObjectId) {
+    return new Set<string>(["won", "gewonnen"]);
+  }
+
+  const company = await db.collection("companies").findOne(
+    { _id: companyObjectId },
+    { projection: { pipelineStages: 1 } },
+  );
+
+  const wonKeys = new Set<string>(["won", "gewonnen"]);
+  const stages = Array.isArray((company as any)?.pipelineStages)
+    ? (company as any).pipelineStages
+    : [];
+
+  for (const stage of stages) {
+    const key = safeString(stage?.key).toLowerCase();
+    const type = safeString(stage?.type).toLowerCase();
+    if (key && type === "won") {
+      wonKeys.add(key);
+    }
+  }
+
+  return wonKeys;
+}
+
+export async function isPlanningWon(db: Db, planning: any) {
+  const companyId =
+    mongoIdToString(planning?.companyId) || safeString(planning?.companyId);
+  const stageCandidates = [
+    safeString(planning?.commercial?.stage).toLowerCase(),
+    safeString(planning?.stage).toLowerCase(),
+  ].filter(Boolean);
+
+  if (stageCandidates.includes("won") || stageCandidates.includes("gewonnen")) {
+    return true;
+  }
+
+  if (!companyId || stageCandidates.length === 0) {
+    return false;
+  }
+
+  const wonKeys = await resolveCompanyWonStageKeys(db, companyId);
+  return stageCandidates.some((value) => wonKeys.has(value));
+}
+
 function normalizeExecutionHistoryEntry(entry: any) {
   const stage = normalizeExecutionStage(entry?.stage) ?? "offen";
   const at =
@@ -392,8 +439,7 @@ export async function ensureExecutionTasksForWonPlanning(
   planning: any,
   session?: SessionPayload | null,
 ) {
-  const currentStage = safeString(planning?.commercial?.stage).toLowerCase();
-  if (currentStage !== "gewonnen") {
+  if (!(await isPlanningWon(db, planning))) {
     return { created: 0, items: [] as any[] };
   }
 
@@ -452,7 +498,6 @@ export async function backfillExecutionTasksForWonPlannings(
   const plannings = await db
     .collection("plannings")
     .find({
-      "commercial.stage": "gewonnen",
       ...activeDocumentFilter(),
     })
     .toArray();
@@ -460,6 +505,9 @@ export async function backfillExecutionTasksForWonPlannings(
   let created = 0;
   let processed = 0;
   for (const planning of plannings) {
+    if (!(await isPlanningWon(db, planning))) {
+      continue;
+    }
     const result = await ensureExecutionTasksForWonPlanning(db, planning, session);
     created += result.created;
     processed += 1;
