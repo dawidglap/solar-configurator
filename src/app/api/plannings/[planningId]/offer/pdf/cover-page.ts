@@ -183,7 +183,7 @@ function fitWrappedTitle(text: string, font: PDFFont, maxWidth: number) {
 }
 
 function fitWrappedSubtitle(text: string, font: PDFFont, maxWidth: number) {
-  const candidates = [13.5, 12.5, 11.5, 10.5];
+  const candidates = [18.5, 17.5, 16.5, 15.5, 14.5, 13.5];
 
   for (const size of candidates) {
     const lines = wrapText(text, maxWidth, font, size);
@@ -358,18 +358,18 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     [safeText(data.projectAddress), data.kWp > 0 ? `${money(data.kWp)} kWp` : ""]
       .filter(Boolean)
       .join(" - ");
-  const titleWrap = fitWrappedTitle(title, font, titleBoxW - 32);
-  const subtitleWrap = fitWrappedSubtitle(subtitle, font, titleBoxW - 32);
+  const titleWrap = fitWrappedTitle(title, bold, titleBoxW - 32);
+  const subtitleWrap = fitWrappedSubtitle(subtitle, bold, titleBoxW - 32);
   const titleLineHeight = titleWrap.size + 2.5;
   const subtitleLineHeight = subtitleWrap.size + 2.5;
   let titleY = titleBoxY + 78;
   for (const line of titleWrap.lines) {
-    drawText(page, line, titleBoxX + 16, titleY, titleWrap.size, font, textDark);
+    drawText(page, line, titleBoxX + 16, titleY, titleWrap.size, bold, textDark);
     titleY -= titleLineHeight;
   }
-  let subtitleY = titleBoxY + 44;
+  let subtitleY = titleBoxY + 40;
   for (const line of subtitleWrap.lines) {
-    drawText(page, line, titleBoxX + 16, subtitleY, subtitleWrap.size, font, textDark);
+    drawText(page, line, titleBoxX + 16, subtitleY, subtitleWrap.size, bold, textDark);
     subtitleY -= subtitleLineHeight;
   }
 
