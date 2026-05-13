@@ -21,7 +21,6 @@ import type {
   PanelSpec,
   ModulesConfig,
 } from '@/types/planner';
-import { PANEL_CATALOG } from '../../constants/panels';
 
 export type {
   PlannerStep,
@@ -132,8 +131,8 @@ function createInitialPlannerState() {
     address: createDefaultAddress(),
     hydrationReady: false,
 
-    catalogPanels: PANEL_CATALOG,
-    selectedPanelId: PANEL_CATALOG[0]?.id ?? '',
+    catalogPanels: [] as PanelSpec[],
+    selectedPanelId: '',
     modules: createDefaultModules(),
 
     detectedRoofs: [] as DetectedRoof[],
@@ -182,6 +181,7 @@ type PlannerV2State = {
 
   catalogPanels: PanelSpec[];
   selectedPanelId: string;
+  setCatalogPanels: (panels: PanelSpec[]) => void;
   setSelectedPanel: (id: string) => void;
   getSelectedPanel: () => PanelSpec | undefined;
   modules: ModulesConfig;
@@ -402,10 +402,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           selectedSnowGuardId: undefined,
 
           selectedPanelId: saved.selectedPanelId ?? defaults.selectedPanelId,
-          catalogPanels:
-            Array.isArray(saved.catalogPanels) && saved.catalogPanels.length > 0
-              ? saved.catalogPanels
-              : s.catalogPanels,
+          catalogPanels: s.catalogPanels,
 
           profile: saved.profile ?? defaults.profile,
           ist: saved.ist ?? defaults.ist,
@@ -434,8 +431,23 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           return { tool: t };
         }),
 
-      catalogPanels: PANEL_CATALOG,
-      selectedPanelId: PANEL_CATALOG[0].id,
+      catalogPanels: [],
+      selectedPanelId: '',
+      setCatalogPanels: (panels) =>
+        set((state) => {
+          const nextPanels = Array.isArray(panels) ? panels : [];
+          const selectedStillExists = nextPanels.some(
+            (panel) => panel.id === state.selectedPanelId
+          );
+
+          return {
+            catalogPanels: nextPanels,
+            selectedPanelId:
+              selectedStillExists
+                ? state.selectedPanelId
+                : nextPanels[0]?.id ?? state.selectedPanelId ?? '',
+          };
+        }),
       setSelectedPanel: (id) => set({ selectedPanelId: id }),
       getSelectedPanel: () => {
         const { catalogPanels, selectedPanelId } = get();
@@ -576,7 +588,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
     }),
     {
       name: 'planner-v2',
-      version: 13,
+      version: 14,
 
       storage: createJSONStorage(() => localStorage),
 
@@ -588,7 +600,6 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         selectedId: s.selectedId,
         address: s.address,
         snapshotScale: s.snapshotScale,
-        catalogPanels: s.catalogPanels,
         selectedPanelId: s.selectedPanelId,
         modules: s.modules,
         panels: s.panels,
@@ -660,9 +671,10 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           persisted.snapshotScale = 2;
         }
 
-        if (!persisted.catalogPanels) persisted.catalogPanels = PANEL_CATALOG;
+        persisted.catalogPanels = [];
+
         if (!persisted.selectedPanelId) {
-          persisted.selectedPanelId = PANEL_CATALOG[0].id;
+          persisted.selectedPanelId = "";
         }
 
         if (!persisted.view) {
@@ -698,7 +710,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           persisted.panels = [];
         } else {
           const fallbackPanelId =
-            (persisted.selectedPanelId as string) || PANEL_CATALOG[0].id;
+            (persisted.selectedPanelId as string) || "";
           persisted.panels = persisted.panels.map((p: any) => ({
             ...p,
             panelId: p.panelId ?? fallbackPanelId,

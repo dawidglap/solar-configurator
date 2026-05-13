@@ -8,6 +8,7 @@ import { usePlannerV2Store } from "@/components_v2/state/plannerV2Store";
 import { normalizePlannerStep } from "@/components_v2/state/normalizePlannerStep";
 import { usePlanningLoad } from "@/components_v2/state/usePlanningLoad";
 import { useAutoSave } from "@/components_v2/state/planning/useAutoSave";
+import { useCatalogPanels } from "@/components_v2/state/useCatalogPanels";
 
 export default function PlannerV2Page() {
   const sp = useSearchParams();
@@ -21,6 +22,7 @@ export default function PlannerV2Page() {
 
   usePlanningLoad();
   useAutoSave();
+  useCatalogPanels();
 
   const setStep = usePlannerV2Store((s) => s.setStep);
 

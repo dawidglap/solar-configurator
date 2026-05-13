@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
-import { PANEL_CATALOG } from "@/constants/panels";
 import { Maximize2, X } from "lucide-react";
 
 const fmt0 = new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 });
@@ -41,6 +40,7 @@ export default function WirtschaftlichkeitPanel({
   const [isExpanded, setIsExpanded] = useState(false);
 
   const placedPanels = usePlannerV2Store((s) => s.panels);
+  const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
   const selectedPanelId = usePlannerV2Store((s) => s.selectedPanelId);
   const getPartsTotals = usePlannerV2Store((s) => s.getPartsTotals);
 
@@ -50,7 +50,7 @@ export default function WirtschaftlichkeitPanel({
     const qty = placedPanels?.length ?? 0;
     const panelId = placedPanels?.[0]?.panelId || selectedPanelId || "";
     const spec =
-      (panelId && PANEL_CATALOG.find((p) => p.id === panelId)) || undefined;
+      (panelId && catalogPanels.find((p) => p.id === panelId)) || undefined;
 
     const priceChf = safeNumber((spec as any)?.priceChf, 0);
     const modulesTotal = qty * priceChf;
@@ -121,6 +121,7 @@ export default function WirtschaftlichkeitPanel({
     };
   }, [
     placedPanels,
+    catalogPanels,
     selectedPanelId,
     getPartsTotals,
     productionKwhYear,

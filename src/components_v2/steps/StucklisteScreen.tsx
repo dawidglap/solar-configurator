@@ -1,9 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
-import { PANEL_CATALOG } from "@/constants/panels";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 
 type LineItem = {
@@ -31,6 +30,7 @@ const pillBtn = pillBase + " hover:bg-white/10 active:bg-white/15 text-left";
 
 export default function StucklisteScreen() {
   const placedPanels = usePlannerV2Store((s) => s.panels);
+  const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
 
   /**
    * ✅ 1) FIX: La riga "Modul" è SOLO la realtà dei pannelli piazzati.
@@ -41,7 +41,7 @@ export default function StucklisteScreen() {
     const panelId = placedPanels[0]?.panelId;
 
     const spec = panelId
-      ? PANEL_CATALOG.find((p) => p.id === panelId)
+      ? catalogPanels.find((p) => p.id === panelId)
       : undefined;
 
     const wp = spec?.wp ?? 0;
@@ -50,7 +50,7 @@ export default function StucklisteScreen() {
     const total = qty * priceChf;
 
     return { qty, panelId, spec, wp, priceChf, kWp, total };
-  }, [placedPanels]);
+  }, [placedPanels, catalogPanels]);
 
   /**
    * ✅ 2) Altre voci (manuali) — per ora esempi
@@ -86,11 +86,20 @@ export default function StucklisteScreen() {
    * IMPORTANTISSIMO: questa NON cambia i "placed panels".
    */
   const [selectedCatalogPanelId, setSelectedCatalogPanelId] = useState<string>(
-    PANEL_CATALOG[0]?.id ?? "",
+    "",
   );
 
+  useEffect(() => {
+    const selectedStillExists = catalogPanels.some(
+      (panel) => panel.id === selectedCatalogPanelId
+    );
+    if ((!selectedCatalogPanelId || !selectedStillExists) && catalogPanels[0]?.id) {
+      setSelectedCatalogPanelId(catalogPanels[0].id);
+    }
+  }, [selectedCatalogPanelId, catalogPanels]);
+
   const addManualModuleLineFromCatalog = () => {
-    const spec = PANEL_CATALOG.find((p) => p.id === selectedCatalogPanelId);
+    const spec = catalogPanels.find((p) => p.id === selectedCatalogPanelId);
     if (!spec) return;
 
     setItems((prev) => [
@@ -236,7 +245,7 @@ export default function StucklisteScreen() {
             </div>
 
             <div className="mt-3 space-y-2 text-[11px]">
-              {/* MODULE dropdown reale: prende da PANEL_CATALOG */}
+              {/* MODULE dropdown: prende dal tenant-Katalog aus /api/catalog-items */}
               <div className="space-y-2">
                 <div className="text-white/70 text-[10px] uppercase tracking-wide">
                   Module
@@ -247,7 +256,7 @@ export default function StucklisteScreen() {
                   onChange={(e) => setSelectedCatalogPanelId(e.target.value)}
                   className={pillBase + " text-white/90"}
                 >
-                  {PANEL_CATALOG.map((p) => (
+                  {catalogPanels.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.brand} – {p.model} ({fmt0.format(p.wp)}Wp)
                     </option>
@@ -289,7 +298,7 @@ export default function StucklisteScreen() {
             </div>
 
             <div className="mt-4 text-[9px] text-white/35 leading-snug">
-              TODO: Katalog pro Firma aus DB. Aktuell PANEL_CATALOG (MVP).
+              Modulkatalog wird aus dem Firmenkatalog geladen.
             </div>
           </div>
         </aside>

@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import { ChevronDown } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
-import { PANEL_CATALOG } from "@/constants/panels";
 import ProductionSummaryCard from "../report/ProductionSummaryCard";
 import { BATTERIES } from "@/constants/batteries";
 import { CHARGERS } from "@/constants/chargers";
@@ -28,11 +27,11 @@ const PAYMENT_PLANS: { key: PaymentPlanKey; label: string }[] = [
   { key: "30-60-10", label: "30% / 60% / 10%" },
 ];
 
-function calcKwpFromPanels(panels: any[]) {
+function calcKwpFromPanels(panels: any[], catalogPanels: any[]) {
   const qty = panels.length;
   const panelId = panels[0]?.panelId;
   const spec = panelId
-    ? PANEL_CATALOG.find((p) => p.id === panelId)
+    ? catalogPanels.find((p) => p.id === panelId)
     : undefined;
   const wp = spec?.wp ?? 0;
   const kWp = (qty * wp) / 1000;
@@ -46,10 +45,11 @@ const pillBase =
 
 export default function ReportScreen() {
   const placedPanels = usePlannerV2Store((s) => s.panels);
+  const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
 
   const moduleInfo = useMemo(
-    () => calcKwpFromPanels(placedPanels),
-    [placedPanels],
+    () => calcKwpFromPanels(placedPanels, catalogPanels),
+    [placedPanels, catalogPanels],
   );
 
   // ✅ produzione unificata, no NaN

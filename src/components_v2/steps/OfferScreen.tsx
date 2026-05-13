@@ -6,7 +6,6 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Download, Loader2 } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
-import { PANEL_CATALOG } from "@/constants/panels";
 
 const fmt2 = new Intl.NumberFormat("de-CH", {
   minimumFractionDigits: 2,
@@ -19,12 +18,13 @@ export default function OfferScreen() {
   const planningId = sp.get("planningId") ?? "";
 
   const placedPanels = usePlannerV2Store((s) => s.panels);
+  const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
 
   const placed = useMemo(() => {
     const qty = placedPanels.length;
     const panelId = placedPanels[0]?.panelId;
     const spec = panelId
-      ? PANEL_CATALOG.find((p) => p.id === panelId)
+      ? catalogPanels.find((p) => p.id === panelId)
       : undefined;
 
     const wp = spec?.wp ?? 0;
@@ -33,7 +33,7 @@ export default function OfferScreen() {
     const total = qty * priceChf;
 
     return { qty, panelId, spec, wp, priceChf, kWp, total };
-  }, [placedPanels]);
+  }, [placedPanels, catalogPanels]);
 
   const [pdfUrl, setPdfUrl] = useState("");
   const [loadingPdf, setLoadingPdf] = useState(false);

@@ -1,13 +1,11 @@
 // src/components_v2/state/defaultStoreData.ts
 // ⚠️ NO "use client" qui dentro!
-
-import { PANEL_CATALOG } from "@/constants/panels";
 import type { PlannerStep, Tool } from "@/types/planner";
 import { defaultProfile } from "./slices/profileSlice";
 
 // Se vuoi puoi tipizzare meglio, ma per ora va benissimo così.
 export function defaultStoreData() {
-  const selectedPanelId = PANEL_CATALOG[0]?.id ?? "";
+  const selectedPanelId = "";
 
   return {
     // step/navigation
@@ -45,7 +43,7 @@ export function defaultStoreData() {
     selectedSnowGuardId: undefined,
 
     // catalog + selezione
-    catalogPanels: PANEL_CATALOG,
+    catalogPanels: [],
     selectedPanelId,
 
     // form step 1
