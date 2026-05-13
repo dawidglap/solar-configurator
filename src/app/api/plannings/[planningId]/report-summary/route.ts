@@ -81,13 +81,13 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
+      ...getCorsHeaders(origin),
       "Cache-Control": "no-store, max-age=0, must-revalidate",
       "CDN-Cache-Control": "no-store",
       "Vercel-CDN-Cache-Control": "no-store",
       Pragma: "no-cache",
       Expires: "0",
       Vary: "Origin, Cookie",
-      ...getCorsHeaders(origin),
     },
   });
 }
@@ -945,13 +945,13 @@ export async function OPTIONS(req: Request) {
   return new Response(null, {
     status: 204,
     headers: {
+      ...getCorsHeaders(origin),
       "Cache-Control": "no-store, max-age=0, must-revalidate",
       "CDN-Cache-Control": "no-store",
       "Vercel-CDN-Cache-Control": "no-store",
       Pragma: "no-cache",
       Expires: "0",
       Vary: "Origin, Cookie",
-      ...getCorsHeaders(origin),
     },
   });
 }
