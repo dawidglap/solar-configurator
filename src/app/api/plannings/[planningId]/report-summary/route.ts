@@ -8,27 +8,7 @@ import { enforceActiveSubscription } from "@/lib/subscription";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-const REPORT_SUMMARY_CACHE_TTL_MS = 120_000;
-const REPORT_SUMMARY_RATE_GUARD_MS = 1_500;
-
-// Vercel Observability showed repeated loops on this route too.
-// Protect it with:
-// - browser-private cache
-// - per-instance micro-cache
-// - per-user/planning rate guard
-const reportSummaryCache = new Map<
-  string,
-  {
-    planningUpdatedAt: string;
-    body: {
-      ok: true;
-      planningId: string;
-      reportSummary: ReturnType<typeof buildReportSummary>;
-    };
-    expiresAt: number;
-  }
->();
-const reportSummaryLastRequestAt = new Map<string, number>();
+export const fetchCache = "force-no-store";
 
 /* ----------------------------- Session helpers ---------------------------- */
 
@@ -101,9 +81,12 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
-      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      "Cache-Control": "no-store, max-age=0, must-revalidate",
+      "CDN-Cache-Control": "no-store",
+      "Vercel-CDN-Cache-Control": "no-store",
       Pragma: "no-cache",
       Expires: "0",
+      Vary: "Origin, Cookie",
       ...getCorsHeaders(origin),
     },
   });
@@ -111,22 +94,6 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
 
 function getDebugLoggingEnabled() {
   return process.env.NODE_ENV === "development" || process.env.API_DEBUG === "true";
-}
-
-function getCachedReportSummaryHeaders(origin: string | null) {
-  return {
-    "Content-Type": "application/json",
-    ...getCorsHeaders(origin),
-    "Cache-Control": "private, max-age=300, stale-while-revalidate=600",
-    Vary: "Origin, Cookie",
-  };
-}
-
-function jsonCachedReportSummaryResponse(origin: string | null, body: any, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: getCachedReportSummaryHeaders(origin),
-  });
 }
 
 function normalizeCompanyId(value: unknown) {
@@ -140,22 +107,6 @@ function normalizeCompanyId(value: unknown) {
 function buildPlanningCompanyFilter(companyId: string) {
   const objectId = toObjectIdOrNull(companyId);
   return objectId ? { $in: [companyId, objectId] } : companyId;
-}
-
-function getCacheKey(companyId: string, planningId: string) {
-  return `${companyId}::${planningId}`;
-}
-
-function getRateGuardKey(companyId: string, userId: string, planningId: string) {
-  return `${companyId}::${userId || "anonymous"}::${planningId}`;
-}
-
-function pruneReportSummaryCache(now = Date.now()) {
-  for (const [key, value] of reportSummaryCache.entries()) {
-    if (value.expiresAt <= now) {
-      reportSummaryCache.delete(key);
-    }
-  }
 }
 
 function logReportSummaryRequest(args: {
@@ -994,9 +945,12 @@ export async function OPTIONS(req: Request) {
   return new Response(null, {
     status: 204,
     headers: {
-      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      "Cache-Control": "no-store, max-age=0, must-revalidate",
+      "CDN-Cache-Control": "no-store",
+      "Vercel-CDN-Cache-Control": "no-store",
       Pragma: "no-cache",
       Expires: "0",
+      Vary: "Origin, Cookie",
       ...getCorsHeaders(origin),
     },
   });
@@ -1093,13 +1047,6 @@ export async function GET(
     return jsonResponse(origin, { ok: false, error: "Invalid planningId" }, status);
   }
 
-  const cacheKey = getCacheKey(companyId, planningId);
-  const rateGuardKey = getRateGuardKey(companyId, userId, planningId);
-  const now = Date.now();
-  pruneReportSummaryCache(now);
-  const cached = reportSummaryCache.get(cacheKey);
-  const lastRequestedAt = reportSummaryLastRequestAt.get(rateGuardKey) ?? 0;
-
   try {
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
@@ -1119,50 +1066,6 @@ export async function GET(
     const plannings = db.collection("plannings");
     const catalogItems = db.collection("catalogItems");
 
-    const docMeta = await plannings.findOne(
-      {
-        _id: planningObjectId,
-        companyId: buildPlanningCompanyFilter(companyId),
-      },
-      { projection: { _id: 1, updatedAt: 1 } },
-    );
-
-    if (!docMeta) {
-      const status = 404;
-      logReportSummaryRequest({
-        method: req.method,
-        pathname,
-        planningId,
-        userId,
-        companyId,
-        origin,
-        durationMs: Date.now() - startedAt,
-        status,
-      });
-      return jsonCachedReportSummaryResponse(origin, { ok: false, error: "Planning not found" }, status);
-    }
-
-    const planningUpdatedAt =
-      docMeta.updatedAt instanceof Date
-        ? docMeta.updatedAt.toISOString()
-        : safeString(docMeta.updatedAt);
-
-    if (cached && cached.expiresAt > now && cached.planningUpdatedAt === planningUpdatedAt) {
-      reportSummaryLastRequestAt.set(rateGuardKey, now);
-      const status = 200;
-      logReportSummaryRequest({
-        method: req.method,
-        pathname,
-        planningId,
-        userId,
-        companyId,
-        origin,
-        durationMs: Date.now() - startedAt,
-        status,
-      });
-      return jsonCachedReportSummaryResponse(origin, cached.body, status);
-    }
-
     const doc = await plannings.findOne({
       _id: planningObjectId,
       companyId: buildPlanningCompanyFilter(companyId),
@@ -1180,7 +1083,7 @@ export async function GET(
         durationMs: Date.now() - startedAt,
         status,
       });
-      return jsonCachedReportSummaryResponse(origin, { ok: false, error: "Planning not found" }, status);
+      return jsonResponse(origin, { ok: false, error: "Planning not found" }, status);
     }
 
     const catalogDocs = await catalogItems
@@ -1196,12 +1099,6 @@ export async function GET(
       planningId: String((doc as any)._id),
       reportSummary,
     };
-    reportSummaryCache.set(cacheKey, {
-      planningUpdatedAt,
-      body,
-      expiresAt: now + REPORT_SUMMARY_CACHE_TTL_MS,
-    });
-    reportSummaryLastRequestAt.set(rateGuardKey, now);
     const status = 200;
     logReportSummaryRequest({
       method: req.method,
@@ -1214,7 +1111,7 @@ export async function GET(
       status,
     });
 
-    return jsonCachedReportSummaryResponse(origin, body, status);
+    return jsonResponse(origin, body, status);
   } catch (e: any) {
     console.error("GET REPORT SUMMARY ERROR:", e);
     const status = 500;
