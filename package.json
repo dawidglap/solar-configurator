@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "next lint",
     "test:checklist": "npx tsx scripts/test-checklist-patch.ts",
+    "test:execution-tasks": "npx tsx scripts/test-execution-tasks.ts",
     "backfill:company-subscriptions": "npx tsx scripts/backfill-company-subscriptions.ts",
+    "backfill:execution-tasks": "npx tsx scripts/backfill-execution-tasks.ts",
+    "migrate:montages-to-execution-tasks": "npx tsx scripts/migrate-montages-to-execution-tasks.ts",
     "audit:customer-duplicates": "node scripts/audit-customer-duplicates.js",
     "audit:customer-duplicates:mark": "node scripts/audit-customer-duplicates.js --mark",
     "ensure:customer-indexes": "node scripts/ensure-customer-indexes.js"

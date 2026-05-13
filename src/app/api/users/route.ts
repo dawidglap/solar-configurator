@@ -101,6 +101,11 @@ function normalizeUser(doc: any, activeCompanyId: string) {
     name: fullName,
     email: safeString(doc?.email),
     role: safeString(membership?.role) || "",
+    executionRoles: Array.isArray(doc?.executionRoles)
+      ? doc.executionRoles
+          .map((value: unknown) => safeString(value).toLowerCase())
+          .filter((value: string) => value === "montage" || value === "elektro")
+      : [],
     status: safeString(membership?.status) || safeString(doc?.status) || "active",
     isPlatformSuperAdmin: !!doc?.isPlatformSuperAdmin,
     createdAt: doc?.createdAt ?? null,
@@ -131,6 +136,11 @@ export async function GET(req: Request) {
 
   const activeCompanyId = String(session.activeCompanyId);
   const activeCompanyObjectId = objectIdOrNull(activeCompanyId);
+  const executionRole = safeString(new URL(req.url).searchParams.get("executionRole")).toLowerCase();
+
+  if (executionRole && executionRole !== "montage" && executionRole !== "elektro") {
+    return jsonResponse(origin, { ok: false, error: "Invalid executionRole" }, 400);
+  }
 
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
@@ -168,7 +178,11 @@ export async function GET(req: Request) {
       .sort({ createdAt: -1 })
       .toArray();
 
-    const items = docs.map((doc) => normalizeUser(doc, activeCompanyId));
+    const items = docs
+      .map((doc) => normalizeUser(doc, activeCompanyId))
+      .filter((doc) =>
+        executionRole ? Array.isArray((doc as any).executionRoles) && (doc as any).executionRoles.includes(executionRole) : true,
+      );
 
     return jsonResponse(origin, { ok: true, users: items, items }, 200);
   } catch (e: any) {

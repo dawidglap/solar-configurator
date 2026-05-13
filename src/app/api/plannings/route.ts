@@ -12,6 +12,7 @@ import {
   normalizeStageHistory,
 } from "@/lib/plannings";
 import { getSessionUserName } from "@/lib/tasks";
+import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
 
 export const runtime = "nodejs";
 
@@ -271,6 +272,17 @@ export async function POST(req: Request) {
     };
 
     const res = await plannings.insertOne(doc);
+
+    if (commercialStage === "gewonnen") {
+      await ensureExecutionTasksForWonPlanning(
+        db,
+        {
+          ...doc,
+          _id: res.insertedId,
+        },
+        session as any,
+      );
+    }
 
     return new Response(
       JSON.stringify({ ok: true, planningId: res.insertedId.toString() }),

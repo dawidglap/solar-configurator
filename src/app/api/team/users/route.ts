@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
+import { normalizeExecutionRoles } from "@/lib/executionTasks";
 
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
@@ -64,6 +65,7 @@ export async function POST(req: Request) {
   const name = String(body.name ?? "").trim();
   const role = String(body.role ?? "sales").trim(); // sales|planner|viewer|admin
   const tempPassword = String(body.tempPassword ?? "").trim();
+  const executionRoles = normalizeExecutionRoles(body.executionRoles);
 
   if (!email || !tempPassword) {
     return jsonResponse(
@@ -111,6 +113,7 @@ export async function POST(req: Request) {
       email,
       name: name || null,
       passwordHash,
+      executionRoles,
       memberships: [{ companyId: activeCompanyId, role, status: "active" }],
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -121,6 +124,7 @@ export async function POST(req: Request) {
       userId: res.insertedId.toString(),
       email,
       role,
+      executionRoles,
       tempPassword, // solo per test, poi lo togliamo
     });
   } catch (e: any) {

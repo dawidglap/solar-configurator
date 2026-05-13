@@ -104,6 +104,85 @@ Backfill existing companies with subscription defaults:
 npm run backfill:company-subscriptions
 ```
 
+## Execution Tasks API
+
+The backend now supports a dual-track execution model for won projects:
+
+- `track: montage`
+- `track: elektro`
+
+Each project can have one execution task per track, with hard-coded stages:
+
+- `offen`
+- `geplant`
+- `in_ausfuehrung`
+- `abgeschlossen`
+
+The project checklist remains the single source of truth on the linked planning.
+
+### New endpoints
+
+- `GET /api/execution-tasks?track=montage|elektro&stage=&from=&to=&q=&assignee=`
+- `GET /api/execution-tasks/:taskId`
+- `PATCH /api/execution-tasks/:taskId`
+- `POST /api/execution-tasks/backfill`
+- `GET /api/execution-tasks/:taskId/checklist`
+- `PATCH /api/execution-tasks/:taskId/checklist/:itemKey`
+
+### Notes
+
+- execution tasks are created automatically when a planning moves to `commercial.stage = "gewonnen"`
+- creation is idempotent per `(companyId, projectId, track)`
+- old `montages` remains untouched and is considered deprecated
+- users can carry `executionRoles: ["montage" | "elektro"]`
+- `GET /api/users?executionRole=montage|elektro` filters assignable users
+
+### Curl examples
+
+List all montage tasks:
+
+```bash
+curl 'https://planner.helionic.ch/api/execution-tasks?track=montage' \
+  -H 'Origin: https://app.helionic.ch' \
+  --cookie 'session=YOUR_SESSION_COOKIE'
+```
+
+Update one execution task:
+
+```bash
+curl 'https://planner.helionic.ch/api/execution-tasks/TASK_ID' \
+  -X PATCH \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: https://app.helionic.ch' \
+  --cookie 'session=YOUR_SESSION_COOKIE' \
+  -d '{
+    "stage": "geplant",
+    "scheduledStart": "2026-05-20T07:00:00.000Z",
+    "scheduledEnd": "2026-05-20T16:00:00.000Z",
+    "startTime": "07:00",
+    "endTime": "16:00",
+    "assignedUserIds": ["USER_ID"],
+    "notes": "Termin mit Kunde abgestimmt"
+  }'
+```
+
+Backfill missing execution tasks for already won projects:
+
+```bash
+curl 'https://planner.helionic.ch/api/execution-tasks/backfill' \
+  -X POST \
+  -H 'Origin: https://app.helionic.ch' \
+  --cookie 'session=YOUR_SESSION_COOKIE'
+```
+
+### Scripts
+
+```bash
+npm run backfill:execution-tasks
+npm run migrate:montages-to-execution-tasks
+npm run test:execution-tasks
+```
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

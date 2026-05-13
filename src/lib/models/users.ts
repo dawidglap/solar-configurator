@@ -11,6 +11,8 @@ export type UserMembership = {
   status?: "active" | "invited" | "disabled";
 };
 
+export type ExecutionRole = "montage" | "elektro";
+
 export type User = {
   _id: string;
 
@@ -25,6 +27,7 @@ export type User = {
   status: "active" | "invited" | "disabled";
 
   memberships: UserMembership[];
+  executionRoles?: ExecutionRole[];
 
   createdAt: Date;
   updatedAt: Date;

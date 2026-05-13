@@ -12,6 +12,7 @@ import {
   normalizeStageHistory,
 } from "@/lib/plannings";
 import { getSessionUserName } from "@/lib/tasks";
+import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
 
 export const runtime = "nodejs";
 
@@ -661,6 +662,10 @@ if (ist && typeof ist === "object") {
 
     if (!updated) {
       return jsonResponse(origin, { ok: false, error: "Planning not found after update" }, 404);
+    }
+
+    if (safeString((updated as any)?.commercial?.stage).toLowerCase() === "gewonnen") {
+      await ensureExecutionTasksForWonPlanning(db, updated, session as any);
     }
 
     const { comments: _comments, ...updatedWithoutComments } = updated as any;
