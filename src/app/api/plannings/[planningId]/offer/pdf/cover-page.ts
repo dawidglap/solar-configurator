@@ -355,7 +355,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
       .filter(Boolean)
       .join(" — ") || data.title || "Photovoltaik-Angebot";
   const subtitle =
-    [safeText(data.projectAddress), data.kWp > 0 ? `${money(data.kWp)} kWp` : ""]
+    [data.kWp > 0 ? `${money(data.kWp)} kWp` : "", safeText(data.projectAddress)]
       .filter(Boolean)
       .join(" - ");
   const titleWrap = fitWrappedTitle(title, bold, titleBoxW - 32);
