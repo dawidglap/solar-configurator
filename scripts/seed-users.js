@@ -18,25 +18,7 @@ const run = async () => {
   const passwordHash = await bcrypt.hash(passwordPlain, 10);
 
   const now = new Date();
-
-  // elimina utenti demo esistenti
-  await users.deleteMany({
-    email: {
-      $in: [
-        "superadmin@helionic.ch",
-        "owner@demo-energie.ch",
-        "admin@demo-energie.ch",
-        "sales@demo-energie.ch",
-        "installer@demo-energie.ch",
-        "office@demo-energie.ch",
-        "viewer@demo-energie.ch",
-      ],
-    },
-  });
-
-  console.log("Old demo users removed");
-
-  await users.insertMany([
+  const demoUsers = [
     {
       email: "superadmin@helionic.ch",
       firstName: "Platform",
@@ -44,6 +26,7 @@ const run = async () => {
       passwordHash,
       isPlatformSuperAdmin: true,
       status: "active",
+      executionRoles: [],
       memberships: [],
       createdAt: now,
       updatedAt: now,
@@ -55,6 +38,7 @@ const run = async () => {
       passwordHash,
       isPlatformSuperAdmin: false,
       status: "active",
+      executionRoles: [],
       memberships: [
         {
           companyId,
@@ -73,6 +57,7 @@ const run = async () => {
       passwordHash,
       isPlatformSuperAdmin: false,
       status: "active",
+      executionRoles: [],
       memberships: [
         {
           companyId,
@@ -91,6 +76,7 @@ const run = async () => {
       passwordHash,
       isPlatformSuperAdmin: false,
       status: "active",
+      executionRoles: [],
       memberships: [
         {
           companyId,
@@ -109,6 +95,7 @@ const run = async () => {
       passwordHash,
       isPlatformSuperAdmin: false,
       status: "active",
+      executionRoles: [],
       memberships: [
         {
           companyId,
@@ -127,6 +114,7 @@ const run = async () => {
       passwordHash,
       isPlatformSuperAdmin: false,
       status: "active",
+      executionRoles: [],
       memberships: [
         {
           companyId,
@@ -145,6 +133,7 @@ const run = async () => {
       passwordHash,
       isPlatformSuperAdmin: false,
       status: "active",
+      executionRoles: [],
       memberships: [
         {
           companyId,
@@ -156,9 +145,114 @@ const run = async () => {
       createdAt: now,
       updatedAt: now,
     },
-  ]);
+    {
+      email: "montage1@demo-energie.ch",
+      firstName: "Marco",
+      lastName: "Monteur",
+      passwordHash,
+      isPlatformSuperAdmin: false,
+      status: "active",
+      executionRoles: ["montage"],
+      memberships: [
+        {
+          companyId,
+          role: "installer",
+          isDefault: true,
+          status: "active",
+        },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      email: "montage2@demo-energie.ch",
+      firstName: "Lukas",
+      lastName: "Lehner",
+      passwordHash,
+      isPlatformSuperAdmin: false,
+      status: "active",
+      executionRoles: ["montage"],
+      memberships: [
+        {
+          companyId,
+          role: "installer",
+          isDefault: true,
+          status: "active",
+        },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      email: "elektro1@demo-energie.ch",
+      firstName: "Erik",
+      lastName: "Elektriker",
+      passwordHash,
+      isPlatformSuperAdmin: false,
+      status: "active",
+      executionRoles: ["elektro"],
+      memberships: [
+        {
+          companyId,
+          role: "installer",
+          isDefault: true,
+          status: "active",
+        },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      email: "elektro2@demo-energie.ch",
+      firstName: "Pia",
+      lastName: "Power",
+      passwordHash,
+      isPlatformSuperAdmin: false,
+      status: "active",
+      executionRoles: ["montage", "elektro"],
+      memberships: [
+        {
+          companyId,
+          role: "installer",
+          isDefault: true,
+          status: "active",
+        },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
 
-  console.log("✅ Demo users created");
+  const result = await users.bulkWrite(
+    demoUsers.map((user) => ({
+      updateOne: {
+        filter: { email: user.email },
+        update: {
+          $set: {
+            firstName: user.firstName,
+            lastName: user.lastName,
+            passwordHash: user.passwordHash,
+            isPlatformSuperAdmin: user.isPlatformSuperAdmin,
+            status: user.status,
+            executionRoles: user.executionRoles,
+            memberships: user.memberships,
+            updatedAt: user.updatedAt,
+          },
+          $setOnInsert: {
+            email: user.email,
+            createdAt: user.createdAt,
+          },
+        },
+        upsert: true,
+      },
+    }))
+  );
+
+  console.log("✅ Demo users upserted", {
+    matched: result.matchedCount,
+    modified: result.modifiedCount,
+    upserted: result.upsertedCount,
+  });
 
   process.exit(0);
 };

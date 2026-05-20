@@ -29,6 +29,8 @@ export type ExecutionStage = (typeof EXECUTION_STAGES)[number];
 
 type NormalizedExecutionAssignee = {
   id: string;
+  firstName: string;
+  lastName: string;
   fullName: string;
   email: string;
   executionRoles: ExecutionTrack[];
@@ -221,6 +223,8 @@ export function normalizeExecutionTask(doc: any, opts?: {
       const lastName = safeString(user?.lastName);
       return {
         id,
+        firstName,
+        lastName,
         fullName:
           [firstName, lastName].filter(Boolean).join(" ") ||
           safeString(user?.name) ||

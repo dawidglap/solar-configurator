@@ -173,16 +173,13 @@ export async function GET(req: Request) {
 
     const docs = await users
       .find({
+        ...(executionRole ? { executionRoles: executionRole } : {}),
         $or: companyMatchers,
       })
       .sort({ createdAt: -1 })
       .toArray();
 
-    const items = docs
-      .map((doc) => normalizeUser(doc, activeCompanyId))
-      .filter((doc) =>
-        executionRole ? Array.isArray((doc as any).executionRoles) && (doc as any).executionRoles.includes(executionRole) : true,
-      );
+    const items = docs.map((doc) => normalizeUser(doc, activeCompanyId));
 
     return jsonResponse(origin, { ok: true, users: items, items }, 200);
   } catch (e: any) {
