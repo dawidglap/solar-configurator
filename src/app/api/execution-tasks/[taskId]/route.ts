@@ -10,8 +10,10 @@ import {
 import { readSession, safeString } from "@/lib/api-session";
 import { buildIdVariants } from "@/lib/tasks";
 import {
+  buildExecutionScheduleHistoryEntry,
   ensureExecutionTaskIndexes,
   getExecutionTasksCollection,
+  hasExecutionScheduleChanged,
   hydrateExecutionTasks,
   normalizeExecutionAddress,
   normalizeExecutionDate,
@@ -184,6 +186,16 @@ export async function PATCH(req: Request, { params }: Params) {
       updateSet.assignedUserIds = assignedUserIds;
     }
 
+    const scheduleChanged = hasExecutionScheduleChanged(existing, {
+      scheduledStart,
+      scheduledEnd,
+      startTime,
+      endTime,
+    });
+    const scheduleHistoryEntry = scheduleChanged
+      ? buildExecutionScheduleHistoryEntry(existing, session, body?.rescheduleReason)
+      : null;
+
     let pushStageHistory: Record<string, any> | null = null;
     if (nextStage && nextStage !== (existing as any)?.stage) {
       updateSet.stage = nextStage;
@@ -198,8 +210,13 @@ export async function PATCH(req: Request, { params }: Params) {
       { _id: new ObjectId(taskId), ...buildExecutionCompanyFilter(companyId) },
       {
         $set: updateSet,
-        ...(pushStageHistory
-          ? { $push: { stageHistory: pushStageHistory } }
+        ...((pushStageHistory || scheduleHistoryEntry)
+          ? {
+              $push: {
+                ...(pushStageHistory ? { stageHistory: pushStageHistory } : {}),
+                ...(scheduleHistoryEntry ? { scheduleHistory: scheduleHistoryEntry } : {}),
+              },
+            }
           : {}),
       } as any,
     );

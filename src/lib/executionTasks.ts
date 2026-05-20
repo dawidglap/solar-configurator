@@ -65,6 +65,27 @@ type NormalizedExecutionTask = {
   updatedAt: string;
 };
 
+type NormalizedExecutionScheduleHistoryEntry = {
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  changedAt: string;
+  changedByUserId: string | null;
+  changedByName: string;
+  reason: string | null;
+};
+
+type NormalizedExecutionActivity = {
+  id: string;
+  taskId: string;
+  companyId: string;
+  text: string;
+  createdByUserId: string | null;
+  createdByName: string;
+  createdAt: string;
+};
+
 let ensureExecutionTaskIndexesPromise: Promise<void> | null = null;
 
 export function isExecutionTrack(value: unknown): value is ExecutionTrack {
@@ -122,6 +143,10 @@ export function getExecutionTasksCollection(db: Db) {
   return db.collection("executionTasks");
 }
 
+export function getExecutionActivitiesCollection(db: Db) {
+  return db.collection("executionActivities");
+}
+
 export async function ensureExecutionTaskIndexes(db: Db) {
   if (ensureExecutionTaskIndexesPromise) return ensureExecutionTaskIndexesPromise;
 
@@ -143,6 +168,24 @@ export async function ensureExecutionTaskIndexes(db: Db) {
     });
 
   return ensureExecutionTaskIndexesPromise;
+}
+
+let ensureExecutionActivityIndexesPromise: Promise<void> | null = null;
+
+export async function ensureExecutionActivityIndexes(db: Db) {
+  if (ensureExecutionActivityIndexesPromise) return ensureExecutionActivityIndexesPromise;
+
+  const activities = getExecutionActivitiesCollection(db);
+  ensureExecutionActivityIndexesPromise = Promise.all([
+    activities.createIndex({ companyId: 1, taskId: 1, createdAt: -1 }),
+  ])
+    .then(() => undefined)
+    .catch((error) => {
+      ensureExecutionActivityIndexesPromise = null;
+      throw error;
+    });
+
+  return ensureExecutionActivityIndexesPromise;
 }
 
 async function resolveCompanyWonStageKeys(db: Db, companyId: string) {
@@ -201,6 +244,137 @@ function normalizeExecutionHistoryEntry(entry: any) {
   const by = safeString(entry?.by) || mongoIdToString(entry?.by) || null;
 
   return { stage, at, by };
+}
+
+function normalizeExecutionDateValueForOutput(value: any) {
+  if (value instanceof Date) return value.toISOString();
+  return safeString(value) || null;
+}
+
+function normalizeExecutionDateValueForStorage(value: any) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const normalized = normalizeExecutionDate(value);
+  return normalized === undefined ? null : normalized;
+}
+
+export function normalizeExecutionScheduleHistoryEntry(
+  entry: any,
+): NormalizedExecutionScheduleHistoryEntry | null {
+  const changedAt =
+    entry?.changedAt instanceof Date
+      ? entry.changedAt.toISOString()
+      : safeString(entry?.changedAt);
+  if (!changedAt) return null;
+
+  return {
+    scheduledStart: normalizeExecutionDateValueForOutput(entry?.scheduledStart),
+    scheduledEnd: normalizeExecutionDateValueForOutput(entry?.scheduledEnd),
+    startTime: safeString(entry?.startTime) || null,
+    endTime: safeString(entry?.endTime) || null,
+    changedAt,
+    changedByUserId:
+      safeString(entry?.changedByUserId) || mongoIdToString(entry?.changedByUserId) || null,
+    changedByName: safeString(entry?.changedByName) || "unknown",
+    reason: safeString(entry?.reason) || null,
+  };
+}
+
+export function normalizeExecutionScheduleHistory(history: unknown) {
+  if (!Array.isArray(history)) return [] as NormalizedExecutionScheduleHistoryEntry[];
+
+  return history
+    .map((entry) => normalizeExecutionScheduleHistoryEntry(entry))
+    .filter(
+      (
+        entry: NormalizedExecutionScheduleHistoryEntry | null,
+      ): entry is NormalizedExecutionScheduleHistoryEntry => !!entry,
+    );
+}
+
+function comparableDateValue(value: any) {
+  return normalizeExecutionDateValueForOutput(value);
+}
+
+export function hasExecutionScheduleChanged(
+  existing: any,
+  next: {
+    scheduledStart?: Date | null;
+    scheduledEnd?: Date | null;
+    startTime?: string | null;
+    endTime?: string | null;
+  },
+) {
+  if (next.scheduledStart !== undefined) {
+    if (comparableDateValue(existing?.scheduledStart) !== comparableDateValue(next.scheduledStart)) {
+      return true;
+    }
+  }
+  if (next.scheduledEnd !== undefined) {
+    if (comparableDateValue(existing?.scheduledEnd) !== comparableDateValue(next.scheduledEnd)) {
+      return true;
+    }
+  }
+  if (next.startTime !== undefined) {
+    if ((safeString(existing?.startTime) || null) !== (next.startTime ?? null)) {
+      return true;
+    }
+  }
+  if (next.endTime !== undefined) {
+    if ((safeString(existing?.endTime) || null) !== (next.endTime ?? null)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function buildExecutionScheduleHistoryEntry(
+  existing: any,
+  session: SessionPayload | null | undefined,
+  reason?: unknown,
+) {
+  const changedByUserId = getSessionUserId(session);
+  const userObjectId = toObjectIdOrNull(changedByUserId);
+
+  return {
+    scheduledStart: normalizeExecutionDateValueForStorage(existing?.scheduledStart),
+    scheduledEnd: normalizeExecutionDateValueForStorage(existing?.scheduledEnd),
+    startTime: safeString(existing?.startTime) || null,
+    endTime: safeString(existing?.endTime) || null,
+    changedAt: new Date(),
+    changedByUserId: userObjectId || changedByUserId || null,
+    changedByName: getSessionUserName(session) || "unknown",
+    reason: safeString(reason) || null,
+  };
+}
+
+export function normalizeExecutionActivity(doc: any): NormalizedExecutionActivity {
+  return {
+    id: mongoIdToString(doc?._id),
+    taskId: mongoIdToString(doc?.taskId) || safeString(doc?.taskId),
+    companyId: mongoIdToString(doc?.companyId) || safeString(doc?.companyId),
+    text: safeString(doc?.text),
+    createdByUserId:
+      safeString(doc?.createdByUserId) || mongoIdToString(doc?.createdByUserId) || null,
+    createdByName: safeString(doc?.createdByName) || "unknown",
+    createdAt:
+      doc?.createdAt instanceof Date
+        ? doc.createdAt.toISOString()
+        : safeString(doc?.createdAt),
+  };
+}
+
+export function canDeleteExecutionActivity(
+  activity: any,
+  session: SessionPayload | null | undefined,
+) {
+  if (isAdminLikeRole(session)) return true;
+  const currentUserId = getSessionUserId(session);
+  if (!currentUserId) return false;
+  return (
+    safeString(activity?.createdByUserId) === currentUserId ||
+    mongoIdToString(activity?.createdByUserId) === currentUserId
+  );
 }
 
 export function normalizeExecutionTask(doc: any, opts?: {
