@@ -143,6 +143,13 @@ export async function POST(req: Request) {
       isPlatformSuperAdmin: !!user.isPlatformSuperAdmin,
       activeCompanyId: activeCompanyId?.toString() ?? null,
       activeRole,
+      firstName: typeof user.firstName === "string" ? user.firstName : null,
+      lastName: typeof user.lastName === "string" ? user.lastName : null,
+      name:
+        (typeof user.firstName === "string" || typeof user.lastName === "string")
+          ? [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || null
+          : (typeof user.name === "string" ? user.name : null),
+      email: typeof user.email === "string" ? user.email : null,
       iat: Date.now(),
     };
 

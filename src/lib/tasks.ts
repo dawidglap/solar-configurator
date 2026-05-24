@@ -55,16 +55,22 @@ export function getSessionUserId(session: SessionPayload | null | undefined) {
   return safeString(session?.userId) || safeString((session as any)?.id);
 }
 
-export function getSessionUserName(session: SessionPayload | null | undefined) {
+export function getSessionUserMeta(session: SessionPayload | null | undefined) {
+  const id = getSessionUserId(session) || null;
   const firstName = safeString((session as any)?.firstName);
   const lastName = safeString((session as any)?.lastName);
-  const fullName = [firstName, lastName].filter(Boolean).join(" ");
-  return (
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const name =
     fullName ||
     safeString((session as any)?.name) ||
     safeString((session as any)?.email) ||
-    ""
-  );
+    "Unbekannt";
+
+  return { id, name };
+}
+
+export function getSessionUserName(session: SessionPayload | null | undefined) {
+  return getSessionUserMeta(session).name;
 }
 
 export function getSessionUserEmail(session: SessionPayload | null | undefined) {

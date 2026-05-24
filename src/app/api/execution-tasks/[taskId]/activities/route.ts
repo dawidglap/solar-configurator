@@ -1,7 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/db";
 import { enforceActiveSubscription } from "@/lib/subscription";
-import { jsonResponse, noStoreHeaders, buildIdVariants, getSessionUserId, getSessionUserName } from "@/lib/tasks";
+import { jsonResponse, noStoreHeaders, buildIdVariants } from "@/lib/tasks";
 import { readSession, safeString, toObjectIdOrNull } from "@/lib/api-session";
 import {
   ensureExecutionActivityIndexes,
@@ -9,6 +9,7 @@ import {
   getExecutionActivitiesCollection,
   getExecutionTasksCollection,
   normalizeExecutionActivity,
+  resolveExecutionActorMeta,
 } from "@/lib/executionTasks";
 
 export const runtime = "nodejs";
@@ -115,14 +116,14 @@ export async function POST(req: Request, { params }: Params) {
       return jsonResponse(origin, { ok: false, message: "Execution task not found" }, 404);
     }
 
-    const createdByUserId = getSessionUserId(session);
-    const createdByObjectId = toObjectIdOrNull(createdByUserId);
+    const actor = await resolveExecutionActorMeta(db, session);
+    const createdByObjectId = toObjectIdOrNull(actor.id);
     const doc = {
       taskId: new ObjectId(taskId),
       companyId: (task as any).companyId,
       text,
-      createdByUserId: createdByObjectId || createdByUserId || null,
-      createdByName: getSessionUserName(session) || "unknown",
+      createdByUserId: createdByObjectId || actor.id || null,
+      createdByName: actor.name,
       createdAt: new Date(),
     };
 

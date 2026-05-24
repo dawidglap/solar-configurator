@@ -11,6 +11,7 @@ import {
   buildIdVariants,
   getCompanyMembersByIds,
   getSessionUserId,
+  getSessionUserMeta,
   getSessionUserName,
   isAdminLikeRole,
 } from "@/lib/tasks";
@@ -330,10 +331,10 @@ export function hasExecutionScheduleChanged(
 
 export function buildExecutionScheduleHistoryEntry(
   existing: any,
-  session: SessionPayload | null | undefined,
+  actor: { id: string | null; name: string },
   reason?: unknown,
 ) {
-  const changedByUserId = getSessionUserId(session);
+  const changedByUserId = actor.id;
   const userObjectId = toObjectIdOrNull(changedByUserId);
 
   return {
@@ -343,7 +344,7 @@ export function buildExecutionScheduleHistoryEntry(
     endTime: safeString(existing?.endTime) || null,
     changedAt: new Date(),
     changedByUserId: userObjectId || changedByUserId || null,
-    changedByName: getSessionUserName(session) || "unknown",
+    changedByName: actor.name,
     reason: safeString(reason) || null,
   };
 }
@@ -375,6 +376,35 @@ export function canDeleteExecutionActivity(
     safeString(activity?.createdByUserId) === currentUserId ||
     mongoIdToString(activity?.createdByUserId) === currentUserId
   );
+}
+
+export async function resolveExecutionActorMeta(
+  db: Db,
+  session: SessionPayload | null | undefined,
+) {
+  const base = getSessionUserMeta(session);
+  if (base.name !== "Unbekannt") {
+    return base;
+  }
+
+  const userId = base.id;
+  const objectId = toObjectIdOrNull(userId);
+  if (!objectId) return base;
+
+  const user = await db.collection("users").findOne(
+    { _id: objectId },
+    { projection: { firstName: 1, lastName: 1, name: 1, email: 1 } },
+  );
+  if (!user) return base;
+
+  const firstName = safeString((user as any)?.firstName);
+  const lastName = safeString((user as any)?.lastName);
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+
+  return {
+    id: userId,
+    name: fullName || safeString((user as any)?.name) || safeString((user as any)?.email) || "Unbekannt",
+  };
 }
 
 export function normalizeExecutionTask(doc: any, opts?: {

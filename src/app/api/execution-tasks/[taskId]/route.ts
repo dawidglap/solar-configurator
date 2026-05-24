@@ -19,6 +19,7 @@ import {
   normalizeExecutionDate,
   normalizeExecutionStage,
   normalizeExecutionTime,
+  resolveExecutionActorMeta,
   validateExecutionAssignees,
 } from "@/lib/executionTasks";
 
@@ -186,6 +187,7 @@ export async function PATCH(req: Request, { params }: Params) {
       updateSet.assignedUserIds = assignedUserIds;
     }
 
+    const actor = await resolveExecutionActorMeta(db, session);
     const scheduleChanged = hasExecutionScheduleChanged(existing, {
       scheduledStart,
       scheduledEnd,
@@ -193,7 +195,7 @@ export async function PATCH(req: Request, { params }: Params) {
       endTime,
     });
     const scheduleHistoryEntry = scheduleChanged
-      ? buildExecutionScheduleHistoryEntry(existing, session, body?.rescheduleReason)
+      ? buildExecutionScheduleHistoryEntry(existing, actor, body?.rescheduleReason)
       : null;
 
     let pushStageHistory: Record<string, any> | null = null;
