@@ -241,15 +241,27 @@ export async function validateInstallerIds(
 
 export function isPlanningMontageReady(planning: any) {
   const data = planning?.data ?? {};
+  const commercial = planning?.commercial ?? {};
+  const stage = safeString(commercial?.stage || planning?.stage).toLowerCase();
+  const stageType = safeString(commercial?.stageType || planning?.stageType).toLowerCase();
+  const paymentStatus = safeString(
+    commercial?.paymentStatus ||
+      planning?.paymentStatus ||
+      data?.paymentStatus ||
+      data?.reportOptions?.paymentStatus ||
+      data?.offer?.status ||
+      data?.angebot?.status ||
+      data?.offerStatus ||
+      data?.angebotStatus,
+  ).toLowerCase();
 
   return (
-    safeString(data?.offerStatus) === "paid" ||
-    safeString(data?.paymentStatus) === "paid" ||
-    safeString(data?.angebotStatus) === "paid" ||
+    planning?.montageReady === true ||
     data?.montageReady === true ||
-    safeString(data?.reportOptions?.paymentStatus) === "paid" ||
-    safeString(data?.offer?.status) === "paid" ||
-    safeString(data?.angebot?.status) === "paid"
+    paymentStatus === "paid" ||
+    stage === "won" ||
+    stage === "gewonnen" ||
+    stageType === "won"
   );
 }
 
@@ -277,42 +289,54 @@ function parseAddressLine(raw: string) {
 
 export function extractAddressFromPlanning(planning: any, customer?: any) {
   const profile = planning?.data?.profile ?? planning?.data?.planner?.profile ?? {};
-  const buildingStreet =
-    safeString(profile?.buildingStreet) ||
-    safeString(profile?.street) ||
-    safeString(profile?.billingStreet);
-  const buildingStreetNo =
-    safeString(profile?.buildingStreetNo) ||
-    safeString(profile?.streetNo) ||
-    safeString(profile?.billingStreetNo);
-  const buildingZip =
-    safeString(profile?.buildingZip) ||
-    safeString(profile?.zip) ||
-    safeString(profile?.billingZip);
-  const buildingCity =
-    safeString(profile?.buildingCity) ||
-    safeString(profile?.city) ||
-    safeString(profile?.billingCity);
+  const buildAddress = (source: any, prefix?: string) => {
+    const street = prefix
+      ? safeString(source?.[`${prefix}Street`])
+      : safeString(source?.street);
+    const streetNo = prefix
+      ? safeString(source?.[`${prefix}StreetNo`])
+      : safeString(source?.streetNo);
+    const zip = prefix
+      ? safeString(source?.[`${prefix}Zip`])
+      : safeString(source?.zip);
+    const city = prefix
+      ? safeString(source?.[`${prefix}City`])
+      : safeString(source?.city);
+    const country = prefix
+      ? safeString(source?.[`${prefix}Country`])
+      : safeString(source?.country);
 
-  if (buildingStreet || buildingStreetNo || buildingZip || buildingCity) {
+    if (!street && !streetNo && !zip && !city) return null;
     return normalizeMontageAddress({
-      street: [buildingStreet, buildingStreetNo].filter(Boolean).join(" "),
-      zip: buildingZip,
-      city: buildingCity,
-      country: "CH",
+      street: [street, streetNo].filter(Boolean).join(" "),
+      zip,
+      city,
+      country: country || "CH",
     });
-  }
+  };
 
-  const snapshotAddress =
-    safeString(planning?.data?.planner?.snapshot?.address) ||
-    safeString(planning?.data?.snapshot?.address);
-  if (snapshotAddress) {
-    return normalizeMontageAddress(parseAddressLine(snapshotAddress));
-  }
+  const profileBuildingAddress = buildAddress(profile, "building");
+  if (profileBuildingAddress) return profileBuildingAddress;
+
+  const profileStreetAddress = buildAddress(profile);
+  if (profileStreetAddress) return profileStreetAddress;
+
+  const customerBuildingAddress = buildAddress(customer, "building");
+  if (customerBuildingAddress) return customerBuildingAddress;
+
+  const customerBillingAddress = buildAddress(customer, "billing");
+  if (customerBillingAddress) return customerBillingAddress;
 
   const customerAddress = safeString(customer?.address);
   if (customerAddress) {
     return normalizeMontageAddress(parseAddressLine(customerAddress));
+  }
+
+  const titleAddress = safeString(planning?.title).includes("·")
+    ? safeString(planning?.title).split("·").slice(1).join("·")
+    : "";
+  if (titleAddress) {
+    return normalizeMontageAddress(parseAddressLine(titleAddress));
   }
 
   return normalizeMontageAddress(null);

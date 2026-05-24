@@ -9,6 +9,7 @@ import {
   isPlanningWon,
   validateExecutionAssignees,
 } from "@/lib/executionTasks";
+import { isPlanningMontageReady } from "@/lib/montages";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -48,11 +49,37 @@ async function main() {
     createdAt: new Date(),
     updatedAt: new Date(),
   };
+  const unpaidWonPlanningId = new ObjectId();
+  const unpaidWonPlanningDoc = {
+    _id: unpaidWonPlanningId,
+    companyId,
+    customerId: new ObjectId().toString(),
+    title: "Unpaid Won Planning · Musterstrasse 8, 9000 St. Gallen",
+    planningNumber: `TEST-UNPAID-WON-${Date.now()}`,
+    commercial: {
+      stage: "won",
+      paymentStatus: "unpaid",
+    },
+    summary: {
+      customerName: "Unpaid Won Kunde",
+    },
+    data: {
+      profile: {
+        buildingStreet: "Musterstrasse",
+        buildingStreetNo: "8",
+        buildingZip: "9000",
+        buildingCity: "St. Gallen",
+      },
+    },
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
 
   await db.collection("plannings").insertOne(planningDoc);
   const gewonnenPlanningId = new ObjectId();
   const backfillPlanningId = new ObjectId();
   await db.collection("plannings").insertMany([
+    unpaidWonPlanningDoc,
     {
       _id: gewonnenPlanningId,
       companyId,
@@ -113,11 +140,24 @@ async function main() {
 
   try {
     assert(await isPlanningWon(db, planningDoc), "expected planning with stage=won to be treated as won");
+    assert(
+      isPlanningMontageReady(unpaidWonPlanningDoc),
+      "expected unpaid planning with stage=won to be montage-ready",
+    );
     const first = await ensureExecutionTasksForWonPlanning(db, planningDoc, {
       userId: montageUserId.toString(),
       activeCompanyId: companyId,
     } as any);
     assert(first.created === 2, `expected 2 created tasks, got ${first.created}`);
+
+    const unpaidWon = await ensureExecutionTasksForWonPlanning(db, unpaidWonPlanningDoc, {
+      userId: montageUserId.toString(),
+      activeCompanyId: companyId,
+    } as any);
+    assert(
+      unpaidWon.created === 2,
+      `expected 2 created tasks for unpaid won planning, got ${unpaidWon.created}`,
+    );
 
     const second = await ensureExecutionTasksForWonPlanning(db, planningDoc, {
       userId: montageUserId.toString(),
@@ -154,6 +194,14 @@ async function main() {
       .toArray();
     assert(backfillTasks.length === 2, `expected 2 backfill tasks, got ${backfillTasks.length}`);
 
+    const unpaidWonTasks = await getExecutionTasksCollection(db)
+      .find({ companyId, projectId: unpaidWonPlanningId.toString() })
+      .toArray();
+    assert(
+      unpaidWonTasks.length === 2,
+      `expected 2 execution tasks for unpaid won planning, got ${unpaidWonTasks.length}`,
+    );
+
     const montageOpen = await getExecutionTasksCollection(db)
       .find({ companyId, projectId: planningId.toString(), track: "montage", stage: "offen" })
       .toArray();
@@ -187,7 +235,7 @@ async function main() {
   } finally {
     await Promise.all([
       db.collection("executionTasks").deleteMany({ companyId }),
-      db.collection("plannings").deleteMany({ _id: { $in: [planningId, gewonnenPlanningId, backfillPlanningId] } }),
+      db.collection("plannings").deleteMany({ _id: { $in: [planningId, unpaidWonPlanningId, gewonnenPlanningId, backfillPlanningId] } }),
       db.collection("companies").deleteOne({ _id: new ObjectId(companyId) }),
       db.collection("users").deleteMany({ _id: { $in: [montageUserId, elektroUserId] } }),
     ]);

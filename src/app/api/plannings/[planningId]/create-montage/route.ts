@@ -4,20 +4,21 @@ import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   jsonResponse,
-  mongoIdToString,
   readSession,
   toObjectIdOrNull,
 } from "@/lib/api-session";
 import {
   assertCompanyScopedPlanning,
-  buildMontageDoc,
-  ensureMontageIndexes,
-  getCustomersCollection,
-  getMontagesCollection,
   getPlanningsCollection,
   isPlanningMontageReady,
-  normalizeMontage,
 } from "@/lib/montages";
+import {
+  ensureExecutionTaskIndexes,
+  ensureExecutionTasksForWonPlanning,
+  getExecutionTasksCollection,
+  getPlanningProjectId,
+  hydrateExecutionTasks,
+} from "@/lib/executionTasks";
 
 export const runtime = "nodejs";
 
@@ -47,11 +48,9 @@ export async function POST(
 
   const { planningId } = await params;
   const activeCompanyId = String(session.activeCompanyId);
-  const companyObjectId = toObjectIdOrNull(activeCompanyId);
   const planningObjectId = toObjectIdOrNull(planningId);
-  const userObjectId = toObjectIdOrNull(session.userId);
 
-  if (!companyObjectId || !planningObjectId || !userObjectId) {
+  if (!planningObjectId) {
     return jsonResponse(origin, { ok: false, error: "Invalid request scope" }, 400);
   }
 
@@ -59,21 +58,11 @@ export async function POST(
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session);
     if (subscriptionError) return subscriptionError;
-    await ensureMontageIndexes(db);
+    await ensureExecutionTaskIndexes(db);
 
     const planning = await assertCompanyScopedPlanning(db, planningId, activeCompanyId);
     if (!planning) {
       return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
-    }
-
-    const existing = await getMontagesCollection(db).findOne({
-      companyId: companyObjectId,
-      planningId: planningObjectId,
-    });
-
-    if (existing) {
-      const item = normalizeMontage(existing);
-      return jsonResponse(origin, { ok: true, existing: true, item }, 200);
     }
 
     if (!isPlanningMontageReady(planning)) {
@@ -84,37 +73,28 @@ export async function POST(
       );
     }
 
-    const customerObjectId =
-      toObjectIdOrNull(planning?.customerId) ?? null;
-    const offerObjectId =
-      toObjectIdOrNull(planning?.offerId) ??
-      toObjectIdOrNull(planning?.data?.offerId) ??
-      null;
-    const projectObjectId =
-      toObjectIdOrNull(planning?.projectId) ??
-      toObjectIdOrNull(planning?.data?.projectId) ??
-      null;
+    const result = await ensureExecutionTasksForWonPlanning(db, planning, session as any);
+    const projectId = getPlanningProjectId(planning);
+    const rawTasks =
+      result.items.length > 0
+        ? result.items
+        : await getExecutionTasksCollection(db)
+            .find({
+              companyId: activeCompanyId,
+              projectId,
+              track: { $in: ["montage", "elektro"] },
+            })
+            .toArray();
+    const hydratedTasks = await hydrateExecutionTasks(db, activeCompanyId, rawTasks);
+    const item = hydratedTasks.find((task) => task.track === "montage");
 
-    const customer = customerObjectId
-      ? await getCustomersCollection(db).findOne({ _id: customerObjectId })
-      : null;
-
-    const doc = buildMontageDoc({
-      activeCompanyObjectId: companyObjectId,
-      planningObjectId,
-      userObjectId,
-      planning,
-      customer,
-      projectId: projectObjectId,
-      offerId: offerObjectId,
-      customerId: customerObjectId,
-    });
-
-    const result = await getMontagesCollection(db).insertOne(doc);
-    const inserted = {
-      ...doc,
-      _id: result.insertedId,
-    };
+    if (!item) {
+      return jsonResponse(
+        origin,
+        { ok: false, error: "Failed to create montage execution task" },
+        500,
+      );
+    }
 
     await getPlanningsCollection(db).updateOne(
       {
@@ -123,25 +103,17 @@ export async function POST(
       },
       {
         $set: {
-          "data.montageId": result.insertedId,
-          "data.montageStatus": "draft",
+          "data.montageId": item.id,
+          "data.montageStatus": item.stage,
           "data.montageReady": true,
           updatedAt: new Date(),
         },
       }
     );
 
-    const item = normalizeMontage(inserted, {
-      customerById: customer
-        ? new Map([[mongoIdToString(customer?._id), customer]])
-        : new Map(),
-      planningById: new Map([[mongoIdToString(planning?._id), planning]]),
-      installersById: new Map(),
-    });
-
     return jsonResponse(
       origin,
-      { ok: true, existing: false, item },
+      { ok: true, existing: result.created === 0, item },
       200
     );
   } catch (e: any) {
