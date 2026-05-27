@@ -159,6 +159,33 @@ function createInitialPlannerState() {
   };
 }
 
+function resolveSelectedPanelId(params: {
+  catalogPanels: PanelSpec[];
+  selectedPanelId?: string | null;
+  persistedPanelIds?: string[];
+}) {
+  const selectedPanelId = String(params.selectedPanelId ?? "").trim();
+  const persistedPanelIds = Array.isArray(params.persistedPanelIds)
+    ? params.persistedPanelIds.filter(
+        (panelId): panelId is string =>
+          typeof panelId === "string" && panelId.trim().length > 0
+      )
+    : [];
+
+  if (params.catalogPanels.some((panel) => panel.id === selectedPanelId)) {
+    return selectedPanelId;
+  }
+
+  const matchedPersistedPanelId = persistedPanelIds.find((panelId) =>
+    params.catalogPanels.some((panel) => panel.id === panelId)
+  );
+  if (matchedPersistedPanelId) {
+    return matchedPersistedPanelId;
+  }
+
+  return params.catalogPanels[0]?.id ?? selectedPanelId ?? "";
+}
+
 type PlannerV2State = {
   step: PlannerStep;
   setStep: (s: PlannerStep) => void;
@@ -304,7 +331,20 @@ export const usePlannerV2Store = create<PlannerV2State>()(
       },
 
       resetPlanner: () => {
-        set(() => createInitialPlannerState());
+        set((state) => {
+          const nextState = createInitialPlannerState();
+          const selectedPanelId = resolveSelectedPanelId({
+            catalogPanels: state.catalogPanels,
+            selectedPanelId: state.selectedPanelId,
+            persistedPanelIds: state.panels.map((panel) => panel.panelId),
+          });
+
+          return {
+            ...nextState,
+            catalogPanels: state.catalogPanels,
+            selectedPanelId,
+          };
+        });
         history.clear();
       },
 
@@ -341,74 +381,83 @@ export const usePlannerV2Store = create<PlannerV2State>()(
 
         const defaults = createInitialPlannerState();
 
-        set((s) => ({
-          step: saved.step ?? defaults.step,
-          view: saved.view ?? defaults.view,
-          tool: saved.tool ?? defaults.tool,
-          snapshotScale: saved.snapshotScale ?? defaults.snapshotScale,
-          address:
-            saved.address && typeof saved.address === 'object'
-              ? {
-                  label:
-                    typeof saved.address.label === 'string'
-                      ? saved.address.label
-                      : typeof saved.snapshot?.address === 'string'
-                        ? saved.snapshot.address
-                        : defaults.address.label,
-                  lat:
-                    typeof saved.address.lat === 'number'
-                      ? saved.address.lat
-                      : typeof saved.snapshot?.center?.lat === 'number'
-                        ? saved.snapshot.center.lat
-                        : defaults.address.lat,
-                  lon:
-                    typeof saved.address.lon === 'number'
-                      ? saved.address.lon
-                      : typeof saved.snapshot?.center?.lon === 'number'
-                        ? saved.snapshot.center.lon
-                        : defaults.address.lon,
-                }
-              : typeof saved.snapshot?.address === 'string'
+        set((s) => {
+          const persistedPanels = Array.isArray(saved.panels) ? saved.panels : [];
+          const nextSelectedPanelId = resolveSelectedPanelId({
+            catalogPanels: s.catalogPanels,
+            selectedPanelId: saved.selectedPanelId ?? defaults.selectedPanelId,
+            persistedPanelIds: persistedPanels.map((panel: any) => panel?.panelId),
+          });
+
+          return {
+            step: saved.step ?? defaults.step,
+            view: saved.view ?? defaults.view,
+            tool: saved.tool ?? defaults.tool,
+            snapshotScale: saved.snapshotScale ?? defaults.snapshotScale,
+            address:
+              saved.address && typeof saved.address === 'object'
                 ? {
-                    label: saved.snapshot.address,
+                    label:
+                      typeof saved.address.label === 'string'
+                        ? saved.address.label
+                        : typeof saved.snapshot?.address === 'string'
+                          ? saved.snapshot.address
+                          : defaults.address.label,
                     lat:
-                      typeof saved.snapshot?.center?.lat === 'number'
-                        ? saved.snapshot.center.lat
-                        : defaults.address.lat,
+                      typeof saved.address.lat === 'number'
+                        ? saved.address.lat
+                        : typeof saved.snapshot?.center?.lat === 'number'
+                          ? saved.snapshot.center.lat
+                          : defaults.address.lat,
                     lon:
-                      typeof saved.snapshot?.center?.lon === 'number'
-                        ? saved.snapshot.center.lon
-                        : defaults.address.lon,
+                      typeof saved.address.lon === 'number'
+                        ? saved.address.lon
+                        : typeof saved.snapshot?.center?.lon === 'number'
+                          ? saved.snapshot.center.lon
+                          : defaults.address.lon,
                   }
-                : defaults.address,
+                : typeof saved.snapshot?.address === 'string'
+                  ? {
+                      label: saved.snapshot.address,
+                      lat:
+                        typeof saved.snapshot?.center?.lat === 'number'
+                          ? saved.snapshot.center.lat
+                          : defaults.address.lat,
+                      lon:
+                        typeof saved.snapshot?.center?.lon === 'number'
+                          ? saved.snapshot.center.lon
+                          : defaults.address.lon,
+                    }
+                  : defaults.address,
 
-          layers: Array.isArray(saved.layers) ? saved.layers : [],
-          selectedId: undefined,
+            layers: Array.isArray(saved.layers) ? saved.layers : [],
+            selectedId: undefined,
 
-          zones: Array.isArray(saved.zones) ? saved.zones : [],
-          selectedZoneId: undefined,
+            zones: Array.isArray(saved.zones) ? saved.zones : [],
+            selectedZoneId: undefined,
 
-          panels: Array.isArray(saved.panels) ? saved.panels : [],
-          selectedPanelIds: [],
+            panels: persistedPanels,
+            selectedPanelIds: [],
 
-          detectedRoofs: Array.isArray(saved.detectedRoofs)
-            ? saved.detectedRoofs
-            : [],
+            detectedRoofs: Array.isArray(saved.detectedRoofs)
+              ? saved.detectedRoofs
+              : [],
 
-          modules: saved.modules ?? defaults.modules,
-          roofAlign: saved.roofAlign ?? defaults.roofAlign,
+            modules: saved.modules ?? defaults.modules,
+            roofAlign: saved.roofAlign ?? defaults.roofAlign,
 
-          snowGuards: Array.isArray(saved.snowGuards) ? saved.snowGuards : [],
-          selectedSnowGuardId: undefined,
+            snowGuards: Array.isArray(saved.snowGuards) ? saved.snowGuards : [],
+            selectedSnowGuardId: undefined,
 
-          selectedPanelId: saved.selectedPanelId ?? defaults.selectedPanelId,
-          catalogPanels: s.catalogPanels,
+            selectedPanelId: nextSelectedPanelId,
+            catalogPanels: s.catalogPanels,
 
-          profile: saved.profile ?? defaults.profile,
-          ist: saved.ist ?? defaults.ist,
-          parts: saved.parts ?? defaults.parts,
-          partsView: saved.partsView ?? defaults.partsView,
-        }));
+            profile: saved.profile ?? defaults.profile,
+            ist: saved.ist ?? defaults.ist,
+            parts: saved.parts ?? defaults.parts,
+            partsView: saved.partsView ?? defaults.partsView,
+          };
+        });
 
         history.clear();
       },
@@ -436,16 +485,14 @@ export const usePlannerV2Store = create<PlannerV2State>()(
       setCatalogPanels: (panels) =>
         set((state) => {
           const nextPanels = Array.isArray(panels) ? panels : [];
-          const selectedStillExists = nextPanels.some(
-            (panel) => panel.id === state.selectedPanelId
-          );
 
           return {
             catalogPanels: nextPanels,
-            selectedPanelId:
-              selectedStillExists
-                ? state.selectedPanelId
-                : nextPanels[0]?.id ?? state.selectedPanelId ?? '',
+            selectedPanelId: resolveSelectedPanelId({
+              catalogPanels: nextPanels,
+              selectedPanelId: state.selectedPanelId,
+              persistedPanelIds: state.panels.map((panel) => panel.panelId),
+            }),
           };
         }),
       setSelectedPanel: (id) => set({ selectedPanelId: id }),

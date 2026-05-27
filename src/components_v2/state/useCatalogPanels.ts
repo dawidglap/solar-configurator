@@ -39,7 +39,16 @@ export function useCatalogPanels() {
 
         const panels = data.items
           .map(catalogItemToPanelSpec)
-          .filter((panel): panel is NonNullable<typeof panel> => panel !== null);
+          .filter((panel): panel is NonNullable<typeof panel> => panel !== null)
+          .sort((a, b) => {
+            const brandCompare = a.brand.localeCompare(b.brand, undefined, {
+              sensitivity: "base",
+            });
+            if (brandCompare !== 0) return brandCompare;
+            return a.model.localeCompare(b.model, undefined, {
+              sensitivity: "base",
+            });
+          });
 
         if (panels.length === 0) {
           console.warn(
