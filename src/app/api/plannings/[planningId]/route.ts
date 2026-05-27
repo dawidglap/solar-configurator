@@ -73,6 +73,32 @@ function safeBoolean(v: any, fallback = false) {
   return typeof v === "boolean" ? v : fallback;
 }
 
+function preserveLoosePartsItems(items: any) {
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .filter((item) => item && typeof item === "object" && !Array.isArray(item))
+    .map((item) => ({
+      ...item,
+      // Keep these fields permissive on purpose:
+      // - catalogItemId may be missing/null/empty
+      // - category / brand may be empty strings
+      // - source may be planner | catalog | custom (or legacy values)
+      ...(Object.prototype.hasOwnProperty.call(item, "catalogItemId")
+        ? { catalogItemId: item.catalogItemId }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(item, "category")
+        ? { category: item.category }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(item, "brand")
+        ? { brand: item.brand }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(item, "source")
+        ? { source: item.source }
+        : {}),
+    }));
+}
+
 function syncDemolitionItem(existingItems: any[], ist: any) {
   const demolitionNeeded = safeBoolean(ist?.demolitionNeeded);
 
@@ -504,7 +530,7 @@ if (ist && typeof ist === "object") {
 
   const existingParts = (existingPlanning as any)?.data?.parts ?? {};
   const existingItems = Array.isArray(existingParts?.items)
-    ? existingParts.items
+    ? preserveLoosePartsItems(existingParts.items)
     : [];
 
   setObj["data.parts"] = {
@@ -576,8 +602,8 @@ if (ist && typeof ist === "object") {
       const existingParts = (existingPlanning as any)?.data?.parts ?? {};
 
       const normalizedItems = Array.isArray(parts?.items)
-        ? parts.items
-        : existingParts.items ?? [];
+        ? preserveLoosePartsItems(parts.items)
+        : preserveLoosePartsItems(existingParts.items ?? []);
 
       const normalizedFormDocuments =
         parts?.formDocuments && typeof parts.formDocuments === "object"
