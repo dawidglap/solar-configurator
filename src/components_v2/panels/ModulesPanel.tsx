@@ -602,7 +602,7 @@ export default function ModulesPanel() {
         </select>
       </section> */}
 
-      {/* === UNTERKONSTRUKTION (disabled) === */}
+      {/* === UNTERKONSTRUKTION (hidden for now) ===
       <section className="space-y-1">
         <label className={labelSm}>Unterkonstruktion</label>
         <select
@@ -612,6 +612,7 @@ export default function ModulesPanel() {
           <option>System auswählen</option>
         </select>
       </section>
+      */}
 
       {/* === MODULLAYOUT (usa onChange per re-layout immediato) === */}
       <section className="space-y-2">
@@ -646,7 +647,7 @@ export default function ModulesPanel() {
         </div>
       </section>
 
-      {/* === WECHSELRICHTER (disabled) === */}
+      {/* === WECHSELRICHTER (hidden for now) ===
       <section className="space-y-1">
         <label className={labelSm}>Wechselrichter</label>
         <select
@@ -656,6 +657,7 @@ export default function ModulesPanel() {
           <option>Auswählen</option>
         </select>
       </section>
+      */}
     </div>
   );
 }

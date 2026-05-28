@@ -271,7 +271,8 @@ export default function TopToolbar() {
       "hover:bg-primary hover:border-primary";
 
     // Disabled: grigio, niente hover
-    const disabledCls = "text-muted-foreground/50 opacity-60 cursor-not-allowed";
+    const disabledCls =
+      "text-muted-foreground/50 opacity-60 cursor-not-allowed";
 
     const cls = [
       base,
@@ -334,7 +335,8 @@ export default function TopToolbar() {
     const clickable =
       "text-muted-foreground hover:bg-secondary/70 hover:border-border hover:text-foreground";
 
-    const disabledCls = "text-muted-foreground/50 opacity-60 cursor-not-allowed";
+    const disabledCls =
+      "text-muted-foreground/50 opacity-60 cursor-not-allowed";
 
     const cls = [base, disabled ? disabledCls : clickable].join(" ");
 
@@ -667,32 +669,11 @@ export default function TopToolbar() {
       {/* DESTRA: 7–10 compatti + Undo/Redo */}
       <div className="flex items-center ms-auto gap-1">
         {/* 7) Neue Variante — placeholder */}
-        <ActionBtn
-          onClick={() => {}}
-          Icon={LuShapes}
-          label=""
-          disabled
-          tooltipLabel="Neue Variante (in arrivo)"
-          tooltipKeys={[]}
-        />
+
         {/* 8) Trasparenza — placeholder */}
-        <ActionBtn
-          onClick={() => {}}
-          Icon={TbDropletHalf2Filled}
-          label=""
-          disabled
-          tooltipLabel="Transparenz (in arrivo)"
-          tooltipKeys={[]}
-        />
+
         {/* 9) Leeren — placeholder */}
-        <ActionBtn
-          onClick={() => {}}
-          Icon={FaRegTrashAlt}
-          label=""
-          disabled
-          tooltipLabel="Leeren (in arrivo)"
-          tooltipKeys={[]}
-        />
+
         {/* 10) Speichern — placeholder */}
         <ActionBtn
           onClick={handleSave}
