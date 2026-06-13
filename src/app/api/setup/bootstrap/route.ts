@@ -1,4 +1,4 @@
-import { MongoClient } from "mongodb";
+import { getDb } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { getCorsHeaders } from "@/lib/cors";
 import { buildNewCompanySubscriptionDefaults, buildUniqueCompanySlug } from "@/lib/subscription";
@@ -13,8 +13,7 @@ export async function OPTIONS(req: Request) {
 
 export async function POST(req: Request) {
   const origin = req.headers.get("origin");
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
+  if (!process.env.MONGODB_URI) {
     return Response.json(
       { ok: false, error: "Missing MONGODB_URI" },
       { status: 500, headers: getCorsHeaders(origin) }
@@ -26,11 +25,8 @@ export async function POST(req: Request) {
   const OWNER_EMAIL = "owner@demo.com";
   const OWNER_PASSWORD = "Demo12345";
 
-  const client = new MongoClient(uri);
-  await client.connect();
-
   try {
-    const db = client.db(); // userà il DB dal connection string (/sola)
+    const db = await getDb();
 
     const companies = db.collection("companies");
     const users = db.collection("users");
@@ -81,7 +77,5 @@ export async function POST(req: Request) {
       { ok: false, message: e?.message ?? "Unknown error" },
       { status: 500, headers: getCorsHeaders(origin) }
     );
-  } finally {
-    await client.close();
   }
 }

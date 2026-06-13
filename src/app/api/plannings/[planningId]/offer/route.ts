@@ -1,4 +1,5 @@
-import { MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { PDFDocument } from "pdf-lib";
 import { getCorsHeaders } from "@/lib/cors";
@@ -164,11 +165,9 @@ export async function POST(
     return makeJsonResponse(origin, { ok: false, error: "Invalid id" }, 400);
   }
 
-  const client = new MongoClient(uri);
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
 
@@ -691,7 +690,5 @@ await addReportPages(pdf, {
       { ok: false, error: e?.message || "Unknown error" },
       500
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }

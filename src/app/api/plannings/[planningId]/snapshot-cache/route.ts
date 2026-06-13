@@ -1,4 +1,5 @@
-import { MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
@@ -127,11 +128,9 @@ export async function POST(
   const now = new Date();
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 6); // 6 ore
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
 
@@ -186,8 +185,6 @@ export async function POST(
       { ok: false, error: e?.message || "Unknown error" },
       500
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }
 
@@ -216,11 +213,9 @@ export async function GET(
     return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
 
     await ensureIndexes(db);
 
@@ -255,7 +250,5 @@ export async function GET(
       { ok: false, error: e?.message || "Unknown error" },
       500
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }

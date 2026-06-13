@@ -1,5 +1,5 @@
 // src/app/api/catalog-items/route.ts
-import { MongoClient } from "mongodb";
+import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
@@ -124,11 +124,9 @@ export async function GET(req: Request) {
   const category = safeString(searchParams.get("category"));
   const activeOnly = searchParams.get("activeOnly") === "true";
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const collection = db.collection("catalogItems");
@@ -160,8 +158,6 @@ export async function GET(req: Request) {
       { ok: false, error: e?.message ?? "Unknown error" },
       500,
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }
 
@@ -223,11 +219,9 @@ export async function POST(req: Request) {
     updatedAt: now,
   };
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const collection = db.collection("catalogItems");
@@ -249,7 +243,5 @@ export async function POST(req: Request) {
       { ok: false, error: e?.message ?? "Unknown error" },
       500,
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }

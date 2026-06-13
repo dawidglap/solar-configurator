@@ -1,5 +1,6 @@
 // src/app/api/catalog-items/[itemId]/route.ts
-import { MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
@@ -138,11 +139,9 @@ export async function GET(
     return jsonResponse(origin, { ok: false, error: "Invalid itemId" }, 400);
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const collection = db.collection("catalogItems");
@@ -164,8 +163,6 @@ export async function GET(
       { ok: false, error: e?.message ?? "Unknown error" },
       500,
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }
 
@@ -222,11 +219,9 @@ export async function PATCH(
   if (typeof body?.sortOrder === "number") setObj.sortOrder = safeNumber(body.sortOrder, 0);
   if (body?.metadata && typeof body.metadata === "object") setObj.metadata = body.metadata;
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const collection = db.collection("catalogItems");
@@ -260,8 +255,6 @@ export async function PATCH(
       { ok: false, error: e?.message ?? "Unknown error" },
       500,
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }
 
@@ -291,11 +284,9 @@ export async function DELETE(
     return jsonResponse(origin, { ok: false, error: "Invalid itemId" }, 400);
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const collection = db.collection("catalogItems");
 
     const res = await collection.deleteOne({
@@ -315,7 +306,5 @@ export async function DELETE(
       { ok: false, error: e?.message ?? "Unknown error" },
       500,
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }

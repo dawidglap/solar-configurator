@@ -1,4 +1,5 @@
-import { MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
@@ -245,11 +246,9 @@ export async function GET(req: Request) {
     return jsonResponse(origin, { ok: false, error: "Invalid activeCompanyId" }, 400);
   }
 
-  const client = new MongoClient(uri);
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const companies = db.collection("companies");
@@ -271,8 +270,6 @@ export async function GET(req: Request) {
       { ok: false, error: e?.message || "Unknown error" },
       500
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }
 
@@ -310,11 +307,10 @@ export async function PATCH(req: Request) {
   }
 
   const normalized = normalizePatchInput(body);
-  const client = new MongoClient(uri);
+
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const companies = db.collection("companies");
@@ -365,7 +361,5 @@ export async function PATCH(req: Request) {
       { ok: false, error: e?.message || "Unknown error" },
       500
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }

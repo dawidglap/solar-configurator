@@ -1,5 +1,5 @@
 // src/app/api/auth/login/route.ts
-import { MongoClient } from "mongodb";
+import { getDb } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
@@ -64,15 +64,9 @@ export async function POST(req: Request) {
     );
   }
 
-  const client = new MongoClient(uri, {
-    serverSelectionTimeoutMS: 5000,
-    family: 4,
-  });
 
   try {
-    await client.connect();
-
-    const db = client.db();
+    const db = await getDb();
     const users = db.collection("users");
 
     const user: any = await users.findOne({ email });
@@ -185,7 +179,7 @@ export async function POST(req: Request) {
     console.error("LOGIN ERROR:", e);
 
     return new Response(
-      JSON.stringify({ ok: false, error: e?.message ?? "Unknown error" }),
+      JSON.stringify({ ok: false, error: "Login currently unavailable" }),
       {
         status: 500,
         headers: {
@@ -194,7 +188,5 @@ export async function POST(req: Request) {
         },
       }
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }

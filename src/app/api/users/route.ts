@@ -1,4 +1,5 @@
-import { MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
@@ -142,11 +143,9 @@ export async function GET(req: Request) {
     return jsonResponse(origin, { ok: false, error: "Invalid executionRole" }, 400);
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const users = db.collection("users");
@@ -189,7 +188,5 @@ export async function GET(req: Request) {
       { ok: false, error: e?.message || "Unknown error" },
       500
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }

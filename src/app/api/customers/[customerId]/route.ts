@@ -1,5 +1,5 @@
 // src/app/api/customers/[customerId]/route.ts
-import { MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { getDb } from "@/lib/db";
@@ -424,11 +424,9 @@ export async function PATCH(
     setObj.notes = safeString(body?.notes);
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const customers = db.collection("customers");
@@ -496,7 +494,6 @@ export async function PATCH(
     );
   } finally {
     customerDetailCache.delete(getCacheKey(safeString(session.activeCompanyId), customerId));
-    await client.close().catch(() => {});
   }
 }
 
@@ -526,11 +523,9 @@ export async function DELETE(
     return jsonResponse(origin, { ok: false, error: "Invalid customerId" }, 400);
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
 
@@ -579,6 +574,5 @@ export async function DELETE(
     );
   } finally {
     customerDetailCache.delete(getCacheKey(safeString(session.activeCompanyId), customerId));
-    await client.close().catch(() => {});
   }
 }

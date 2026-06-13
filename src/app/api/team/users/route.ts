@@ -1,4 +1,4 @@
-import { MongoClient } from "mongodb";
+import { getDb } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
@@ -85,11 +85,9 @@ export async function POST(req: Request) {
     return jsonResponse(origin, { ok: false, error: "Missing activeCompanyId" }, 400);
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const users = db.collection("users");
@@ -130,7 +128,5 @@ export async function POST(req: Request) {
   } catch (e: any) {
     console.error("CREATE USER ERROR:", e);
     return jsonResponse(origin, { ok: false, error: e?.message ?? "Unknown error" }, 500);
-  } finally {
-    await client.close().catch(() => {});
   }
 }

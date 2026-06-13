@@ -1,5 +1,5 @@
 // src/app/api/plannings/route.ts
-import { MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
 import crypto from "crypto";
 import { defaultStoreData } from "@/components_v2/state/defaultStoreData";
 import { getCorsHeaders } from "@/lib/cors";
@@ -11,6 +11,7 @@ import {
   ensurePlanningStageHistoryMigration,
   normalizeStageHistory,
 } from "@/lib/plannings";
+import { getDb } from "@/lib/db";
 import { getSessionUserName } from "@/lib/tasks";
 import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
 
@@ -176,11 +177,8 @@ export async function POST(req: Request) {
 
   const summaryCustomerName = safeString(body?.summary?.customerName) || "";
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
-
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const plannings = db.collection("plannings");
@@ -294,8 +292,6 @@ export async function POST(req: Request) {
       JSON.stringify({ ok: false, error: e?.message ?? "Unknown error" }),
       { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }
 
@@ -331,11 +327,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const limit = Math.min(Number(searchParams.get("limit") ?? 200), 500);
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
-
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const plannings = db.collection("plannings");
@@ -429,7 +422,5 @@ export async function GET(req: Request) {
       JSON.stringify({ ok: false, error: e?.message ?? "Unknown error" }),
       { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }

@@ -1,5 +1,5 @@
 // src/app/api/customers/route.ts
-import { MongoClient } from "mongodb";
+import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import {
@@ -80,11 +80,9 @@ export async function GET(req: Request) {
     );
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const customers = db.collection("customers");
@@ -132,8 +130,6 @@ export async function GET(req: Request) {
       JSON.stringify({ ok: false, error: e?.message ?? "Unknown error" }),
       { status: 500, headers: getCorsHeaders(origin) }
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }
 
@@ -210,11 +206,9 @@ export async function POST(req: Request) {
     );
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const customers = db.collection("customers");
@@ -257,10 +251,8 @@ export async function POST(req: Request) {
     console.error("CREATE CUSTOMER ERROR:", e);
     if (e?.code === 11000) {
       try {
-        const existing = await client
-          .db()
-          .collection("customers")
-          .findOne(dedupTarget.filter);
+        const db = await getDb();
+        const existing = await db.collection("customers").findOne(dedupTarget.filter);
 
         if (existing) {
           return new Response(
@@ -280,7 +272,5 @@ export async function POST(req: Request) {
       JSON.stringify({ ok: false, error: e?.message ?? "Unknown error" }),
       { status: 500, headers: getCorsHeaders(origin) }
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }

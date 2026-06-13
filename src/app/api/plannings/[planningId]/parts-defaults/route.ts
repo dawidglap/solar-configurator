@@ -1,5 +1,6 @@
 // src/app/api/plannings/[planningId]/parts-defaults/route.ts
-import { MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
@@ -1081,11 +1082,9 @@ export async function GET(
     return jsonResponse(origin, { ok: false, error: "Invalid planningId" }, 400);
   }
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
 
   try {
-    await client.connect();
-    const db = client.db();
+    const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
 
@@ -1127,7 +1126,5 @@ export async function GET(
       { ok: false, error: e?.message ?? "Unknown error" },
       500
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }

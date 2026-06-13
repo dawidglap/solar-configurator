@@ -1,4 +1,4 @@
-import { MongoClient } from "mongodb";
+import { getMongoClient } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 
 export async function OPTIONS(req: Request) {
@@ -12,20 +12,15 @@ export async function OPTIONS(req: Request) {
 export async function GET(req: Request) {
   const origin = req.headers.get("origin");
   try {
-    const uri = process.env.MONGODB_URI;
-    if (!uri) {
+    if (!process.env.MONGODB_URI) {
       return Response.json(
         { ok: false, error: "Missing MONGODB_URI" },
         { status: 500, headers: getCorsHeaders(origin) }
       );
     }
 
-    const client = new MongoClient(uri);
-    await client.connect();
-
+    const client = await getMongoClient();
     await client.db("admin").command({ ping: 1 });
-
-    await client.close();
 
     return Response.json({ ok: true, db: "connected" }, { headers: getCorsHeaders(origin) });
   } catch (e: any) {
