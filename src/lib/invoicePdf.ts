@@ -501,9 +501,10 @@ export async function persistInvoicePdfFile(args: PersistInvoicePdfArgs) {
   await ensurePlanningFileIndexes(args.db);
   const files = getPlanningFilesCollection(args.db);
   const invoiceObjectId = toObjectIdOrNull(args.invoiceId);
+  const pdfFileObjectId = toObjectIdOrNull(args.invoice?.pdfFileId);
   const existing =
-    (toObjectIdOrNull(args.invoice?.pdfFileId)
-      ? await files.findOne({ _id: toObjectIdOrNull(args.invoice?.pdfFileId) })
+    (pdfFileObjectId
+      ? await files.findOne({ _id: pdfFileObjectId })
       : null) ||
     (invoiceObjectId
       ? await files.findOne({
@@ -583,8 +584,11 @@ export async function getInvoiceContextById(args: {
     : null;
   if (!planning) return null;
 
+  const companyObjectId = toObjectIdOrNull(args.companyId);
+  if (!companyObjectId) return null;
+
   const company = await args.db.collection("companies").findOne({
-    _id: toObjectIdOrNull(args.companyId),
+    _id: companyObjectId,
   });
   if (!company) return null;
 
