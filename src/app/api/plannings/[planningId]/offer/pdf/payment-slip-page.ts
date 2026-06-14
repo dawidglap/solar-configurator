@@ -406,7 +406,7 @@ export async function addPaymentSlipPage(pdf: PDFDocument, data: PaymentSlipPage
 
   const cutY = 354;
   drawDashedLine(page, MARGIN_X, cutY, PAGE_W - MARGIN_X, cutY, 5, 3);
-  drawText(page, "✂", MARGIN_X + 4, cutY + 6, 10, font, C.muted);
+  drawText(page, "Hier abtrennen", MARGIN_X + 4, cutY + 6, 8, font, C.muted);
 
   const sectionY = 82;
   const sectionH = 248;
