@@ -7,6 +7,7 @@ import {
   getPlanningFilePermissions,
   getPlanningFilesCollection,
   getPlanningFileDbAndSession,
+  isSystemManagedPlanningFileCategory,
 } from "@/lib/planningFiles";
 import { enforceActiveSubscription } from "@/lib/subscription";
 
@@ -48,21 +49,32 @@ export async function DELETE(req: Request, { params }: Params) {
       return createPlanningFileJsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
     }
 
-    const result = await getPlanningFilesCollection(db).updateOne(
-      {
-        _id: new ObjectId(fileId),
-        companyId,
-        planningId,
-        isDeleted: { $ne: true },
-      },
+    const collection = getPlanningFilesCollection(db);
+    const existing = await collection.findOne({
+      _id: new ObjectId(fileId),
+      companyId,
+      planningId,
+      isDeleted: { $ne: true },
+    });
+
+    if (!existing) {
+      return createPlanningFileJsonResponse(origin, { ok: false, error: "File not found" }, 404);
+    }
+
+    if (isSystemManagedPlanningFileCategory(existing?.category)) {
+      return createPlanningFileJsonResponse(
+        origin,
+        { ok: false, error: "Systemdatei kann nicht gelöscht werden." },
+        403,
+      );
+    }
+
+    await collection.updateOne(
+      { _id: new ObjectId(fileId) },
       {
         $set: buildPlanningFileDeletePatch(session),
       },
     );
-
-    if (!result.matchedCount) {
-      return createPlanningFileJsonResponse(origin, { ok: false, error: "File not found" }, 404);
-    }
 
     return createPlanningFileJsonResponse(origin, { ok: true, deleted: true }, 200);
   } catch (e: any) {

@@ -63,3 +63,16 @@ export async function uploadBufferToCloudinary(input: {
     stream.end(input.buffer);
   });
 }
+
+export async function deleteCloudinaryAsset(input: {
+  publicId: string;
+  resourceType?: "image" | "raw" | "video";
+  type?: "upload" | "private" | "authenticated";
+}) {
+  const sdk = getCloudinary();
+  return sdk.uploader.destroy(input.publicId, {
+    resource_type: input.resourceType || "raw",
+    type: input.type || "upload",
+    invalidate: false,
+  });
+}

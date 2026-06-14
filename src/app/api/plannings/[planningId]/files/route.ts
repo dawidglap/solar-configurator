@@ -9,6 +9,7 @@ import {
   getPlanningFilePermissions,
   getPlanningFilesCollection,
   getPlanningFileDbAndSession,
+  isSystemManagedPlanningFileCategory,
   normalizePlanningFile,
   normalizePlanningFileCategory,
   parseAndUploadPlanningFile,
@@ -123,6 +124,14 @@ export async function POST(req: Request, { params }: Params) {
 
     if (!category) {
       return createPlanningFileJsonResponse(origin, { ok: false, error: "Invalid category" }, 400);
+    }
+
+    if (isSystemManagedPlanningFileCategory(category)) {
+      return createPlanningFileJsonResponse(
+        origin,
+        { ok: false, error: "Systemdatei kann nicht manuell hochgeladen werden." },
+        403,
+      );
     }
 
     if (!(file instanceof File)) {

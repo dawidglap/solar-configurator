@@ -18,13 +18,20 @@ import {
   noStoreHeaders,
 } from "@/lib/tasks";
 import { activeDocumentFilter } from "@/lib/trash";
-import { getCloudinary, hasCloudinaryEnv, uploadBufferToCloudinary } from "@/lib/cloudinary";
+import {
+  deleteCloudinaryAsset,
+  getCloudinary,
+  hasCloudinaryEnv,
+  uploadBufferToCloudinary,
+} from "@/lib/cloudinary";
 
 export const PLANNING_FILE_CATEGORIES = [
   "offer",
   "planning",
   "document",
   "photo",
+  "auftrag",
+  "angebot_snapshot",
 ] as const;
 
 export const PLANNING_FILE_TYPES = [
@@ -54,9 +61,21 @@ const ALLOWED_MIME_TYPES = new Set([
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
+export const SYSTEM_MANAGED_PLANNING_FILE_CATEGORIES = [
+  "auftrag",
+  "angebot_snapshot",
+] as const;
+
 export function normalizePlanningFileCategory(value: unknown): PlanningFileCategory | null {
   const normalized = safeString(value).toLowerCase() as PlanningFileCategory;
   return PLANNING_FILE_CATEGORIES.includes(normalized) ? normalized : null;
+}
+
+export function isSystemManagedPlanningFileCategory(value: unknown) {
+  const normalized = safeString(value).toLowerCase();
+  return SYSTEM_MANAGED_PLANNING_FILE_CATEGORIES.includes(
+    normalized as (typeof SYSTEM_MANAGED_PLANNING_FILE_CATEGORIES)[number],
+  );
 }
 
 export function isAllowedPlanningFileMimeType(value: unknown) {
@@ -308,8 +327,12 @@ export function extractPlanningFileCustomerId(planning: any) {
   return safeString(planning?.customerId) || undefined;
 }
 
+export function getStoredPlanningFileCollectionName() {
+  return "planningFiles";
+}
+
 export function getPlanningFilesCollection(db: Db) {
-  return db.collection("planningFiles");
+  return db.collection(getStoredPlanningFileCollectionName());
 }
 
 export function createPlanningFileNoStoreHeaders(origin: string | null) {
@@ -509,6 +532,107 @@ export async function uploadGeneratedPlanningFileBuffer(input: {
     deletedByName: null,
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+export async function removePlanningFileCloudinaryAsset(doc: any) {
+  const rawPublicId = safeString(doc?.cloudinaryPublicId);
+  if (!rawPublicId || !hasCloudinaryEnv()) return;
+
+  const resourceType =
+    (safeString(doc?.cloudinaryResourceType) || "raw") as "image" | "raw" | "video";
+  const deliveryType = inferPlanningFileCloudinaryDeliveryType(doc);
+  const { publicIdWithExtension, publicId } = splitPlanningFilePublicIdAndFormat(doc);
+
+  await deleteCloudinaryAsset({
+    publicId:
+      resourceType === "raw"
+        ? publicIdWithExtension || rawPublicId
+        : publicId || rawPublicId,
+    resourceType,
+    type: deliveryType,
+  });
+}
+
+export async function upsertManagedPlanningFile(input: {
+  db: Db;
+  companyId: string;
+  planningId: string;
+  category: Extract<PlanningFileCategory, "auftrag" | "angebot_snapshot">;
+  title: string;
+  originalFileName: string;
+  mimeType: string;
+  buffer: Buffer;
+  customerId?: string;
+  session: SessionPayload;
+}) {
+  const collection = getPlanningFilesCollection(input.db);
+  const existing = await collection.findOne({
+    companyId: input.companyId,
+    planningId: input.planningId,
+    category: input.category,
+    isDeleted: { $ne: true },
+  });
+
+  const nextHash = crypto.createHash("sha256").update(input.buffer).digest("hex");
+  const existingHash = safeString(existing?.contentHash);
+
+  if (existing && existingHash && existingHash === nextHash) {
+    return {
+      reused: true,
+      doc: existing,
+    };
+  }
+
+  const uploaded = await uploadGeneratedPlanningFileBuffer({
+    companyId: input.companyId,
+    planningId: input.planningId,
+    category: input.category,
+    title: input.title,
+    originalFileName: input.originalFileName,
+    mimeType: input.mimeType,
+    buffer: input.buffer,
+    customerId: input.customerId,
+    session: input.session,
+  });
+
+  const now = new Date().toISOString();
+  const nextDoc = {
+    ...uploaded,
+    contentHash: nextHash,
+    updatedAt: now,
+  };
+
+  if (!existing) {
+    const insertResult = await collection.insertOne(nextDoc);
+    return {
+      reused: false,
+      doc: { ...nextDoc, _id: insertResult.insertedId },
+    };
+  }
+
+  try {
+    await removePlanningFileCloudinaryAsset(existing);
+  } catch (error) {
+    console.error("REMOVE OLD MANAGED PLANNING FILE ERROR:", error);
+  }
+
+  await collection.updateOne(
+    { _id: existing._id },
+    {
+      $set: {
+        ...nextDoc,
+        createdAt: existing.createdAt ?? uploaded.createdAt,
+      },
+    },
+  );
+
+  return {
+    reused: false,
+    doc: {
+      ...existing,
+      ...nextDoc,
+    },
   };
 }
 
