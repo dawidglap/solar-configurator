@@ -22,6 +22,12 @@ export type Company = {
   paymentDefaults?: {
     termDays?: number;
     currency?: string;
+    dunningFees?: number[] | Record<string, number>;
+    dunningTermDays?: number;
+  };
+
+  templates?: {
+    invoiceText?: string;
   };
 
   createdAt: Date;

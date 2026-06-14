@@ -31,6 +31,10 @@ function normalizeCompanyBank(company: any) {
     paymentDefaults: {
       termDays: Number(company?.paymentDefaults?.termDays ?? 30),
       currency: safeString(company?.paymentDefaults?.currency) || "CHF",
+      dunningFees: Array.isArray(company?.paymentDefaults?.dunningFees)
+        ? company.paymentDefaults.dunningFees.map((value: unknown) => Number(value) || 0)
+        : [],
+      dunningTermDays: Number(company?.paymentDefaults?.dunningTermDays ?? 10),
     },
     updatedAt:
       company?.updatedAt instanceof Date
@@ -91,6 +95,10 @@ export async function PATCH(req: Request) {
           paymentDefaults: {
             termDays: Math.max(0, Number(body?.paymentDefaults?.termDays ?? 30) || 30),
             currency: safeString(body?.paymentDefaults?.currency) || "CHF",
+            dunningFees: Array.isArray(body?.paymentDefaults?.dunningFees)
+              ? body.paymentDefaults.dunningFees.map((value: unknown) => Number(value) || 0)
+              : [],
+            dunningTermDays: Math.max(0, Number(body?.paymentDefaults?.dunningTermDays ?? 10) || 10),
           },
           updatedAt: new Date(),
         },

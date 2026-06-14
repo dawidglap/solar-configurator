@@ -10,6 +10,7 @@ import {
   toCompanyObjectId,
   toPlanningObjectId,
 } from "@/lib/orders";
+import { createInvoicesForOrderIfMissing } from "@/lib/invoices";
 import { buildPlanningDocumentPdf } from "@/lib/planningDocuments";
 import {
   ensurePlanningFileIndexes,
@@ -238,7 +239,7 @@ export async function POST(
       return jsonResponse(origin, { ok: false, message: "Auftragsnummer fehlt." }, 500);
     }
 
-    const { pdfBytes } = await buildPlanningDocumentPdf({
+    const { pdfBytes, pricing } = await buildPlanningDocumentPdf({
       db,
       planning,
       company,
@@ -265,6 +266,25 @@ export async function POST(
         },
       );
     }
+
+    await createInvoicesForOrderIfMissing({
+      db,
+      companyId,
+      planning: alreadyGenerated
+        ? {
+            ...planning,
+            orderStatus: "generated",
+            orderId,
+            orderGeneratedAt,
+          }
+        : planning,
+      company,
+      session,
+      orderId,
+      orderGeneratedAt:
+        orderGeneratedAt instanceof Date ? orderGeneratedAt : new Date(orderGeneratedAt),
+      totalInklMwst: Number(pricing?.totalInklMwst ?? 0),
+    });
 
     const managedFiles = await persistManagedOrderFiles({
       db,

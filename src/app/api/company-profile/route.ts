@@ -119,6 +119,17 @@ function buildDefaultCompanyProfile(company: any) {
           ? company.paymentDefaults.termDays
           : 30,
       currency: safeString(company?.paymentDefaults?.currency) || "CHF",
+      dunningFees: Array.isArray(company?.paymentDefaults?.dunningFees)
+        ? company.paymentDefaults.dunningFees.map((value: unknown) => Number(value) || 0)
+        : [],
+      dunningTermDays:
+        typeof company?.paymentDefaults?.dunningTermDays === "number"
+          ? company.paymentDefaults.dunningTermDays
+          : 10,
+    },
+
+    templates: {
+      invoiceText: safeString(company?.templates?.invoiceText),
     },
 
     branding: {
@@ -207,6 +218,17 @@ function normalizePatchInput(body: any) {
           ? body.paymentDefaults.termDays
           : 30,
       currency: safeString(body?.paymentDefaults?.currency) || "CHF",
+      dunningFees: Array.isArray(body?.paymentDefaults?.dunningFees)
+        ? body.paymentDefaults.dunningFees.map((value: unknown) => Number(value) || 0)
+        : [],
+      dunningTermDays:
+        typeof body?.paymentDefaults?.dunningTermDays === "number"
+          ? body.paymentDefaults.dunningTermDays
+          : 10,
+    },
+
+    templates: {
+      invoiceText: safeString(body?.templates?.invoiceText),
     },
 
     branding: {
@@ -360,6 +382,7 @@ export async function PATCH(req: Request) {
         billing: normalized.billing,
         bank: normalized.bank,
         paymentDefaults: normalized.paymentDefaults,
+        templates: normalized.templates,
         branding: normalized.branding,
         defaults: normalized.defaults,
         pdfSettings: normalized.pdfSettings,

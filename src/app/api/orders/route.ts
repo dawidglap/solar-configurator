@@ -136,10 +136,63 @@ export async function GET(req: Request) {
       ])
       .toArray();
 
+    const orderIds = docs
+      .map((doc: any) => safeString(doc?.orderId))
+      .filter(Boolean);
+    const invoiceSummaryDocs = orderIds.length
+      ? await db
+          .collection("invoices")
+          .aggregate([
+            {
+              $match: {
+                companyId: String(session.activeCompanyId),
+                orderId: { $in: orderIds },
+                invoiceType: "rechnung",
+              },
+            },
+            {
+              $group: {
+                _id: "$orderId",
+                invoicesCount: { $sum: 1 },
+                invoicesPaidCount: {
+                  $sum: {
+                    $cond: [{ $eq: ["$paymentStatus", "bezahlt"] }, 1, 0],
+                  },
+                },
+                invoicesOpenAmount: {
+                  $sum: {
+                    $cond: [
+                      { $eq: ["$paymentStatus", "bezahlt"] },
+                      0,
+                      { $subtract: ["$amount", { $ifNull: ["$paidAmount", 0] }] },
+                    ],
+                  },
+                },
+              },
+            },
+          ])
+          .toArray()
+      : [];
+    const invoiceSummaryByOrderId = new Map(
+      invoiceSummaryDocs.map((doc: any) => [
+        safeString(doc?._id),
+        {
+          invoicesCount: Number(doc?.invoicesCount ?? 0),
+          invoicesPaidCount: Number(doc?.invoicesPaidCount ?? 0),
+          invoicesOpenAmount: Number(doc?.invoicesOpenAmount ?? 0),
+        },
+      ]),
+    );
+
     const items = await Promise.all(
       docs.map(async (doc: any) => {
         const commercial = await computePlanningCommercialSummary(db, doc);
         const orderFields = normalizeOrderFields(doc);
+        const invoiceSummary = invoiceSummaryByOrderId.get(safeString(doc?.orderId)) ?? {
+          invoicesCount: 0,
+          invoicesPaidCount: 0,
+          invoicesOpenAmount: 0,
+        };
         return {
           ...orderFields,
           planningId: safeString(doc?._id?.toString?.() ?? doc?._id),
@@ -147,6 +200,9 @@ export async function GET(req: Request) {
           customerName: customerNameFromPlanning(doc),
           projectTitle: safeString(doc?.title) || safeString(doc?.planningNumber),
           totalInklMwst: commercial.grossPriceChf,
+          invoicesCount: invoiceSummary.invoicesCount,
+          invoicesPaidCount: invoiceSummary.invoicesPaidCount,
+          invoicesOpenAmount: invoiceSummary.invoicesOpenAmount,
         };
       }),
     );
