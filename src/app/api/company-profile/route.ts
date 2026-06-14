@@ -194,6 +194,21 @@ function normalizePatchInput(body: any) {
       accountHolder: safeString(body?.billing?.accountHolder),
     },
 
+    bank: {
+      bankName: safeString(body?.bank?.bankName),
+      iban: safeString(body?.bank?.iban),
+      accountHolder: safeString(body?.bank?.accountHolder),
+      bicSwift: safeString(body?.bank?.bicSwift),
+    },
+
+    paymentDefaults: {
+      termDays:
+        typeof body?.paymentDefaults?.termDays === "number"
+          ? body.paymentDefaults.termDays
+          : 30,
+      currency: safeString(body?.paymentDefaults?.currency) || "CHF",
+    },
+
     branding: {
       logoUrl: safeString(body?.branding?.logoUrl),
       primaryColor: safeString(body?.branding?.primaryColor) || "#3DBBA0",
@@ -343,6 +358,8 @@ export async function PATCH(req: Request) {
         address: normalized.address,
         contact: normalized.contact,
         billing: normalized.billing,
+        bank: normalized.bank,
+        paymentDefaults: normalized.paymentDefaults,
         branding: normalized.branding,
         defaults: normalized.defaults,
         pdfSettings: normalized.pdfSettings,

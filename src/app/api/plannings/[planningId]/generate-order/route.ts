@@ -125,7 +125,8 @@ export async function POST(
       return jsonResponse(origin, { ok: false, message: "Firma nicht gefunden." }, 404);
     }
 
-    if (!safeString(company?.bank?.iban)) {
+    const iban = (company?.bank?.iban || company?.billing?.iban || "").replace(/\s/g, "");
+    if (!iban) {
       return jsonResponse(
         origin,
         { ok: false, message: "IBAN in Firmeneinstellungen ergänzen." },
