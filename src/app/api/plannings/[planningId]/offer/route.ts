@@ -47,6 +47,9 @@ export async function POST(
   }
 
   const body = await req.json().catch(() => ({} as any));
+  const requestUrl = new URL(req.url);
+  const requestedDocumentType =
+    safeString(requestUrl.searchParams.get("documentType")) || body?.documentType;
 
   try {
     const db = await getDb();
@@ -66,7 +69,7 @@ export async function POST(
       _id: new ObjectId(String(session.activeCompanyId)),
     });
 
-    const documentType = resolveDocumentType(planning, body?.documentType);
+    const documentType = resolveDocumentType(planning, requestedDocumentType);
     const orderId =
       documentType === "auftrag"
         ? safeString(body?.orderId) || safeString((planning as any)?.orderId)

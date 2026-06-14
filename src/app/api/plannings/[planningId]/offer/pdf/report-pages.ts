@@ -7,6 +7,7 @@ type ReportPagesData = {
   offer?: any;
   documentType?: "angebot" | "auftrag";
   documentNumberLabel?: string;
+  orderGeneratedAt?: string;
 };
 
 const PAGE_W = 595.28;
@@ -764,6 +765,18 @@ function addBerichtOverviewPage(
     6.5,
     C.muted
   );
+
+  if (data.documentType === "auftrag" && safeString(data.orderGeneratedAt)) {
+    txt(
+      page,
+      `Bestätigter Auftrag vom ${safeString(data.orderGeneratedAt)}`,
+      44,
+      53,
+      7.8,
+      font,
+      C.muted
+    );
+  }
 
   footer(page, font, data.companyName);
 }

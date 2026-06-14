@@ -47,19 +47,6 @@ type OfferCoverData = {
   documentType?: "angebot" | "auftrag";
   documentTitle?: string;
   documentNumberLabel?: string;
-  orderGeneratedAt?: string;
-  paymentRows?: Array<{
-    label: string;
-    pct: number;
-    amountChf: number;
-    dueAt: string;
-  }>;
-  bankDetails?: {
-    accountHolder?: string;
-    iban?: string;
-    bankName?: string;
-    bicSwift?: string;
-  };
 };
 
 type Row = {
@@ -670,113 +657,56 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     textDark
   );
 
-  if (data.documentType === "auftrag") {
-    const paymentRows = Array.isArray(data.paymentRows) ? data.paymentRows : [];
-    const bankDetails = data.bankDetails ?? {};
-
-    if (paymentRows.length) {
-      y -= 20;
-      drawText(page, "Zahlungsbedingungen", tableX, y, 11.2, bold, textDark);
-      y -= 18;
-
-      const rateX = tableX;
-      const pctX = tableX + 180;
-      const amountX = tableX + 265;
-      const dueX = tableX + 390;
-
-      drawText(page, "Rate", rateX, y, 8.8, bold, textDark);
-      drawText(page, "%", pctX, y, 8.8, bold, textDark);
-      drawText(page, "Betrag CHF", amountX, y, 8.8, bold, textDark);
-      drawText(page, "Fällig am", dueX, y, 8.8, bold, textDark);
-      drawLine(page, tableX, y - 6, tableX + 430, y - 6, 1, lineGray);
-      y -= 16;
-
-      for (const row of paymentRows.slice(0, 5)) {
-        drawText(page, truncate(row.label, 24), rateX, y, 8.7, font, textDark);
-        drawText(page, `${pct(row.pct)} %`, pctX, y, 8.7, font, textDark);
-        drawText(page, money(row.amountChf), amountX, y, 8.7, font, textDark);
-        drawText(page, row.dueAt || "—", dueX, y, 8.7, font, textDark);
-        y -= 14;
-      }
-    }
-
-    y -= 8;
-    drawText(page, "Bankverbindung", tableX, y, 11.2, bold, textDark);
-    y -= 18;
-
-    const bankRows = [
-      { label: "Empfänger", value: safeText(bankDetails.accountHolder) || safeText(data.companyName) || "—" },
-      { label: "IBAN", value: safeText(bankDetails.iban) || "—" },
-      { label: "Bank", value: safeText(bankDetails.bankName) || "—" },
-      { label: "BIC/SWIFT", value: safeText(bankDetails.bicSwift) || "—" },
-    ];
-
-    for (const row of bankRows) {
-      drawText(page, `${row.label}:`, tableX, y, 8.9, font, textDark);
-      drawText(page, row.value, tableX + 118, y, 8.9, bold, textDark);
-      y -= 13;
-    }
-
-    y -= 8;
-    drawText(
-      page,
-      `Bestätigter Auftrag vom ${data.orderGeneratedAt || data.offerDate || "—"}`,
-      tableX,
-      y,
-      9.2,
-      bold,
-      textDark
-    );
-  } else {
+  if (data.documentType !== "auftrag") {
     y -= 22;
     drawText(page, "Offerte gültig bis:", tableX, y, 9.4, font, textDark);
     drawText(page, data.validUntil || "—", tableX + 118, y, 9.4, bold, textDark);
     drawLine(page, tableX, y - 7, tableX + 270, y - 7, 1, lineGray);
-
-    y -= 24;
-    drawText(
-      page,
-      "Als Ihr persönlicher Ansprechpartner stehen wir Ihnen jederzeit gerne",
-      tableX,
-      y,
-      9,
-      font,
-      textDark
-    );
-    y -= 12;
-    drawText(
-      page,
-      "zur Verfügung. Wir freuen uns, von Ihnen zu hören!",
-      tableX,
-      y,
-      9,
-      font,
-      textDark
-    );
-
-    y -= 26;
-    drawText(page, "Mit freundlichen Grüssen", tableX, y, 9.2, font, textDark);
-
-    y -= 22;
-    drawText(
-      page,
-      data.advisorName || data.companyName || "—",
-      tableX,
-      y,
-      12.5,
-      bold,
-      textDark
-    );
-
-    y -= 13;
-    drawText(
-      page,
-      `${data.advisorRole || "Beratung"} · ${data.companyName || "—"}`,
-      tableX,
-      y,
-      8.5,
-      font,
-      textMuted
-    );
   }
+
+  y -= 24;
+  drawText(
+    page,
+    "Als Ihr persönlicher Ansprechpartner stehen wir Ihnen jederzeit gerne",
+    tableX,
+    y,
+    9,
+    font,
+    textDark
+  );
+  y -= 12;
+  drawText(
+    page,
+    "zur Verfügung. Wir freuen uns, von Ihnen zu hören!",
+    tableX,
+    y,
+    9,
+    font,
+    textDark
+  );
+
+  y -= 26;
+  drawText(page, "Mit freundlichen Grüssen", tableX, y, 9.2, font, textDark);
+
+  y -= 22;
+  drawText(
+    page,
+    data.advisorName || data.companyName || "—",
+    tableX,
+    y,
+    12.5,
+    bold,
+    textDark
+  );
+
+  y -= 13;
+  drawText(
+    page,
+    `${data.advisorRole || "Beratung"} · ${data.companyName || "—"}`,
+    tableX,
+    y,
+    8.5,
+    font,
+    textMuted
+  );
 }

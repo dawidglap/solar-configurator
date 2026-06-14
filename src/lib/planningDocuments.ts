@@ -2,6 +2,7 @@ import { ObjectId, type Db } from "mongodb";
 import { PDFDocument } from "pdf-lib";
 import { addCoverPage } from "@/app/api/plannings/[planningId]/offer/pdf/cover-page";
 import { addDetailPages } from "@/app/api/plannings/[planningId]/offer/pdf/detail-pages";
+import { addPaymentSlipPage } from "@/app/api/plannings/[planningId]/offer/pdf/payment-slip-page";
 import { addProjectOverviewPage } from "@/app/api/plannings/[planningId]/offer/pdf/project-overview-page";
 import { addReportPages } from "@/app/api/plannings/[planningId]/offer/pdf/report-pages";
 import { buildReportSummary } from "@/app/api/plannings/[planningId]/report-summary/route";
@@ -15,6 +16,14 @@ type PaymentRow = {
   pct: number;
   amountChf: number;
   dueAt: string;
+  dueDate: Date;
+};
+
+type ResolvedBankDetails = {
+  accountHolder: string;
+  iban: string;
+  bankName: string;
+  bicSwift: string;
 };
 
 type BuildPlanningDocumentPdfArgs = {
@@ -62,6 +71,126 @@ function formatIban(value: unknown) {
   const compact = safeString(value).replace(/\s+/g, "").toUpperCase();
   if (!compact) return "";
   return compact.replace(/(.{4})(?=.)/g, "$1 ").trim();
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + Math.max(0, Math.trunc(days)));
+  return next;
+}
+
+function getCompanyFooterCandidates(company: any) {
+  const pdfSettings = company?.pdfSettings ?? {};
+  return [
+    safeString(pdfSettings?.footerBankName),
+    safeString(pdfSettings?.footerAccountHolder),
+    safeString(pdfSettings?.footerIban),
+    safeString(pdfSettings?.footerBic),
+  ].filter(Boolean);
+}
+
+function parseFooterBankDetails(company: any) {
+  const segments = getCompanyFooterCandidates(company)
+    .flatMap((value) =>
+      value
+        .split(/[·•|]/)
+        .map((segment) => safeString(segment))
+        .filter(Boolean),
+    );
+
+  let bankName = "";
+  let accountHolder = "";
+  let iban = "";
+  let bicSwift = "";
+
+  for (const segment of segments) {
+    const compact = segment.replace(/\s+/g, "").toUpperCase();
+    if (!iban && /^[A-Z]{2}[0-9A-Z]{13,32}$/.test(compact)) {
+      iban = compact;
+      continue;
+    }
+
+    if (!bicSwift && /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(compact)) {
+      bicSwift = compact;
+      continue;
+    }
+
+    if (!bankName) {
+      bankName = segment;
+      continue;
+    }
+
+    if (!accountHolder) {
+      accountHolder = segment;
+    }
+  }
+
+  return {
+    bankName,
+    accountHolder,
+    iban,
+    bicSwift,
+  };
+}
+
+function resolveBankDetails(company: any): ResolvedBankDetails {
+  const bank = company?.bank ?? {};
+  const billing = company?.billing ?? {};
+  const footerParsed = parseFooterBankDetails(company);
+
+  return {
+    accountHolder:
+      safeString(bank?.accountHolder) ||
+      safeString(company?.name) ||
+      safeString(billing?.accountHolder) ||
+      safeString(footerParsed.accountHolder),
+    iban:
+      safeString(bank?.iban) ||
+      safeString(billing?.iban) ||
+      safeString(footerParsed.iban),
+    bankName:
+      safeString(bank?.bankName) ||
+      safeString(billing?.bankName) ||
+      safeString(footerParsed.bankName),
+    bicSwift:
+      safeString(bank?.bicSwift) ||
+      safeString(billing?.bicSwift ?? billing?.bic) ||
+      safeString(footerParsed.bicSwift),
+  };
+}
+
+function buildCompanyAddressLines(company: any) {
+  const street = safeString(company?.address?.street);
+  const place = [safeString(company?.address?.zip), safeString(company?.address?.city)]
+    .filter(Boolean)
+    .join(" ");
+  const country = safeString(company?.address?.country);
+
+  return [
+    safeString(company?.name),
+    street,
+    place,
+    country && country.toLowerCase() !== "schweiz" ? country : "",
+  ].filter(Boolean);
+}
+
+function buildCustomerAddressLines(profile: any, summary: any) {
+  const salutation = safeString(profile?.salutation ?? profile?.title ?? profile?.gender);
+  const name =
+    [safeString(profile?.firstName ?? profile?.contactFirstName), safeString(profile?.lastName ?? profile?.contactLastName)]
+      .filter(Boolean)
+      .join(" ") ||
+    safeString(profile?.companyName) ||
+    safeString(summary?.customerName);
+  const street = safeString(profile?.street ?? profile?.buildingStreet);
+  const place = [
+    safeString(profile?.zip ?? profile?.buildingZip),
+    safeString(profile?.city ?? profile?.buildingCity),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return [salutation, name, street, place].filter(Boolean);
 }
 
 function getItemLineTotal(item: any) {
@@ -151,19 +280,13 @@ function extractPaymentsSource(data: any) {
 
 function buildPaymentRows(args: {
   planning: any;
-  company: any;
   totalInklMwst: number;
-  orderGeneratedAt?: Date | string | null;
+  baseDate: Date;
 }) {
   const data = args.planning?.data ?? {};
   const rows = Array.isArray(extractPaymentsSource(data))
     ? extractPaymentsSource(data)
     : [];
-  const baseDate = parseDate(args.orderGeneratedAt) ?? new Date();
-  const defaultTermDays = Math.max(
-    0,
-    safeNumber(args.company?.paymentDefaults?.termDays, 30),
-  );
 
   return rows
     .map((row: any, index: number): PaymentRow | null => {
@@ -180,15 +303,19 @@ function buildPaymentRows(args: {
         `Rate ${index + 1}`;
 
       const explicitDueDate = parseDate(row?.dueAt ?? row?.dueDate ?? row?.date);
-      const termDays = safeNumber(row?.termDays ?? row?.days, defaultTermDays);
-      const computedDueDate = new Date(baseDate);
-      computedDueDate.setDate(computedDueDate.getDate() + Math.max(0, termDays));
+      const dueOffsetDays = safeNumber(
+        row?.dueOffsetDays ?? row?.dueInDays ?? row?.termDays ?? row?.days,
+        0,
+      );
+      const computedDueDate = addDays(args.baseDate, dueOffsetDays);
+      const dueDate = explicitDueDate ?? computedDueDate;
 
       return {
         label,
         pct,
         amountChf,
-        dueAt: formatDateCH(explicitDueDate ?? computedDueDate),
+        dueAt: formatDateCH(dueDate),
+        dueDate,
       };
     })
     .filter((row: PaymentRow | null): row is PaymentRow => !!row);
@@ -429,6 +556,31 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     documentType,
     orderId: args.orderId,
   });
+  const resolvedBankDetails = resolveBankDetails(company);
+  const orderGeneratedAt = parseDate(args.orderGeneratedAt ?? planning?.orderGeneratedAt);
+  const invoiceDate =
+    documentType === "auftrag" ? orderGeneratedAt ?? today : today;
+  const defaultDueDate = addDays(
+    invoiceDate,
+    safeNumber(company?.paymentDefaults?.termDays, 30),
+  );
+  const paymentRows = buildPaymentRows({
+    planning,
+    totalInklMwst: grossPriceChf,
+    baseDate: invoiceDate,
+  });
+  const paymentSlipRows =
+    paymentRows.length > 0
+      ? paymentRows
+      : [
+          {
+            label: "Einmalige Zahlung",
+            pct: 100,
+            amountChf: roundToFiveCents(grossPriceChf),
+            dueAt: formatDateCH(defaultDueDate),
+            dueDate: defaultDueDate,
+          },
+        ];
 
   const offer = {
     title: safeString(planning?.title) || "Photovoltaik-Angebot",
@@ -560,14 +712,6 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       .filter(Boolean)
       .join(", ") || "—";
 
-  const orderGeneratedAt = parseDate(args.orderGeneratedAt ?? planning?.orderGeneratedAt);
-  const paymentRows = buildPaymentRows({
-    planning,
-    company,
-    totalInklMwst: grossPriceChf,
-    orderGeneratedAt,
-  });
-
   await addCoverPage(pdf, {
     title: offer.title,
     planningNumber: offer.planningNumber,
@@ -604,15 +748,6 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     documentType,
     documentTitle: identifiers.documentTitle,
     documentNumberLabel: identifiers.documentNumberLabel,
-    orderGeneratedAt: orderGeneratedAt ? formatDateCH(orderGeneratedAt) : "",
-    paymentRows,
-    bankDetails: {
-      accountHolder:
-        safeString(company?.bank?.accountHolder) || safeString(company?.name) || "",
-      iban: formatIban(company?.bank?.iban),
-      bankName: safeString(company?.bank?.bankName),
-      bicSwift: safeString(company?.bank?.bicSwift),
-    },
   });
 
   const companyForPdf = company
@@ -675,6 +810,37 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     offer,
     documentType,
     documentNumberLabel: identifiers.documentNumberLabel,
+    orderGeneratedAt:
+      documentType === "auftrag" && orderGeneratedAt
+        ? formatDateCH(orderGeneratedAt)
+        : "",
+  });
+
+  await addPaymentSlipPage(pdf, {
+    documentType,
+    documentNumber: identifiers.documentNumber,
+    documentNumberLabel: identifiers.documentNumberLabel,
+    invoiceDate: formatDateCH(invoiceDate),
+    dueDate: formatDateCH(defaultDueDate),
+    invoiceDateIso: invoiceDate,
+    companyName,
+    companyLogoUrl: safeString(company?.branding?.logoUrl),
+    companyAddressLines: buildCompanyAddressLines(company),
+    customerAddressLines: buildCustomerAddressLines(profile, summary),
+    paymentRows: paymentSlipRows,
+    totalAmountChf: grossPriceChf,
+    currency: safeString(company?.paymentDefaults?.currency) || "CHF",
+    bankDetails: {
+      accountHolder: resolvedBankDetails.accountHolder,
+      iban: formatIban(resolvedBankDetails.iban),
+      bankName: resolvedBankDetails.bankName,
+      bicSwift: resolvedBankDetails.bicSwift,
+    },
+    reference: identifiers.documentNumber,
+    additionalInformation: `${identifiers.documentNumber} vom ${formatDateCH(invoiceDate)}`,
+    showPreviewWatermark: documentType === "angebot",
+    showIbanWarning:
+      documentType === "angebot" && !safeString(resolvedBankDetails.iban),
   });
 
   const pdfBytes = await pdf.save();
