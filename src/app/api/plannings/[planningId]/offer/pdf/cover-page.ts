@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
+import { sanitizePdfText } from "@/lib/pdfText";
 
 type OfferCoverData = {
   title: string;
@@ -112,7 +113,7 @@ function drawText(
   font: PDFFont,
   color = rgb(0.14, 0.22, 0.27)
 ) {
-  page.drawText(text, { x, y, size, font, color });
+  page.drawText(sanitizePdfText(text), { x, y, size, font, color });
 }
 
 function drawLine(
@@ -133,8 +134,9 @@ function drawLine(
 }
 
 function truncate(text: string, max = 52) {
-  if (!text) return "";
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  const normalized = sanitizePdfText(text);
+  if (!normalized) return "";
+  return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
 }
 
 function wrapText(text: string, maxWidth: number, font: PDFFont, size: number) {
@@ -161,7 +163,7 @@ function wrapText(text: string, maxWidth: number, font: PDFFont, size: number) {
 }
 
 function safeText(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
+  return sanitizePdfText(value);
 }
 
 function fitWrappedTitle(text: string, font: PDFFont, maxWidth: number) {

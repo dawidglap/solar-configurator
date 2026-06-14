@@ -99,7 +99,12 @@ export async function POST(
       },
     });
   } catch (e: any) {
-    console.error("OFFER DOCUMENT ERROR:", e);
+    console.error("OFFER DOCUMENT ERROR:", {
+      planningId,
+      requestedDocumentType,
+      message: e?.message,
+      stack: e?.stack,
+    });
     return jsonError(origin, "PDF konnte nicht erstellt werden.", 500);
   }
 }

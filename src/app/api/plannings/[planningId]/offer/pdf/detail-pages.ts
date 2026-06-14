@@ -1,4 +1,5 @@
 import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
+import { sanitizePdfText } from "@/lib/pdfText";
 
 type CompanyLike = {
   name?: string;
@@ -99,7 +100,7 @@ function getTableColumnLayout() {
 }
 
 function safeString(v: unknown) {
-  return typeof v === "string" ? v.trim() : "";
+  return sanitizePdfText(v);
 }
 
 function safeNumber(v: unknown, fallback = 0) {
@@ -129,7 +130,7 @@ function drawText(
   font: PDFFont,
   color = COLOR_TEXT
 ) {
-  page.drawText(text, { x, y, size, font, color });
+  page.drawText(safeString(text), { x, y, size, font, color });
 }
 
 function drawLine(

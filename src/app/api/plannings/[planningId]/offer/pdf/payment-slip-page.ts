@@ -1,4 +1,5 @@
 import { PDFDocument, PDFPage, PDFFont, degrees, rgb } from "pdf-lib";
+import { sanitizePdfText } from "@/lib/pdfText";
 
 type PaymentSlipRow = {
   label: string;
@@ -50,7 +51,7 @@ const C = {
 };
 
 function safeString(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
+  return sanitizePdfText(value);
 }
 
 function money(value: number) {
@@ -69,7 +70,7 @@ function drawText(
   font: PDFFont,
   color = C.text,
 ) {
-  page.drawText(text, { x, y, size, font, color });
+  page.drawText(safeString(text), { x, y, size, font, color });
 }
 
 function drawRightText(
@@ -81,8 +82,9 @@ function drawRightText(
   font: PDFFont,
   color = C.text,
 ) {
-  const width = font.widthOfTextAtSize(text, size);
-  drawText(page, text, rightX - width, y, size, font, color);
+  const normalized = safeString(text);
+  const width = font.widthOfTextAtSize(normalized, size);
+  drawText(page, normalized, rightX - width, y, size, font, color);
 }
 
 function drawLine(page: PDFPage, x1: number, y1: number, x2: number, y2: number, thickness = 0.7) {
@@ -222,7 +224,7 @@ async function drawLogo(args: {
 }
 
 function drawWatermark(page: PDFPage, bold: PDFFont) {
-  page.drawText("Vorschau — nicht zahlungswirksam", {
+  page.drawText("Vorschau - nicht zahlungswirksam", {
     x: 96,
     y: 356,
     size: 34,

@@ -2,6 +2,7 @@ import type { Db } from "mongodb";
 import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
 import { addPaymentSlipPage } from "@/app/api/plannings/[planningId]/offer/pdf/payment-slip-page";
 import { safeString, toObjectIdOrNull, type SessionPayload } from "@/lib/api-session";
+import { sanitizePdfText } from "@/lib/pdfText";
 import { formatIban, roundToFiveCents } from "@/lib/planningDocuments";
 import {
   ensurePlanningFileIndexes,
@@ -60,7 +61,7 @@ function money(value: number) {
 }
 
 function wrapText(text: string, maxWidth: number, font: PDFFont, size: number) {
-  const clean = safeString(text).replace(/\s+/g, " ").trim();
+  const clean = sanitizePdfText(text).replace(/\s+/g, " ").trim();
   if (!clean) return [];
 
   const words = clean.split(" ");
@@ -80,6 +81,10 @@ function wrapText(text: string, maxWidth: number, font: PDFFont, size: number) {
 
   if (current) lines.push(current);
   return lines;
+}
+
+function pdfText(value: unknown) {
+  return sanitizePdfText(value);
 }
 
 function splitParagraphs(text: string) {
@@ -266,7 +271,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   });
 
   if (!logoShown) {
-    page.drawText(safeString(args.company?.name) || "Ihre Firma", {
+    page.drawText(pdfText(args.company?.name) || "Ihre Firma", {
       x: marginX,
       y: 758,
       size: 18,
@@ -278,7 +283,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   const companyLines = buildCompanyAddressLines(args.company);
   let companyY = 742;
   for (const line of companyLines) {
-    page.drawText(line, {
+    page.drawText(pdfText(line), {
       x: 382,
       y: companyY,
       size: 8.6,
@@ -289,7 +294,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   }
 
   const heading = getInvoiceHeading(args.invoice);
-  page.drawText(`${heading} Nr. ${safeString(args.invoice?.invoiceNumber) || "—"}`, {
+  page.drawText(`${pdfText(heading)} Nr. ${pdfText(args.invoice?.invoiceNumber) || "-"}`, {
     x: marginX,
     y: 688,
     size: 20,
@@ -313,7 +318,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   });
   let recipientY = 622;
   for (const line of recipientLines) {
-    page.drawText(line, {
+    page.drawText(pdfText(line), {
       x: marginX,
       y: recipientY,
       size: 11,
@@ -346,15 +351,17 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
 
   let detailsY = 636;
   for (const [label, value] of detailRows) {
-    page.drawText(label, {
+    const normalizedLabel = pdfText(label);
+    const normalizedValue = pdfText(value);
+    page.drawText(normalizedLabel, {
       x: 344,
       y: detailsY,
       size: 8.5,
       font,
       color: cMuted,
     });
-    const width = bold.widthOfTextAtSize(value, 9);
-    page.drawText(value, {
+    const width = bold.widthOfTextAtSize(normalizedValue, 9);
+    page.drawText(normalizedValue, {
       x: 538 - width,
       y: detailsY,
       size: 9,
@@ -368,7 +375,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   for (const paragraph of splitParagraphs(args.invoice?.bodyText)) {
     const lines = wrapText(paragraph, 507, font, 10.5);
     for (const line of lines) {
-      page.drawText(line, {
+      page.drawText(pdfText(line), {
         x: marginX,
         y: bodyY,
         size: 10.5,
@@ -394,9 +401,9 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   page.drawText("Betrag", { x: 478, y: tableTop + 8, size: 9, font: bold, color: cText });
 
   const rowY = tableTop - 24;
-  const description = `Photovoltaik-Anlage – Rate ${safeNumber(args.invoice?.rateIndex, 0) + 1} (${safeNumber(args.invoice?.pct, 0)}%)`;
-  page.drawText(description, { x: marginX + 12, y: rowY, size: 9.5, font, color: cText });
-  const amountLabel = `${safeString(args.invoice?.currency) || "CHF"} ${money(safeNumber(args.invoice?.amount, 0))}`;
+  const description = `Photovoltaik-Anlage - Rate ${safeNumber(args.invoice?.rateIndex, 0) + 1} (${safeNumber(args.invoice?.pct, 0)}%)`;
+  page.drawText(pdfText(description), { x: marginX + 12, y: rowY, size: 9.5, font, color: cText });
+  const amountLabel = `${pdfText(args.invoice?.currency) || "CHF"} ${money(safeNumber(args.invoice?.amount, 0))}`;
   const amountWidth = bold.widthOfTextAtSize(amountLabel, 9.5);
   page.drawText(amountLabel, { x: 539 - amountWidth, y: rowY, size: 9.5, font: bold, color: cText });
   page.drawLine({
@@ -447,7 +454,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
     thickness: 0.6,
     color: cLine,
   });
-  page.drawText(footerLine || safeString(args.company?.name) || "Ihre Firma", {
+  page.drawText(pdfText(footerLine || safeString(args.company?.name) || "Ihre Firma"), {
     x: marginX,
     y: 48,
     size: 7.6,
@@ -458,12 +465,12 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   if (safeString(args.invoice?.invoiceType) !== "gutschrift") {
     await addPaymentSlipPage(pdf, {
       documentType: "auftrag",
-      documentNumber: safeString(args.invoice?.invoiceNumber) || "—",
-      documentNumberLabel: `${heading} Nr. ${safeString(args.invoice?.invoiceNumber) || "—"}`,
+      documentNumber: pdfText(args.invoice?.invoiceNumber) || "-",
+      documentNumberLabel: `${pdfText(heading)} Nr. ${pdfText(args.invoice?.invoiceNumber) || "-"}`,
       invoiceDate: formatDateCH(issueDate),
       dueDate: formatDateCH(dueDate ?? addDays(issueDate ?? new Date(), 30)),
       invoiceDateIso: issueDate,
-      companyName: safeString(args.company?.name) || "Ihre Firma",
+      companyName: pdfText(args.company?.name) || "Ihre Firma",
       companyLogoUrl: safeString(args.company?.branding?.logoUrl),
       companyAddressLines: companyLines,
       customerAddressLines: recipientLines,
@@ -483,8 +490,8 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
         bankName: bank.bankName,
         bicSwift: bank.bicSwift,
       },
-      reference: safeString(args.invoice?.invoiceNumber) || safeString(args.invoice?._id),
-      additionalInformation: `${safeString(args.invoice?.orderId) || safeString(args.invoice?.invoiceNumber)} vom ${formatDateCH(issueDate)}`,
+      reference: pdfText(args.invoice?.invoiceNumber) || pdfText(args.invoice?._id),
+      additionalInformation: `${pdfText(args.invoice?.orderId) || pdfText(args.invoice?.invoiceNumber)} vom ${formatDateCH(issueDate)}`,
       showPreviewWatermark: false,
       showIbanWarning: !safeString(bank.iban),
     });

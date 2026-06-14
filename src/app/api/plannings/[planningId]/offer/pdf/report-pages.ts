@@ -1,4 +1,5 @@
 import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
+import { sanitizePdfText } from "@/lib/pdfText";
 
 type ReportPagesData = {
   planningNumber?: string;
@@ -32,7 +33,7 @@ const C = {
 };
 
 function safeString(v: unknown) {
-  return typeof v === "string" ? v.trim() : "";
+  return sanitizePdfText(v);
 }
 
 function n(v: any, fallback = 0) {
@@ -64,7 +65,7 @@ function txt(
   font: PDFFont,
   color = C.dark
 ) {
-  page.drawText(String(text ?? ""), { x, y, size, font, color });
+  page.drawText(safeString(text), { x, y, size, font, color });
 }
 
 function rightTxt(
@@ -76,8 +77,9 @@ function rightTxt(
   font: PDFFont,
   color = C.dark
 ) {
-  const w = font.widthOfTextAtSize(String(text ?? ""), size);
-  txt(page, text, rightX - w, y, size, font, color);
+  const normalized = safeString(text);
+  const w = font.widthOfTextAtSize(normalized, size);
+  txt(page, normalized, rightX - w, y, size, font, color);
 }
 
 function header(

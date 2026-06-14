@@ -2,7 +2,6 @@ import { ObjectId, type Db } from "mongodb";
 import { PDFDocument } from "pdf-lib";
 import { addCoverPage } from "@/app/api/plannings/[planningId]/offer/pdf/cover-page";
 import { addDetailPages } from "@/app/api/plannings/[planningId]/offer/pdf/detail-pages";
-import { addPaymentSlipPage } from "@/app/api/plannings/[planningId]/offer/pdf/payment-slip-page";
 import { addProjectOverviewPage } from "@/app/api/plannings/[planningId]/offer/pdf/project-overview-page";
 import { addReportPages } from "@/app/api/plannings/[planningId]/offer/pdf/report-pages";
 import { buildReportSummary } from "@/app/api/plannings/[planningId]/report-summary/route";
@@ -556,31 +555,9 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     documentType,
     orderId: args.orderId,
   });
-  const resolvedBankDetails = resolveBankDetails(company);
   const orderGeneratedAt = parseDate(args.orderGeneratedAt ?? planning?.orderGeneratedAt);
   const invoiceDate =
     documentType === "auftrag" ? orderGeneratedAt ?? today : today;
-  const defaultDueDate = addDays(
-    invoiceDate,
-    safeNumber(company?.paymentDefaults?.termDays, 30),
-  );
-  const paymentRows = buildPaymentRows({
-    planning,
-    totalInklMwst: grossPriceChf,
-    baseDate: invoiceDate,
-  });
-  const paymentSlipRows =
-    paymentRows.length > 0
-      ? paymentRows
-      : [
-          {
-            label: "Einmalige Zahlung",
-            pct: 100,
-            amountChf: roundToFiveCents(grossPriceChf),
-            dueAt: formatDateCH(defaultDueDate),
-            dueDate: defaultDueDate,
-          },
-        ];
 
   const offer = {
     title: safeString(planning?.title) || "Photovoltaik-Angebot",
@@ -814,33 +791,6 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       documentType === "auftrag" && orderGeneratedAt
         ? formatDateCH(orderGeneratedAt)
         : "",
-  });
-
-  await addPaymentSlipPage(pdf, {
-    documentType,
-    documentNumber: identifiers.documentNumber,
-    documentNumberLabel: identifiers.documentNumberLabel,
-    invoiceDate: formatDateCH(invoiceDate),
-    dueDate: formatDateCH(defaultDueDate),
-    invoiceDateIso: invoiceDate,
-    companyName,
-    companyLogoUrl: safeString(company?.branding?.logoUrl),
-    companyAddressLines: buildCompanyAddressLines(company),
-    customerAddressLines: buildCustomerAddressLines(profile, summary),
-    paymentRows: paymentSlipRows,
-    totalAmountChf: grossPriceChf,
-    currency: safeString(company?.paymentDefaults?.currency) || "CHF",
-    bankDetails: {
-      accountHolder: resolvedBankDetails.accountHolder,
-      iban: formatIban(resolvedBankDetails.iban),
-      bankName: resolvedBankDetails.bankName,
-      bicSwift: resolvedBankDetails.bicSwift,
-    },
-    reference: identifiers.documentNumber,
-    additionalInformation: `${identifiers.documentNumber} vom ${formatDateCH(invoiceDate)}`,
-    showPreviewWatermark: documentType === "angebot",
-    showIbanWarning:
-      documentType === "angebot" && !safeString(resolvedBankDetails.iban),
   });
 
   const pdfBytes = await pdf.save();

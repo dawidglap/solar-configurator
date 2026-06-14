@@ -9,6 +9,7 @@ import {
   clip,
   endPath,
 } from "pdf-lib";
+import { sanitizePdfText } from "@/lib/pdfText";
 
 type ProjectOverviewData = {
   title?: string;
@@ -36,7 +37,7 @@ type ProjectOverviewData = {
 };
 
 function safeString(v: unknown) {
-  return typeof v === "string" ? v.trim() : "";
+  return sanitizePdfText(v);
 }
 
 function safeNumber(v: unknown, fallback = 0) {
@@ -71,7 +72,7 @@ function drawText(
   font: PDFFont,
   color = rgb(0.16, 0.24, 0.28)
 ) {
-  page.drawText(text, { x, y, size, font, color });
+  page.drawText(safeString(text), { x, y, size, font, color });
 }
 
 function drawRightText(
@@ -83,8 +84,9 @@ function drawRightText(
   font: PDFFont,
   color = rgb(0.16, 0.24, 0.28)
 ) {
-  const w = font.widthOfTextAtSize(text, size);
-  drawText(page, text, rightX - w, y, size, font, color);
+  const normalized = safeString(text);
+  const w = font.widthOfTextAtSize(normalized, size);
+  drawText(page, normalized, rightX - w, y, size, font, color);
 }
 
 function dataUrlToBytes(dataUrl?: string | null) {
