@@ -14,6 +14,7 @@ import {
 import { getDb } from "@/lib/db";
 import { getSessionUserName } from "@/lib/tasks";
 import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
+import { normalizeOrderFields } from "@/lib/orders";
 
 export const runtime = "nodejs";
 
@@ -265,6 +266,15 @@ export async function POST(req: Request) {
 
       data: defaultStoreData(),
 
+      orderStatus: "none",
+      orderId: null,
+      orderGeneratedAt: null,
+      orderGeneratedByUserId: null,
+      orderGeneratedByName: null,
+      commercialLockedAt: null,
+      orderSnapshotFileId: null,
+      angebotSnapshotFileId: null,
+
       createdAt: now,
       updatedAt: now,
     };
@@ -361,10 +371,18 @@ export async function GET(req: Request) {
           currentStep: 1,
           title: 1,
           planningNumber: 1,
-          commercial: 1,
-          summary: 1,
-          createdAt: 1,
-          updatedAt: 1,
+           commercial: 1,
+           summary: 1,
+           orderStatus: 1,
+           orderId: 1,
+           orderGeneratedAt: 1,
+           orderGeneratedByUserId: 1,
+           orderGeneratedByName: 1,
+           commercialLockedAt: 1,
+           orderSnapshotFileId: 1,
+           angebotSnapshotFileId: 1,
+           createdAt: 1,
+           updatedAt: 1,
           "data.profile.contactFirstName": 1,
           "data.profile.contactLastName": 1,
           "data.profile.businessName": 1,
@@ -404,6 +422,7 @@ export async function GET(req: Request) {
         },
         summary,
         customerName,
+        ...normalizeOrderFields(d),
         createdAt: d.createdAt ?? null,
         updatedAt: d.updatedAt ?? null,
         firstName: safeString(d?.data?.profile?.contactFirstName),

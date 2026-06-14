@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
+import { normalizeOrderFields } from "@/lib/orders";
 
 export const runtime = "nodejs";
 
@@ -173,6 +174,15 @@ export async function POST(
             ? (source as any).commercial.valueChf
             : 0,
       },
+
+      orderStatus: "none",
+      orderId: null,
+      orderGeneratedAt: null,
+      orderGeneratedByUserId: null,
+      orderGeneratedByName: null,
+      commercialLockedAt: null,
+      orderSnapshotFileId: null,
+      angebotSnapshotFileId: null,
     };
 
     const res = await plannings.insertOne(duplicated);
@@ -186,6 +196,7 @@ export async function POST(
         planningNumber: duplicated.planningNumber,
         variantOfPlanningId: duplicated.variantOfPlanningId,
         variantNumber: duplicated.variantNumber,
+        ...normalizeOrderFields(duplicated),
       },
     });
   } catch (e: any) {

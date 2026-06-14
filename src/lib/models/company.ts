@@ -12,6 +12,18 @@ export type Company = {
   notes: string;
   deletedAt?: Date;
 
+  bank?: {
+    bankName?: string;
+    iban?: string;
+    accountHolder?: string;
+    bicSwift?: string;
+  };
+
+  paymentDefaults?: {
+    termDays?: number;
+    currency?: string;
+  };
+
   createdAt: Date;
   updatedAt: Date;
 };

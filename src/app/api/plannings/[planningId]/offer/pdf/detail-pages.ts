@@ -49,6 +49,9 @@ type AddDetailPagesArgs = {
     detailItems?: DetailItem[];
   };
   company?: CompanyLike | null;
+  documentType?: "angebot" | "auftrag";
+  documentTitle?: string;
+  documentNumberLabel?: string;
 };
 
 const PAGE_W = 595.28;
@@ -392,6 +395,8 @@ export async function addDetailPages(pdf: PDFDocument, args: AddDetailPagesArgs)
     font,
     bold,
     footerLines,
+    documentTitle: args.documentTitle,
+    documentNumberLabel: args.documentNumberLabel,
   });
 
   let y = page.cursorY;
@@ -415,6 +420,8 @@ export async function addDetailPages(pdf: PDFDocument, args: AddDetailPagesArgs)
         font,
         bold,
         footerLines,
+        documentTitle: args.documentTitle,
+        documentNumberLabel: args.documentNumberLabel,
       });
       y = page.cursorY;
       currentSection = "";
@@ -449,6 +456,8 @@ function createPage(
     font: PDFFont;
     bold: PDFFont;
     footerLines: string[];
+    documentTitle?: string;
+    documentNumberLabel?: string;
   }
 ) {
   const page = pdf.addPage([PAGE_W, PAGE_H]);
@@ -463,7 +472,8 @@ function createPage(
 
   // Header
   const headerRight = [
-    args.planningNumber ? `Offerte Nr. ${args.planningNumber}` : "",
+    safeString(args.documentNumberLabel) ||
+      (args.planningNumber ? `Offerte Nr. ${args.planningNumber}` : ""),
     `Seite ${args.pageNumber}`,
   ]
     .filter(Boolean)

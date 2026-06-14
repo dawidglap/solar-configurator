@@ -105,6 +105,22 @@ function buildDefaultCompanyProfile(company: any) {
       accountHolder: safeString(company?.billing?.accountHolder),
     },
 
+    bank: {
+      bankName: safeString(company?.bank?.bankName) || safeString(company?.billing?.bankName),
+      iban: safeString(company?.bank?.iban) || safeString(company?.billing?.iban),
+      accountHolder:
+        safeString(company?.bank?.accountHolder) || safeString(company?.billing?.accountHolder),
+      bicSwift: safeString(company?.bank?.bicSwift) || safeString(company?.billing?.bic),
+    },
+
+    paymentDefaults: {
+      termDays:
+        typeof company?.paymentDefaults?.termDays === "number"
+          ? company.paymentDefaults.termDays
+          : 30,
+      currency: safeString(company?.paymentDefaults?.currency) || "CHF",
+    },
+
     branding: {
       logoUrl: safeString(company?.branding?.logoUrl),
       primaryColor: safeString(company?.branding?.primaryColor) || "#3DBBA0",

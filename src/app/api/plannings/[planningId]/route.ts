@@ -14,6 +14,7 @@ import {
 } from "@/lib/plannings";
 import { getSessionUserName } from "@/lib/tasks";
 import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
+import { normalizeOrderFields } from "@/lib/orders";
 
 export const runtime = "nodejs";
 
@@ -712,6 +713,7 @@ if (ist && typeof ist === "object") {
         stageHistory: normalizeStageHistory((updated as any)?.commercial?.stageHistory),
       },
       customerId: (updated as any)?.customerId ?? null,
+      ...normalizeOrderFields(updated),
     };
 
     return jsonResponse(origin, { ok: true, planning: normalized }, 200);
@@ -801,6 +803,7 @@ export async function GET(
         stageHistory: normalizeStageHistory((doc as any)?.commercial?.stageHistory),
       },
       customerId: (doc as any)?.customerId ?? null,
+      ...normalizeOrderFields(doc),
     };
 
     return jsonResponse(origin, { ok: true, planning: normalized }, 200);

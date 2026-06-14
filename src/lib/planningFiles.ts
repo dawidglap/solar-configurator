@@ -238,6 +238,8 @@ export function normalizePlanningFile(doc: any) {
     planningId: safeString(doc?.planningId),
     ...(safeString(doc?.customerId) ? { customerId: safeString(doc?.customerId) } : {}),
     category: normalizePlanningFileCategory(doc?.category) ?? "document",
+    ...(safeString(doc?.type) ? { type: safeString(doc?.type) } : {}),
+    ...(safeString(doc?.linkToPlanningId) ? { linkToPlanningId: safeString(doc?.linkToPlanningId) } : {}),
     title: safeString(doc?.title),
     originalFileName: safeString(doc?.originalFileName),
     fileType: (safeString(doc?.fileType) || "other") as PlanningFileType,
@@ -444,6 +446,79 @@ export async function parseAndUploadPlanningFile(input: {
   };
 
   return doc;
+}
+
+export async function uploadGeneratedPlanningFileBuffer(input: {
+  companyId: string;
+  planningId: string;
+  category: PlanningFileCategory;
+  title: string;
+  originalFileName: string;
+  mimeType: string;
+  buffer: Buffer;
+  customerId?: string;
+  session: SessionPayload;
+  type?: string;
+  linkToPlanningId?: string;
+}) {
+  if (!hasCloudinaryEnv()) {
+    throw new Error("Missing Cloudinary environment variables");
+  }
+
+  const mimeType = safeString(input.mimeType).toLowerCase() || "application/pdf";
+  const resourceType = getPlanningFileCloudinaryResourceType(mimeType);
+  const fileType = getPlanningFileTypeFromMimeType(mimeType);
+  const folder = buildCloudinaryFolder(input.companyId, input.planningId, input.category);
+  const publicId = buildCloudinaryPublicId(input.originalFileName);
+  const upload = await uploadBufferToCloudinary({
+    buffer: input.buffer,
+    folder,
+    publicId,
+    resourceType,
+    mimeType,
+    originalFilename: input.originalFileName,
+  });
+
+  const now = new Date().toISOString();
+  const uploadedBy = getPlanningFileSessionUser(input.session);
+
+  return {
+    companyId: input.companyId,
+    planningId: input.planningId,
+    ...(input.customerId ? { customerId: input.customerId } : {}),
+    ...(safeString(input.type) ? { type: safeString(input.type) } : {}),
+    ...(safeString(input.linkToPlanningId) ? { linkToPlanningId: safeString(input.linkToPlanningId) } : {}),
+    category: input.category,
+    title: safeString(input.title) || stripFileExtension(input.originalFileName) || input.originalFileName,
+    originalFileName: input.originalFileName,
+    fileType,
+    mimeType,
+    sizeBytes: input.buffer.byteLength,
+    cloudinaryPublicId: safeString(upload?.public_id),
+    cloudinaryResourceType: resourceType,
+    cloudinaryDeliveryType: safeString(upload?.type) || "upload",
+    cloudinaryUrl: safeString(upload?.url),
+    cloudinarySecureUrl: safeString(upload?.secure_url),
+    thumbnailUrl: buildThumbnailUrl(upload, resourceType),
+    uploadedByUserId: uploadedBy.userId,
+    uploadedByName: uploadedBy.name,
+    ...(uploadedBy.email ? { uploadedByEmail: uploadedBy.email } : {}),
+    isDeleted: false,
+    deletedAt: null,
+    deletedByUserId: null,
+    deletedByName: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export async function fetchPlanningFileBuffer(doc: any) {
+  const downloadUrl = buildPlanningFileDownloadUrl(doc, "attachment");
+  const response = await fetch(downloadUrl, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to download planning file (${response.status})`);
+  }
+  return Buffer.from(await response.arrayBuffer());
 }
 
 export async function getPlanningFileDbAndSession(req: Request) {

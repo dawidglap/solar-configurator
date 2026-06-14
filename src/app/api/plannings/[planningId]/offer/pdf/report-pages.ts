@@ -5,6 +5,8 @@ type ReportPagesData = {
   companyName?: string;
   reportSummary?: any;
   offer?: any;
+  documentType?: "angebot" | "auftrag";
+  documentNumberLabel?: string;
 };
 
 const PAGE_W = 595.28;
@@ -27,6 +29,10 @@ const C = {
   gray: rgb(0.58, 0.62, 0.65),
   white: rgb(1, 1, 1),
 };
+
+function safeString(v: unknown) {
+  return typeof v === "string" ? v.trim() : "";
+}
 
 function n(v: any, fallback = 0) {
   const x = Number(v);
@@ -78,12 +84,14 @@ function header(
   font: PDFFont,
   bold: PDFFont,
   title: string,
-  planningNumber?: string
+  planningNumber?: string,
+  documentNumberLabel?: string,
 ) {
   txt(page, title, 44, 792, 19, bold, C.dark);
 
-  if (planningNumber) {
-    rightTxt(page, `Offerte Nr. ${planningNumber}`, 551, 797, 8.8, font, C.muted);
+  const numberLabel = safeString(documentNumberLabel) || (planningNumber ? `Offerte Nr. ${planningNumber}` : "");
+  if (numberLabel) {
+    rightTxt(page, numberLabel, 551, 797, 8.8, font, C.muted);
   }
 
   page.drawLine({
@@ -413,7 +421,7 @@ function addBerichtOverviewPage(
   const offer = data.offer || {};
   const page = pdf.addPage([PAGE_W, PAGE_H]);
 
-  header(page, font, bold, "Bericht", data.planningNumber);
+  header(page, font, bold, "Bericht", data.planningNumber, data.documentNumberLabel);
 
   txt(
     page,

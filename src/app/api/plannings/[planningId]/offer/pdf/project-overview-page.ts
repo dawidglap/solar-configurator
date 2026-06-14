@@ -31,6 +31,8 @@ type ProjectOverviewData = {
   electricityUsageKwh?: number;
 
   companyName?: string;
+  documentType?: "angebot" | "auftrag";
+  documentNumberLabel?: string;
 };
 
 function safeString(v: unknown) {
@@ -116,8 +118,9 @@ function drawHeader(args: {
   bold: PDFFont;
   title: string;
   planningNumber?: string;
+  documentNumberLabel?: string;
 }) {
-  const { page, font, bold, title, planningNumber } = args;
+  const { page, font, bold, title, planningNumber, documentNumberLabel } = args;
 
   const dark = rgb(0.13, 0.22, 0.27);
   const muted = rgb(0.38, 0.45, 0.49);
@@ -125,8 +128,9 @@ function drawHeader(args: {
 
   drawText(page, title, 44, 792, 19, bold, dark);
 
-  if (planningNumber) {
-    drawRightText(page, `Offerte Nr. ${planningNumber}`, 551, 797, 8.8, font, muted);
+  const numberLabel = safeString(documentNumberLabel) || (planningNumber ? `Offerte Nr. ${planningNumber}` : "");
+  if (numberLabel) {
+    drawRightText(page, numberLabel, 551, 797, 8.8, font, muted);
   }
 
   page.drawLine({
@@ -337,6 +341,7 @@ export async function addProjectOverviewPage(
     bold,
     title: "Projektübersicht",
     planningNumber: data.planningNumber,
+    documentNumberLabel: data.documentNumberLabel,
   });
 
   drawText(
@@ -453,6 +458,7 @@ export async function addProjectOverviewPage(
     bold,
     title: "Technische Eckdaten",
     planningNumber: data.planningNumber,
+    documentNumberLabel: data.documentNumberLabel,
   });
 
   drawText(
