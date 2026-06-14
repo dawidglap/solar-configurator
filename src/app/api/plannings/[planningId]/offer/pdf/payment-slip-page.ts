@@ -208,7 +208,7 @@ async function drawLogo(args: {
     const height = image.height * scale;
 
     page.drawImage(image, {
-      x,
+      x: x + (w - width) / 2,
       y: y + (h - height) / 2,
       width,
       height,
@@ -283,9 +283,15 @@ export async function addPaymentSlipPage(pdf: PDFDocument, data: PaymentSlipPage
   drawText(page, title, MARGIN_X, TOP_Y, 18, bold);
   drawLine(page, MARGIN_X, TOP_Y - 10, PAGE_W - MARGIN_X, TOP_Y - 10, 1.8);
 
-  const metaX = 370;
-  const metaY = 740;
-  const metaWidth = PAGE_W - metaX - MARGIN_X;
+  const leftColX = MARGIN_X;
+  const leftColW = 224;
+  const rightColW = 240;
+  const rightColX = PAGE_W - MARGIN_X - rightColW;
+  const topBlockY = 632;
+  const topBlockH = 96;
+  const metaX = rightColX;
+  const metaY = 748;
+  const metaWidth = rightColW;
   const metaRows = [
     ["Rechnungsdatum", data.invoiceDate],
     ["Fällig am", data.dueDate],
@@ -295,9 +301,9 @@ export async function addPaymentSlipPage(pdf: PDFDocument, data: PaymentSlipPage
 
   page.drawRectangle({
     x: metaX,
-    y: metaY - 62,
+    y: metaY - 80,
     width: metaWidth,
-    height: 70,
+    height: 88,
     color: C.soft,
     borderColor: C.line,
     borderWidth: 0.7,
@@ -307,7 +313,7 @@ export async function addPaymentSlipPage(pdf: PDFDocument, data: PaymentSlipPage
   for (const [label, value] of metaRows) {
     drawText(page, label, metaX + 12, metaCursorY, 8.2, font, C.muted);
     drawRightText(page, fallbackText(value), metaX + metaWidth - 12, metaCursorY, 8.8, bold);
-    metaCursorY -= 15.5;
+    metaCursorY -= 18;
   }
 
   if (data.showIbanWarning) {
@@ -315,47 +321,59 @@ export async function addPaymentSlipPage(pdf: PDFDocument, data: PaymentSlipPage
       page,
       "IBAN in Firmeneinstellungen ergänzen, um den Zahlungsschein zu vervollständigen.",
       MARGIN_X,
-      730,
+      738,
       8.8,
       bold,
       C.warning,
     );
   }
 
+  page.drawRectangle({
+    x: leftColX,
+    y: topBlockY,
+    width: leftColW,
+    height: topBlockH,
+    color: C.white,
+    borderColor: C.line,
+    borderWidth: 0.7,
+  });
+
   const logoShown = await drawLogo({
     pdf,
     page,
     url: data.companyLogoUrl,
-    x: MARGIN_X,
-    y: 650,
-    w: 96,
-    h: 44,
+    x: leftColX + 12,
+    y: topBlockY + 10,
+    w: leftColW - 24,
+    h: topBlockH - 20,
   });
 
-  const companyNameX = logoShown ? MARGIN_X + 108 : MARGIN_X;
-  const companyNameLines = wrapText(data.companyName, 215, bold, 17);
-  drawWrappedLines({
-    page,
-    lines: companyNameLines,
-    x: companyNameX,
-    y: 676,
-    size: 17,
-    lineHeight: 18.5,
-    font: bold,
-  });
+  if (!logoShown) {
+    const companyNameLines = wrapText(data.companyName, leftColW - 28, bold, 18);
+    const totalHeight = Math.max(1, companyNameLines.length) * 20;
+    drawWrappedLines({
+      page,
+      lines: companyNameLines,
+      x: leftColX + 14,
+      y: topBlockY + (topBlockH + totalHeight) / 2 - 16,
+      size: 18,
+      lineHeight: 20,
+      font: bold,
+    });
+  }
 
-  drawText(page, "Empfänger-Adresse", 334, 690, 9, bold, C.muted);
+  drawText(page, "Empfänger-Adresse", rightColX, 638, 9, bold, C.muted);
   drawWrappedLines({
     page,
     lines: data.customerAddressLines.length ? data.customerAddressLines : ["—"],
-    x: 334,
-    y: 674,
+    x: rightColX,
+    y: 620,
     size: 9.3,
     lineHeight: 12,
     font,
   });
 
-  const tableTopY = 606;
+  const tableTopY = 566;
   const tableLeft = MARGIN_X;
   const tableRight = PAGE_W - MARGIN_X;
   const colDescription = tableLeft + 12;
