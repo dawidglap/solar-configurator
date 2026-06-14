@@ -9,6 +9,8 @@ import {
   buildInitialStageHistoryEntry,
   buildStageHistoryForTransition,
   ensurePlanningIndexes,
+  getPipelineStageTypeByKey,
+  getWonStageKey,
   ensurePlanningStageHistoryMigration,
   normalizeStageHistory,
 } from "@/lib/plannings";
@@ -413,6 +415,8 @@ export async function PATCH(
     if (subscriptionError) return subscriptionError;
     const plannings = db.collection("plannings");
     const customers = db.collection("customers");
+    const companies = db.collection("companies");
+    const activeCompanyObjectId = toObjectIdOrNull(session.activeCompanyId);
     await ensurePlanningIndexes(db);
     await ensurePlanningStageHistoryMigration(db);
 
@@ -447,6 +451,35 @@ export async function PATCH(
     if (commercial && typeof commercial === "object") {
       if (typeof commercial.stage === "string") {
         const nextStage = safeString(commercial.stage) || "lead";
+        const company = await companies.findOne({
+          ...(activeCompanyObjectId ? { _id: activeCompanyObjectId } : { _id: new ObjectId() }),
+        });
+        const currentStage = safeString((existingPlanning as any)?.commercial?.stage) || "lead";
+        const currentStageType = getPipelineStageTypeByKey(company, currentStage);
+        const nextStageType = getPipelineStageTypeByKey(company, nextStage);
+
+        if (
+          currentStageType === "won" &&
+          nextStage !== currentStage
+        ) {
+          return jsonResponse(
+            origin,
+            { ok: false, message: "Statuswechsel aus «Gewonnen» ist nur via Storno möglich." },
+            409,
+          );
+        }
+
+        if (
+          nextStageType === "won" &&
+          safeString((existingPlanning as any)?.orderStatus) !== "generated"
+        ) {
+          return jsonResponse(
+            origin,
+            { ok: false, message: "Auftrag muss zuerst generiert werden." },
+            409,
+          );
+        }
+
         setObj["commercial.stage"] = nextStage;
         setObj["commercial.stageHistory"] = buildStageHistoryForTransition(
           existingPlanning,
@@ -690,7 +723,13 @@ if (ist && typeof ist === "object") {
       return jsonResponse(origin, { ok: false, error: "Planning not found after update" }, 404);
     }
 
-    if (safeString((updated as any)?.commercial?.stage).toLowerCase() === "gewonnen") {
+    const updatedCompany = await companies.findOne({
+      ...(activeCompanyObjectId ? { _id: activeCompanyObjectId } : { _id: new ObjectId() }),
+    });
+    if (
+      safeString((updated as any)?.commercial?.stage) ===
+      getWonStageKey(updatedCompany)
+    ) {
       await ensureExecutionTasksForWonPlanning(db, updated, session as any);
     }
 

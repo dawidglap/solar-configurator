@@ -12,6 +12,7 @@ import {
 } from "@/lib/orders";
 import { createInvoicesForOrderIfMissing } from "@/lib/invoices";
 import { buildPlanningDocumentPdf } from "@/lib/planningDocuments";
+import { buildStageHistoryForTransition, getWonStageKey } from "@/lib/plannings";
 import {
   ensurePlanningFileIndexes,
   extractPlanningFileCustomerId,
@@ -20,6 +21,7 @@ import {
   normalizePlanningFile,
   upsertManagedPlanningFile,
 } from "@/lib/planningFiles";
+import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -225,6 +227,7 @@ export async function POST(
 
     const alreadyGenerated = safeString((planning as any)?.orderStatus) === "generated";
     const now = new Date();
+    const wonStageKey = getWonStageKey(company);
     const orderId =
       safeString((planning as any)?.orderId) ||
       (alreadyGenerated ? "" : await nextOrderId(db, companyId, now));
@@ -261,6 +264,27 @@ export async function POST(
             orderGeneratedByUserId: auditFields.orderGeneratedByUserId,
             orderGeneratedByName: auditFields.orderGeneratedByName,
             commercialLockedAt: now,
+            "commercial.stage": wonStageKey,
+            "commercial.stageHistory": buildStageHistoryForTransition(
+              planning,
+              wonStageKey,
+              session,
+            ),
+            updatedAt: now,
+          },
+        },
+      );
+    } else if (safeString((planning as any)?.commercial?.stage) !== wonStageKey) {
+      await plannings.updateOne(
+        { _id: planningObjectId, companyId },
+        {
+          $set: {
+            "commercial.stage": wonStageKey,
+            "commercial.stageHistory": buildStageHistoryForTransition(
+              planning,
+              wonStageKey,
+              session,
+            ),
             updatedAt: now,
           },
         },
@@ -323,6 +347,9 @@ export async function POST(
     }
 
     const updatedPlanning = await plannings.findOne({ _id: planningObjectId, companyId });
+    if (updatedPlanning && safeString((updatedPlanning as any)?.commercial?.stage) === wonStageKey) {
+      await ensureExecutionTasksForWonPlanning(db, updatedPlanning, session as any);
+    }
     const responseBody = {
       ok: !alreadyGenerated,
       ...(alreadyGenerated ? { message: "Auftrag wurde bereits generiert." } : {}),

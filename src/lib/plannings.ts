@@ -42,9 +42,108 @@ export type PlanningChecklistHistoryEntry = {
   byName: string | null;
 };
 
+export type PipelineStageType = "open" | "won" | "lost";
+
+export type PipelineStage = {
+  key: string;
+  label: string;
+  color: string;
+  order: number;
+  type: PipelineStageType;
+};
+
+const DEFAULT_PIPELINE_STAGES: PipelineStage[] = [
+  {
+    key: "lead",
+    label: "Entwurf",
+    color: "hsl(210 80% 58%)",
+    order: 0,
+    type: "open",
+  },
+  {
+    key: "offer",
+    label: "Angebot gesendet",
+    color: "hsl(42 92% 55%)",
+    order: 1,
+    type: "open",
+  },
+  {
+    key: "won",
+    label: "Gewonnen",
+    color: "hsl(160 60% 45%)",
+    order: 2,
+    type: "won",
+  },
+  {
+    key: "lost",
+    label: "Verloren",
+    color: "hsl(0 72% 55%)",
+    order: 3,
+    type: "lost",
+  },
+];
+
 let ensurePlanningIndexesPromise: Promise<void> | null = null;
 let ensurePlanningStageHistoryMigrationPromise: Promise<void> | null = null;
 let ensurePlanningChecklistMigrationPromise: Promise<void> | null = null;
+
+function normalizePipelineStageType(value: unknown): PipelineStageType {
+  const normalized = safeString(value).toLowerCase();
+  if (normalized === "won") return "won";
+  if (normalized === "lost") return "lost";
+  return "open";
+}
+
+export function normalizePipelineStages(input: unknown): PipelineStage[] {
+  if (!Array.isArray(input)) {
+    return DEFAULT_PIPELINE_STAGES.map((stage) => ({ ...stage }));
+  }
+
+  const stages = input
+    .map((stage, index) => {
+      const key = safeString((stage as any)?.key).toLowerCase();
+      const label = safeString((stage as any)?.label);
+      const color = safeString((stage as any)?.color);
+      if (!key || !label || !color) return null;
+
+      return {
+        key,
+        label,
+        color,
+        order:
+          typeof (stage as any)?.order === "number" &&
+          Number.isFinite((stage as any).order)
+            ? (stage as any).order
+            : index,
+        type: normalizePipelineStageType((stage as any)?.type),
+      } satisfies PipelineStage;
+    })
+    .filter((stage): stage is PipelineStage => !!stage)
+    .sort((a, b) => a.order - b.order)
+    .map((stage, index) => ({
+      ...stage,
+      order: index,
+    }));
+
+  return stages.length > 0 ? stages : DEFAULT_PIPELINE_STAGES.map((stage) => ({ ...stage }));
+}
+
+export function getCompanyPipelineStages(company: any) {
+  return normalizePipelineStages(company?.pipelineStages);
+}
+
+export function getPipelineStageTypeByKey(company: any, stageKey: unknown): PipelineStageType {
+  const normalizedKey = safeString(stageKey).toLowerCase();
+  if (!normalizedKey) return "open";
+
+  const stage = getCompanyPipelineStages(company).find((entry) => entry.key === normalizedKey);
+  return stage?.type ?? "open";
+}
+
+export function getWonStageKey(company: any) {
+  const stage = getCompanyPipelineStages(company).find((entry) => entry.type === "won");
+  return stage?.key || "won";
+}
 
 export function normalizePlanningComment(comment: any): PlanningComment {
   const rawId = comment?.id;

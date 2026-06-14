@@ -79,6 +79,16 @@ export function normalizeOrderFields(planning: any) {
       mongoIdToString(planning?.angebotSnapshotFileId) ||
       safeString(planning?.angebotSnapshotFileId) ||
       null,
+    cancelledAt:
+      planning?.cancelledAt instanceof Date
+        ? planning.cancelledAt.toISOString()
+        : safeString(planning?.cancelledAt) || null,
+    cancelledByUserId:
+      mongoIdToString(planning?.cancelledByUserId) ||
+      safeString(planning?.cancelledByUserId) ||
+      null,
+    cancelledByName: safeString(planning?.cancelledByName) || null,
+    cancelReason: safeString(planning?.cancelReason) || null,
   };
 }
 
