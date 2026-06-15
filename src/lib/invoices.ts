@@ -31,8 +31,9 @@ export type InvoicePaymentStatus = (typeof INVOICE_PAYMENT_STATUSES)[number];
 
 type InvoiceRateSpec = {
   rateIndex: number;
+  label: string;
   pct: number;
-  dueDate: Date;
+  dueDate: Date | null;
 };
 
 type CreateOrderInvoicesArgs = {
@@ -52,6 +53,15 @@ function parseDate(value: unknown) {
   if (!normalized) return null;
   const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseIsoDateOnly(value: unknown) {
+  const normalized = safeString(value);
+  if (!normalized) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return "invalid";
+  const date = new Date(`${normalized}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return "invalid";
+  return date;
 }
 
 function addDays(date: Date, days: number) {
@@ -84,6 +94,54 @@ function extractRateSource(planning: any) {
     data?.reportOptions?.payments ??
     []
   );
+}
+
+export function validatePlanningPayments(rawPayments: unknown) {
+  if (rawPayments == null) {
+    return { ok: true as const, items: [] as InvoiceRateSpec[] };
+  }
+
+  if (!Array.isArray(rawPayments)) {
+    return { ok: false as const, message: "Zahlungsraten sind ungültig." };
+  }
+
+  if (rawPayments.length > 5) {
+    return { ok: false as const, message: "Maximal 5 Zahlungsraten sind erlaubt." };
+  }
+
+  let totalPct = 0;
+  const items: InvoiceRateSpec[] = [];
+  for (let index = 0; index < rawPayments.length; index += 1) {
+    const row = rawPayments[index] as any;
+    const pct = safeNumber(
+      row?.pct ?? row?.percent ?? row?.percentage ?? row?.sharePct,
+      Number.NaN,
+    );
+
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      return { ok: false as const, message: "Zahlungsrate Prozentwert ist ungültig." };
+    }
+
+    totalPct += pct;
+
+    const parsedDueDate = parseIsoDateOnly(row?.dueDate ?? row?.dueAt ?? row?.date);
+    if (parsedDueDate === "invalid") {
+      return { ok: false as const, message: "Fälligkeitsdatum ist ungültig." };
+    }
+
+    items.push({
+      rateIndex: index,
+      label: safeString(row?.label) || `Rate ${index + 1}`,
+      pct,
+      dueDate: parsedDueDate,
+    });
+  }
+
+  if (totalPct > 100.01) {
+    return { ok: false as const, message: "Die Summe der Zahlungsraten darf 100.01% nicht überschreiten." };
+  }
+
+  return { ok: true as const, items };
 }
 
 export function getInvoicesCollection(db: Db) {
@@ -235,46 +293,6 @@ export function buildInvoiceDefaultBodyText(args: {
   ].join("\n");
 }
 
-export function extractInvoiceRates(args: {
-  planning: any;
-  company: any;
-  baseDate: Date;
-}) {
-  const rows = Array.isArray(extractRateSource(args.planning))
-    ? extractRateSource(args.planning)
-    : [];
-  const specs = rows
-    .map((row: any, index: number): InvoiceRateSpec | null => {
-      const pct = safeNumber(
-        row?.pct ?? row?.percent ?? row?.percentage ?? row?.sharePct,
-        Number.NaN,
-      );
-      if (!Number.isFinite(pct) || pct <= 0) return null;
-
-      const explicitDueDate = parseDate(row?.dueAt ?? row?.dueDate ?? row?.date);
-      const dueOffsetDays = safeNumber(
-        row?.dueOffsetDays ?? row?.dueInDays ?? row?.termDays ?? row?.days,
-        safeNumber(args.company?.paymentDefaults?.termDays, 30),
-      );
-      return {
-        rateIndex: index,
-        pct,
-        dueDate: explicitDueDate ?? addDays(args.baseDate, dueOffsetDays),
-      };
-    })
-    .filter((row: InvoiceRateSpec | null): row is InvoiceRateSpec => !!row);
-
-  if (specs.length > 0) return specs;
-
-  return [
-    {
-      rateIndex: 0,
-      pct: 100,
-      dueDate: addDays(args.baseDate, safeNumber(args.company?.paymentDefaults?.termDays, 30)),
-    },
-  ];
-}
-
 export function normalizeInvoice(doc: any) {
   const issueDate = parseDate(doc?.issueDate);
   const dueDate = parseDate(doc?.dueDate);
@@ -289,9 +307,13 @@ export function normalizeInvoice(doc: any) {
     invoiceType: normalizeInvoiceType(doc?.invoiceType) ?? "rechnung",
     parentInvoiceId: mongoIdToString(doc?.parentInvoiceId) || null,
     rateIndex: safeNumber(doc?.rateIndex, 0),
+    position: safeNumber(doc?.position, safeNumber(doc?.rateIndex, 0)),
     rateLabel: safeString(doc?.rateLabel),
+    label: safeString(doc?.label) || safeString(doc?.rateLabel) || safeString(doc?.invoiceNumber),
     pct: safeNumber(doc?.pct, 0),
+    percentage: safeNumber(doc?.percentage, safeNumber(doc?.pct, 0)),
     amount: safeNumber(doc?.amount, 0),
+    amountChf: safeNumber(doc?.amountChf, safeNumber(doc?.amount, 0)),
     currency: safeString(doc?.currency) || "CHF",
     issueDate: issueDate ? issueDate.toISOString() : null,
     dueDate: dueDate ? dueDate.toISOString() : null,
@@ -347,9 +369,16 @@ export async function createInvoicesForOrderIfMissing(args: CreateOrderInvoicesA
   });
 
   const docs = [];
-  for (const rate of rates) {
-    const invoiceNumber = await nextInvoiceNumber(args.db, args.companyId, "rechnung", createdAt);
-    const amount = roundToFiveCents((args.totalInklMwst * rate.pct) / 100);
+  const totalAmount = roundToFiveCents(args.totalInklMwst);
+  let allocated = 0;
+  for (let index = 0; index < rates.length; index += 1) {
+    const rate = rates[index];
+    const invoiceNumber = `${args.orderId}-R${rate.rateIndex + 1}`;
+    const isLast = index === rates.length - 1;
+    const amount = isLast
+      ? Number((totalAmount - allocated).toFixed(2))
+      : Number(((args.totalInklMwst * rate.pct) / 100).toFixed(2));
+    allocated = Number((allocated + amount).toFixed(2));
     docs.push({
       companyId: args.companyId,
       planningId: safeString(args.planning?._id?.toString?.() ?? args.planning?._id),
@@ -358,12 +387,16 @@ export async function createInvoicesForOrderIfMissing(args: CreateOrderInvoicesA
       invoiceType: "rechnung",
       parentInvoiceId: null,
       rateIndex: rate.rateIndex,
-      rateLabel: `${invoiceNumber}-${rate.rateIndex + 1}`,
+      position: rate.rateIndex,
+      label: rate.label,
+      rateLabel: rate.label,
       pct: rate.pct,
+      percentage: rate.pct,
       amount,
+      amountChf: amount,
       currency: safeString(args.company?.paymentDefaults?.currency) || "CHF",
       issueDate,
-      dueDate: rate.dueDate,
+      dueDate: rate.dueDate ?? addDays(issueDate, safeNumber(args.company?.paymentDefaults?.termDays, 30)),
       status: "entwurf",
       paymentStatus: "offen",
       paidAt: null,
@@ -375,7 +408,8 @@ export async function createInvoicesForOrderIfMissing(args: CreateOrderInvoicesA
         invoiceType: "rechnung",
         rateIndex: rate.rateIndex,
         pct: rate.pct,
-        dueDate: rate.dueDate,
+        dueDate:
+          rate.dueDate ?? addDays(issueDate, safeNumber(args.company?.paymentDefaults?.termDays, 30)),
       }),
       internalNote: "",
       pdfFileId: null,
@@ -409,6 +443,81 @@ export async function createInvoicesForOrderIfMissing(args: CreateOrderInvoicesA
   };
 }
 
+export function extractInvoiceRates(args: {
+  planning: any;
+  company: any;
+  baseDate: Date;
+}) {
+  const rawRows = extractRateSource(args.planning);
+  const validation = validatePlanningPayments(rawRows);
+  if (!validation.ok) {
+    throw new Error(validation.message);
+  }
+
+  if (validation.items.length > 0) {
+    return validation.items.map((row) => ({
+      rateIndex: row.rateIndex,
+      label: row.label,
+      pct: row.pct,
+      dueDate:
+        row.dueDate ??
+        addDays(args.baseDate, safeNumber(args.company?.paymentDefaults?.termDays, 30)),
+    }));
+  }
+
+  return [
+    {
+      rateIndex: 0,
+      label: "Schlussrechnung",
+      pct: 100,
+      dueDate: addDays(args.baseDate, safeNumber(args.company?.paymentDefaults?.termDays, 30)),
+    },
+  ];
+}
+
+export async function resyncOrderInvoices(args: {
+  db: Db;
+  companyId: string;
+  planning: any;
+  company: any;
+  session: SessionPayload;
+  orderId: string;
+  orderGeneratedAt: Date;
+  totalInklMwst: number;
+}) {
+  await ensureInvoiceIndexes(args.db);
+  const invoices = getInvoicesCollection(args.db);
+  const existing = await invoices
+    .find({
+      companyId: args.companyId,
+      orderId: args.orderId,
+    })
+    .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
+    .toArray();
+
+  if (existing.some((invoice) => normalizeInvoicePaymentStatus(invoice?.paymentStatus) === "bezahlt")) {
+    return {
+      ok: false as const,
+      status: 409,
+      message: "Rechnungen sind bereits bezahlt — Synchronisation nicht möglich.",
+    };
+  }
+
+  if (existing.length > 0) {
+    await invoices.deleteMany({
+      companyId: args.companyId,
+      orderId: args.orderId,
+    });
+  }
+
+  const created = await createInvoicesForOrderIfMissing(args);
+  return {
+    ok: true as const,
+    status: 200,
+    invoices: created.invoices,
+  };
+}
+
 export async function getInvoiceByIdForCompany(db: Db, invoiceId: string, companyId: string) {
   const objectId = toObjectIdOrNull(invoiceId);
   if (!objectId) return null;
@@ -424,4 +533,3 @@ export function computeInvoicePaymentStatus(amount: number, paidAmount: number) 
   if (Math.abs(paidAmount) > 0.009) return "teilweise" as InvoicePaymentStatus;
   return "offen" as InvoicePaymentStatus;
 }
-

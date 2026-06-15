@@ -10,7 +10,7 @@ import {
   toCompanyObjectId,
   toPlanningObjectId,
 } from "@/lib/orders";
-import { createInvoicesForOrderIfMissing } from "@/lib/invoices";
+import { createInvoicesForOrderIfMissing, normalizeInvoice, validatePlanningPayments } from "@/lib/invoices";
 import { buildPlanningDocumentPdf } from "@/lib/planningDocuments";
 import { buildStageHistoryForTransition, getWonStageKey } from "@/lib/plannings";
 import {
@@ -216,6 +216,11 @@ export async function POST(
       return jsonResponse(origin, { ok: false, message: "Firma nicht gefunden." }, 404);
     }
 
+    const paymentValidation = validatePlanningPayments((planning as any)?.data?.angebot?.payments);
+    if (!paymentValidation.ok) {
+      return jsonResponse(origin, { ok: false, message: paymentValidation.message }, 400);
+    }
+
     const iban = (company?.bank?.iban || company?.billing?.iban || "").replace(/\s/g, "");
     if (!iban) {
       return jsonResponse(
@@ -291,7 +296,7 @@ export async function POST(
       );
     }
 
-    await createInvoicesForOrderIfMissing({
+    const invoiceResult = await createInvoicesForOrderIfMissing({
       db,
       companyId,
       planning: alreadyGenerated
@@ -353,7 +358,12 @@ export async function POST(
     const responseBody = {
       ok: !alreadyGenerated,
       ...(alreadyGenerated ? { message: "Auftrag wurde bereits generiert." } : {}),
+      order: {
+        orderId,
+        status: "generated",
+      },
       planning: normalizePlanningForOrder(updatedPlanning),
+      invoices: invoiceResult.invoices.map((invoice: any) => normalizeInvoice(invoice)),
       orderId,
       orderStatus: "generated",
       orderSnapshotFileId:

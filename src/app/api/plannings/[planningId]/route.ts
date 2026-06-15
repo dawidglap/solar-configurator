@@ -17,6 +17,15 @@ import {
 import { getSessionUserName } from "@/lib/tasks";
 import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
 import { normalizeOrderFields } from "@/lib/orders";
+import {
+  createInvoicesForOrderIfMissing,
+  ensureInvoiceIndexes,
+  getInvoicesCollection,
+  normalizeInvoice,
+  resyncOrderInvoices,
+  validatePlanningPayments,
+} from "@/lib/invoices";
+import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
 
 export const runtime = "nodejs";
 
@@ -373,6 +382,15 @@ export async function PATCH(
   const commercial = body?.commercial;
   const summary = body?.summary;
   const parts = body?.parts;
+  const angebot =
+    body?.angebot ??
+    body?.data?.angebot ??
+    body?.["data.angebot"];
+  const invoiceSyncRequestedAt = safeString(
+    angebot?.invoiceSyncRequestedAt ??
+      body?.data?.angebot?.invoiceSyncRequestedAt ??
+      body?.invoiceSyncRequestedAt,
+  );
 
   // NEW: support Bericht / reportOptions payload
   const reportOptions =
@@ -385,6 +403,7 @@ export async function PATCH(
     (ist && typeof ist === "object") ||
     (planner && typeof planner === "object") ||
     (parts && typeof parts === "object") ||
+    (angebot && typeof angebot === "object") ||
     (reportOptions && typeof reportOptions === "object");
 
   const hasCrmPayload =
@@ -416,9 +435,11 @@ export async function PATCH(
     const plannings = db.collection("plannings");
     const customers = db.collection("customers");
     const companies = db.collection("companies");
+    const invoices = getInvoicesCollection(db);
     const activeCompanyObjectId = toObjectIdOrNull(session.activeCompanyId);
     await ensurePlanningIndexes(db);
     await ensurePlanningStageHistoryMigration(db);
+    await ensureInvoiceIndexes(db);
 
     const existingPlanning = await plannings.findOne({
       _id: planningObjectId,
@@ -653,6 +674,22 @@ if (ist && typeof ist === "object") {
       setObj.currentStep = "parts";
     }
 
+    if (angebot && typeof angebot === "object") {
+      const existingAngebot = (existingPlanning as any)?.data?.angebot ?? {};
+      const nextAngebot = {
+        ...existingAngebot,
+        ...angebot,
+      };
+      delete (nextAngebot as any).invoiceSyncRequestedAt;
+
+      const paymentValidation = validatePlanningPayments(nextAngebot?.payments);
+      if (!paymentValidation.ok) {
+        return jsonResponse(origin, { ok: false, message: paymentValidation.message }, 400);
+      }
+
+      setObj["data.angebot"] = nextAngebot;
+    }
+
     // NEW: save Bericht options
     if (reportOptions && typeof reportOptions === "object") {
       const existingReportOptions =
@@ -733,6 +770,48 @@ if (ist && typeof ist === "object") {
       await ensureExecutionTasksForWonPlanning(db, updated, session as any);
     }
 
+    let syncedInvoices: any[] | null = null;
+    if (invoiceSyncRequestedAt && safeString((updated as any)?.orderId)) {
+      const commercial = await computePlanningCommercialSummary(db, updated);
+      const resyncResult = await resyncOrderInvoices({
+        db,
+        companyId: String(session.activeCompanyId),
+        planning: updated,
+        company: updatedCompany,
+        session: session as any,
+        orderId: safeString((updated as any)?.orderId),
+        orderGeneratedAt:
+          (updated as any)?.orderGeneratedAt instanceof Date
+            ? (updated as any).orderGeneratedAt
+            : new Date(String((updated as any)?.orderGeneratedAt || new Date().toISOString())),
+        totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
+      });
+
+      if (!resyncResult.ok) {
+        return jsonResponse(
+          origin,
+          { ok: false, message: resyncResult.message },
+          resyncResult.status,
+        );
+      }
+
+      syncedInvoices = resyncResult.invoices.map((invoice) => normalizeInvoice(invoice));
+    }
+
+    const normalizedInvoices =
+      syncedInvoices ??
+      (safeString((updated as any)?.orderId)
+        ? (
+            await invoices
+              .find({
+                companyId: String(session.activeCompanyId),
+                orderId: safeString((updated as any)?.orderId),
+              })
+              .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
+              .toArray()
+          ).map((invoice) => normalizeInvoice(invoice))
+        : []);
+
     const { comments: _comments, ...updatedWithoutComments } = updated as any;
     const normalized = {
       ...updatedWithoutComments,
@@ -753,9 +832,10 @@ if (ist && typeof ist === "object") {
       },
       customerId: (updated as any)?.customerId ?? null,
       ...normalizeOrderFields(updated),
+      invoices: normalizedInvoices,
     };
 
-    return jsonResponse(origin, { ok: true, planning: normalized }, 200);
+    return jsonResponse(origin, { ok: true, planning: normalized, invoices: normalizedInvoices }, 200);
   } catch (e: any) {
     console.error("UPDATE PLANNING ERROR:", e);
     return jsonResponse(
@@ -810,8 +890,10 @@ export async function GET(
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const plannings = db.collection("plannings");
+    const invoices = getInvoicesCollection(db);
     await ensurePlanningIndexes(db);
     await ensurePlanningStageHistoryMigration(db);
+    await ensureInvoiceIndexes(db);
 
     const doc = await plannings.findOne({
       _id: planningObjectId,
@@ -822,6 +904,18 @@ export async function GET(
     if (!doc) {
       return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
     }
+
+    const normalizedInvoices = safeString((doc as any)?.orderId)
+      ? (
+          await invoices
+            .find({
+              companyId: String(session.activeCompanyId),
+              orderId: safeString((doc as any)?.orderId),
+            })
+            .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
+            .toArray()
+        ).map((invoice) => normalizeInvoice(invoice))
+      : [];
 
     const { comments: _comments, ...docWithoutComments } = doc as any;
     const normalized = {
@@ -843,9 +937,10 @@ export async function GET(
       },
       customerId: (doc as any)?.customerId ?? null,
       ...normalizeOrderFields(doc),
+      invoices: normalizedInvoices,
     };
 
-    return jsonResponse(origin, { ok: true, planning: normalized }, 200);
+    return jsonResponse(origin, { ok: true, planning: normalized, invoices: normalizedInvoices }, 200);
   } catch (e: any) {
     console.error("GET PLANNING ERROR:", e);
     return jsonResponse(
