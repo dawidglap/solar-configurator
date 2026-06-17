@@ -6,7 +6,6 @@ import {
   toObjectIdOrNull,
   type SessionPayload,
 } from "@/lib/api-session";
-import { roundToFiveCents } from "@/lib/planningDocuments";
 import {
   getSessionUserEmail,
   getSessionUserMeta,
@@ -88,8 +87,8 @@ function normalizeInvoicePaymentStatus(value: unknown): InvoicePaymentStatus {
 function extractRateSource(planning: any) {
   const data = planning?.data ?? {};
   return (
-    data?.angebot?.n ??
     data?.angebot?.payments ??
+    data?.angebot?.n ??
     data?.offer?.payments ??
     data?.reportOptions?.payments ??
     []
@@ -369,7 +368,7 @@ export async function createInvoicesForOrderIfMissing(args: CreateOrderInvoicesA
   });
 
   const docs = [];
-  const totalAmount = roundToFiveCents(args.totalInklMwst);
+  const totalAmount = Number(safeNumber(args.totalInklMwst, 0).toFixed(2));
   let allocated = 0;
   for (let index = 0; index < rates.length; index += 1) {
     const rate = rates[index];
@@ -377,8 +376,11 @@ export async function createInvoicesForOrderIfMissing(args: CreateOrderInvoicesA
     const isLast = index === rates.length - 1;
     const amount = isLast
       ? Number((totalAmount - allocated).toFixed(2))
-      : Number(((args.totalInklMwst * rate.pct) / 100).toFixed(2));
+      : Number(((safeNumber(args.totalInklMwst, 0) * rate.pct) / 100).toFixed(2));
     allocated = Number((allocated + amount).toFixed(2));
+    const persistedDueDate = rate.dueDate ?? null;
+    const effectiveDueDateForText =
+      persistedDueDate ?? addDays(issueDate, safeNumber(args.company?.paymentDefaults?.termDays, 30));
     docs.push({
       companyId: args.companyId,
       planningId: safeString(args.planning?._id?.toString?.() ?? args.planning?._id),
@@ -396,7 +398,7 @@ export async function createInvoicesForOrderIfMissing(args: CreateOrderInvoicesA
       amountChf: amount,
       currency: safeString(args.company?.paymentDefaults?.currency) || "CHF",
       issueDate,
-      dueDate: rate.dueDate ?? addDays(issueDate, safeNumber(args.company?.paymentDefaults?.termDays, 30)),
+      dueDate: persistedDueDate,
       status: "entwurf",
       paymentStatus: "offen",
       paidAt: null,
@@ -408,8 +410,7 @@ export async function createInvoicesForOrderIfMissing(args: CreateOrderInvoicesA
         invoiceType: "rechnung",
         rateIndex: rate.rateIndex,
         pct: rate.pct,
-        dueDate:
-          rate.dueDate ?? addDays(issueDate, safeNumber(args.company?.paymentDefaults?.termDays, 30)),
+        dueDate: effectiveDueDateForText,
       }),
       internalNote: "",
       pdfFileId: null,
@@ -459,9 +460,7 @@ export function extractInvoiceRates(args: {
       rateIndex: row.rateIndex,
       label: row.label,
       pct: row.pct,
-      dueDate:
-        row.dueDate ??
-        addDays(args.baseDate, safeNumber(args.company?.paymentDefaults?.termDays, 30)),
+      dueDate: row.dueDate ?? null,
     }));
   }
 
@@ -470,7 +469,7 @@ export function extractInvoiceRates(args: {
       rateIndex: 0,
       label: "Schlussrechnung",
       pct: 100,
-      dueDate: addDays(args.baseDate, safeNumber(args.company?.paymentDefaults?.termDays, 30)),
+      dueDate: null,
     },
   ];
 }
@@ -507,6 +506,8 @@ export async function resyncOrderInvoices(args: {
     await invoices.deleteMany({
       companyId: args.companyId,
       orderId: args.orderId,
+      invoiceType: "rechnung",
+      paymentStatus: { $ne: "bezahlt" },
     });
   }
 

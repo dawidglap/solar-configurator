@@ -94,6 +94,7 @@ export async function GET(
       origin,
       {
         ok: true,
+        invoices: invoices.map((invoice) => normalizeInvoice(invoice)),
         order: {
           ...normalizeOrderFields(planning),
           planningId: safeString(planning?._id?.toString?.() ?? planning?._id),
