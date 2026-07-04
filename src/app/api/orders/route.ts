@@ -118,6 +118,59 @@ export async function GET(req: Request) {
       .aggregate([
         { $match: match },
         {
+          $addFields: {
+            responsibleUserId: {
+              $let: {
+                vars: {
+                  preferred: {
+                    $ifNull: ["$createdByUserId", "$orderGeneratedByUserId"],
+                  },
+                },
+                in: {
+                  $cond: [
+                    { $ifNull: ["$$preferred", false] },
+                    { $toString: "$$preferred" },
+                    "",
+                  ],
+                },
+              },
+            },
+          },
+        },
+        {
+          $lookup: {
+            from: "users",
+            let: {
+              responsibleUserId: "$responsibleUserId",
+            },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $eq: [{ $toString: "$_id" }, "$$responsibleUserId"],
+                  },
+                },
+              },
+              {
+                $project: {
+                  firstName: 1,
+                  lastName: 1,
+                  email: 1,
+                  name: 1,
+                },
+              },
+            ],
+            as: "responsibleUser",
+          },
+        },
+        {
+          $addFields: {
+            responsibleUser: {
+              $arrayElemAt: ["$responsibleUser", 0],
+            },
+          },
+        },
+        {
           $project: {
             title: 1,
             planningNumber: 1,
@@ -130,6 +183,11 @@ export async function GET(req: Request) {
             orderGeneratedAt: 1,
             orderSnapshotFileId: 1,
             angebotSnapshotFileId: 1,
+            createdByUserId: 1,
+            createdByName: 1,
+            orderGeneratedByUserId: 1,
+            orderGeneratedByName: 1,
+            responsibleUser: 1,
           },
         },
         { $sort: { orderGeneratedAt: -1, _id: -1 } },
@@ -200,6 +258,21 @@ export async function GET(req: Request) {
           customerName: customerNameFromPlanning(doc),
           projectTitle: safeString(doc?.title) || safeString(doc?.planningNumber),
           totalInklMwst: commercial.grossPriceChf,
+          createdByUserId:
+            safeString(doc?.responsibleUser?._id?.toString?.() ?? doc?.createdByUserId ?? doc?.orderGeneratedByUserId) ||
+            null,
+          createdByName:
+            [
+              safeString(doc?.responsibleUser?.firstName),
+              safeString(doc?.responsibleUser?.lastName),
+            ]
+              .filter(Boolean)
+              .join(" ") ||
+            safeString(doc?.responsibleUser?.name) ||
+            safeString(doc?.createdByName) ||
+            safeString(doc?.orderGeneratedByName) ||
+            null,
+          createdByEmail: safeString(doc?.responsibleUser?.email) || null,
           invoicesCount: invoiceSummary.invoicesCount,
           invoicesPaidCount: invoiceSummary.invoicesPaidCount,
           invoicesOpenAmount: invoiceSummary.invoicesOpenAmount,

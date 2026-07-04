@@ -155,6 +155,8 @@ export async function ensureInvoiceIndexes(db: Db) {
     invoices.createIndex({ companyId: 1, planningId: 1, createdAt: -1 }),
     invoices.createIndex({ companyId: 1, dueDate: 1, paymentStatus: 1 }),
     invoices.createIndex({ companyId: 1, parentInvoiceId: 1 }),
+    invoices.createIndex({ companyId: 1, invoiceType: 1, createdAt: -1, _id: -1 }),
+    invoices.createIndex({ companyId: 1, paymentStatus: 1, dueDate: 1, createdAt: -1, _id: -1 }),
   ]);
 }
 
