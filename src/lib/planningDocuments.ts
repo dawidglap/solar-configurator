@@ -35,6 +35,15 @@ type BuildPlanningDocumentPdfArgs = {
   orderGeneratedAt?: Date | string | null;
 };
 
+function pickBoolean(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 function safeNumber(v: unknown, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
@@ -76,6 +85,13 @@ function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + Math.max(0, Math.trunc(days)));
   return next;
+}
+
+function splitFeatureLines(value: unknown) {
+  return safeString(value)
+    .split(/\r?\n/)
+    .map((line) => safeString(line))
+    .filter(Boolean);
 }
 
 function getCompanyFooterCandidates(company: any) {
@@ -336,6 +352,11 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
     .toArray();
 
   const reportSummary = buildReportSummary(planning, catalogDocs);
+  const mwstIncluded =
+    pickBoolean(
+      planning?.data?.reportOptions?.mwstIncluded,
+      reportSummary?.mwstIncluded,
+    ) ?? true;
 
   const partsTotalNet = Number(
     items.reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0).toFixed(2),
@@ -365,8 +386,12 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
     Math.max(0, partsTotalNet - totalDiscountChf).toFixed(2),
   );
   const vatRatePct = 8.1;
-  const vatAmountChf = Number((netAfterDiscountChf * (vatRatePct / 100)).toFixed(2));
-  const grossPriceChf = Number((netAfterDiscountChf + vatAmountChf).toFixed(2));
+  const vatAmountChf = mwstIncluded
+    ? Number((netAfterDiscountChf * (vatRatePct / 100)).toFixed(2))
+    : 0;
+  const grossPriceChf = mwstIncluded
+    ? Number((netAfterDiscountChf + vatAmountChf).toFixed(2))
+    : netAfterDiscountChf;
 
   const dcPowerKw = safeNumber(summary?.dcPowerKw, 0);
   const automaticPvSubsidyChf = safeNumber(
@@ -400,6 +425,7 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
     vatRatePct,
     vatAmountChf,
     grossPriceChf,
+    mwstIncluded,
     automaticPvSubsidyChf,
     manualAdditionalSubsidyChf,
     subsidyChf,
@@ -431,6 +457,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   const data = planning?.data ?? {};
   const profile = data?.profile ?? {};
   const parts = data?.parts ?? {};
+  const reportOptions = data?.reportOptions ?? {};
   const summary = planning?.summary ?? {};
   const items = Array.isArray(parts?.items) ? parts.items : [];
 
@@ -446,6 +473,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     vatRatePct,
     vatAmountChf,
     grossPriceChf,
+    mwstIncluded,
     automaticPvSubsidyChf,
     manualAdditionalSubsidyChf,
     subsidyChf,
@@ -580,6 +608,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       vatRatePct,
       vatAmountChf,
       grossPriceChf,
+      mwstIncluded,
       automaticPvSubsidyChf,
       manualAdditionalSubsidyChf,
       subsidyChf,
@@ -607,33 +636,50 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       batteryPriceChf,
       wallboxPriceChf,
     },
-    detailItems: enrichedItems.map((item: any, index: number) => ({
-      position: index + 1,
-      category: safeString(item?.category ?? item?.kategorie),
-      brand: safeString(item?.brand ?? item?.marke),
-      model: safeString(item?.model),
-      name: safeString(item?.name ?? item?.label ?? item?.beschreibung),
-      quantity: safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0),
-      unit: safeString(item?.unit),
-      unitLabel: safeString(item?.unitLabel),
-      unitPriceNet: safeNumber(
-        item?.unitPriceNet ??
-          item?.unitPrice ??
-          item?.einzelpreis ??
-          item?.priceNet ??
-          item?.priceChf,
-        0,
-      ),
-      lineTotalNet: getItemLineTotal(item),
-      catalogItemId: safeString(item?.catalogItemId),
-      pdfSection: safeString(item?.pdfSection),
-      description: safeString(item?.catalogDescription),
-      longDescription: safeString(item?.catalogLongDescription),
-      features: safeStringArray(item?.catalogFeatures),
-      warranty: safeString(item?.catalogWarranty),
-      compatibility: safeString(item?.catalogCompatibility),
-      notes: safeString(item?.notes) || safeString(item?.catalogNotes),
-    })),
+    detailItems: enrichedItems.map((item: any, index: number) => {
+      const rowLongDescription = safeString(item?.longDescription);
+      const catalogLongDescription = safeString(item?.catalogLongDescription);
+      const explicitFeatures = safeStringArray(item?.features);
+      const fallbackFeatures =
+        explicitFeatures.length > 0
+          ? explicitFeatures
+          : splitFeatureLines(rowLongDescription);
+      const finalLongDescription =
+        explicitFeatures.length === 0 && fallbackFeatures.length > 0
+          ? ""
+          : rowLongDescription || catalogLongDescription;
+
+      return {
+        position: index + 1,
+        category: safeString(item?.category ?? item?.kategorie),
+        brand: safeString(item?.brand ?? item?.marke),
+        model: safeString(item?.model),
+        name: safeString(item?.name ?? item?.label ?? item?.beschreibung),
+        quantity: safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0),
+        unit: safeString(item?.unit),
+        unitLabel: safeString(item?.unitLabel),
+        unitPriceNet: safeNumber(
+          item?.unitPriceNet ??
+            item?.unitPrice ??
+            item?.einzelpreis ??
+            item?.priceNet ??
+            item?.priceChf,
+          0,
+        ),
+        lineTotalNet: getItemLineTotal(item),
+        catalogItemId: safeString(item?.catalogItemId),
+        pdfSection: safeString(item?.pdfSection),
+        description: safeString(item?.catalogDescription),
+        longDescription: finalLongDescription,
+        features:
+          fallbackFeatures.length > 0
+            ? fallbackFeatures
+            : safeStringArray(item?.catalogFeatures),
+        warranty: safeString(item?.catalogWarranty),
+        compatibility: safeString(item?.catalogCompatibility),
+        notes: safeString(item?.notes) || safeString(item?.catalogNotes),
+      };
+    }),
   };
 
   const pdf = await PDFDocument.create();
@@ -707,6 +753,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     vatRatePct: offer.pricing.vatRatePct,
     vatAmountChf: offer.pricing.vatAmountChf,
     grossPriceChf: offer.pricing.grossPriceChf,
+    mwstIncluded: offer.pricing.mwstIncluded,
     automaticPvSubsidyChf: offer.pricing.automaticPvSubsidyChf,
     manualAdditionalSubsidyChf: offer.pricing.manualAdditionalSubsidyChf,
     subsidyChf: offer.pricing.subsidyChf,
@@ -725,6 +772,12 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     documentType,
     documentTitle: identifiers.documentTitle,
     documentNumberLabel: identifiers.documentNumberLabel,
+    paymentTerms:
+      safeString(reportSummary?.paymentTerms) ||
+      safeString(reportOptions?.paymentTerms ?? reportOptions?.zahlungsbedingungen) ||
+      "Nach Absprache",
+    skontoPct: safeNumber(reportSummary?.skontoPct ?? reportOptions?.skontoPct, 0),
+    skontoDays: safeNumber(reportOptions?.skontoDays, 10),
   });
 
   const companyForPdf = company

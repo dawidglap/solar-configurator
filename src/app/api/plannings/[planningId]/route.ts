@@ -63,6 +63,17 @@ function safeString(v: any) {
   return typeof v === "string" ? v.trim() : "";
 }
 
+function safeNumber(v: any, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function safeStringArray(v: any) {
+  return Array.isArray(v)
+    ? v.map((x) => safeString(x)).filter(Boolean)
+    : [];
+}
+
 function toObjectIdOrNull(v: any) {
   try {
     if (!v) return null;
@@ -109,7 +120,77 @@ function preserveLoosePartsItems(items: any) {
       ...(Object.prototype.hasOwnProperty.call(item, "source")
         ? { source: item.source }
         : {}),
+      ...(Object.prototype.hasOwnProperty.call(item, "costNet")
+        ? { costNet: safeNumber(item.costNet, 0) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(item, "discountPct")
+        ? { discountPct: safeNumber(item.discountPct, 0) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(item, "discountChf")
+        ? { discountChf: safeNumber(item.discountChf, 0) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(item, "discountMode")
+        ? { discountMode: safeString(item.discountMode) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(item, "pinned")
+        ? { pinned: item.pinned === true }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(item, "optional")
+        ? { optional: item.optional === true }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(item, "longDescription")
+        ? { longDescription: safeString(item.longDescription) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(item, "features")
+        ? { features: safeStringArray(item.features) }
+        : {}),
     }));
+}
+
+async function upsertPinnedCatalogItems(db: any, companyId: string, items: any[]) {
+  if (!companyId || !Array.isArray(items) || items.length === 0) return;
+
+  const catalogItems = db.collection("catalogItems");
+  const now = new Date();
+
+  for (const item of items) {
+    if (item?.pinned !== true) continue;
+
+    const name = safeString(item?.name ?? item?.beschreibung);
+    if (!name) continue;
+
+    await catalogItems.updateOne(
+      {
+        companyId,
+        name,
+      },
+      {
+        $setOnInsert: {
+          companyId,
+          category: safeString(item?.category ?? item?.kategorie),
+          brand: safeString(item?.brand ?? item?.marke),
+          name,
+          unit: safeString(item?.unit) || "piece",
+          unitLabel: safeString(item?.unitLabel) || "Stk.",
+          priceNet: safeNumber(
+            item?.unitPriceNet ??
+              item?.unitPrice ??
+              item?.einzelpreis ??
+              item?.priceNet ??
+              item?.priceChf,
+            0,
+          ),
+          costNet: safeNumber(item?.costNet, 0),
+          longDescription: safeString(item?.longDescription),
+          features: safeStringArray(item?.features),
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
+      { upsert: true },
+    );
+  }
 }
 
 function syncDemolitionItem(existingItems: any[], ist: any) {
@@ -426,6 +507,7 @@ export async function PATCH(
   }
 
   const setObj: Record<string, any> = { updatedAt: new Date() };
+  let normalizedItemsForCatalog: any[] | null = null;
 
 
   try {
@@ -658,6 +740,7 @@ if (ist && typeof ist === "object") {
       const normalizedItems = Array.isArray(parts?.items)
         ? preserveLoosePartsItems(parts.items)
         : preserveLoosePartsItems(existingParts.items ?? []);
+      normalizedItemsForCatalog = normalizedItems;
 
       const normalizedFormDocuments =
         parts?.formDocuments && typeof parts.formDocuments === "object"
@@ -758,6 +841,14 @@ if (ist && typeof ist === "object") {
 
     if (!updated) {
       return jsonResponse(origin, { ok: false, error: "Planning not found after update" }, 404);
+    }
+
+    if (Array.isArray(normalizedItemsForCatalog) && normalizedItemsForCatalog.length) {
+      await upsertPinnedCatalogItems(
+        db,
+        String(session.activeCompanyId),
+        normalizedItemsForCatalog,
+      );
     }
 
     const updatedCompany = await companies.findOne({

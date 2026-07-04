@@ -41,6 +41,10 @@ type OfferCoverData = {
   discountPct?: number;
   discountFromPctChf?: number;
   totalDiscountChf?: number;
+  paymentTerms?: string;
+  skontoPct?: number;
+  skontoDays?: number;
+  mwstIncluded?: boolean;
 
   advisorName?: string;
   advisorRole?: string;
@@ -55,6 +59,11 @@ type Row = {
   middle?: string;
   right: string;
   bold?: boolean;
+};
+
+type PaymentTermRow = {
+  label: string;
+  amount?: number;
 };
 
 function money(n?: number) {
@@ -164,6 +173,30 @@ function wrapText(text: string, maxWidth: number, font: PDFFont, size: number) {
 
 function safeText(value: unknown) {
   return sanitizePdfText(value);
+}
+
+function buildPaymentTermRows(paymentTerms: string, finalTotal: number): PaymentTermRow[] {
+  const normalized = safeText(paymentTerms);
+  if (normalized === "100 %") {
+    return [{ label: "100 % bei Rechnungsstellung", amount: finalTotal }];
+  }
+  if (normalized === "50 % / 50 %") {
+    return [
+      { label: "50 % Anzahlung", amount: finalTotal * 0.5 },
+      { label: "50 % nach Montage", amount: finalTotal * 0.5 },
+    ];
+  }
+  if (normalized === "50 % / 40 % / 10 %") {
+    return [
+      { label: "50 % Anzahlung", amount: finalTotal * 0.5 },
+      { label: "40 % nach Montage", amount: finalTotal * 0.4 },
+      { label: "10 % nach Inbetriebnahme", amount: finalTotal * 0.1 },
+    ];
+  }
+  if (normalized === "Nach Absprache") {
+    return [{ label: "Zahlungsmodalitäten nach Absprache" }];
+  }
+  return normalized ? [{ label: normalized }] : [{ label: "Zahlungsmodalitäten nach Absprache" }];
 }
 
 function fitWrappedTitle(text: string, font: PDFFont, maxWidth: number) {
@@ -434,6 +467,8 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   y -= 16;
 
   const grossPrice = Number(data.grossPriceChf || 0);
+  const finalTotal = grossPrice;
+  const mwstIncluded = data.mwstIncluded !== false;
   const automaticPvSubsidy = Number(data.automaticPvSubsidyChf || 0);
   const manualAdditionalSubsidy = Number(data.manualAdditionalSubsidyChf || 0);
   const totalSubsidy = Number(data.subsidyChf || 0);
@@ -447,6 +482,11 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   const discountPct = Number(data.discountPct || 0);
   const discountFromPctChf = Number(data.discountFromPctChf || 0);
   const totalDiscountChf = Number(data.totalDiscountChf || 0);
+  const paymentTerms = safeText(data.paymentTerms) || "Nach Absprache";
+  const paymentTermRows = buildPaymentTermRows(paymentTerms, finalTotal);
+  const skontoPctValue = Number(data.skontoPct || 0);
+  const skontoDays = Number(data.skontoDays || 10);
+  const skontoValue = Number((finalTotal * (skontoPctValue / 100)).toFixed(2));
 
   const systemSummary = [
     data.kWp > 0 ? `${money(data.kWp)} kWp` : "",
@@ -514,14 +554,18 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
             : []),
         ]
       : []),
+    ...(mwstIncluded
+      ? [
+          {
+            left: "",
+            middle: `MWST ${pct(data.vatRatePct)} %`,
+            right: `${money(data.vatAmountChf)} CHF`,
+          } satisfies Row,
+        ]
+      : []),
     {
       left: "",
-      middle: `MWST ${pct(data.vatRatePct)} %`,
-      right: `${money(data.vatAmountChf)} CHF`,
-    },
-    {
-      left: "",
-      middle: "Kosten inkl. MWST",
+      middle: mwstIncluded ? "Total inkl. MWST." : "Total exkl. MWST.",
       right: `${money(grossPrice)} CHF`,
       bold: true,
     },
@@ -666,6 +710,43 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     drawLine(page, tableX, y - 7, tableX + 270, y - 7, 1, lineGray);
   }
 
+  y -= 24;
+  drawText(page, "Zahlungsbedingungen:", tableX, y, 9.8, bold, textDark);
+  y -= 14;
+  drawText(page, paymentTerms, tableX, y, 9.1, font, textMuted);
+  y -= 16;
+
+  y = drawPricingRows({
+    page,
+    rows: paymentTermRows.map((row) => ({
+      left: "",
+      middle: row.label,
+      right: typeof row.amount === "number" ? `CHF ${money(row.amount)}` : "",
+    })),
+    x: tableX,
+    y,
+    width: tableW,
+    font,
+    bold,
+    size: 9.2,
+    lineHeight: 15,
+  });
+
+  if (skontoPctValue > 0) {
+    y -= 4;
+    drawText(
+      page,
+      `Bei Zahlung innert ${skontoDays} Tagen: Skonto ${pct(skontoPctValue)} % (− CHF ${money(skontoValue)})`,
+      tableX,
+      y,
+      8.8,
+      font,
+      textDark
+    );
+    y -= 12;
+  }
+
+  drawLine(page, tableX, y + 6, tableX + tableW, y + 6, 1, lineGray);
   y -= 24;
   drawText(
     page,

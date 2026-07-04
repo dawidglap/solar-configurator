@@ -154,6 +154,12 @@ function pickBoolean(...values: unknown[]) {
   return undefined;
 }
 
+function safeStringArray(v: any) {
+  return Array.isArray(v)
+    ? v.map((x) => safeString(x)).filter(Boolean)
+    : [];
+}
+
 function averageRoofTiltDeg(layers: any[]) {
   if (!Array.isArray(layers) || layers.length === 0) return 20;
 
@@ -388,12 +394,21 @@ type NormalizedPartItem = {
   id: string;
   category: string;
   brand: string;
+  model: string;
   name: string;
   unit: string;
   unitLabel: string;
   quantity: number;
   unitPriceNet: number;
   lineTotalNet: number;
+  costNet: number;
+  discountPct: number;
+  discountChf: number;
+  discountMode: string;
+  pinned: boolean;
+  optional: boolean;
+  longDescription: string;
+  features: string[];
 };
 
 type NormalizedCatalogItem = {
@@ -450,6 +465,7 @@ function normalizePartItem(item: any): NormalizedPartItem {
     id: safeString(item?.id),
     category: safeString(item?.category ?? item?.kategorie),
     brand: safeString(item?.brand ?? item?.marke),
+    model: safeString(item?.model),
     name: safeString(item?.name ?? item?.beschreibung),
     unit: safeString(item?.unit ?? item?.einheit),
     unitLabel:
@@ -458,6 +474,14 @@ function normalizePartItem(item: any): NormalizedPartItem {
     quantity,
     unitPriceNet,
     lineTotalNet,
+    costNet: safeNumber(item?.costNet, 0),
+    discountPct: safeNumber(item?.discountPct, 0),
+    discountChf: safeNumber(item?.discountChf, 0),
+    discountMode: safeString(item?.discountMode),
+    pinned: item?.pinned === true,
+    optional: item?.optional === true,
+    longDescription: safeString(item?.longDescription),
+    features: safeStringArray(item?.features),
   };
 }
 
@@ -517,7 +541,8 @@ function normalizeReportOptions(raw: any) {
     skontoPct: parseNumericReportOption(raw?.skontoPct ?? raw?.skonto),
     paymentTerms:
       safeString(raw?.paymentTerms ?? raw?.zahlungsbedingungen) ||
-      "30 Tage netto",
+      "Nach Absprache",
+    mwstIncluded: pickBoolean(raw?.mwstIncluded) ?? true,
   };
 }
 
@@ -584,6 +609,16 @@ function getCostBreakdownFromIncludedParts(items: NormalizedPartItem[]) {
   );
 
   const grossInvestmentChf = Number((modulesTotalChf + partsTotalChf).toFixed(2));
+  const totalMargeChf = Number(
+    items
+      .reduce((sum, item) => {
+        if (safeNumber(item.costNet, 0) <= 0) return sum;
+        return sum + (safeNumber(item.unitPriceNet, 0) - safeNumber(item.costNet, 0)) * safeNumber(item.quantity, 0);
+      }, 0)
+      .toFixed(2)
+  );
+  const margePct =
+    grossInvestmentChf > 0 ? round2((totalMargeChf / grossInvestmentChf) * 100) : null;
 
   return {
     moduleItems,
@@ -591,6 +626,8 @@ function getCostBreakdownFromIncludedParts(items: NormalizedPartItem[]) {
     modulesTotalChf,
     partsTotalChf,
     grossInvestmentChf,
+    totalMargeChf,
+    margePct,
   };
 }
 
@@ -730,6 +767,8 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   let modulesTotalChf = costBreakdown.modulesTotalChf;
   let partsTotalChf = costBreakdown.partsTotalChf;
   let grossInvestmentChf = costBreakdown.grossInvestmentChf;
+  const totalMargeChf = costBreakdown.totalMargeChf;
+  const margePct = costBreakdown.margePct;
 
   if (grossInvestmentChf <= 0 && moduleCount > 0 && fallbackModuleUnitPriceChf > 0) {
     modulesTotalChf = round2(moduleCount * fallbackModuleUnitPriceChf);
@@ -869,6 +908,8 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
     partsTotalChf,
 
     grossInvestmentChf,
+    totalMargeChf,
+    margePct,
     discountChf,
     discountPct,
     discountFromPctChf,
@@ -898,6 +939,7 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
     hasHeatPump,
 
     paymentTerms: reportOptions.paymentTerms,
+    mwstIncluded: reportOptions.mwstIncluded,
     includedPartsCount: includedParts.length,
 
     extraBatteryCostChf,
