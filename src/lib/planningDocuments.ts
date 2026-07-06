@@ -7,6 +7,10 @@ import { addReportPages } from "@/app/api/plannings/[planningId]/offer/pdf/repor
 import { buildReportSummary } from "@/app/api/plannings/[planningId]/report-summary/route";
 import { safeString, toObjectIdOrNull, type SessionPayload } from "@/lib/api-session";
 import { getSessionUserMeta } from "@/lib/tasks";
+import {
+  downloadCompanyDocumentBuffer,
+  type CompanyDocumentKind,
+} from "@/lib/companyDocuments";
 
 export type PlanningDocumentType = "angebot" | "auftrag";
 
@@ -291,6 +295,50 @@ function extractPaymentsSource(data: any) {
     data?.reportOptions?.payments ??
     []
   );
+}
+
+function getEnabledCompanyDocumentKinds(planning: any): CompanyDocumentKind[] {
+  const formDocuments = planning?.data?.parts?.formDocuments ?? {};
+  const orderedKinds: CompanyDocumentKind[] = ["vollmacht", "bestellformular", "agb"];
+  return orderedKinds.filter((kind) => formDocuments?.[kind] === true);
+}
+
+async function appendCompanyOwnedOfferAttachments(args: {
+  db: Db;
+  pdf: PDFDocument;
+  planning: any;
+  companyId: string;
+}) {
+  const enabledKinds = getEnabledCompanyDocumentKinds(args.planning);
+  if (!enabledKinds.length) return;
+
+  for (const kind of enabledKinds) {
+    const payload = await downloadCompanyDocumentBuffer(args.db, args.companyId, kind);
+    if (!payload?.buffer) {
+      console.warn(`[offer-pdf] company document missing, skip append`, {
+        companyId: args.companyId,
+        kind,
+        planningId: safeString(args.planning?._id),
+      });
+      continue;
+    }
+
+    try {
+      const attachmentPdf = await PDFDocument.load(payload.buffer);
+      const pageIndexes = attachmentPdf.getPageIndices();
+      const copiedPages = await args.pdf.copyPages(attachmentPdf, pageIndexes);
+      for (const page of copiedPages) {
+        args.pdf.addPage(page);
+      }
+    } catch (error: any) {
+      console.warn(`[offer-pdf] company document append failed`, {
+        companyId: args.companyId,
+        kind,
+        planningId: safeString(args.planning?._id),
+        message: error?.message,
+      });
+    }
+  }
 }
 
 function buildPaymentRows(args: {
@@ -845,6 +893,15 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
         ? formatDateCH(orderGeneratedAt)
         : "",
   });
+
+  if (documentType === "angebot") {
+    await appendCompanyOwnedOfferAttachments({
+      db,
+      pdf,
+      planning,
+      companyId: String(planning?.companyId || session?.activeCompanyId || ""),
+    });
+  }
 
   const pdfBytes = await pdf.save();
 

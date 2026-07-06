@@ -3,6 +3,11 @@ import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
+import {
+  companyIdToObjectId,
+  getCompanyDocumentsMap,
+  ensureCompanyDocumentIndexes,
+} from "@/lib/companyDocuments";
 
 export const runtime = "nodejs";
 
@@ -74,7 +79,7 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
   });
 }
 
-function buildDefaultCompanyProfile(company: any) {
+function buildDefaultCompanyProfile(company: any, documents?: any) {
   return {
     id: String(company?._id ?? ""),
     name: safeString(company?.name),
@@ -168,6 +173,12 @@ function buildDefaultCompanyProfile(company: any) {
       offerAdvisorUserId: safeNullableObjectIdString(
         company?.defaultContacts?.offerAdvisorUserId
       ),
+    },
+
+    documents: documents ?? {
+      vollmacht: null,
+      bestellformular: null,
+      agb: null,
     },
 
     createdAt: company?.createdAt ?? null,
@@ -294,7 +305,7 @@ export async function GET(req: Request) {
 
   let companyObjectId: ObjectId;
   try {
-    companyObjectId = new ObjectId(String(session.activeCompanyId));
+    companyObjectId = companyIdToObjectId(String(session.activeCompanyId));
   } catch {
     return jsonResponse(origin, { ok: false, error: "Invalid activeCompanyId" }, 400);
   }
@@ -305,6 +316,7 @@ export async function GET(req: Request) {
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const companies = db.collection("companies");
+    await ensureCompanyDocumentIndexes(db);
 
     const company = await companies.findOne({ _id: companyObjectId });
 
@@ -312,9 +324,11 @@ export async function GET(req: Request) {
       return jsonResponse(origin, { ok: false, error: "Company not found" }, 404);
     }
 
+    const documents = await getCompanyDocumentsMap(db, String(session.activeCompanyId));
+
     return jsonResponse(origin, {
       ok: true,
-      companyProfile: buildDefaultCompanyProfile(company),
+      companyProfile: buildDefaultCompanyProfile(company, documents),
     });
   } catch (e: any) {
     console.error("GET COMPANY PROFILE ERROR:", e);
@@ -349,7 +363,7 @@ export async function PATCH(req: Request) {
 
   let companyObjectId: ObjectId;
   try {
-    companyObjectId = new ObjectId(String(session.activeCompanyId));
+    companyObjectId = companyIdToObjectId(String(session.activeCompanyId));
   } catch {
     return jsonResponse(origin, { ok: false, error: "Invalid activeCompanyId" }, 400);
   }
@@ -405,10 +419,12 @@ export async function PATCH(req: Request) {
     await companies.updateOne({ _id: companyObjectId }, updateDoc);
 
     const company = await companies.findOne({ _id: companyObjectId });
+    await ensureCompanyDocumentIndexes(db);
+    const documents = await getCompanyDocumentsMap(db, String(session.activeCompanyId));
 
     return jsonResponse(origin, {
       ok: true,
-      companyProfile: buildDefaultCompanyProfile(company),
+      companyProfile: buildDefaultCompanyProfile(company, documents),
     });
   } catch (e: any) {
     console.error("PATCH COMPANY PROFILE ERROR:", e);
