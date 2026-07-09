@@ -2,7 +2,11 @@ import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
-import { buildPlanningDocumentPdf, resolveDocumentType } from "@/lib/planningDocuments";
+import {
+  buildPlanningDocumentPdf,
+  resolveDocumentType,
+  resolveReportSections,
+} from "@/lib/planningDocuments";
 import { readSession, safeString } from "@/lib/api-session";
 
 export const runtime = "nodejs";
@@ -70,6 +74,7 @@ export async function POST(
     });
 
     const documentType = resolveDocumentType(planning, requestedDocumentType);
+    const sections = resolveReportSections(planning);
     const orderId =
       documentType === "auftrag"
         ? safeString(body?.orderId) || safeString((planning as any)?.orderId)
@@ -87,6 +92,7 @@ export async function POST(
       documentType,
       orderId,
       orderGeneratedAt,
+      sections,
     });
 
     return new Response(pdfBytes, {

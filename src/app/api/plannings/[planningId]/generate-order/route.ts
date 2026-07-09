@@ -16,7 +16,11 @@ import {
   normalizeInvoice,
   normalizePlanningPaymentTerms,
 } from "@/lib/invoices";
-import { buildPlanningDocumentPdf } from "@/lib/planningDocuments";
+import {
+  buildPlanningDocumentPdf,
+  resolveReportSections,
+  type PlanningReportSections,
+} from "@/lib/planningDocuments";
 import { buildStageHistoryForTransition, getWonStageKey } from "@/lib/plannings";
 import {
   ensurePlanningFileIndexes,
@@ -63,6 +67,7 @@ async function buildAngebotSnapshotBuffer(args: {
   company: any;
   session: any;
   planningId: string;
+  sections: PlanningReportSections;
 }) {
   const currentOfferFile = await args.files.findOne(
     {
@@ -90,6 +95,7 @@ async function buildAngebotSnapshotBuffer(args: {
     company: args.company,
     session: args.session,
     documentType: "angebot",
+    sections: args.sections,
   });
 
   return pdfBytes;
@@ -105,6 +111,7 @@ async function persistManagedOrderFiles(args: {
   orderId: string;
   orderGeneratedAt: Date | string;
   orderPdfBuffer: Buffer;
+  sections: PlanningReportSections;
 }) {
   const warnings: string[] = [];
   const customerId = extractPlanningFileCustomerId(args.planning);
@@ -138,6 +145,7 @@ async function persistManagedOrderFiles(args: {
       company: args.company,
       session: args.session,
       planningId: args.planningId,
+      sections: args.sections,
     });
 
     const result = await upsertManagedPlanningFile({
@@ -247,6 +255,7 @@ export async function POST(
 
     const now = new Date();
     const wonStageKey = getWonStageKey(company);
+    const sections = resolveReportSections(planning);
     const orderId =
       safeString((planning as any)?.orderId) ||
       (alreadyGenerated ? "" : await nextOrderId(db, companyId, now));
@@ -269,6 +278,7 @@ export async function POST(
       documentType: "auftrag",
       orderId,
       orderGeneratedAt,
+      sections,
     });
 
     if (!alreadyGenerated) {
@@ -346,6 +356,7 @@ export async function POST(
       orderId,
       orderGeneratedAt,
       orderPdfBuffer: pdfBytes,
+      sections,
     });
 
     if (managedFiles.orderFile || managedFiles.angebotSnapshotFile) {

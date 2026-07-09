@@ -1,9 +1,6 @@
 import { ObjectId, type Db } from "mongodb";
 import { PDFDocument } from "pdf-lib";
 import { addCoverPage } from "@/app/api/plannings/[planningId]/offer/pdf/cover-page";
-import { addDetailPages } from "@/app/api/plannings/[planningId]/offer/pdf/detail-pages";
-import { addProjectOverviewPage } from "@/app/api/plannings/[planningId]/offer/pdf/project-overview-page";
-import { addReportPages } from "@/app/api/plannings/[planningId]/offer/pdf/report-pages";
 import { buildReportSummary } from "@/app/api/plannings/[planningId]/report-summary/route";
 import { safeString, toObjectIdOrNull, type SessionPayload } from "@/lib/api-session";
 import { getSessionUserMeta } from "@/lib/tasks";
@@ -11,8 +8,16 @@ import {
   downloadCompanyDocumentBuffer,
   type CompanyDocumentKind,
 } from "@/lib/companyDocuments";
+import { renderAnalyse } from "@/lib/pdf/sections/analyse";
+import { renderProjektuebersicht } from "@/lib/pdf/sections/projektuebersicht";
+import { renderTechnischeEckdaten } from "@/lib/pdf/sections/technischeEckdaten";
 
 export type PlanningDocumentType = "angebot" | "auftrag";
+export type PlanningReportSections = {
+  projektuebersicht: boolean;
+  technischeEckdaten: boolean;
+  analyse: boolean;
+};
 
 type PaymentRow = {
   label: string;
@@ -37,6 +42,7 @@ type BuildPlanningDocumentPdfArgs = {
   documentType: PlanningDocumentType;
   orderId?: string | null;
   orderGeneratedAt?: Date | string | null;
+  sections?: PlanningReportSections;
 };
 
 function pickBoolean(...values: unknown[]) {
@@ -384,6 +390,15 @@ function buildPaymentRows(args: {
     .filter((row: PaymentRow | null): row is PaymentRow => !!row);
 }
 
+export function resolveReportSections(planning: any): PlanningReportSections {
+  const rawSections = planning?.data?.parts?.reportSections ?? {};
+  return {
+    projektuebersicht: rawSections?.projektuebersicht ?? true,
+    technischeEckdaten: rawSections?.technischeEckdaten ?? true,
+    analyse: rawSections?.analyse ?? rawSections?.bericht ?? true,
+  };
+}
+
 export async function computePlanningCommercialSummary(db: Db, planning: any) {
   const data = planning?.data ?? {};
   const parts = data?.parts ?? {};
@@ -487,6 +502,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   const { db, planning, company, session, documentType } = args;
   const users = db.collection("users");
   const snapshotCache = db.collection("snapshotCache");
+  const sections = args.sections ?? resolveReportSections(planning);
 
   const sessionUserId = safeString(session?.userId);
   const user = sessionUserId
@@ -852,47 +868,53 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       }
     : null;
 
-  await addDetailPages(pdf, {
-    offer,
-    company: companyForPdf,
-    documentType,
-    documentTitle: identifiers.documentTitle,
-    documentNumberLabel: identifiers.documentNumberLabel,
-  });
+  if (sections.projektuebersicht) {
+    await renderProjektuebersicht(pdf, {
+      title: offer.title,
+      planningNumber: offer.planningNumber,
+      projectSnapshotDataUrl,
+      customerName: offer.customer.name,
+      projectAddress,
+      dcPowerKw: offer.pv.dcPowerKw,
+      moduleCount: offer.pv.moduleCount,
+      roofCount: safeNumber(summary?.roofCount, 0),
+      selectedPanelLabel,
+      inverterLabel,
+      batteryLabel: offer.options.batteryLabel,
+      wallboxLabel: offer.options.wallboxLabel,
+      roofType: safeString(ist?.roofType || ist?.roofShape),
+      roofCovering: safeString(ist?.roofCovering || ist?.roofCover),
+      electricityUsageKwh: safeNumber(ist?.electricityUsageKwh || ist?.consumption, 0),
+      companyName: offer.companyName,
+      documentType,
+      documentNumberLabel: identifiers.documentNumberLabel,
+    });
+  }
 
-  await addProjectOverviewPage(pdf, {
-    title: offer.title,
-    planningNumber: offer.planningNumber,
-    projectSnapshotDataUrl,
-    customerName: offer.customer.name,
-    projectAddress,
-    dcPowerKw: offer.pv.dcPowerKw,
-    moduleCount: offer.pv.moduleCount,
-    roofCount: safeNumber(summary?.roofCount, 0),
-    selectedPanelLabel,
-    inverterLabel,
-    batteryLabel: offer.options.batteryLabel,
-    wallboxLabel: offer.options.wallboxLabel,
-    roofType: safeString(ist?.roofType || ist?.roofShape),
-    roofCovering: safeString(ist?.roofCovering || ist?.roofCover),
-    electricityUsageKwh: safeNumber(ist?.electricityUsageKwh || ist?.consumption, 0),
-    companyName: offer.companyName,
-    documentType,
-    documentNumberLabel: identifiers.documentNumberLabel,
-  });
+  if (sections.technischeEckdaten) {
+    await renderTechnischeEckdaten(pdf, {
+      offer,
+      company: companyForPdf,
+      documentType,
+      documentTitle: identifiers.documentTitle,
+      documentNumberLabel: identifiers.documentNumberLabel,
+    });
+  }
 
-  await addReportPages(pdf, {
-    planningNumber: offer.planningNumber,
-    companyName: offer.companyName,
-    reportSummary,
-    offer,
-    documentType,
-    documentNumberLabel: identifiers.documentNumberLabel,
-    orderGeneratedAt:
-      documentType === "auftrag" && orderGeneratedAt
-        ? formatDateCH(orderGeneratedAt)
-        : "",
-  });
+  if (sections.analyse) {
+    await renderAnalyse(pdf, {
+      planningNumber: offer.planningNumber,
+      companyName: offer.companyName,
+      reportSummary,
+      offer,
+      documentType,
+      documentNumberLabel: identifiers.documentNumberLabel,
+      orderGeneratedAt:
+        documentType === "auftrag" && orderGeneratedAt
+          ? formatDateCH(orderGeneratedAt)
+          : "",
+    });
+  }
 
   if (documentType === "angebot") {
     await appendCompanyOwnedOfferAttachments({
