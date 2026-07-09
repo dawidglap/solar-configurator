@@ -23,10 +23,17 @@ export const INVOICE_STATUSES = [
   "storniert",
 ] as const;
 export const INVOICE_PAYMENT_STATUSES = ["offen", "teilweise", "bezahlt"] as const;
+export const VALID_PAYMENT_TERMS = [
+  "100 %",
+  "50 % / 50 %",
+  "50 % / 40 % / 10 %",
+  "Nach Absprache",
+] as const;
 
 export type InvoiceType = (typeof INVOICE_TYPES)[number];
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 export type InvoicePaymentStatus = (typeof INVOICE_PAYMENT_STATUSES)[number];
+export type PaymentTerms = (typeof VALID_PAYMENT_TERMS)[number];
 
 type InvoiceRateSpec = {
   rateIndex: number;
@@ -93,6 +100,71 @@ function extractRateSource(planning: any) {
     data?.reportOptions?.payments ??
     []
   );
+}
+
+export function normalizePlanningPaymentTerms(planning: any): PaymentTerms | null {
+  const value = safeString(
+    planning?.data?.reportOptions?.paymentTerms ??
+      planning?.data?.reportOptions?.zahlungsbedingungen,
+  );
+  return VALID_PAYMENT_TERMS.includes(value as PaymentTerms) ? (value as PaymentTerms) : null;
+}
+
+export function derivePaymentsFromPaymentTerms(paymentTerms: PaymentTerms): InvoiceRateSpec[] {
+  if (paymentTerms === "50 % / 50 %") {
+    return [
+      { rateIndex: 0, label: "Anzahlung", pct: 50, dueDate: null },
+      { rateIndex: 1, label: "Schlussrechnung", pct: 50, dueDate: null },
+    ];
+  }
+
+  if (paymentTerms === "50 % / 40 % / 10 %") {
+    return [
+      { rateIndex: 0, label: "Anzahlung", pct: 50, dueDate: null },
+      { rateIndex: 1, label: "Zwischenrate", pct: 40, dueDate: null },
+      { rateIndex: 2, label: "Schlussrechnung", pct: 10, dueDate: null },
+    ];
+  }
+
+  return [
+    { rateIndex: 0, label: "Schlussrechnung", pct: 100, dueDate: null },
+  ];
+}
+
+export function getPlannedInvoiceRates(planning: any) {
+  const rawRows = extractRateSource(planning);
+  const validation = validatePlanningPayments(rawRows);
+  if (!validation.ok) {
+    return validation;
+  }
+
+  if (validation.items.length > 0) {
+    return {
+      ok: true as const,
+      items: validation.items.map((row) => ({
+        rateIndex: row.rateIndex,
+        label: row.label,
+        pct: row.pct,
+        dueDate: row.dueDate ?? null,
+      })),
+      paymentTerms: normalizePlanningPaymentTerms(planning),
+    };
+  }
+
+  const paymentTerms = normalizePlanningPaymentTerms(planning);
+  if (!paymentTerms) {
+    return {
+      ok: true as const,
+      items: [] as InvoiceRateSpec[],
+      paymentTerms: null,
+    };
+  }
+
+  return {
+    ok: true as const,
+    items: derivePaymentsFromPaymentTerms(paymentTerms),
+    paymentTerms,
+  };
 }
 
 export function validatePlanningPayments(rawPayments: unknown) {
@@ -451,29 +523,16 @@ export function extractInvoiceRates(args: {
   company: any;
   baseDate: Date;
 }) {
-  const rawRows = extractRateSource(args.planning);
-  const validation = validatePlanningPayments(rawRows);
-  if (!validation.ok) {
-    throw new Error(validation.message);
+  const resolved = getPlannedInvoiceRates(args.planning);
+  if (!resolved.ok) {
+    throw new Error(resolved.message);
   }
 
-  if (validation.items.length > 0) {
-    return validation.items.map((row) => ({
-      rateIndex: row.rateIndex,
-      label: row.label,
-      pct: row.pct,
-      dueDate: row.dueDate ?? null,
-    }));
+  if (resolved.items.length > 0) {
+    return resolved.items;
   }
 
-  return [
-    {
-      rateIndex: 0,
-      label: "Schlussrechnung",
-      pct: 100,
-      dueDate: null,
-    },
-  ];
+  return [{ rateIndex: 0, label: "Schlussrechnung", pct: 100, dueDate: null }];
 }
 
 export async function resyncOrderInvoices(args: {

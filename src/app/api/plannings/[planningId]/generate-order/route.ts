@@ -10,7 +10,12 @@ import {
   toCompanyObjectId,
   toPlanningObjectId,
 } from "@/lib/orders";
-import { createInvoicesForOrderIfMissing, normalizeInvoice, validatePlanningPayments } from "@/lib/invoices";
+import {
+  createInvoicesForOrderIfMissing,
+  getPlannedInvoiceRates,
+  normalizeInvoice,
+  normalizePlanningPaymentTerms,
+} from "@/lib/invoices";
 import { buildPlanningDocumentPdf } from "@/lib/planningDocuments";
 import { buildStageHistoryForTransition, getWonStageKey } from "@/lib/plannings";
 import {
@@ -216,7 +221,17 @@ export async function POST(
       return jsonResponse(origin, { ok: false, message: "Firma nicht gefunden." }, 404);
     }
 
-    const paymentValidation = validatePlanningPayments((planning as any)?.data?.angebot?.payments);
+    const alreadyGenerated = safeString((planning as any)?.orderStatus) === "generated";
+    const paymentTerms = normalizePlanningPaymentTerms(planning);
+    if (!alreadyGenerated && !paymentTerms) {
+      return jsonResponse(
+        origin,
+        { ok: false, message: "Bitte wählen Sie zuerst Zahlungsbedingungen im Angebot aus." },
+        400,
+      );
+    }
+
+    const paymentValidation = getPlannedInvoiceRates(planning);
     if (!paymentValidation.ok) {
       return jsonResponse(origin, { ok: false, message: paymentValidation.message }, 400);
     }
@@ -230,7 +245,6 @@ export async function POST(
       );
     }
 
-    const alreadyGenerated = safeString((planning as any)?.orderStatus) === "generated";
     const now = new Date();
     const wonStageKey = getWonStageKey(company);
     const orderId =

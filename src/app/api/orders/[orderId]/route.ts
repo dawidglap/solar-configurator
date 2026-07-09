@@ -3,7 +3,12 @@ import { getCorsHeaders } from "@/lib/cors";
 import { readSession, safeString } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
-import { ensureInvoiceIndexes, getInvoicesCollection, normalizeInvoice } from "@/lib/invoices";
+import {
+  ensureInvoiceIndexes,
+  getInvoicesCollection,
+  getPlannedInvoiceRates,
+  normalizeInvoice,
+} from "@/lib/invoices";
 import { normalizeOrderFields } from "@/lib/orders";
 
 export const runtime = "nodejs";
@@ -87,14 +92,16 @@ export async function GET(
       })
       .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
       .toArray();
+    const normalizedInvoices = invoices.map((invoice) => normalizeInvoice(invoice));
 
     const commercial = await computePlanningCommercialSummary(db, planning);
+    const plannedRates = getPlannedInvoiceRates(planning);
 
     return jsonResponse(
       origin,
       {
         ok: true,
-        invoices: invoices.map((invoice) => normalizeInvoice(invoice)),
+        invoices: normalizedInvoices,
         order: {
           ...normalizeOrderFields(planning),
           planningId: safeString(planning?._id?.toString?.() ?? planning?._id),
@@ -102,7 +109,9 @@ export async function GET(
           customerName: customerNameFromPlanning(planning),
           projectTitle: safeString(planning?.title) || safeString(planning?.planningNumber),
           totalInklMwst: commercial.grossPriceChf,
-          invoices: invoices.map((invoice) => normalizeInvoice(invoice)),
+          plannedRatesCount: plannedRates.ok ? plannedRates.items.length : 0,
+          invoicesCount: normalizedInvoices.length,
+          invoices: normalizedInvoices,
         },
       },
       200,

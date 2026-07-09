@@ -3,6 +3,7 @@ import { getCorsHeaders } from "@/lib/cors";
 import { readSession, safeString } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
+import { getPlannedInvoiceRates, normalizeInvoice } from "@/lib/invoices";
 import { normalizeOrderFields } from "@/lib/orders";
 
 export const runtime = "nodejs";
@@ -231,6 +232,16 @@ export async function GET(req: Request) {
           ])
           .toArray()
       : [];
+    const invoiceDocs = orderIds.length
+      ? await db
+          .collection("invoices")
+          .find({
+            companyId: String(session.activeCompanyId),
+            orderId: { $in: orderIds },
+          })
+          .sort({ orderId: 1, position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
+          .toArray()
+      : [];
     const invoiceSummaryByOrderId = new Map(
       invoiceSummaryDocs.map((doc: any) => [
         safeString(doc?._id),
@@ -241,16 +252,28 @@ export async function GET(req: Request) {
         },
       ]),
     );
+    const invoicesByOrderId = new Map<string, any[]>();
+    for (const invoice of invoiceDocs) {
+      const key = safeString(invoice?.orderId);
+      if (!key) continue;
+      const list = invoicesByOrderId.get(key) ?? [];
+      list.push(invoice);
+      invoicesByOrderId.set(key, list);
+    }
 
     const items = await Promise.all(
       docs.map(async (doc: any) => {
         const commercial = await computePlanningCommercialSummary(db, doc);
         const orderFields = normalizeOrderFields(doc);
+        const plannedRates = getPlannedInvoiceRates(doc);
         const invoiceSummary = invoiceSummaryByOrderId.get(safeString(doc?.orderId)) ?? {
           invoicesCount: 0,
           invoicesPaidCount: 0,
           invoicesOpenAmount: 0,
         };
+        const invoices = (invoicesByOrderId.get(safeString(doc?.orderId)) ?? []).map((invoice: any) =>
+          normalizeInvoice(invoice),
+        );
         return {
           ...orderFields,
           planningId: safeString(doc?._id?.toString?.() ?? doc?._id),
@@ -258,6 +281,7 @@ export async function GET(req: Request) {
           customerName: customerNameFromPlanning(doc),
           projectTitle: safeString(doc?.title) || safeString(doc?.planningNumber),
           totalInklMwst: commercial.grossPriceChf,
+          plannedRatesCount: plannedRates.ok ? plannedRates.items.length : 0,
           createdByUserId:
             safeString(doc?.responsibleUser?._id?.toString?.() ?? doc?.createdByUserId ?? doc?.orderGeneratedByUserId) ||
             null,
@@ -273,9 +297,10 @@ export async function GET(req: Request) {
             safeString(doc?.orderGeneratedByName) ||
             null,
           createdByEmail: safeString(doc?.responsibleUser?.email) || null,
-          invoicesCount: invoiceSummary.invoicesCount,
+          invoicesCount: invoices.length || invoiceSummary.invoicesCount,
           invoicesPaidCount: invoiceSummary.invoicesPaidCount,
           invoicesOpenAmount: invoiceSummary.invoicesOpenAmount,
+          invoices,
         };
       }),
     );
