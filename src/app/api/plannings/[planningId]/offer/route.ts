@@ -10,6 +10,8 @@ import {
 import { readSession, safeString } from "@/lib/api-session";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function jsonError(origin: string | null, message: string, status: number) {
   return new Response(JSON.stringify({ ok: false, message, error: message }), {

@@ -868,6 +868,16 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       }
     : null;
 
+  if (sections.technischeEckdaten) {
+    await renderTechnischeEckdaten(pdf, {
+      offer,
+      company: companyForPdf,
+      documentType,
+      documentTitle: identifiers.documentTitle,
+      documentNumberLabel: identifiers.documentNumberLabel,
+    });
+  }
+
   if (sections.projektuebersicht) {
     await renderProjektuebersicht(pdf, {
       title: offer.title,
@@ -887,16 +897,6 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       electricityUsageKwh: safeNumber(ist?.electricityUsageKwh || ist?.consumption, 0),
       companyName: offer.companyName,
       documentType,
-      documentNumberLabel: identifiers.documentNumberLabel,
-    });
-  }
-
-  if (sections.technischeEckdaten) {
-    await renderTechnischeEckdaten(pdf, {
-      offer,
-      company: companyForPdf,
-      documentType,
-      documentTitle: identifiers.documentTitle,
       documentNumberLabel: identifiers.documentNumberLabel,
     });
   }
