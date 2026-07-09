@@ -1,15 +1,24 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
-import { mongoIdToString, readSession, safeString } from "@/lib/api-session";
+import {
+  mongoIdToString,
+  readSession,
+  safeString,
+  toObjectIdOrNull,
+} from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { activeDocumentFilter } from "@/lib/trash";
 import {
+  buildInvoiceDefaultBodyText,
   canWriteInvoices,
   ensureInvoiceIndexes,
   INVOICE_TYPES,
+  getInvoicesCollection,
   normalizeInvoice,
 } from "@/lib/invoices";
+import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
+import { getSessionUserEmail, getSessionUserMeta, safeNumber } from "@/lib/tasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +48,30 @@ function startOfToday() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return today;
+}
+
+function parseDateInput(value: unknown) {
+  const normalized = safeString(value);
+  if (!normalized) return null;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + Math.max(0, Math.trunc(days)));
+  return next;
+}
+
+function extractRateNumber(invoiceNumber: string, orderId: string) {
+  const escaped = escapeRegex(orderId);
+  const match = safeString(invoiceNumber).match(new RegExp(`^${escaped}-R(\\d+)`, "i"));
+  return match ? Number(match[1]) : null;
+}
+
+function roundPct(amount: number, total: number) {
+  if (!Number.isFinite(total) || Math.abs(total) < 0.0001) return 0;
+  return Math.round(((Math.abs(amount) / total) * 100) * 100) / 100;
 }
 
 function parseCursor(value: string) {
@@ -427,5 +460,243 @@ export async function GET(req: Request) {
   } catch (error: any) {
     console.error("GET INVOICES ERROR:", error);
     return jsonResponse(origin, { ok: false, message: "Rechnungen konnten nicht geladen werden." }, 500);
+  }
+}
+
+export async function POST(req: Request) {
+  const origin = req.headers.get("origin");
+  const secret = process.env.SESSION_SECRET;
+
+  if (!secret) {
+    return jsonResponse(origin, { ok: false, message: "SESSION_SECRET fehlt." }, 500);
+  }
+
+  const session = readSession(req, secret);
+  if (!session?.activeCompanyId) {
+    return jsonResponse(origin, { ok: false, message: "Nicht eingeloggt." }, 401);
+  }
+
+  if (!canWriteInvoices(session)) {
+    return jsonResponse(origin, { ok: false, message: "Keine Berechtigung." }, 403);
+  }
+
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return jsonResponse(origin, { ok: false, message: "Ungültiger JSON-Body." }, 400);
+  }
+
+  const orderId = safeString((body as any)?.orderId);
+  const invoiceType = safeString((body as any)?.invoiceType).toLowerCase();
+  const parentInvoiceId = safeString((body as any)?.parentInvoiceId);
+  const rateLabel = safeString((body as any)?.rateLabel);
+  const amountInput = Number((body as any)?.amount);
+  const dueDateInput = (body as any)?.dueDate;
+  const internalNote = safeString((body as any)?.internalNote);
+
+  if (!orderId) {
+    return jsonResponse(origin, { ok: false, message: "Auftragsnummer fehlt." }, 400);
+  }
+
+  if (!INVOICE_TYPES.includes(invoiceType as (typeof INVOICE_TYPES)[number])) {
+    return jsonResponse(origin, { ok: false, message: "Rechnungstyp ist ungültig." }, 400);
+  }
+
+  if (!Number.isFinite(amountInput) || amountInput <= 0) {
+    return jsonResponse(origin, { ok: false, message: "Betrag muss grösser als 0 sein." }, 400);
+  }
+
+  const parsedDueDate =
+    dueDateInput == null || safeString(dueDateInput) === "" ? null : parseDateInput(dueDateInput);
+  if (dueDateInput != null && safeString(dueDateInput) !== "" && !parsedDueDate) {
+    return jsonResponse(origin, { ok: false, message: "Fälligkeitsdatum ist ungültig." }, 400);
+  }
+
+  if ((invoiceType === "mahnung" || invoiceType === "gutschrift") && !parentInvoiceId) {
+    return jsonResponse(origin, { ok: false, message: "parentInvoiceId ist erforderlich." }, 400);
+  }
+
+  try {
+    const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
+
+    await ensureInvoiceIndexes(db);
+
+    const companyId = String(session.activeCompanyId);
+    const plannings = db.collection("plannings");
+    const invoices = getInvoicesCollection(db);
+
+    const planningAny = await plannings.findOne({ orderId });
+    if (!planningAny) {
+      return jsonResponse(origin, { ok: false, message: "Auftrag nicht gefunden." }, 400);
+    }
+
+    if (safeString((planningAny as any)?.companyId) !== companyId) {
+      return jsonResponse(origin, { ok: false, message: "Keine Berechtigung." }, 403);
+    }
+
+    if (
+      safeString((planningAny as any)?.orderStatus) !== "generated" ||
+      !safeString((planningAny as any)?.orderId)
+    ) {
+      return jsonResponse(origin, { ok: false, message: "Auftrag nicht gefunden." }, 400);
+    }
+
+    if ((planningAny as any)?.cancelledAt) {
+      return jsonResponse(origin, { ok: false, message: "Stornierte Aufträge können nicht fakturiert werden." }, 400);
+    }
+
+    const companyObjectId = toObjectIdOrNull(companyId);
+    const companyDoc = companyObjectId
+      ? await db.collection("companies").findOne({ _id: companyObjectId })
+      : null;
+
+    const commercial = await computePlanningCommercialSummary(db, planningAny);
+    const orderTotalChf = Number(commercial?.grossPriceChf ?? 0);
+    const existingOrderInvoices = await invoices
+      .find({
+        companyId,
+        orderId,
+      })
+      .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
+      .toArray();
+
+    const nextRateNumber =
+      existingOrderInvoices.reduce((max, doc: any) => {
+        const parsed = extractRateNumber(safeString(doc?.invoiceNumber), orderId);
+        return parsed && parsed > max ? parsed : max;
+      }, 0) + 1;
+    const nextPosition =
+      existingOrderInvoices.reduce((max, doc: any) => Math.max(max, safeNumber(doc?.position, safeNumber(doc?.rateIndex, 0))), -1) + 1;
+
+    let parentInvoice: any = null;
+    let rateNumber = nextRateNumber;
+    let rateIndex = nextRateNumber - 1;
+    let position = nextPosition;
+    let normalizedRateLabel = rateLabel || `Rate ${nextRateNumber}`;
+
+    if (invoiceType === "mahnung" || invoiceType === "gutschrift") {
+      const parentInvoiceObjectId = toObjectIdOrNull(parentInvoiceId);
+      if (!parentInvoiceObjectId) {
+        return jsonResponse(origin, { ok: false, message: "parentInvoiceId ist ungültig." }, 400);
+      }
+
+      parentInvoice = await invoices.findOne({
+        _id: parentInvoiceObjectId,
+        companyId,
+      });
+
+      if (
+        !parentInvoice ||
+        safeString(parentInvoice?.orderId) !== orderId ||
+        safeString(parentInvoice?.invoiceType) !== "rechnung"
+      ) {
+        return jsonResponse(origin, { ok: false, message: "parentInvoiceId ist ungültig." }, 400);
+      }
+
+      rateNumber =
+        extractRateNumber(safeString(parentInvoice?.invoiceNumber), orderId) ??
+        safeNumber(parentInvoice?.rateIndex, 0) + 1;
+      rateIndex = safeNumber(parentInvoice?.rateIndex, rateNumber - 1);
+      position = safeNumber(parentInvoice?.position, rateIndex);
+      normalizedRateLabel =
+        rateLabel ||
+        safeString(parentInvoice?.rateLabel) ||
+        safeString(parentInvoice?.label) ||
+        `Rate ${rateNumber}`;
+    }
+
+    let invoiceNumber = `${orderId}-R${rateNumber}`;
+    if (invoiceType === "mahnung") {
+      const existingLevel = await invoices.countDocuments({
+        companyId,
+        parentInvoiceId: parentInvoice._id,
+        invoiceType: "mahnung",
+      });
+      invoiceNumber = `${orderId}-R${rateNumber}-M${existingLevel + 1}`;
+    } else if (invoiceType === "gutschrift") {
+      const existingLevel = await invoices.countDocuments({
+        companyId,
+        parentInvoiceId: parentInvoice._id,
+        invoiceType: "gutschrift",
+      });
+      invoiceNumber = `${orderId}-R${rateNumber}-G${existingLevel + 1}`;
+    }
+
+    const now = new Date();
+    const meta = getSessionUserMeta(session);
+    const createdByUserId = toObjectIdOrNull(meta.id) ?? meta.id ?? null;
+    const amount =
+      invoiceType === "gutschrift" ? -Math.abs(amountInput) : Math.abs(amountInput);
+    const issueDate = now;
+    const dueDate =
+      parsedDueDate ??
+      (invoiceType === "mahnung"
+        ? addDays(now, safeNumber(companyDoc?.paymentDefaults?.dunningTermDays, 10))
+        : null);
+    const dueDateForText =
+      dueDate ??
+      addDays(now, safeNumber(companyDoc?.paymentDefaults?.termDays, 30));
+    const pct = roundPct(amount, orderTotalChf);
+
+    const doc = {
+      companyId,
+      planningId: safeString((planningAny as any)?._id?.toString?.() ?? (planningAny as any)?._id),
+      orderId,
+      invoiceNumber,
+      invoiceType,
+      parentInvoiceId: parentInvoice?._id ?? null,
+      rateIndex,
+      position,
+      rateLabel: normalizedRateLabel,
+      label: normalizedRateLabel,
+      pct,
+      percentage: pct,
+      amount,
+      amountChf: amount,
+      currency: safeString(companyDoc?.paymentDefaults?.currency) || "CHF",
+      issueDate,
+      dueDate,
+      status: invoiceType === "mahnung" ? "mahnung" : "entwurf",
+      paymentStatus: "offen",
+      paidAt: null,
+      paidAmount: 0,
+      anrede: safeString((body as any)?.anrede) || undefined,
+      bodyText: buildInvoiceDefaultBodyText({
+        planning: planningAny,
+        company: companyDoc,
+        invoiceType: invoiceType as any,
+        rateIndex,
+        pct,
+        dueDate: dueDateForText,
+        dunningLevel:
+          invoiceType === "mahnung"
+            ? Number(invoiceNumber.split("-M")[1] || 1)
+            : 0,
+      }),
+      internalNote,
+      pdfFileId: null,
+      createdAt: now,
+      updatedAt: now,
+      createdByUserId,
+      createdByName: meta.name || "Unbekannt",
+      createdByEmail: getSessionUserEmail(session) || null,
+      dunningEligible: false,
+      dunningLevel:
+        invoiceType === "mahnung"
+          ? Number(invoiceNumber.split("-M")[1] || 1)
+          : 0,
+    };
+
+    if (!doc.anrede) {
+      delete doc.anrede;
+    }
+
+    const insert = await invoices.insertOne(doc);
+    const invoice = await invoices.findOne({ _id: insert.insertedId });
+    return jsonResponse(origin, { ok: true, invoice: normalizeInvoice(invoice) }, 200);
+  } catch (error: any) {
+    console.error("POST INVOICES ERROR:", error);
+    return jsonResponse(origin, { ok: false, message: "Rechnung konnte nicht erstellt werden." }, 500);
   }
 }

@@ -97,6 +97,14 @@ function safeBoolean(v: any, fallback = false) {
   return typeof v === "boolean" ? v : fallback;
 }
 
+function hasOwn(obj: any, key: string) {
+  return !!obj && typeof obj === "object" && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function stableJson(value: unknown) {
+  return JSON.stringify(value ?? null);
+}
+
 function preserveLoosePartsItems(items: any) {
   if (!Array.isArray(items)) return [];
 
@@ -467,6 +475,10 @@ export async function PATCH(
     body?.angebot ??
     body?.data?.angebot ??
     body?.["data.angebot"];
+  const invoiceSyncRequestedFieldPresent =
+    hasOwn(body?.angebot, "invoiceSyncRequestedAt") ||
+    hasOwn(body?.data?.angebot, "invoiceSyncRequestedAt") ||
+    hasOwn(body, "invoiceSyncRequestedAt");
   const invoiceSyncRequestedAt = safeString(
     angebot?.invoiceSyncRequestedAt ??
       body?.data?.angebot?.invoiceSyncRequestedAt ??
@@ -531,6 +543,37 @@ export async function PATCH(
 
     if (!existingPlanning) {
       return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
+    }
+
+    const paymentTermsLocked =
+      safeString((existingPlanning as any)?.orderStatus) === "generated" ||
+      !!safeString((existingPlanning as any)?.orderId);
+    if (paymentTermsLocked) {
+      const existingPaymentTerms = safeString(
+        (existingPlanning as any)?.data?.reportOptions?.paymentTerms ??
+          (existingPlanning as any)?.data?.reportOptions?.zahlungsbedingungen,
+      );
+      const paymentTermsChanged =
+        (hasOwn(reportOptions, "paymentTerms") &&
+          safeString(reportOptions?.paymentTerms) !== existingPaymentTerms) ||
+        (hasOwn(reportOptions, "zahlungsbedingungen") &&
+          safeString(reportOptions?.zahlungsbedingungen) !== existingPaymentTerms);
+      const paymentsChanged =
+        hasOwn(angebot, "payments") &&
+        stableJson(angebot?.payments) !==
+          stableJson((existingPlanning as any)?.data?.angebot?.payments);
+
+      if (paymentTermsChanged || paymentsChanged || invoiceSyncRequestedFieldPresent) {
+        return jsonResponse(
+          origin,
+          {
+            ok: false,
+            message:
+              "Zahlungsbedingungen können nach Auftragserzeugung nicht mehr geändert werden.",
+          },
+          409,
+        );
+      }
     }
 
     const canAutoRename = shouldAutoRenameTitle(

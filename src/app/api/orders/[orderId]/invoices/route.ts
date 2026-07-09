@@ -62,7 +62,7 @@ export async function GET(
         companyId: String(session.activeCompanyId),
         orderId: safeString(orderId),
       })
-      .sort({ rateIndex: 1, createdAt: 1, _id: 1 })
+      .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
       .toArray();
 
     return jsonResponse(origin, { ok: true, items: items.map((doc) => normalizeInvoice(doc)) }, 200);
@@ -71,4 +71,3 @@ export async function GET(
     return jsonResponse(origin, { ok: false, message: "Rechnungen konnten nicht geladen werden." }, 500);
   }
 }
-
