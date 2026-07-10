@@ -240,37 +240,18 @@ export function canManageInvoicePayments(session: SessionPayload | null | undefi
   return isAdminLikeRole(session);
 }
 
-function getCounterConfig(type: InvoiceType) {
-  if (type === "mahnung") {
-    return { counterType: "mahnung", prefix: "MA" };
-  }
-  if (type === "gutschrift") {
-    return { counterType: "gutschrift", prefix: "GS" };
-  }
-  return { counterType: "rechnung", prefix: "RE" };
-}
-
-export async function nextInvoiceNumber(
-  db: Db,
-  companyId: string,
-  type: InvoiceType,
-  now = new Date(),
-) {
-  const year = now.getFullYear();
-  const { counterType, prefix } = getCounterConfig(type);
+export async function nextInvoiceNumber(db: Db, companyId: string, now = new Date()) {
   const counters = db.collection("counters");
   const result = await counters.findOneAndUpdate(
     {
       companyId,
-      year,
-      type: counterType,
+      type: "rechnung",
     },
     {
       $inc: { seq: 1 },
       $setOnInsert: {
         companyId,
-        year,
-        type: counterType,
+        type: "rechnung",
         createdAt: now,
       },
       $set: {
@@ -284,7 +265,7 @@ export async function nextInvoiceNumber(
   );
 
   const seq = Number((result as any)?.seq ?? (result as any)?.value?.seq ?? 0);
-  return `${prefix}-${year}-${String(seq).padStart(4, "0")}`;
+  return `RE-${String(seq).padStart(6, "0")}`;
 }
 
 export function buildInvoiceAnrede(planning: any) {
@@ -446,7 +427,7 @@ export async function createInvoicesForOrderIfMissing(args: CreateOrderInvoicesA
   let allocated = 0;
   for (let index = 0; index < rates.length; index += 1) {
     const rate = rates[index];
-    const invoiceNumber = `${args.orderId}-R${rate.rateIndex + 1}`;
+    const invoiceNumber = await nextInvoiceNumber(args.db, args.companyId, createdAt);
     const isLast = index === rates.length - 1;
     const amount = isLast
       ? Number((totalAmount - allocated).toFixed(2))

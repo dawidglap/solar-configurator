@@ -15,6 +15,7 @@ import {
   ensureInvoiceIndexes,
   INVOICE_TYPES,
   getInvoicesCollection,
+  nextInvoiceNumber,
   normalizeInvoice,
 } from "@/lib/invoices";
 import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
@@ -61,12 +62,6 @@ function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + Math.max(0, Math.trunc(days)));
   return next;
-}
-
-function extractRateNumber(invoiceNumber: string, orderId: string) {
-  const escaped = escapeRegex(orderId);
-  const match = safeString(invoiceNumber).match(new RegExp(`^${escaped}-R(\\d+)`, "i"));
-  return match ? Number(match[1]) : null;
 }
 
 function roundPct(amount: number, total: number) {
@@ -562,10 +557,10 @@ export async function POST(req: Request) {
       .toArray();
 
     const nextRateNumber =
-      existingOrderInvoices.reduce((max, doc: any) => {
-        const parsed = extractRateNumber(safeString(doc?.invoiceNumber), orderId);
-        return parsed && parsed > max ? parsed : max;
-      }, 0) + 1;
+      existingOrderInvoices.reduce(
+        (max, doc: any) => Math.max(max, safeNumber(doc?.rateIndex, 0) + 1),
+        0,
+      ) + 1;
     const nextPosition =
       existingOrderInvoices.reduce((max, doc: any) => Math.max(max, safeNumber(doc?.position, safeNumber(doc?.rateIndex, 0))), -1) + 1;
 
@@ -574,6 +569,7 @@ export async function POST(req: Request) {
     let rateIndex = nextRateNumber - 1;
     let position = nextPosition;
     let normalizedRateLabel = rateLabel || `Rate ${nextRateNumber}`;
+    let dunningLevel = 0;
 
     if (invoiceType === "mahnung" || invoiceType === "gutschrift") {
       const parentInvoiceObjectId = toObjectIdOrNull(parentInvoiceId);
@@ -594,9 +590,7 @@ export async function POST(req: Request) {
         return jsonResponse(origin, { ok: false, message: "parentInvoiceId ist ungültig." }, 400);
       }
 
-      rateNumber =
-        extractRateNumber(safeString(parentInvoice?.invoiceNumber), orderId) ??
-        safeNumber(parentInvoice?.rateIndex, 0) + 1;
+      rateNumber = safeNumber(parentInvoice?.rateIndex, 0) + 1;
       rateIndex = safeNumber(parentInvoice?.rateIndex, rateNumber - 1);
       position = safeNumber(parentInvoice?.position, rateIndex);
       normalizedRateLabel =
@@ -606,24 +600,16 @@ export async function POST(req: Request) {
         `Rate ${rateNumber}`;
     }
 
-    let invoiceNumber = `${orderId}-R${rateNumber}`;
-    if (invoiceType === "mahnung") {
-      const existingLevel = await invoices.countDocuments({
-        companyId,
-        parentInvoiceId: parentInvoice._id,
-        invoiceType: "mahnung",
-      });
-      invoiceNumber = `${orderId}-R${rateNumber}-M${existingLevel + 1}`;
-    } else if (invoiceType === "gutschrift") {
-      const existingLevel = await invoices.countDocuments({
-        companyId,
-        parentInvoiceId: parentInvoice._id,
-        invoiceType: "gutschrift",
-      });
-      invoiceNumber = `${orderId}-R${rateNumber}-G${existingLevel + 1}`;
-    }
-
     const now = new Date();
+    if (invoiceType === "mahnung") {
+      dunningLevel =
+        (await invoices.countDocuments({
+          companyId,
+          parentInvoiceId: parentInvoice._id,
+          invoiceType: "mahnung",
+        })) + 1;
+    }
+    const invoiceNumber = await nextInvoiceNumber(db, companyId, now);
     const meta = getSessionUserMeta(session);
     const createdByUserId = toObjectIdOrNull(meta.id) ?? meta.id ?? null;
     const amount =
@@ -669,10 +655,7 @@ export async function POST(req: Request) {
         rateIndex,
         pct,
         dueDate: dueDateForText,
-        dunningLevel:
-          invoiceType === "mahnung"
-            ? Number(invoiceNumber.split("-M")[1] || 1)
-            : 0,
+        dunningLevel,
       }),
       internalNote,
       pdfFileId: null,
@@ -682,10 +665,7 @@ export async function POST(req: Request) {
       createdByName: meta.name || "Unbekannt",
       createdByEmail: getSessionUserEmail(session) || null,
       dunningEligible: false,
-      dunningLevel:
-        invoiceType === "mahnung"
-          ? Number(invoiceNumber.split("-M")[1] || 1)
-          : 0,
+      dunningLevel,
     };
 
     if (!doc.anrede) {

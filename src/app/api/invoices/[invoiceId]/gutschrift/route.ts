@@ -77,7 +77,7 @@ export async function POST(
     }
 
     const now = new Date();
-    const invoiceNumber = await nextInvoiceNumber(db, String(session.activeCompanyId), "gutschrift", now);
+    const invoiceNumber = await nextInvoiceNumber(db, String(session.activeCompanyId), now);
     const meta = getSessionUserMeta(session);
     const createdByUserId = toObjectIdOrNull(meta.id) ?? meta.id ?? null;
     const amount = -Math.abs(safeNumber(parentInvoice?.amount, 0));
@@ -129,4 +129,3 @@ export async function POST(
     return jsonResponse(origin, { ok: false, message: "Gutschrift konnte nicht erstellt werden." }, 500);
   }
 }
-

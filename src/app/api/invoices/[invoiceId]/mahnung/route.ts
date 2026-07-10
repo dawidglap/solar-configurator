@@ -118,7 +118,7 @@ export async function POST(
     const amount = Math.round((openAmount + fee) * 20) / 20;
     const issueDate = now;
     const nextDueDate = addDays(now, safeNumber(context.company?.paymentDefaults?.dunningTermDays, 10));
-    const invoiceNumber = await nextInvoiceNumber(db, String(session.activeCompanyId), "mahnung", now);
+    const invoiceNumber = await nextInvoiceNumber(db, String(session.activeCompanyId), now);
     const meta = getSessionUserMeta(session);
     const createdByUserId = toObjectIdOrNull(meta.id) ?? meta.id ?? null;
 
@@ -170,4 +170,3 @@ export async function POST(
     return jsonResponse(origin, { ok: false, message: "Mahnung konnte nicht erstellt werden." }, 500);
   }
 }
-

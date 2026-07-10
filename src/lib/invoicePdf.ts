@@ -236,8 +236,7 @@ function getInvoiceHeading(invoice: any) {
 }
 
 function getInvoiceFileLabel(invoice: any) {
-  const heading = getInvoiceHeading(invoice).replace(/\s+/g, "_");
-  return `${heading}_${safeString(invoice?.invoiceNumber) || "Dokument"}.pdf`;
+  return `Rechnung_${safeString(invoice?.invoiceNumber) || "Dokument"}.pdf`;
 }
 
 export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
@@ -294,7 +293,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   }
 
   const heading = getInvoiceHeading(args.invoice);
-  page.drawText(`${pdfText(heading)} Nr. ${pdfText(args.invoice?.invoiceNumber) || "-"}`, {
+  page.drawText(`Rechnung Nr. ${pdfText(args.invoice?.invoiceNumber) || "-"}`, {
     x: marginX,
     y: 688,
     size: 20,
@@ -466,7 +465,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
     await addPaymentSlipPage(pdf, {
       documentType: "auftrag",
       documentNumber: pdfText(args.invoice?.invoiceNumber) || "-",
-      documentNumberLabel: `${pdfText(heading)} Nr. ${pdfText(args.invoice?.invoiceNumber) || "-"}`,
+      documentNumberLabel: `Rechnung Nr. ${pdfText(args.invoice?.invoiceNumber) || "-"}`,
       invoiceDate: formatDateCH(issueDate),
       dueDate: formatDateCH(dueDate ?? addDays(issueDate ?? new Date(), 30)),
       invoiceDateIso: issueDate,
@@ -526,7 +525,7 @@ export async function persistInvoicePdfFile(args: PersistInvoicePdfArgs) {
     companyId: args.companyId,
     planningId: args.planningId,
     category: "document",
-    title: getInvoiceHeading(args.invoice) + " " + (safeString(args.invoice?.invoiceNumber) || "Dokument"),
+    title: "Rechnung " + (safeString(args.invoice?.invoiceNumber) || "Dokument"),
     originalFileName: getInvoiceFileLabel(args.invoice),
     mimeType: "application/pdf",
     buffer: args.buffer,
