@@ -2,6 +2,7 @@ import type { Db, ObjectId } from "mongodb";
 import { safeString, mongoIdToString, toObjectIdOrNull } from "@/lib/api-session";
 
 export const MONTAGE_STATUSES = [
+  "offen",
   "draft",
   "planned",
   "confirmed",

@@ -18,6 +18,7 @@ import {
   parseFutureDateInput,
   requirePlatformSuperAdmin,
 } from "@/lib/subscription";
+import { ensureCompanyAuftragPipelineTemplate } from "@/lib/auftragPipeline";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -191,6 +192,10 @@ export async function POST(req: Request) {
     };
 
     const companyRes = await companies.insertOne(companyDoc);
+    await ensureCompanyAuftragPipelineTemplate(db, companyRes.insertedId, {
+      id: session.userId || "",
+      fullName: safeString(session.name) || "System",
+    });
 
     const defaultPassword = buildDefaultOwnerPassword();
     const passwordHash = await bcrypt.hash(defaultPassword, 10);

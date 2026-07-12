@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { getCorsHeaders } from "@/lib/cors";
 import { buildNewCompanySubscriptionDefaults, buildUniqueCompanySlug } from "@/lib/subscription";
+import { ensureCompanyAuftragPipelineTemplate } from "@/lib/auftragPipeline";
 
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
@@ -49,6 +50,10 @@ export async function POST(req: Request) {
       ...subscriptionDefaults,
       createdAt: now,
       updatedAt: now,
+    });
+    await ensureCompanyAuftragPipelineTemplate(db, companyRes.insertedId, {
+      id: "bootstrap",
+      fullName: "Bootstrap",
     });
 
     const passwordHash = await bcrypt.hash(OWNER_PASSWORD, 10);

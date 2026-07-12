@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test:checklist": "npx tsx scripts/test-checklist-patch.ts",
     "test:execution-tasks": "npx tsx scripts/test-execution-tasks.ts",
+    "backfill:auftrag-pipeline": "npx tsx scripts/backfill-auftrag-pipeline.ts",
     "backfill:company-subscriptions": "npx tsx scripts/backfill-company-subscriptions.ts",
     "backfill:execution-tasks": "npx tsx scripts/backfill-execution-tasks.ts",
     "backfill:order-files": "npx tsx scripts/backfill-order-files.ts",

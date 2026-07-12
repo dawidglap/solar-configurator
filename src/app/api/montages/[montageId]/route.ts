@@ -165,6 +165,16 @@ export async function PATCH(
   }
 
   const body = await req.json().catch(() => ({} as any));
+  if ("checklist" in body) {
+    return jsonResponse(
+      origin,
+      {
+        ok: false,
+        error: "Checklist wird jetzt über die Auftrag-Pipeline gesteuert.",
+      },
+      410,
+    );
+  }
 
   try {
     const db = await getDb();
@@ -250,13 +260,6 @@ export async function PATCH(
 
     if ("notes" in body) {
       setObj.notes = safeString(body?.notes);
-    }
-
-    if ("checklist" in body) {
-      setObj.checklist = normalizeMontageChecklist({
-        ...(existing?.checklist ?? {}),
-        ...(body?.checklist ?? {}),
-      });
     }
 
     await getMontagesCollection(db).updateOne(
