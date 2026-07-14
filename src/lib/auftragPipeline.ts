@@ -80,15 +80,45 @@ export function getAuftragAuditLogsCollection(db: Db) {
 }
 
 export async function ensureAuftragIndexes(db: Db) {
+  const auftraege = getAuftraegeCollection(db);
+  const indexes = await auftraege.indexes().catch(() => [] as Array<Record<string, any>>);
+  const montageIndex = indexes.find(
+    (index) => index?.key?.companyId === 1 && index?.key?.montageId === 1,
+  );
+  const expectedPartialFilterExpression = {
+    montageId: {
+      $exists: true,
+    },
+  };
+
+  if (
+    montageIndex &&
+    JSON.stringify(montageIndex.partialFilterExpression ?? null) !==
+      JSON.stringify(expectedPartialFilterExpression)
+  ) {
+    await auftraege.updateMany(
+      { montageId: null as any },
+      {
+        $unset: {
+          montageId: "",
+        },
+      },
+    );
+    await auftraege.dropIndex(String(montageIndex.name)).catch(() => undefined);
+  }
+
   await Promise.all([
     getAuftragPipelineTemplatesCollection(db).createIndex({ companyId: 1 }, { unique: true }),
-    getAuftraegeCollection(db).createIndex({ companyId: 1, planningId: 1 }, { unique: true }),
-    getAuftraegeCollection(db).createIndex({ companyId: 1, orderId: 1 }, { unique: true, sparse: true }),
-    getAuftraegeCollection(db).createIndex(
+    auftraege.createIndex({ companyId: 1, planningId: 1 }, { unique: true }),
+    auftraege.createIndex({ companyId: 1, orderId: 1 }, { unique: true, sparse: true }),
+    auftraege.createIndex(
       { companyId: 1, montageId: 1 },
-      { unique: true, sparse: true },
+      {
+        unique: true,
+        partialFilterExpression: expectedPartialFilterExpression,
+      },
     ),
-    getAuftraegeCollection(db).createIndex({ companyId: 1, status: 1, currentStepKey: 1 }),
+    auftraege.createIndex({ companyId: 1, status: 1, currentStepKey: 1 }),
     getAuftragStepsStateCollection(db).createIndex(
       { companyId: 1, orderId: 1, stepKey: 1 },
       { unique: true },

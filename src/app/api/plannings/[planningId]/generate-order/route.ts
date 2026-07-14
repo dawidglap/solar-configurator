@@ -12,6 +12,8 @@ import {
 } from "@/lib/orders";
 import {
   createInvoicesForOrderIfMissing,
+  ensureInvoiceIndexes,
+  getInvoicesCollection,
   getPlannedInvoiceRates,
   normalizeInvoice,
   normalizePlanningPaymentTerms,
@@ -48,6 +50,32 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+type GenerateOrderErrorCode =
+  | "PLANNING_NOT_FOUND"
+  | "COMPANY_NOT_FOUND"
+  | "NO_INVOICE_RATES"
+  | "INVOICE_RATES_INVALID"
+  | "COMPANY_IBAN_MISSING"
+  | "ORDER_NUMBER_SEQUENCE_FAILED"
+  | "ORDER_DOCUMENT_PDF_FAILED"
+  | "AUFTRAG_INIT_FAILED"
+  | "INVOICE_CREATION_FAILED"
+  | "INTERNAL";
+
+class GenerateOrderError extends Error {
+  code: GenerateOrderErrorCode;
+  status: number;
+  cause?: unknown;
+
+  constructor(code: GenerateOrderErrorCode, message: string, status = 400, cause?: unknown) {
+    super(message);
+    this.name = "GenerateOrderError";
+    this.code = code;
+    this.status = status;
+    this.cause = cause;
+  }
+}
+
 function jsonResponse(origin: string | null, body: any, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -70,6 +98,72 @@ function normalizePlanningForOrder(planning: any) {
     },
     ...normalizeOrderFields(planning),
   };
+}
+
+function buildErrorResponseBody(error: GenerateOrderError | Error | unknown) {
+  const normalized =
+    error instanceof GenerateOrderError
+      ? error
+      : new GenerateOrderError("INTERNAL", "Auftrag konnte nicht generiert werden.", 500, error);
+  const body: Record<string, unknown> = {
+    ok: false,
+    code: normalized.code,
+    message: normalized.message,
+  };
+
+  if (process.env.NODE_ENV !== "production") {
+    body.details = {
+      name: (normalized.cause as any)?.name ?? normalized.name,
+      code: (normalized.cause as any)?.code ?? normalized.code,
+      message: (normalized.cause as any)?.message ?? normalized.message,
+      stack: (normalized.cause as any)?.stack ?? normalized.stack ?? null,
+    };
+  }
+
+  return {
+    status: normalized.status,
+    body,
+  };
+}
+
+function classifyGenerateOrderError(error: unknown) {
+  if (error instanceof GenerateOrderError) {
+    return error;
+  }
+
+  const code = String((error as any)?.code ?? "");
+  const message = String((error as any)?.message ?? "");
+  const keyPattern = (error as any)?.keyPattern ?? {};
+
+  if (
+    (code === "11000" || Number((error as any)?.code) === 11000) &&
+    keyPattern?.orderId === 1
+  ) {
+    return new GenerateOrderError(
+      "ORDER_NUMBER_SEQUENCE_FAILED",
+      "Auftragsnummer konnte nicht eindeutig erzeugt werden.",
+      500,
+      error,
+    );
+  }
+
+  if (
+    (code === "11000" || Number((error as any)?.code) === 11000) &&
+    keyPattern?.montageId === 1
+  ) {
+    return new GenerateOrderError(
+      "AUFTRAG_INIT_FAILED",
+      "Auftrag-Pipeline konnte nicht initialisiert werden.",
+      500,
+      error,
+    );
+  }
+
+  if (message.includes("Ungültige Planning-ID")) {
+    return new GenerateOrderError("PLANNING_NOT_FOUND", "Planung nicht gefunden.", 404, error);
+  }
+
+  return new GenerateOrderError("INTERNAL", "Auftrag konnte nicht generiert werden.", 500, error);
 }
 
 async function buildAngebotSnapshotBuffer(args: {
@@ -214,13 +308,13 @@ export async function POST(
   }
 
   const { planningId } = await params;
+  const companyId = String(session.activeCompanyId);
 
   try {
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session);
     if (subscriptionError) return subscriptionError;
 
-    const companyId = String(session.activeCompanyId);
     const planningObjectId = toPlanningObjectId(planningId);
     const companyObjectId = toCompanyObjectId(companyId);
     const plannings = db.collection("plannings");
@@ -233,44 +327,150 @@ export async function POST(
     });
 
     if (!planning) {
-      return jsonResponse(origin, { ok: false, message: "Planung nicht gefunden." }, 404);
+      const errorResponse = buildErrorResponseBody(
+        new GenerateOrderError("PLANNING_NOT_FOUND", "Planung nicht gefunden.", 404),
+      );
+      return jsonResponse(origin, errorResponse.body, errorResponse.status);
     }
 
     const company = await companies.findOne({ _id: companyObjectId });
     if (!company) {
-      return jsonResponse(origin, { ok: false, message: "Firma nicht gefunden." }, 404);
+      const errorResponse = buildErrorResponseBody(
+        new GenerateOrderError("COMPANY_NOT_FOUND", "Firma nicht gefunden.", 404),
+      );
+      return jsonResponse(origin, errorResponse.body, errorResponse.status);
     }
 
     const alreadyGenerated = safeString((planning as any)?.orderStatus) === "generated";
-    const paymentTerms = normalizePlanningPaymentTerms(planning);
-    if (!alreadyGenerated && !paymentTerms) {
+    if (alreadyGenerated) {
+      await ensureAuftragIndexes(db);
+      await ensureInvoiceIndexes(db);
+      const orderId = safeString((planning as any)?.orderId);
+      const actor = getSessionActor(session);
+      const hydratedAuftrag =
+        orderId
+          ? await getHydratedAuftragState({
+              db,
+              companyId: companyObjectId,
+              orderId,
+              actor,
+            })
+          : null;
+      const invoices = orderId
+        ? await getInvoicesCollection(db)
+            .find({
+              companyId,
+              orderId,
+            })
+            .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
+            .toArray()
+        : [];
+      const planningFiles = await getPlanningFilesCollection(db)
+        .find({
+          companyId,
+          planningId,
+          isDeleted: { $ne: true },
+          category: { $in: ["auftrag", "angebot_snapshot"] },
+        })
+        .sort({ createdAt: -1, _id: -1 })
+        .toArray();
+      const orderFile = planningFiles.find((file: any) => safeString(file?.category) === "auftrag") ?? null;
+      const angebotSnapshotFile =
+        planningFiles.find((file: any) => safeString(file?.category) === "angebot_snapshot") ?? null;
+
       return jsonResponse(
         origin,
-        { ok: false, message: "Bitte wählen Sie zuerst Zahlungsbedingungen im Angebot aus." },
-        400,
+        {
+          ok: true,
+          alreadyGenerated: true,
+          message: "Auftrag wurde bereits generiert.",
+          order: {
+            orderId,
+            status: "generated",
+            currentStepKey:
+              hydratedAuftrag?.normalizedAuftrag.currentStepKey || AUFTRAG_LOCKED_FIRST_STEP.key,
+            completedAt: hydratedAuftrag?.normalizedAuftrag.completedAt || null,
+          },
+          planning: normalizePlanningForOrder(planning),
+          invoices: invoices.map((invoice: any) => normalizeInvoice(invoice)),
+          stepsState: hydratedAuftrag?.stepsState ?? [],
+          checklist: hydratedAuftrag?.checklist ?? { items: [], updatedAt: new Date().toISOString() },
+          auftrag: hydratedAuftrag?.normalizedAuftrag ?? null,
+          orderId,
+          orderStatus: "generated",
+          orderSnapshotFileId:
+            safeString((planning as any)?.orderSnapshotFileId?.toString?.() ?? (planning as any)?.orderSnapshotFileId) ||
+            null,
+          angebotSnapshotFileId:
+            safeString(
+              (planning as any)?.angebotSnapshotFileId?.toString?.() ?? (planning as any)?.angebotSnapshotFileId,
+            ) || null,
+          files: {
+            auftrag: orderFile
+              ? {
+                  id: safeString(orderFile?._id?.toString?.() ?? orderFile?._id),
+                  cloudinarySecureUrl: safeString(orderFile?.cloudinarySecureUrl),
+                }
+              : null,
+            angebotSnapshot: angebotSnapshotFile
+              ? {
+                  id: safeString(angebotSnapshotFile?._id?.toString?.() ?? angebotSnapshotFile?._id),
+                  cloudinarySecureUrl: safeString(angebotSnapshotFile?.cloudinarySecureUrl),
+                }
+              : null,
+          },
+          ...(orderFile ? { orderFile: normalizePlanningFile(orderFile) } : {}),
+        },
+        409,
       );
     }
 
+    const paymentTerms = normalizePlanningPaymentTerms(planning);
     const paymentValidation = getPlannedInvoiceRates(planning);
     if (!paymentValidation.ok) {
-      return jsonResponse(origin, { ok: false, message: paymentValidation.message }, 400);
+      const errorResponse = buildErrorResponseBody(
+        new GenerateOrderError("INVOICE_RATES_INVALID", paymentValidation.message, 400),
+      );
+      return jsonResponse(origin, errorResponse.body, errorResponse.status);
+    }
+    if (!alreadyGenerated && !paymentTerms && paymentValidation.items.length === 0) {
+      const errorResponse = buildErrorResponseBody(
+        new GenerateOrderError(
+          "NO_INVOICE_RATES",
+          "Mindestens eine Zahlungsrate erforderlich.",
+          400,
+        ),
+      );
+      return jsonResponse(origin, errorResponse.body, errorResponse.status);
     }
 
     const iban = (company?.bank?.iban || company?.billing?.iban || "").replace(/\s/g, "");
     if (!iban) {
-      return jsonResponse(
-        origin,
-        { ok: false, message: "IBAN in Firmeneinstellungen ergänzen." },
-        400,
+      const errorResponse = buildErrorResponseBody(
+        new GenerateOrderError(
+          "COMPANY_IBAN_MISSING",
+          "IBAN in den Firmeneinstellungen hinterlegen.",
+          400,
+        ),
       );
+      return jsonResponse(origin, errorResponse.body, errorResponse.status);
     }
 
     const now = new Date();
     const wonStageKey = getWonStageKey(company);
     const sections = resolveReportSections(planning);
-    const orderId =
-      safeString((planning as any)?.orderId) ||
-      (alreadyGenerated ? "" : await nextOrderId(db, companyId, now));
+    const orderId = safeString((planning as any)?.orderId) || (alreadyGenerated ? "" : await (async () => {
+      try {
+        return await nextOrderId(db, companyId, now);
+      } catch (error) {
+        throw new GenerateOrderError(
+          "ORDER_NUMBER_SEQUENCE_FAILED",
+          "Auftragsnummer konnte nicht erzeugt werden.",
+          500,
+          error,
+        );
+      }
+    })());
     const orderGeneratedAt =
       (planning as any)?.orderGeneratedAt instanceof Date
         ? (planning as any).orderGeneratedAt
@@ -279,19 +479,34 @@ export async function POST(
           : now;
 
     if (!orderId) {
-      return jsonResponse(origin, { ok: false, message: "Auftragsnummer fehlt." }, 500);
+      throw new GenerateOrderError(
+        "ORDER_NUMBER_SEQUENCE_FAILED",
+        "Auftragsnummer fehlt.",
+        500,
+      );
     }
 
-    const { pdfBytes, pricing } = await buildPlanningDocumentPdf({
-      db,
-      planning,
-      company,
-      session,
-      documentType: "auftrag",
-      orderId,
-      orderGeneratedAt,
-      sections,
-    });
+    const { pdfBytes, pricing } = await (async () => {
+      try {
+        return await buildPlanningDocumentPdf({
+          db,
+          planning,
+          company,
+          session,
+          documentType: "auftrag",
+          orderId,
+          orderGeneratedAt,
+          sections,
+        });
+      } catch (error) {
+        throw new GenerateOrderError(
+          "ORDER_DOCUMENT_PDF_FAILED",
+          "Auftrag-PDF konnte nicht erzeugt werden.",
+          500,
+          error,
+        );
+      }
+    })();
 
     const actor = getSessionActor(session);
     const client = await getMongoClient();
@@ -356,7 +571,6 @@ export async function POST(
           companyId: companyObjectId,
           orderId,
           planningId: planningObjectId,
-          montageId: null,
           status: "aktiv",
           currentStepKey: AUFTRAG_LOCKED_FIRST_STEP.key,
           completedAt: null,
@@ -399,26 +613,46 @@ export async function POST(
           session: txnSession,
         });
       }
+    }).catch((error) => {
+      throw error instanceof GenerateOrderError
+        ? error
+        : new GenerateOrderError(
+            "AUFTRAG_INIT_FAILED",
+            "Auftrag konnte nicht initialisiert werden.",
+            500,
+            error,
+          );
     });
 
-    const invoiceResult = await createInvoicesForOrderIfMissing({
-      db,
-      companyId,
-      planning: alreadyGenerated
-        ? {
-            ...planning,
-            orderStatus: "generated",
-            orderId,
-            orderGeneratedAt,
-          }
-        : planning,
-      company,
-      session,
-      orderId,
-      orderGeneratedAt:
-        orderGeneratedAt instanceof Date ? orderGeneratedAt : new Date(orderGeneratedAt),
-      totalInklMwst: Number(pricing?.totalInklMwst ?? 0),
-    });
+    const invoiceResult = await (async () => {
+      try {
+        return await createInvoicesForOrderIfMissing({
+          db,
+          companyId,
+          planning: alreadyGenerated
+            ? {
+                ...planning,
+                orderStatus: "generated",
+                orderId,
+                orderGeneratedAt,
+              }
+            : planning,
+          company,
+          session,
+          orderId,
+          orderGeneratedAt:
+            orderGeneratedAt instanceof Date ? orderGeneratedAt : new Date(orderGeneratedAt),
+          totalInklMwst: Number(pricing?.totalInklMwst ?? 0),
+        });
+      } catch (error) {
+        throw new GenerateOrderError(
+          "INVOICE_CREATION_FAILED",
+          "Rechnungen konnten nicht erstellt werden.",
+          500,
+          error,
+        );
+      }
+    })();
 
     const managedFiles = await persistManagedOrderFiles({
       db,
@@ -458,8 +692,19 @@ export async function POST(
     }
 
     const updatedPlanning = await plannings.findOne({ _id: planningObjectId, companyId });
+    let executionTasksWarning: string | null = null;
     if (updatedPlanning && safeString((updatedPlanning as any)?.commercial?.stage) === wonStageKey) {
-      await ensureExecutionTasksForWonPlanning(db, updatedPlanning, session as any);
+      try {
+        await ensureExecutionTasksForWonPlanning(db, updatedPlanning, session as any);
+      } catch (error) {
+        executionTasksWarning = "Execution tasks konnten nicht synchronisiert werden.";
+        console.error(
+          "[generate-order:execution-tasks] planningId=%s companyId=%s",
+          planningId,
+          companyId,
+          error,
+        );
+      }
     }
     const hydratedAuftrag = await getHydratedAuftragState({
       db,
@@ -468,7 +713,8 @@ export async function POST(
       actor,
     });
     const responseBody = {
-      ok: !alreadyGenerated,
+      ok: true,
+      alreadyGenerated,
       ...(alreadyGenerated ? { message: "Auftrag wurde bereits generiert." } : {}),
       order: {
         orderId,
@@ -496,6 +742,7 @@ export async function POST(
             (updatedPlanning as any)?.angebotSnapshotFileId,
         ) || null),
       ...(managedFiles.fileWarning ? { fileWarning: managedFiles.fileWarning } : {}),
+      ...(executionTasksWarning ? { executionTasksWarning } : {}),
       files: {
         auftrag: managedFiles.orderFile
           ? {
@@ -536,7 +783,16 @@ export async function POST(
 
     return jsonResponse(origin, responseBody, alreadyGenerated ? 409 : 200);
   } catch (e: any) {
-    console.error("GENERATE ORDER ERROR:", e);
-    return jsonResponse(origin, { ok: false, message: "Auftrag konnte nicht generiert werden." }, 500);
+    console.error("[generate-order] planningId=%s companyId=%s", planningId, companyId, e);
+    console.error("[generate-order:error-meta]", {
+      planningId,
+      companyId,
+      name: e?.name ?? null,
+      code: e?.code ?? null,
+      message: e?.message ?? null,
+      stack: e?.stack ?? null,
+    });
+    const errorResponse = buildErrorResponseBody(classifyGenerateOrderError(e));
+    return jsonResponse(origin, errorResponse.body, errorResponse.status);
   }
 }

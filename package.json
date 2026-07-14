@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test:generate-order": "npx tsx scripts/test-generate-order.ts",
     "test:auftrag-pipeline": "npx tsx scripts/test-auftrag-pipeline.ts",
     "test:checklist": "npx tsx scripts/test-checklist-patch.ts",
     "test:execution-tasks": "npx tsx scripts/test-execution-tasks.ts",
