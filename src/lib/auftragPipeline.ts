@@ -42,6 +42,9 @@ export const AUFTRAG_LOCKED_LAST_STEP = {
   label: "Bereit für Ausführung",
 } as const;
 
+const LEGACY_LOCKED_FIRST_STEP_KEY = "projekt_geprueft";
+const LEGACY_LOCKED_LAST_STEP_KEY = "projekt_abgeschlossen";
+
 const DEFAULT_STEP_COLORS = [
   "hsl(210 78% 56%)",
   "hsl(220 64% 58%)",
@@ -86,10 +89,17 @@ export async function ensureAuftragIndexes(db: Db) {
 }
 
 function normalizeStepKey(value: unknown) {
-  return safeString(value)
+  const normalized = safeString(value)
     .toLowerCase()
     .replace(/\s+/g, "_")
     .replace(/[^a-z0-9_-]/g, "");
+  if (normalized === LEGACY_LOCKED_FIRST_STEP_KEY) {
+    return AUFTRAG_LOCKED_FIRST_STEP.key;
+  }
+  if (normalized === LEGACY_LOCKED_LAST_STEP_KEY) {
+    return AUFTRAG_LOCKED_LAST_STEP.key;
+  }
+  return normalized;
 }
 
 function normalizeOrder(value: unknown, fallback: number) {
@@ -252,6 +262,45 @@ export function getDefaultAuftragPipelineSteps() {
   })) satisfies AuftragPipelineStep[];
 }
 
+function canonicalizeAuftragPipelineSteps(steps: AuftragPipelineStep[]) {
+  if (steps.length < 2) return steps;
+
+  return steps.map((step, index, all) => {
+    if (index === 0) {
+      return {
+        ...step,
+        key: AUFTRAG_LOCKED_FIRST_STEP.key,
+        label: AUFTRAG_LOCKED_FIRST_STEP.label,
+        order: 0,
+        isLocked: true,
+        isTerminal: false,
+      } satisfies AuftragPipelineStep;
+    }
+
+    if (index === all.length - 1) {
+      return {
+        ...step,
+        key: AUFTRAG_LOCKED_LAST_STEP.key,
+        label: AUFTRAG_LOCKED_LAST_STEP.label,
+        order: all.length - 1,
+        isLocked: true,
+        isTerminal: true,
+      } satisfies AuftragPipelineStep;
+    }
+
+    return {
+      ...step,
+      order: index,
+      isLocked: false,
+      isTerminal: false,
+    } satisfies AuftragPipelineStep;
+  });
+}
+
+function arePipelineStepsEqual(left: AuftragPipelineStep[], right: AuftragPipelineStep[]) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export async function ensureCompanyAuftragPipelineTemplate(
   db: Db,
   companyId: ObjectId,
@@ -276,7 +325,38 @@ export async function ensureCompanyAuftragPipelineTemplate(
     },
   );
 
-  return result as any;
+  const doc = result as any;
+  const existingSteps = normalizeAuftragPipelineSteps(doc?.steps);
+  const canonicalSteps =
+    existingSteps.length > 0
+      ? canonicalizeAuftragPipelineSteps(existingSteps)
+      : getDefaultAuftragPipelineSteps();
+
+  if (!arePipelineStepsEqual(existingSteps, canonicalSteps)) {
+    await getAuftragPipelineTemplatesCollection(db).updateOne(
+      { companyId },
+      {
+        $set: {
+          steps: canonicalSteps,
+          updatedAt: now,
+          updatedBy: actor ?? doc?.updatedBy ?? null,
+        },
+      },
+    );
+    await migrateLegacyAuftraegeLockedSteps(db, companyId, canonicalSteps);
+    return {
+      ...doc,
+      steps: canonicalSteps,
+      updatedAt: now,
+      updatedBy: actor ?? doc?.updatedBy ?? null,
+    };
+  }
+
+  await migrateLegacyAuftraegeLockedSteps(db, companyId, canonicalSteps);
+  return {
+    ...doc,
+    steps: canonicalSteps,
+  };
 }
 
 export function normalizeAuftragPipelineTemplate(doc: any) {
@@ -525,6 +605,55 @@ export async function migrateOpenAuftraegeForTemplate(
   }
 
   const operations = offeneAuftraege.map((auftrag) => {
+    const migrated = migrateAuftragStateToTemplate({
+      templateSteps,
+      existingStepsState: (auftrag as any)?.stepsState,
+      currentStepKey: safeString((auftrag as any)?.currentStepKey),
+      status: safeString((auftrag as any)?.status) as AuftragStatus,
+    });
+
+    return {
+      updateOne: {
+        filter: { _id: (auftrag as any)._id, companyId },
+        update: {
+          $set: {
+            currentStepKey: migrated.currentStepKey,
+            status: migrated.status,
+            stepsState: migrated.stepsState,
+            updatedAt: new Date(),
+          },
+        },
+      },
+    };
+  });
+
+  const result = await getAuftraegeCollection(db).bulkWrite(operations, { ordered: false });
+  return {
+    matched: result.matchedCount,
+    modified: result.modifiedCount,
+  };
+}
+
+export async function migrateLegacyAuftraegeLockedSteps(
+  db: Db,
+  companyId: ObjectId,
+  templateSteps: AuftragPipelineStep[],
+) {
+  const legacyAuftraege = await getAuftraegeCollection(db)
+    .find({
+      companyId,
+      $or: [
+        { currentStepKey: { $in: [LEGACY_LOCKED_FIRST_STEP_KEY, LEGACY_LOCKED_LAST_STEP_KEY] } },
+        { "stepsState.stepKey": { $in: [LEGACY_LOCKED_FIRST_STEP_KEY, LEGACY_LOCKED_LAST_STEP_KEY] } },
+      ],
+    })
+    .toArray();
+
+  if (legacyAuftraege.length === 0) {
+    return { matched: 0, modified: 0 };
+  }
+
+  const operations = legacyAuftraege.map((auftrag) => {
     const migrated = migrateAuftragStateToTemplate({
       templateSteps,
       existingStepsState: (auftrag as any)?.stepsState,

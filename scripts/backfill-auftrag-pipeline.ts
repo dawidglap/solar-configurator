@@ -8,6 +8,7 @@ import {
   ensureAuftragIndexes,
   ensureCompanyAuftragPipelineTemplate,
   getAuftraegeCollection,
+  migrateLegacyAuftraegeLockedSteps,
 } from "@/lib/auftragPipeline";
 
 async function main() {
@@ -17,6 +18,7 @@ async function main() {
   const companies = await db.collection("companies").find({}).project({ _id: 1 }).toArray();
   let seededTemplates = 0;
   let createdAuftraege = 0;
+  let migratedLegacyAuftraege = 0;
 
   for (const company of companies) {
     const companyId = company._id as ObjectId;
@@ -29,6 +31,8 @@ async function main() {
     }
 
     const templateSteps = (template as any)?.steps ?? [];
+    const legacyMigration = await migrateLegacyAuftraegeLockedSteps(db, companyId, templateSteps);
+    migratedLegacyAuftraege += legacyMigration.modified;
     const montages = await db.collection("montages").find({ companyId }).toArray();
     for (const montage of montages) {
       const planningId = montage?.planningId instanceof ObjectId ? montage.planningId : null;
@@ -68,7 +72,9 @@ async function main() {
     }
   }
 
-  console.log(JSON.stringify({ ok: true, seededTemplates, createdAuftraege }, null, 2));
+  console.log(
+    JSON.stringify({ ok: true, seededTemplates, createdAuftraege, migratedLegacyAuftraege }, null, 2),
+  );
 }
 
 main().catch((error) => {
