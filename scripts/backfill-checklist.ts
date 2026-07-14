@@ -2,7 +2,7 @@ import "dotenv/config";
 import { MongoClient } from "mongodb";
 
 const CHECKLIST_KEYS = [
-  "projekt_geprueft",
+  "gewonnen",
   "baumeldung_eingereicht",
   "baumeldung_genehmigt",
   "netzanschlussgesuch_eingereicht",
@@ -16,7 +16,7 @@ const CHECKLIST_KEYS = [
   "abnahme_kunde",
   "abnahme_ewz",
   "schlussrechnung_versendet",
-  "projekt_abgeschlossen",
+  "bereit_fuer_ausfuehrung",
 ] as const;
 
 function safeString(value: unknown) {

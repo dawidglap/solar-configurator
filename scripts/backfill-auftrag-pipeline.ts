@@ -1,6 +1,8 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/db";
 import {
+  AUFTRAG_LOCKED_FIRST_STEP,
+  AUFTRAG_LOCKED_LAST_STEP,
   buildCompletedAuftragStepStates,
   buildInitialAuftragStepStates,
   ensureAuftragIndexes,
@@ -53,8 +55,8 @@ async function main() {
         montageId: montage?._id instanceof ObjectId ? montage._id : null,
         status: completed ? "abgeschlossen" : "aktiv",
         currentStepKey: completed
-          ? templateSteps[templateSteps.length - 1]?.key || "projekt_abgeschlossen"
-          : templateSteps[0]?.key || "projekt_geprueft",
+          ? templateSteps[templateSteps.length - 1]?.key || AUFTRAG_LOCKED_LAST_STEP.key
+          : templateSteps[0]?.key || AUFTRAG_LOCKED_FIRST_STEP.key,
         stepsState: completed
           ? buildCompletedAuftragStepStates(templateSteps, actor, now)
           : buildInitialAuftragStepStates(templateSteps, actor, now),

@@ -1,5 +1,5 @@
 export const CHECKLIST_ITEMS = [
-  { key: "projekt_geprueft", label: "Projekt geprüft", order: 1 },
+  { key: "gewonnen", label: "Gewonnen", order: 1 },
   { key: "baumeldung_eingereicht", label: "Baumeldung eingereicht", order: 2 },
   { key: "baumeldung_genehmigt", label: "Baumeldung genehmigt", order: 3 },
   {
@@ -29,7 +29,7 @@ export const CHECKLIST_ITEMS = [
     label: "Schlussrechnung versendet",
     order: 14,
   },
-  { key: "projekt_abgeschlossen", label: "Projekt abgeschlossen", order: 15 },
+  { key: "bereit_fuer_ausfuehrung", label: "Bereit für Ausführung", order: 15 },
 ] as const;
 
 export type ChecklistItemKey = (typeof CHECKLIST_ITEMS)[number]["key"];

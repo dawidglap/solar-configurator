@@ -20,6 +20,7 @@ import {
   normalizeMontageAddress,
 } from "@/lib/montages";
 import {
+  AUFTRAG_LOCKED_FIRST_STEP,
   buildInitialAuftragStepStates,
   ensureAuftragIndexes,
   ensureCompanyAuftragPipelineTemplate,
@@ -179,7 +180,7 @@ export async function POST(
         planningId: planningObjectId,
         montageId: (montageDoc as any)._id,
         status: "aktiv",
-        currentStepKey: templateSteps[0]?.key || "projekt_geprueft",
+        currentStepKey: templateSteps[0]?.key || AUFTRAG_LOCKED_FIRST_STEP.key,
         stepsState,
         createdAt: now,
         updatedAt: now,

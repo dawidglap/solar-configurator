@@ -7,7 +7,7 @@ import {
   type SessionPayload,
 } from "@/lib/api-session";
 import { CHECKLIST_ITEMS } from "@/lib/checklistCatalog";
-import { getSessionUserMeta, isAdminLikeRole } from "@/lib/tasks";
+import { getSessionUserMeta } from "@/lib/tasks";
 
 export type AuftragPipelineStep = {
   key: string;
@@ -31,6 +31,16 @@ export type AuftragStepState = {
 };
 
 export type AuftragStatus = "aktiv" | "abgeschlossen" | "storniert";
+
+export const AUFTRAG_LOCKED_FIRST_STEP = {
+  key: "gewonnen",
+  label: "Gewonnen",
+} as const;
+
+export const AUFTRAG_LOCKED_LAST_STEP = {
+  key: "bereit_fuer_ausfuehrung",
+  label: "Bereit für Ausführung",
+} as const;
 
 const DEFAULT_STEP_COLORS = [
   "hsl(210 78% 56%)",
@@ -193,20 +203,20 @@ export function validateAuftragPipelineSteps(steps: AuftragPipelineStep[]) {
   const firstStep = steps[0];
   const lastStep = steps[steps.length - 1];
   const firstMatches =
-    firstStep?.key === "projekt_geprueft" &&
+    firstStep?.key === AUFTRAG_LOCKED_FIRST_STEP.key &&
     firstStep.order === 0 &&
     firstStep.isLocked === true &&
     firstStep.isTerminal === false;
   if (!firstMatches) {
-    return 'Der erste Step muss "projekt_geprueft" sein und gesperrt bleiben.';
+    return `Der erste Step muss "${AUFTRAG_LOCKED_FIRST_STEP.key}" sein und gesperrt bleiben.`;
   }
 
   const terminalMatches =
-    lastStep?.key === "projekt_abgeschlossen" &&
+    lastStep?.key === AUFTRAG_LOCKED_LAST_STEP.key &&
     lastStep.isLocked === true &&
     lastStep.isTerminal === true;
   if (!terminalMatches) {
-    return 'Der letzte Step muss "projekt_abgeschlossen" sein und terminal bleiben.';
+    return `Der letzte Step muss "${AUFTRAG_LOCKED_LAST_STEP.key}" sein und terminal bleiben.`;
   }
 
   const lockedCount = steps.filter((step) => step.isLocked).length;
@@ -223,8 +233,18 @@ export function validateAuftragPipelineSteps(steps: AuftragPipelineStep[]) {
 
 export function getDefaultAuftragPipelineSteps() {
   return CHECKLIST_ITEMS.map((item, index, all) => ({
-    key: item.key,
-    label: item.label,
+    key:
+      index === 0
+        ? AUFTRAG_LOCKED_FIRST_STEP.key
+        : index === all.length - 1
+          ? AUFTRAG_LOCKED_LAST_STEP.key
+          : item.key,
+    label:
+      index === 0
+        ? AUFTRAG_LOCKED_FIRST_STEP.label
+        : index === all.length - 1
+          ? AUFTRAG_LOCKED_LAST_STEP.label
+          : item.label,
     color: DEFAULT_STEP_COLORS[index] || DEFAULT_STEP_COLORS[DEFAULT_STEP_COLORS.length - 1],
     order: index,
     isLocked: index === 0 || index === all.length - 1,
