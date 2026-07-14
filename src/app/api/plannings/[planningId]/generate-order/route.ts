@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/db";
+import { getDb, getMongoClient } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import { readSession, safeString } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
@@ -23,6 +23,17 @@ import {
 } from "@/lib/planningDocuments";
 import { buildStageHistoryForTransition, getWonStageKey } from "@/lib/plannings";
 import {
+  AUFTRAG_LOCKED_FIRST_STEP,
+  buildInitialAuftragStepStates,
+  ensureCompanyAuftragPipelineTemplate,
+  ensureAuftragIndexes,
+  ensureAuftragStepStateForOrder,
+  getHydratedAuftragState,
+  getSessionActor,
+  persistAuftragStepsState,
+  runWithOptionalTransaction,
+} from "@/lib/auftragPipeline";
+import {
   ensurePlanningFileIndexes,
   extractPlanningFileCustomerId,
   fetchPlanningFileBuffer,
@@ -31,6 +42,7 @@ import {
   upsertManagedPlanningFile,
 } from "@/lib/planningFiles";
 import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
+import { emitCompanyRealtimeEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -281,44 +293,113 @@ export async function POST(
       sections,
     });
 
-    if (!alreadyGenerated) {
-      const auditFields = buildOrderAuditFields(session);
-      await plannings.updateOne(
-        { _id: planningObjectId, companyId },
-        {
-          $set: {
-            orderStatus: "generated",
-            orderId,
-            orderGeneratedAt,
-            orderGeneratedByUserId: auditFields.orderGeneratedByUserId,
-            orderGeneratedByName: auditFields.orderGeneratedByName,
-            commercialLockedAt: now,
-            "commercial.stage": wonStageKey,
-            "commercial.stageHistory": buildStageHistoryForTransition(
-              planning,
-              wonStageKey,
-              session,
-            ),
-            updatedAt: now,
+    const actor = getSessionActor(session);
+    const client = await getMongoClient();
+    await ensureAuftragIndexes(db);
+
+    await runWithOptionalTransaction(client, async (txnSession) => {
+      if (!alreadyGenerated) {
+        const auditFields = buildOrderAuditFields(session);
+        await plannings.updateOne(
+          { _id: planningObjectId, companyId },
+          {
+            $set: {
+              orderStatus: "generated",
+              orderId,
+              orderGeneratedAt,
+              orderGeneratedByUserId: auditFields.orderGeneratedByUserId,
+              orderGeneratedByName: auditFields.orderGeneratedByName,
+              commercialLockedAt: now,
+              "commercial.stage": wonStageKey,
+              "commercial.stageHistory": buildStageHistoryForTransition(
+                planning,
+                wonStageKey,
+                session,
+              ),
+              updatedAt: now,
+            },
           },
-        },
-      );
-    } else if (safeString((planning as any)?.commercial?.stage) !== wonStageKey) {
-      await plannings.updateOne(
-        { _id: planningObjectId, companyId },
-        {
-          $set: {
-            "commercial.stage": wonStageKey,
-            "commercial.stageHistory": buildStageHistoryForTransition(
-              planning,
-              wonStageKey,
-              session,
-            ),
-            updatedAt: now,
+          txnSession ? { session: txnSession } : undefined,
+        );
+      } else if (safeString((planning as any)?.commercial?.stage) !== wonStageKey) {
+        await plannings.updateOne(
+          { _id: planningObjectId, companyId },
+          {
+            $set: {
+              "commercial.stage": wonStageKey,
+              "commercial.stageHistory": buildStageHistoryForTransition(
+                planning,
+                wonStageKey,
+                session,
+              ),
+              updatedAt: now,
+            },
           },
-        },
-      );
-    }
+          txnSession ? { session: txnSession } : undefined,
+        );
+      }
+
+      const template = await ensureCompanyAuftragPipelineTemplate(db, companyObjectId, actor);
+      const templateSteps = (template as any)?.steps ?? [];
+      const existingAuftrag =
+        (await db.collection("auftraege").findOne(
+          {
+            companyId: companyObjectId,
+            $or: [{ orderId }, { planningId: planningObjectId }],
+          },
+          txnSession ? { session: txnSession } : undefined,
+        )) ?? null;
+
+      let auftragDoc = existingAuftrag;
+      if (!auftragDoc) {
+        const insertDoc = {
+          companyId: companyObjectId,
+          orderId,
+          planningId: planningObjectId,
+          montageId: null,
+          status: "aktiv",
+          currentStepKey: AUFTRAG_LOCKED_FIRST_STEP.key,
+          completedAt: null,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: actor,
+        };
+        const insert = await db.collection("auftraege").insertOne(
+          insertDoc,
+          txnSession ? { session: txnSession } : undefined,
+        );
+        auftragDoc = { ...insertDoc, _id: insert.insertedId };
+        await persistAuftragStepsState({
+          db,
+          companyId: companyObjectId,
+          orderId,
+          templateSteps,
+          stepsState: buildInitialAuftragStepStates(templateSteps, actor, now),
+          session: txnSession,
+        });
+      } else {
+        await db.collection("auftraege").updateOne(
+          { _id: (auftragDoc as any)._id, companyId: companyObjectId },
+          {
+            $set: {
+              orderId,
+              planningId: planningObjectId,
+              updatedAt: now,
+            },
+          },
+          txnSession ? { session: txnSession } : undefined,
+        );
+        auftragDoc = { ...auftragDoc, orderId, planningId: planningObjectId, updatedAt: now };
+        await ensureAuftragStepStateForOrder({
+          db,
+          companyId: companyObjectId,
+          orderId,
+          templateSteps,
+          auftrag: auftragDoc,
+          session: txnSession,
+        });
+      }
+    });
 
     const invoiceResult = await createInvoicesForOrderIfMissing({
       db,
@@ -380,15 +461,26 @@ export async function POST(
     if (updatedPlanning && safeString((updatedPlanning as any)?.commercial?.stage) === wonStageKey) {
       await ensureExecutionTasksForWonPlanning(db, updatedPlanning, session as any);
     }
+    const hydratedAuftrag = await getHydratedAuftragState({
+      db,
+      companyId: companyObjectId,
+      orderId,
+      actor,
+    });
     const responseBody = {
       ok: !alreadyGenerated,
       ...(alreadyGenerated ? { message: "Auftrag wurde bereits generiert." } : {}),
       order: {
         orderId,
         status: "generated",
+        currentStepKey: hydratedAuftrag?.normalizedAuftrag.currentStepKey || AUFTRAG_LOCKED_FIRST_STEP.key,
+        completedAt: hydratedAuftrag?.normalizedAuftrag.completedAt || null,
       },
       planning: normalizePlanningForOrder(updatedPlanning),
       invoices: invoiceResult.invoices.map((invoice: any) => normalizeInvoice(invoice)),
+      stepsState: hydratedAuftrag?.stepsState ?? [],
+      checklist: hydratedAuftrag?.checklist ?? { items: [], updatedAt: new Date().toISOString() },
+      auftrag: hydratedAuftrag?.normalizedAuftrag ?? null,
       orderId,
       orderStatus: "generated",
       orderSnapshotFileId:
@@ -427,6 +519,20 @@ export async function POST(
           }
         : {}),
     };
+
+    await emitCompanyRealtimeEvent(companyId, "orders", {
+      orderId,
+      status: "generated",
+      currentStepKey: hydratedAuftrag?.normalizedAuftrag.currentStepKey || AUFTRAG_LOCKED_FIRST_STEP.key,
+    });
+    await emitCompanyRealtimeEvent(companyId, "auftrag-steps", {
+      orderId,
+      stepsState: hydratedAuftrag?.stepsState ?? [],
+    });
+    await emitCompanyRealtimeEvent(companyId, "planning-checklist", {
+      planningId,
+      checklist: hydratedAuftrag?.checklist ?? { items: [], updatedAt: new Date().toISOString() },
+    });
 
     return jsonResponse(origin, responseBody, alreadyGenerated ? 409 : 200);
   } catch (e: any) {

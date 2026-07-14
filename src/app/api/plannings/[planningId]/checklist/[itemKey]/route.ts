@@ -1,5 +1,5 @@
 import { ObjectId } from "mongodb";
-import { getDb } from "@/lib/db";
+import { getDb, getMongoClient } from "@/lib/db";
 import { readSession, safeString } from "@/lib/api-session";
 import { activeDocumentFilter } from "@/lib/trash";
 import { jsonResponse as taskJsonResponse, noStoreHeaders } from "@/lib/tasks";
@@ -11,6 +11,21 @@ import {
   updateChecklistItem,
 } from "@/lib/plannings";
 import { CHECKLIST_ITEMS, CHECKLIST_ITEM_MAP, type ChecklistItemKey } from "@/lib/checklistCatalog";
+import {
+  advanceAuftragSteps,
+  buildChecklistFromAuftragState,
+  ensureAuftragIndexes,
+  getHydratedAuftragState,
+  getNextTemplateStepKey,
+  getSessionActor,
+  isLockedTemplateStep,
+  logAuftragAdvance,
+  normalizeAuftrag,
+  persistAuftragStepsState,
+  runWithOptionalTransaction,
+} from "@/lib/auftragPipeline";
+import { toObjectIdOrNull } from "@/lib/api-session";
+import { emitCompanyRealtimeEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -112,6 +127,7 @@ export async function PATCH(req: Request, { params }: Params) {
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session);
     if (subscriptionError) return subscriptionError;
+    await ensureAuftragIndexes(db);
     const checklist = await ensureChecklistOnPlanning(
       db,
       planningId,
@@ -120,6 +136,182 @@ export async function PATCH(req: Request, { params }: Params) {
 
     if (!checklist) {
       return jsonResponse(origin, { ok: false, message: "Planning not found" }, 404);
+    }
+
+    const planning = await getScopedPlanning(db, planningId, String(session.activeCompanyId));
+    if (!planning) {
+      return jsonResponse(origin, { ok: false, message: "Planning not found" }, 404);
+    }
+
+    const orderId = safeString((planning as any)?.orderId);
+    const companyObjectId = toObjectIdOrNull(String(session.activeCompanyId));
+    if (
+      safeString((planning as any)?.orderStatus) === "generated" &&
+      orderId &&
+      companyObjectId
+    ) {
+      const actor = getSessionActor(session);
+      const hydrated = await getHydratedAuftragState({
+        db,
+        companyId: companyObjectId,
+        orderId,
+        actor,
+      });
+
+      if (!hydrated) {
+        return jsonResponse(origin, { ok: false, message: "Auftrag nicht gefunden." }, 404);
+      }
+
+      if (isLockedTemplateStep(hydrated.templateSteps, itemKey)) {
+        return jsonResponse(
+          origin,
+          {
+            ok: false,
+            message: "Gesperrte Pipeline-Schritte werden automatisch vom System gesteuert.",
+          },
+          409,
+        );
+      }
+
+      const targetStepKey = body.done
+        ? getNextTemplateStepKey(hydrated.templateSteps, itemKey) || itemKey
+        : itemKey;
+      const client = await getMongoClient();
+      const result = await runWithOptionalTransaction(client, async (txnSession) => {
+        const advanced = advanceAuftragSteps({
+          templateSteps: hydrated.templateSteps,
+          existingStepsState: hydrated.stepsState,
+          toStepKey: targetStepKey,
+          actor,
+        });
+        const now = new Date();
+
+        await persistAuftragStepsState({
+          db,
+          companyId: companyObjectId,
+          orderId,
+          templateSteps: hydrated.templateSteps,
+          stepsState: advanced.stepsState,
+          session: txnSession,
+        });
+
+        await db.collection("auftraege").updateOne(
+          {
+            _id: (hydrated.auftrag as any)._id,
+            companyId: companyObjectId,
+          },
+          {
+            $set: {
+              orderId,
+              currentStepKey: advanced.currentStepKey,
+              status: advanced.status,
+              completedAt: advanced.status === "abgeschlossen" ? now : null,
+              updatedAt: now,
+            },
+            $unset: {
+              stepsState: "",
+            },
+          },
+          txnSession ? { session: txnSession } : undefined,
+        );
+
+        const nextMontageStatus = advanced.status === "abgeschlossen" ? "completed" : "offen";
+        const montageId = toObjectIdOrNull((hydrated.auftrag as any)?.montageId);
+        if (montageId) {
+          await db.collection("montages").updateOne(
+            {
+              _id: montageId,
+              companyId: companyObjectId,
+            },
+            {
+              $set: {
+                status: nextMontageStatus,
+                updatedAt: now,
+              },
+            },
+            txnSession ? { session: txnSession } : undefined,
+          );
+        }
+
+        await db.collection("plannings").updateOne(
+          {
+            _id: (hydrated.auftrag as any).planningId,
+            companyId: String(session.activeCompanyId),
+          },
+          {
+            $set: {
+              "data.montageStatus": nextMontageStatus,
+              updatedAt: now,
+            },
+          },
+          txnSession ? { session: txnSession } : undefined,
+        );
+
+        await logAuftragAdvance({
+          db,
+          companyId: companyObjectId,
+          auftragId: (hydrated.auftrag as any)._id,
+          actor,
+          fromStepKey: safeString((hydrated.auftrag as any)?.currentStepKey),
+          toStepKey: advanced.currentStepKey,
+          session: txnSession,
+        });
+
+        return {
+          normalizedAuftrag: normalizeAuftrag({
+            ...hydrated.auftrag,
+            currentStepKey: advanced.currentStepKey,
+            status: advanced.status,
+            completedAt: advanced.status === "abgeschlossen" ? now : null,
+            updatedAt: now,
+          }),
+          montageId,
+          montageStatus: nextMontageStatus,
+          stepsState: advanced.stepsState,
+          checklist: buildChecklistFromAuftragState({
+            templateSteps: hydrated.templateSteps,
+            stepsState: advanced.stepsState,
+          }),
+        };
+      });
+
+      await emitCompanyRealtimeEvent(String(session.activeCompanyId), "orders", {
+        orderId,
+        currentStepKey: result.normalizedAuftrag.currentStepKey,
+        completedAt: result.normalizedAuftrag.completedAt,
+        status: result.normalizedAuftrag.status,
+      });
+      await emitCompanyRealtimeEvent(String(session.activeCompanyId), "auftrag-steps", {
+        orderId,
+        stepsState: result.stepsState,
+      });
+      await emitCompanyRealtimeEvent(String(session.activeCompanyId), "planning-checklist", {
+        planningId,
+        checklist: result.checklist,
+      });
+      if (result.montageId) {
+        await emitCompanyRealtimeEvent(String(session.activeCompanyId), "montage:updated", {
+          montageId: safeString((result.montageId as any)?.toString?.() ?? result.montageId),
+          status: result.montageStatus,
+        });
+      }
+
+      return jsonResponse(
+        origin,
+        {
+          ok: true,
+          order: {
+            orderId,
+            currentStepKey: result.normalizedAuftrag.currentStepKey,
+            completedAt: result.normalizedAuftrag.completedAt,
+            status: result.normalizedAuftrag.status,
+          },
+          auftragId: result.normalizedAuftrag.id,
+          stepsState: result.stepsState,
+          checklist: result.checklist,
+        },
+        200,
+      );
     }
 
     const next = updateChecklistItem(

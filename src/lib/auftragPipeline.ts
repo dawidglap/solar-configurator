@@ -71,6 +71,10 @@ export function getAuftraegeCollection(db: Db) {
   return db.collection("auftraege");
 }
 
+export function getAuftragStepsStateCollection(db: Db) {
+  return db.collection("auftrag_steps_state");
+}
+
 export function getAuftragAuditLogsCollection(db: Db) {
   return db.collection("auftrag_audit_logs");
 }
@@ -79,11 +83,17 @@ export async function ensureAuftragIndexes(db: Db) {
   await Promise.all([
     getAuftragPipelineTemplatesCollection(db).createIndex({ companyId: 1 }, { unique: true }),
     getAuftraegeCollection(db).createIndex({ companyId: 1, planningId: 1 }, { unique: true }),
+    getAuftraegeCollection(db).createIndex({ companyId: 1, orderId: 1 }, { unique: true, sparse: true }),
     getAuftraegeCollection(db).createIndex(
       { companyId: 1, montageId: 1 },
       { unique: true, sparse: true },
     ),
     getAuftraegeCollection(db).createIndex({ companyId: 1, status: 1, currentStepKey: 1 }),
+    getAuftragStepsStateCollection(db).createIndex(
+      { companyId: 1, orderId: 1, stepKey: 1 },
+      { unique: true },
+    ),
+    getAuftragStepsStateCollection(db).createIndex({ companyId: 1, orderId: 1, position: 1 }),
     getAuftragAuditLogsCollection(db).createIndex({ companyId: 1, auftragId: 1, createdAt: -1 }),
   ]);
 }
@@ -397,6 +407,12 @@ export function normalizeAuftragStepStates(input: unknown) {
     .filter((entry): entry is AuftragStepState => !!entry);
 }
 
+function normalizeAuftragStepStatePosition(input: any, fallback: number) {
+  return typeof input?.position === "number" && Number.isFinite(input.position)
+    ? Math.trunc(input.position)
+    : fallback;
+}
+
 function buildEmptyStepState(stepKey: string): AuftragStepState {
   return {
     stepKey,
@@ -404,6 +420,14 @@ function buildEmptyStepState(stepKey: string): AuftragStepState {
     completedBy: null,
     archived: false,
   };
+}
+
+function buildChecklistItemLabel(stepKey: string) {
+  return stepKey
+    .split("_")
+    .filter(Boolean)
+    .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+    .join(" ");
 }
 
 function mapStatesByKey(states: AuftragStepState[]) {
@@ -524,6 +548,263 @@ export function buildCompletedAuftragStepStates(
   }));
 }
 
+function buildActorFromAuftrag(doc: any): AuftragStepActor {
+  const embedded = normalizeStepActor(doc?.createdBy);
+  if (embedded) return embedded;
+
+  return {
+    id: safeString(doc?.createdByUserId) || "",
+    fullName: safeString(doc?.createdByName) || "Unbekannt",
+  };
+}
+
+function buildStepStateDocs(args: {
+  companyId: ObjectId;
+  orderId: string;
+  templateSteps: AuftragPipelineStep[];
+  stepsState: AuftragStepState[];
+}) {
+  const templateStepMap = new Map(args.templateSteps.map((step) => [step.key, step]));
+  let archivedPosition = args.templateSteps.length;
+
+  return args.stepsState.map((state) => {
+    const templateStep = templateStepMap.get(state.stepKey);
+    const completedAt = state.completedAt ? new Date(state.completedAt) : null;
+
+    return {
+      companyId: args.companyId,
+      orderId: args.orderId,
+      stepKey: state.stepKey,
+      stepLabel: templateStep?.label || buildChecklistItemLabel(state.stepKey),
+      completedAt,
+      completedBy: state.completedBy ?? null,
+      archived: !!state.archived,
+      position: templateStep ? templateStep.order : archivedPosition++,
+      updatedAt: new Date(),
+      ...(templateStep ? { createdAt: new Date() } : {}),
+    };
+  });
+}
+
+export async function persistAuftragStepsState(args: {
+  db: Db;
+  companyId: ObjectId;
+  orderId: string;
+  templateSteps: AuftragPipelineStep[];
+  stepsState: AuftragStepState[];
+  session?: ClientSession;
+}) {
+  const docs = buildStepStateDocs(args);
+  const collection = getAuftragStepsStateCollection(args.db);
+  const operations = docs.map((doc) => ({
+    updateOne: {
+      filter: {
+        companyId: args.companyId,
+        orderId: args.orderId,
+        stepKey: doc.stepKey,
+      },
+      update: {
+        $set: {
+          stepLabel: doc.stepLabel,
+          completedAt: doc.completedAt,
+          completedBy: doc.completedBy,
+          archived: doc.archived,
+          position: doc.position,
+          updatedAt: doc.updatedAt,
+        },
+        $setOnInsert: {
+          companyId: doc.companyId,
+          orderId: doc.orderId,
+          createdAt: new Date(),
+        },
+      },
+      upsert: true,
+    },
+  }));
+
+  if (operations.length > 0) {
+    await collection.bulkWrite(operations, {
+      ordered: false,
+      ...(args.session ? { session: args.session } : {}),
+    });
+  }
+
+  const stepKeys = docs.map((doc) => doc.stepKey);
+  await collection.deleteMany(
+    {
+      companyId: args.companyId,
+      orderId: args.orderId,
+      ...(stepKeys.length > 0 ? { stepKey: { $nin: stepKeys } } : {}),
+    },
+    args.session ? { session: args.session } : undefined,
+  );
+}
+
+function mergeAuftragStepsWithTemplate(args: {
+  templateSteps: AuftragPipelineStep[];
+  stepDocs: any[];
+}) {
+  const normalizedDocs = args.stepDocs
+    .map((doc, index) => {
+      const normalized = normalizeAuftragStepState(doc);
+      if (!normalized) return null;
+      return {
+        ...normalized,
+        stepLabel: safeString(doc?.stepLabel) || buildChecklistItemLabel(normalized.stepKey),
+        position: normalizeAuftragStepStatePosition(doc, index),
+      };
+    })
+    .filter(
+      (
+        item,
+      ): item is AuftragStepState & {
+        stepLabel: string;
+        position: number;
+      } => !!item,
+    );
+
+  const byKey = new Map(normalizedDocs.map((doc) => [doc.stepKey, doc]));
+  const activeStates = args.templateSteps.map((step) => {
+    const existing = byKey.get(step.key);
+    return existing
+      ? {
+          stepKey: step.key,
+          completedAt: existing.completedAt,
+          completedBy: existing.completedBy,
+          archived: false,
+        }
+      : buildEmptyStepState(step.key);
+  });
+
+  const templateKeys = new Set(args.templateSteps.map((step) => step.key));
+  const archivedStates = normalizedDocs
+    .filter((doc) => !templateKeys.has(doc.stepKey) && !!doc.completedAt)
+    .sort((left, right) => left.position - right.position)
+    .map((doc) => ({
+      stepKey: doc.stepKey,
+      completedAt: doc.completedAt,
+      completedBy: doc.completedBy,
+      archived: true,
+    }));
+
+  return [...activeStates, ...archivedStates];
+}
+
+function deriveAuftragStatesFromLegacyDoc(args: {
+  templateSteps: AuftragPipelineStep[];
+  auftrag: any;
+}) {
+  const actor = buildActorFromAuftrag(args.auftrag);
+  const createdAt =
+    args.auftrag?.createdAt instanceof Date ? args.auftrag.createdAt : new Date();
+  const embeddedSteps = normalizeAuftragStepStates((args.auftrag as any)?.stepsState);
+  if (embeddedSteps.length > 0) {
+    return migrateAuftragStateToTemplate({
+      templateSteps: args.templateSteps,
+      existingStepsState: embeddedSteps,
+      currentStepKey: safeString((args.auftrag as any)?.currentStepKey),
+      status: safeString((args.auftrag as any)?.status) as AuftragStatus,
+    });
+  }
+
+  if (safeString((args.auftrag as any)?.status) === "abgeschlossen" || (args.auftrag as any)?.completedAt) {
+    const stepsState = buildCompletedAuftragStepStates(args.templateSteps, actor, createdAt);
+    return {
+      currentStepKey:
+        args.templateSteps[args.templateSteps.length - 1]?.key || AUFTRAG_LOCKED_LAST_STEP.key,
+      status: "abgeschlossen" as AuftragStatus,
+      stepsState,
+    };
+  }
+
+  const targetStepKey =
+    safeString((args.auftrag as any)?.currentStepKey) || args.templateSteps[0]?.key || AUFTRAG_LOCKED_FIRST_STEP.key;
+  return advanceAuftragSteps({
+    templateSteps: args.templateSteps,
+    existingStepsState: [],
+    toStepKey: targetStepKey,
+    actor,
+    now: createdAt,
+  });
+}
+
+export async function ensureAuftragStepStateForOrder(args: {
+  db: Db;
+  companyId: ObjectId;
+  orderId: string;
+  templateSteps: AuftragPipelineStep[];
+  auftrag: any;
+  session?: ClientSession;
+}) {
+  const collection = getAuftragStepsStateCollection(args.db);
+  const existing = await collection
+    .find(
+      {
+        companyId: args.companyId,
+        orderId: args.orderId,
+      },
+      args.session ? { session: args.session } : undefined,
+    )
+    .sort({ position: 1, _id: 1 })
+    .toArray();
+
+  if (existing.length > 0) {
+    return mergeAuftragStepsWithTemplate({
+      templateSteps: args.templateSteps,
+      stepDocs: existing,
+    });
+  }
+
+  const reconstructed = deriveAuftragStatesFromLegacyDoc({
+    templateSteps: args.templateSteps,
+    auftrag: args.auftrag,
+  });
+  await persistAuftragStepsState({
+    db: args.db,
+    companyId: args.companyId,
+    orderId: args.orderId,
+    templateSteps: args.templateSteps,
+    stepsState: reconstructed.stepsState,
+    session: args.session,
+  });
+  return reconstructed.stepsState;
+}
+
+export function buildChecklistFromAuftragState(args: {
+  templateSteps: AuftragPipelineStep[];
+  stepsState: AuftragStepState[];
+}) {
+  const statesByKey = mapStatesByKey(args.stepsState.filter((state) => !state.archived));
+  const items = args.templateSteps.map((step) => {
+    const state = statesByKey.get(step.key) ?? buildEmptyStepState(step.key);
+    return {
+      key: step.key,
+      label: step.label,
+      done: !!state.completedAt,
+      doneAt: state.completedAt,
+      doneBy: state.completedBy?.id || null,
+      doneByName: state.completedBy?.fullName || null,
+    };
+  });
+
+  return {
+    items,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function getNextTemplateStepKey(templateSteps: AuftragPipelineStep[], stepKey: string) {
+  const normalizedKey = normalizeStepKey(stepKey);
+  const currentIndex = templateSteps.findIndex((step) => step.key === normalizedKey);
+  if (currentIndex < 0) return null;
+  return templateSteps[currentIndex + 1]?.key || templateSteps[currentIndex]?.key || null;
+}
+
+export function isLockedTemplateStep(templateSteps: AuftragPipelineStep[], stepKey: string) {
+  const normalizedKey = normalizeStepKey(stepKey);
+  return !!templateSteps.find((step) => step.key === normalizedKey && step.isLocked);
+}
+
 export function advanceAuftragSteps(args: {
   templateSteps: AuftragPipelineStep[];
   existingStepsState: unknown;
@@ -605,11 +886,9 @@ export async function migrateOpenAuftraegeForTemplate(
   }
 
   const operations = offeneAuftraege.map((auftrag) => {
-    const migrated = migrateAuftragStateToTemplate({
+    const migrated = deriveAuftragStatesFromLegacyDoc({
       templateSteps,
-      existingStepsState: (auftrag as any)?.stepsState,
-      currentStepKey: safeString((auftrag as any)?.currentStepKey),
-      status: safeString((auftrag as any)?.status) as AuftragStatus,
+      auftrag,
     });
 
     return {
@@ -619,8 +898,14 @@ export async function migrateOpenAuftraegeForTemplate(
           $set: {
             currentStepKey: migrated.currentStepKey,
             status: migrated.status,
-            stepsState: migrated.stepsState,
+            completedAt:
+              migrated.status === "abgeschlossen"
+                ? (auftrag as any)?.completedAt ?? new Date()
+                : null,
             updatedAt: new Date(),
+          },
+          $unset: {
+            stepsState: "",
           },
         },
       },
@@ -628,6 +913,21 @@ export async function migrateOpenAuftraegeForTemplate(
   });
 
   const result = await getAuftraegeCollection(db).bulkWrite(operations, { ordered: false });
+  for (const auftrag of offeneAuftraege) {
+    const migrated = deriveAuftragStatesFromLegacyDoc({
+      templateSteps,
+      auftrag,
+    });
+    const orderId = safeString((auftrag as any)?.orderId);
+    if (!orderId) continue;
+    await persistAuftragStepsState({
+      db,
+      companyId,
+      orderId,
+      templateSteps,
+      stepsState: migrated.stepsState,
+    });
+  }
   return {
     matched: result.matchedCount,
     modified: result.modifiedCount,
@@ -654,12 +954,7 @@ export async function migrateLegacyAuftraegeLockedSteps(
   }
 
   const operations = legacyAuftraege.map((auftrag) => {
-    const migrated = migrateAuftragStateToTemplate({
-      templateSteps,
-      existingStepsState: (auftrag as any)?.stepsState,
-      currentStepKey: safeString((auftrag as any)?.currentStepKey),
-      status: safeString((auftrag as any)?.status) as AuftragStatus,
-    });
+    const migrated = deriveAuftragStatesFromLegacyDoc({ templateSteps, auftrag });
 
     return {
       updateOne: {
@@ -668,8 +963,14 @@ export async function migrateLegacyAuftraegeLockedSteps(
           $set: {
             currentStepKey: migrated.currentStepKey,
             status: migrated.status,
-            stepsState: migrated.stepsState,
+            completedAt:
+              migrated.status === "abgeschlossen"
+                ? (auftrag as any)?.completedAt ?? new Date()
+                : null,
             updatedAt: new Date(),
+          },
+          $unset: {
+            stepsState: "",
           },
         },
       },
@@ -677,6 +978,18 @@ export async function migrateLegacyAuftraegeLockedSteps(
   });
 
   const result = await getAuftraegeCollection(db).bulkWrite(operations, { ordered: false });
+  for (const auftrag of legacyAuftraege) {
+    const migrated = deriveAuftragStatesFromLegacyDoc({ templateSteps, auftrag });
+    const orderId = safeString((auftrag as any)?.orderId);
+    if (!orderId) continue;
+    await persistAuftragStepsState({
+      db,
+      companyId,
+      orderId,
+      templateSteps,
+      stepsState: migrated.stepsState,
+    });
+  }
   return {
     matched: result.matchedCount,
     modified: result.modifiedCount,
@@ -687,10 +1000,15 @@ export function normalizeAuftrag(doc: any) {
   return {
     id: mongoIdToString(doc?._id),
     companyId: mongoIdToString(doc?.companyId),
+    orderId: safeString(doc?.orderId) || null,
     planningId: mongoIdToString(doc?.planningId),
     montageId: mongoIdToString(doc?.montageId) || null,
     status: (safeString(doc?.status) || "aktiv") as AuftragStatus,
     currentStepKey: safeString(doc?.currentStepKey) || null,
+    completedAt:
+      doc?.completedAt instanceof Date
+        ? doc.completedAt.toISOString()
+        : safeString(doc?.completedAt) || null,
     stepsState: normalizeAuftragStepStates(doc?.stepsState),
     createdAt:
       doc?.createdAt instanceof Date
@@ -701,6 +1019,70 @@ export function normalizeAuftrag(doc: any) {
         ? doc.updatedAt.toISOString()
         : safeString(doc?.updatedAt) || null,
     createdBy: normalizeStepActor(doc?.createdBy),
+  };
+}
+
+export async function getAuftragByOrderId(
+  db: Db,
+  companyId: ObjectId,
+  orderId: string,
+  session?: ClientSession,
+) {
+  return getAuftraegeCollection(db).findOne(
+    {
+      companyId,
+      orderId: safeString(orderId),
+    },
+    session ? { session } : undefined,
+  );
+}
+
+export async function getHydratedAuftragState(args: {
+  db: Db;
+  companyId: ObjectId;
+  orderId: string;
+  actor?: AuftragStepActor | null;
+  session?: ClientSession;
+}) {
+  const normalizedOrderId = safeString(args.orderId);
+  if (!normalizedOrderId) return null;
+
+  const template = await ensureCompanyAuftragPipelineTemplate(
+    args.db,
+    args.companyId,
+    args.actor ?? null,
+  );
+  const templateSteps = normalizeAuftragPipelineSteps((template as any)?.steps);
+  const auftrag = await getAuftragByOrderId(
+    args.db,
+    args.companyId,
+    normalizedOrderId,
+    args.session,
+  );
+  if (!auftrag) return null;
+
+  const stepsState = await ensureAuftragStepStateForOrder({
+    db: args.db,
+    companyId: args.companyId,
+    orderId: normalizedOrderId,
+    templateSteps,
+    auftrag,
+    session: args.session,
+  });
+  const checklist = buildChecklistFromAuftragState({
+    templateSteps,
+    stepsState,
+  });
+
+  return {
+    auftrag,
+    normalizedAuftrag: {
+      ...normalizeAuftrag(auftrag),
+      stepsState,
+    },
+    templateSteps,
+    stepsState,
+    checklist,
   };
 }
 

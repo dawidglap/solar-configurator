@@ -10,6 +10,8 @@ import {
   normalizeInvoice,
 } from "@/lib/invoices";
 import { normalizeOrderFields } from "@/lib/orders";
+import { ensureAuftragIndexes, getHydratedAuftragState } from "@/lib/auftragPipeline";
+import { toObjectIdOrNull } from "@/lib/api-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -73,6 +75,7 @@ export async function GET(
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session);
     if (subscriptionError) return subscriptionError;
+    await ensureAuftragIndexes(db);
 
     const planning = await db.collection("plannings").findOne({
       companyId: String(session.activeCompanyId),
@@ -96,12 +99,23 @@ export async function GET(
 
     const commercial = await computePlanningCommercialSummary(db, planning);
     const plannedRates = getPlannedInvoiceRates(planning);
+    const companyObjectId = toObjectIdOrNull(String(session.activeCompanyId));
+    const auftrag =
+      companyObjectId
+        ? await getHydratedAuftragState({
+            db,
+            companyId: companyObjectId,
+            orderId: normalizedOrderId,
+          })
+        : null;
 
     return jsonResponse(
       origin,
       {
         ok: true,
         invoices: normalizedInvoices,
+        stepsState: auftrag?.stepsState ?? [],
+        checklist: auftrag?.checklist ?? null,
         order: {
           ...normalizeOrderFields(planning),
           planningId: safeString(planning?._id?.toString?.() ?? planning?._id),
@@ -112,6 +126,9 @@ export async function GET(
           plannedRatesCount: plannedRates.ok ? plannedRates.items.length : 0,
           invoicesCount: normalizedInvoices.length,
           invoices: normalizedInvoices,
+          currentStepKey: auftrag?.normalizedAuftrag.currentStepKey || null,
+          completedAt: auftrag?.normalizedAuftrag.completedAt || null,
+          auftragId: auftrag?.normalizedAuftrag.id || null,
         },
       },
       200,

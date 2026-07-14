@@ -5,6 +5,8 @@ import { enforceActiveSubscription } from "@/lib/subscription";
 import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
 import { getPlannedInvoiceRates, normalizeInvoice } from "@/lib/invoices";
 import { normalizeOrderFields } from "@/lib/orders";
+import { ensureAuftragIndexes, getAuftraegeCollection, normalizeAuftrag } from "@/lib/auftragPipeline";
+import { buildIdVariants } from "@/lib/tasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,6 +65,7 @@ export async function GET(req: Request) {
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session);
     if (subscriptionError) return subscriptionError;
+    await ensureAuftragIndexes(db);
 
     const { searchParams } = new URL(req.url);
     const match: Record<string, any> = {
@@ -242,6 +245,14 @@ export async function GET(req: Request) {
           .sort({ orderId: 1, position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
           .toArray()
       : [];
+    const auftragDocs = orderIds.length
+      ? await getAuftraegeCollection(db)
+          .find({
+            companyId: { $in: buildIdVariants(String(session.activeCompanyId)) },
+            orderId: { $in: orderIds },
+          })
+          .toArray()
+      : [];
     const invoiceSummaryByOrderId = new Map(
       invoiceSummaryDocs.map((doc: any) => [
         safeString(doc?._id),
@@ -260,6 +271,9 @@ export async function GET(req: Request) {
       list.push(invoice);
       invoicesByOrderId.set(key, list);
     }
+    const auftragByOrderId = new Map(
+      auftragDocs.map((doc: any) => [safeString(doc?.orderId), normalizeAuftrag(doc)]),
+    );
 
     const items = await Promise.all(
       docs.map(async (doc: any) => {
@@ -274,6 +288,7 @@ export async function GET(req: Request) {
         const invoices = (invoicesByOrderId.get(safeString(doc?.orderId)) ?? []).map((invoice: any) =>
           normalizeInvoice(invoice),
         );
+        const auftrag = auftragByOrderId.get(safeString(doc?.orderId)) ?? null;
         return {
           ...orderFields,
           planningId: safeString(doc?._id?.toString?.() ?? doc?._id),
@@ -301,6 +316,9 @@ export async function GET(req: Request) {
           invoicesPaidCount: invoiceSummary.invoicesPaidCount,
           invoicesOpenAmount: invoiceSummary.invoicesOpenAmount,
           invoices,
+          currentStepKey: auftrag?.currentStepKey || null,
+          orderCompletedAt: auftrag?.completedAt || null,
+          auftragId: auftrag?.id || null,
         };
       }),
     );

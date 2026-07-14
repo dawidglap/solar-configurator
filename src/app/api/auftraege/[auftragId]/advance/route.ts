@@ -10,12 +10,14 @@ import {
 import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   advanceAuftragSteps,
+  buildChecklistFromAuftragState,
   ensureAuftragIndexes,
-  ensureCompanyAuftragPipelineTemplate,
-  getAuftraegeCollection,
+  getAuftragByOrderId,
+  getHydratedAuftragState,
   getSessionActor,
-  logAuftragAdvance,
   normalizeAuftrag,
+  persistAuftragStepsState,
+  logAuftragAdvance,
   runWithOptionalTransaction,
 } from "@/lib/auftragPipeline";
 import { emitCompanyRealtimeEvent } from "@/lib/realtime";
@@ -49,9 +51,9 @@ export async function PATCH(
 
   const companyObjectId = toObjectIdOrNull(session.activeCompanyId);
   const { auftragId } = await params;
-  const auftragObjectId = toObjectIdOrNull(auftragId);
-  if (!companyObjectId || !auftragObjectId) {
-    return jsonResponse(origin, { ok: false, message: "Ungültige Anfrage." }, 400);
+  const orderId = safeString(auftragId);
+  if (!companyObjectId || !orderId) {
+    return jsonResponse(origin, { ok: false, message: "Ungültige Auftragsnummer." }, 400);
   }
 
   const body = await req.json().catch(() => null);
@@ -66,13 +68,16 @@ export async function PATCH(
     if (subscriptionError) return subscriptionError;
     await ensureAuftragIndexes(db);
 
-    const existingAuftrag = await getAuftraegeCollection(db).findOne({
-      _id: auftragObjectId,
+    const hydrated = await getHydratedAuftragState({
+      db,
       companyId: companyObjectId,
+      orderId,
+      actor: getSessionActor(session),
     });
-    if (!existingAuftrag) {
+    if (!hydrated) {
       return jsonResponse(origin, { ok: false, message: "Auftrag nicht gefunden." }, 404);
     }
+    const existingAuftrag = hydrated.auftrag;
     if (safeString((existingAuftrag as any)?.status) === "storniert") {
       return jsonResponse(origin, { ok: false, message: "Stornierte Aufträge können nicht verschoben werden." }, 409);
     }
@@ -80,27 +85,38 @@ export async function PATCH(
     const client = await getMongoClient();
     const actor = getSessionActor(session);
     const result = await runWithOptionalTransaction(client, async (txnSession) => {
-      const template = await ensureCompanyAuftragPipelineTemplate(db, companyObjectId, actor);
-      const templateSteps = (template as any)?.steps ?? [];
       const advanced = advanceAuftragSteps({
-        templateSteps,
-        existingStepsState: (existingAuftrag as any)?.stepsState,
+        templateSteps: hydrated.templateSteps,
+        existingStepsState: hydrated.stepsState,
         toStepKey,
         actor,
       });
 
       const now = new Date();
-      await getAuftraegeCollection(db).updateOne(
+      await persistAuftragStepsState({
+        db,
+        companyId: companyObjectId,
+        orderId,
+        templateSteps: hydrated.templateSteps,
+        stepsState: advanced.stepsState,
+        session: txnSession,
+      });
+
+      await db.collection("auftraege").updateOne(
         {
-          _id: auftragObjectId,
+          _id: (existingAuftrag as any)._id,
           companyId: companyObjectId,
         },
         {
           $set: {
+            orderId,
             currentStepKey: advanced.currentStepKey,
             status: advanced.status,
-            stepsState: advanced.stepsState,
+            completedAt: advanced.status === "abgeschlossen" ? now : null,
             updatedAt: now,
+          },
+          $unset: {
+            stepsState: "",
           },
         },
         txnSession ? { session: txnSession } : undefined,
@@ -141,33 +157,50 @@ export async function PATCH(
       await logAuftragAdvance({
         db,
         companyId: companyObjectId,
-        auftragId: auftragObjectId,
+        auftragId: (existingAuftrag as any)._id,
         actor,
         fromStepKey: safeString((existingAuftrag as any)?.currentStepKey),
         toStepKey: advanced.currentStepKey,
         session: txnSession,
       });
 
-      const updated = await getAuftraegeCollection(db).findOne(
-        {
-          _id: auftragObjectId,
-          companyId: companyObjectId,
-        },
-        txnSession ? { session: txnSession } : undefined,
-      );
+      const updated = await getAuftragByOrderId(db, companyObjectId, orderId, txnSession);
+      const checklist = buildChecklistFromAuftragState({
+        templateSteps: hydrated.templateSteps,
+        stepsState: advanced.stepsState,
+      });
 
       return {
         auftrag: updated,
         montageId,
         montageStatus: nextMontageStatus,
+        stepsState: advanced.stepsState,
+        checklist,
       };
     });
 
-    const normalized = normalizeAuftrag(result.auftrag);
+    const normalized = {
+      ...normalizeAuftrag(result.auftrag),
+      stepsState: result.stepsState,
+    };
     await emitCompanyRealtimeEvent(String(session.activeCompanyId), "auftrag:updated", {
       auftragId: normalized.id,
       currentStepKey: normalized.currentStepKey,
       status: normalized.status,
+    });
+    await emitCompanyRealtimeEvent(String(session.activeCompanyId), "orders", {
+      orderId: normalized.orderId,
+      currentStepKey: normalized.currentStepKey,
+      completedAt: normalized.completedAt,
+      status: normalized.status,
+    });
+    await emitCompanyRealtimeEvent(String(session.activeCompanyId), "auftrag-steps", {
+      orderId: normalized.orderId,
+      stepsState: result.stepsState,
+    });
+    await emitCompanyRealtimeEvent(String(session.activeCompanyId), "planning-checklist", {
+      planningId: mongoIdToString((result.auftrag as any)?.planningId),
+      checklist: result.checklist,
     });
     if (result.montageId) {
       await emitCompanyRealtimeEvent(String(session.activeCompanyId), "montage:updated", {
@@ -180,9 +213,17 @@ export async function PATCH(
       origin,
       {
         ok: true,
+        order: {
+          orderId: normalized.orderId,
+          currentStepKey: normalized.currentStepKey,
+          completedAt: normalized.completedAt,
+          status: normalized.status,
+        },
         auftragId: normalized.id,
+        orderId: normalized.orderId,
         currentStepKey: normalized.currentStepKey,
-        stepsState: normalized.stepsState,
+        stepsState: result.stepsState,
+        checklist: result.checklist,
         status: normalized.status,
       },
       200,

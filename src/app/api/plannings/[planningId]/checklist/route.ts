@@ -11,6 +11,11 @@ import {
   normalizePlanningChecklist,
 } from "@/lib/plannings";
 import { CHECKLIST_ITEMS } from "@/lib/checklistCatalog";
+import {
+  ensureAuftragIndexes,
+  getHydratedAuftragState,
+} from "@/lib/auftragPipeline";
+import { toObjectIdOrNull } from "@/lib/api-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -114,6 +119,7 @@ export async function GET(req: Request, { params }: Params) {
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session);
     if (subscriptionError) return subscriptionError;
+    await ensureAuftragIndexes(db);
     const resolved = await ensureChecklistOnPlanning(
       db,
       planningId,
@@ -122,6 +128,23 @@ export async function GET(req: Request, { params }: Params) {
 
     if (!resolved?.planning) {
       return jsonResponse(origin, { ok: false, message: "Planning not found" }, 404);
+    }
+
+    const orderId = safeString((resolved.planning as any)?.orderId);
+    const companyObjectId = toObjectIdOrNull(String(session.activeCompanyId));
+    if (
+      safeString((resolved.planning as any)?.orderStatus) === "generated" &&
+      orderId &&
+      companyObjectId
+    ) {
+      const hydrated = await getHydratedAuftragState({
+        db,
+        companyId: companyObjectId,
+        orderId,
+      });
+      if (hydrated) {
+        return jsonResponse(origin, { ok: true, checklist: hydrated.checklist }, 200);
+      }
     }
 
     return jsonResponse(origin, { ok: true, checklist: resolved.checklist }, 200);
@@ -158,6 +181,7 @@ export async function PUT(req: Request, { params }: Params) {
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session);
     if (subscriptionError) return subscriptionError;
+    await ensureAuftragIndexes(db);
     const resolved = await ensureChecklistOnPlanning(
       db,
       planningId,
@@ -166,6 +190,20 @@ export async function PUT(req: Request, { params }: Params) {
 
     if (!resolved?.planning) {
       return jsonResponse(origin, { ok: false, message: "Planning not found" }, 404);
+    }
+
+    if (
+      safeString((resolved.planning as any)?.orderStatus) === "generated" &&
+      safeString((resolved.planning as any)?.orderId)
+    ) {
+      return jsonResponse(
+        origin,
+        {
+          ok: false,
+          message: "Checklist wird für generierte Aufträge aus der Auftrag-Pipeline abgeleitet.",
+        },
+        409,
+      );
     }
 
     const checklist = applyChecklistBulk(
