@@ -6,9 +6,9 @@ import { getDb } from "@/lib/db";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { activeDocumentFilter, buildSoftDeleteFields } from "@/lib/trash";
 import {
+  buildCustomerPatchSet,
+  CUSTOMER_PUBLIC_PROJECTION,
   normalizeCustomerDoc,
-  normalizeStoredCustomerEmail,
-  normalizeStoredCustomerString,
   safeCustomerString,
 } from "@/lib/customers";
 
@@ -279,21 +279,7 @@ export async function GET(
         ...activeDocumentFilter(),
       },
       {
-        projection: {
-          _id: 1,
-          companyId: 1,
-          type: 1,
-          name: 1,
-          firstName: 1,
-          lastName: 1,
-          companyName: 1,
-          email: 1,
-          phone: 1,
-          address: 1,
-          notes: 1,
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        projection: CUSTOMER_PUBLIC_PROJECTION,
       }
     );
 
@@ -383,47 +369,7 @@ export async function PATCH(
   }
 
   const body = await req.json().catch(() => ({} as any));
-
-  const setObj: Record<string, any> = {
-    updatedAt: new Date(),
-  };
-
-  if ("type" in body) {
-    setObj.type = body?.type === "company" ? "company" : "private";
-  }
-
-  if ("name" in body) {
-    setObj.name = safeString(body?.name);
-  }
-
-  if ("firstName" in body) {
-    setObj.firstName = normalizeStoredCustomerString(body?.firstName);
-  }
-
-  if ("lastName" in body) {
-    setObj.lastName = normalizeStoredCustomerString(body?.lastName);
-  }
-
-  if ("companyName" in body) {
-    setObj.companyName = normalizeStoredCustomerString(body?.companyName);
-  }
-
-  if ("email" in body) {
-    setObj.email = normalizeStoredCustomerEmail(body?.email);
-  }
-
-  if ("phone" in body) {
-    setObj.phone = safeString(body?.phone);
-  }
-
-  if ("address" in body) {
-    setObj.address = safeString(body?.address);
-  }
-
-  if ("notes" in body) {
-    setObj.notes = safeString(body?.notes);
-  }
-
+  const setObj = buildCustomerPatchSet(body);
 
   try {
     const db = await getDb();
@@ -434,7 +380,7 @@ export async function PATCH(
     const res = await customers.updateOne(
       {
         _id: customerObjectId,
-        companyId: session.activeCompanyId,
+        companyId: buildCustomerCompanyFilter(safeString(session.activeCompanyId)),
         ...activeDocumentFilter(),
       },
       {
@@ -449,24 +395,11 @@ export async function PATCH(
     const updated = await customers.findOne(
       {
         _id: customerObjectId,
-        companyId: session.activeCompanyId,
+        companyId: buildCustomerCompanyFilter(safeString(session.activeCompanyId)),
         ...activeDocumentFilter(),
       },
       {
-        projection: {
-          _id: 1,
-          type: 1,
-          name: 1,
-          firstName: 1,
-          lastName: 1,
-          companyName: 1,
-          email: 1,
-          phone: 1,
-          address: 1,
-          notes: 1,
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        projection: CUSTOMER_PUBLIC_PROJECTION,
       }
     );
 

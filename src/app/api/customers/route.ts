@@ -3,11 +3,11 @@ import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import {
+  buildCustomerCreateDoc,
   buildCustomerDedupFilter,
+  CUSTOMER_PUBLIC_PROJECTION,
   ensureCustomerIndexes,
   normalizeCustomerDoc,
-  normalizeStoredCustomerEmail,
-  normalizeStoredCustomerString,
   safeCustomerString,
 } from "@/lib/customers";
 import { enforceActiveSubscription } from "@/lib/subscription";
@@ -96,20 +96,7 @@ export async function GET(req: Request) {
           ...activeDocumentFilter(),
         },
         {
-          projection: {
-            _id: 1,
-            type: 1,
-            name: 1,
-            firstName: 1,
-            lastName: 1,
-            companyName: 1,
-            email: 1,
-            phone: 1,
-            address: 1,
-            notes: 1,
-            createdAt: 1,
-            updatedAt: 1,
-          },
+          projection: CUSTOMER_PUBLIC_PROJECTION,
         }
       )
       .sort({ updatedAt: -1 })
@@ -159,19 +146,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({} as any));
 
   const type = body?.type === "company" ? "company" : "private";
-
-  const doc = {
-    companyId: session.activeCompanyId,
-    type,
-    name: safeString(body?.name),
-    firstName: normalizeStoredCustomerString(body?.firstName),
-    lastName: normalizeStoredCustomerString(body?.lastName),
-    companyName: normalizeStoredCustomerString(body?.companyName),
-    email: normalizeStoredCustomerEmail(body?.email),
-    phone: safeString(body?.phone),
-    address: safeString(body?.address),
-    notes: safeString(body?.notes),
-  };
+  const doc = buildCustomerCreateDoc(body, session.activeCompanyId);
 
   const dedupTarget = buildCustomerDedupFilter({
     companyId: session.activeCompanyId,
