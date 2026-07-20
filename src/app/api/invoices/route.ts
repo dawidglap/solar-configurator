@@ -12,11 +12,14 @@ import { activeDocumentFilter } from "@/lib/trash";
 import {
   buildInvoiceDefaultBodyText,
   canWriteInvoices,
+  computeInvoiceDaysOverdue,
   ensureInvoiceIndexes,
   INVOICE_TYPES,
   getInvoicesCollection,
+  getInvoiceEventsCollection,
   nextInvoiceNumber,
   normalizeInvoice,
+  resolveInvoicePaymentAndDunningState,
 } from "@/lib/invoices";
 import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
 import { getSessionUserEmail, getSessionUserMeta, safeNumber } from "@/lib/tasks";
@@ -555,9 +558,12 @@ export async function POST(req: Request) {
       })
       .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
       .toArray();
+    const existingBaseInvoices = existingOrderInvoices.filter(
+      (doc: any) => safeString(doc?.invoiceType) === "rechnung",
+    );
 
     const nextRateNumber =
-      existingOrderInvoices.reduce(
+      existingBaseInvoices.reduce(
         (max, doc: any) => Math.max(max, safeNumber(doc?.rateIndex, 0) + 1),
         0,
       ) + 1;
@@ -571,7 +577,7 @@ export async function POST(req: Request) {
     let normalizedRateLabel = rateLabel || `Rate ${nextRateNumber}`;
     let dunningLevel = 0;
 
-    if (invoiceType === "mahnung" || invoiceType === "gutschrift") {
+    if (parentInvoiceId) {
       const parentInvoiceObjectId = toObjectIdOrNull(parentInvoiceId);
       if (!parentInvoiceObjectId) {
         return jsonResponse(origin, { ok: false, message: "parentInvoiceId ist ungültig." }, 400);
@@ -584,20 +590,24 @@ export async function POST(req: Request) {
 
       if (
         !parentInvoice ||
-        safeString(parentInvoice?.orderId) !== orderId ||
-        safeString(parentInvoice?.invoiceType) !== "rechnung"
+        safeString(parentInvoice?.orderId) !== orderId
       ) {
         return jsonResponse(origin, { ok: false, message: "parentInvoiceId ist ungültig." }, 400);
       }
 
-      rateNumber = safeNumber(parentInvoice?.rateIndex, 0) + 1;
-      rateIndex = safeNumber(parentInvoice?.rateIndex, rateNumber - 1);
-      position = safeNumber(parentInvoice?.position, rateIndex);
-      normalizedRateLabel =
-        rateLabel ||
-        safeString(parentInvoice?.rateLabel) ||
-        safeString(parentInvoice?.label) ||
-        `Rate ${rateNumber}`;
+      if (invoiceType === "mahnung" || invoiceType === "gutschrift") {
+        if (safeString(parentInvoice?.invoiceType) !== "rechnung") {
+          return jsonResponse(origin, { ok: false, message: "parentInvoiceId ist ungültig." }, 400);
+        }
+        rateNumber = safeNumber(parentInvoice?.rateIndex, 0) + 1;
+        rateIndex = safeNumber(parentInvoice?.rateIndex, rateNumber - 1);
+        position = safeNumber(parentInvoice?.position, rateIndex);
+        normalizedRateLabel =
+          rateLabel ||
+          safeString(parentInvoice?.rateLabel) ||
+          safeString(parentInvoice?.label) ||
+          `Rate ${rateNumber}`;
+      }
     }
 
     const now = new Date();
@@ -609,7 +619,10 @@ export async function POST(req: Request) {
           invoiceType: "mahnung",
         })) + 1;
     }
-    const invoiceNumber = await nextInvoiceNumber(db, companyId, now);
+    const invoiceNumber =
+      invoiceType === "rechnung" && parentInvoice
+        ? `${orderId}-R${nextRateNumber}`
+        : await nextInvoiceNumber(db, companyId, now);
     const meta = getSessionUserMeta(session);
     const createdByUserId = toObjectIdOrNull(meta.id) ?? meta.id ?? null;
     const amount =
@@ -624,6 +637,15 @@ export async function POST(req: Request) {
       dueDate ??
       addDays(now, safeNumber(companyDoc?.paymentDefaults?.termDays, 30));
     const pct = roundPct(amount, orderTotalChf);
+    const draftFinancialDefaults = resolveInvoicePaymentAndDunningState({
+      amount,
+      status: invoiceType === "mahnung" ? "mahnung" : "entwurf",
+      paidAmount: 0,
+      paymentStatus: "offen",
+      paidAt: null,
+      dunningLevel,
+      now,
+    });
 
     const doc = {
       companyId,
@@ -641,22 +663,33 @@ export async function POST(req: Request) {
       amount,
       amountChf: amount,
       currency: safeString(companyDoc?.paymentDefaults?.currency) || "CHF",
+      discountPct: safeNumber((body as any)?.discountPct, 0),
+      discountChf: safeNumber((body as any)?.discountChf, 0),
+      skontoPct: safeNumber((body as any)?.skontoPct, 0),
+      skontoChf: safeNumber((body as any)?.skontoChf, 0),
+      skontoDays: Math.max(0, Math.trunc(safeNumber((body as any)?.skontoDays, 0))),
+      mwstIncluded: (body as any)?.mwstIncluded !== false,
+      positionMenge: Math.max(0, safeNumber((body as any)?.positionMenge, 1)),
+      positionEinheit: safeString((body as any)?.positionEinheit) || "Pauschal",
+      positionPreis: safeNumber((body as any)?.positionPreis, amount),
       issueDate,
       dueDate,
-      status: invoiceType === "mahnung" ? "mahnung" : "entwurf",
-      paymentStatus: "offen",
-      paidAt: null,
-      paidAmount: 0,
+      status: draftFinancialDefaults.status,
+      paymentStatus: draftFinancialDefaults.paymentStatus,
+      paidAt: draftFinancialDefaults.paidAt,
+      paidAmount: draftFinancialDefaults.paidAmount,
       anrede: safeString((body as any)?.anrede) || undefined,
-      bodyText: buildInvoiceDefaultBodyText({
-        planning: planningAny,
-        company: companyDoc,
-        invoiceType: invoiceType as any,
-        rateIndex,
-        pct,
-        dueDate: dueDateForText,
-        dunningLevel,
-      }),
+      bodyText:
+        safeString((body as any)?.bodyText) ||
+        buildInvoiceDefaultBodyText({
+          planning: planningAny,
+          company: companyDoc,
+          invoiceType: invoiceType as any,
+          rateIndex,
+          pct,
+          dueDate: dueDateForText,
+          dunningLevel,
+        }),
       internalNote,
       pdfFileId: null,
       createdAt: now,
@@ -664,8 +697,8 @@ export async function POST(req: Request) {
       createdByUserId,
       createdByName: meta.name || "Unbekannt",
       createdByEmail: getSessionUserEmail(session) || null,
-      dunningEligible: false,
-      dunningLevel,
+      dunningEligible: draftFinancialDefaults.paymentStatus !== "bezahlt",
+      dunningLevel: draftFinancialDefaults.dunningLevel,
     };
 
     if (!doc.anrede) {

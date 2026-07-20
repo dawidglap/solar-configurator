@@ -1,5 +1,11 @@
 import { getCorsHeaders } from "@/lib/cors";
 import { getDb } from "@/lib/db";
+import {
+  computeInvoiceDaysOverdue,
+  ensureInvoiceIndexes,
+  getInvoiceEventsCollection,
+  getInvoicesCollection,
+} from "@/lib/invoices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,48 +45,68 @@ export async function POST(req: Request) {
 
   try {
     const db = await getDb();
-    const invoices = db.collection("invoices");
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    await ensureInvoiceIndexes(db);
+    const invoices = getInvoicesCollection(db);
+    const invoiceEvents = getInvoiceEventsCollection(db);
 
-    const overdue = await invoices.updateMany(
+    const candidates = await invoices.find(
       {
         invoiceType: "rechnung",
-        dueDate: { $lt: startOfToday },
-        paymentStatus: "offen",
-        status: { $ne: "storniert" },
+        status: { $in: ["versendet", "mahnung"] },
+        paymentStatus: { $ne: "bezahlt" },
+        dueDate: { $ne: null },
       },
-      {
-        $set: {
-          dunningEligible: true,
-          updatedAt: new Date(),
-        },
-      },
-    );
+    ).toArray();
 
-    const reset = await invoices.updateMany(
-      {
-        $or: [
-          { paymentStatus: { $ne: "offen" } },
-          { dueDate: { $gte: startOfToday } },
-          { status: "storniert" },
-          { invoiceType: { $ne: "rechnung" } },
-        ],
-      },
-      {
-        $set: {
-          dunningEligible: false,
-          updatedAt: new Date(),
+    let updated = 0;
+    let events = 0;
+    for (const invoice of candidates) {
+      const currentLevel = Math.max(0, Math.trunc(Number(invoice?.dunningLevel ?? 0)));
+      const daysOverdue = computeInvoiceDaysOverdue({
+        dueDate: invoice?.dueDate,
+        paymentStatus: invoice?.paymentStatus,
+      });
+      let nextLevel = currentLevel;
+
+      if (daysOverdue >= 10 && currentLevel === 1) {
+        nextLevel = 2;
+      } else if (daysOverdue >= 5 && currentLevel === 0) {
+        nextLevel = 1;
+      }
+
+      if (nextLevel === currentLevel) {
+        continue;
+      }
+
+      await invoices.updateOne(
+        { _id: invoice._id },
+        {
+          $set: {
+            dunningLevel: nextLevel,
+            status: "mahnung",
+            updatedAt: new Date(),
+            dunningEligible: true,
+          },
         },
-      },
-    );
+      );
+      await invoiceEvents.insertOne({
+        companyId: invoice.companyId,
+        invoiceId: invoice._id,
+        type: "dunning_level_up",
+        from: currentLevel,
+        to: nextLevel,
+        at: new Date(),
+      });
+      updated += 1;
+      events += 1;
+    }
 
     return jsonResponse(
       origin,
       {
         ok: true,
-        overdueUpdated: overdue.modifiedCount,
-        resetUpdated: reset.modifiedCount,
+        updated,
+        events,
       },
       200,
     );
@@ -89,4 +115,3 @@ export async function POST(req: Request) {
     return jsonResponse(origin, { ok: false, message: error?.message || "Unknown error" }, 500);
   }
 }
-

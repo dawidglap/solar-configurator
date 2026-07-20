@@ -4,11 +4,11 @@ import { readSession } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   canManageInvoicePayments,
-  computeInvoicePaymentStatus,
   ensureInvoiceIndexes,
   getInvoiceByIdForCompany,
   getInvoicesCollection,
   normalizeInvoice,
+  resolveInvoicePaymentAndDunningState,
 } from "@/lib/invoices";
 import { safeNumber } from "@/lib/tasks";
 
@@ -77,17 +77,25 @@ export async function POST(
     }
 
     const paidAmount = safeNumber(body?.paidAmount, safeNumber(existing?.amount, 0));
-    const paidAt = parseDate(body?.paidAt) ?? new Date();
-    const paymentStatus = computeInvoicePaymentStatus(safeNumber(existing?.amount, 0), paidAmount);
+    const resolved = resolveInvoicePaymentAndDunningState({
+      amount: safeNumber(existing?.amount, 0),
+      status: existing?.status,
+      paidAmount,
+      paidAt: parseDate(body?.paidAt) ?? new Date(),
+      dunningLevel: existing?.dunningLevel,
+    });
 
     const invoices = getInvoicesCollection(db);
     await invoices.updateOne(
       { _id: existing._id },
       {
         $set: {
-          paidAmount,
-          paidAt,
-          paymentStatus,
+          status: resolved.status,
+          paidAmount: resolved.paidAmount,
+          paidAt: resolved.paidAt,
+          paymentStatus: resolved.paymentStatus,
+          dunningLevel: resolved.dunningLevel,
+          dunningEligible: resolved.paymentStatus !== "bezahlt",
           updatedAt: new Date(),
         },
       },
@@ -100,4 +108,3 @@ export async function POST(
     return jsonResponse(origin, { ok: false, message: "Zahlungsstatus konnte nicht aktualisiert werden." }, 500);
   }
 }
-

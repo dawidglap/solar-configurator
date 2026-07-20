@@ -35,6 +35,8 @@ export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 export type InvoicePaymentStatus = (typeof INVOICE_PAYMENT_STATUSES)[number];
 export type PaymentTerms = (typeof VALID_PAYMENT_TERMS)[number];
 
+export type InvoiceDunningLevel = 0 | 1 | 2;
+
 type InvoiceRateSpec = {
   rateIndex: number;
   label: string;
@@ -89,6 +91,22 @@ function normalizeInvoiceStatus(value: unknown): InvoiceStatus {
 function normalizeInvoicePaymentStatus(value: unknown): InvoicePaymentStatus {
   const normalized = safeString(value).toLowerCase() as InvoicePaymentStatus;
   return INVOICE_PAYMENT_STATUSES.includes(normalized) ? normalized : "offen";
+}
+
+export function normalizeEditableInvoiceStatus(value: unknown): InvoiceStatus | null {
+  const normalized = safeString(value).toLowerCase();
+  if (!normalized) return null;
+  if (!["entwurf", "versendet", "mahnung", "storniert"].includes(normalized)) {
+    return null;
+  }
+  return normalized as InvoiceStatus;
+}
+
+export function normalizeEditableInvoiceDunningLevel(value: unknown): InvoiceDunningLevel | null {
+  if (value == null || value === "") return null;
+  const normalized = Math.trunc(safeNumber(value, Number.NaN));
+  if (![0, 1, 2].includes(normalized)) return null;
+  return normalized as InvoiceDunningLevel;
 }
 
 function extractRateSource(planning: any) {
@@ -219,8 +237,13 @@ export function getInvoicesCollection(db: Db) {
   return db.collection("invoices");
 }
 
+export function getInvoiceEventsCollection(db: Db) {
+  return db.collection("invoice_events");
+}
+
 export async function ensureInvoiceIndexes(db: Db) {
   const invoices = getInvoicesCollection(db);
+  const invoiceEvents = getInvoiceEventsCollection(db);
   await Promise.all([
     invoices.createIndex({ companyId: 1, orderId: 1, rateIndex: 1, invoiceType: 1, createdAt: 1 }),
     invoices.createIndex({ companyId: 1, invoiceNumber: 1 }, { unique: true }),
@@ -229,6 +252,8 @@ export async function ensureInvoiceIndexes(db: Db) {
     invoices.createIndex({ companyId: 1, parentInvoiceId: 1 }),
     invoices.createIndex({ companyId: 1, invoiceType: 1, createdAt: -1, _id: -1 }),
     invoices.createIndex({ companyId: 1, paymentStatus: 1, dueDate: 1, createdAt: -1, _id: -1 }),
+    invoiceEvents.createIndex({ companyId: 1, invoiceId: 1, at: -1 }),
+    invoiceEvents.createIndex({ companyId: 1, type: 1, at: -1 }),
   ]);
 }
 
@@ -351,6 +376,11 @@ export function normalizeInvoice(doc: any) {
   const issueDate = parseDate(doc?.issueDate);
   const dueDate = parseDate(doc?.dueDate);
   const paidAt = parseDate(doc?.paidAt);
+  const amount = safeNumber(doc?.amount, 0);
+  const daysOverdue = computeInvoiceDaysOverdue({
+    dueDate,
+    paymentStatus: doc?.paymentStatus,
+  });
 
   return {
     id: mongoIdToString(doc?._id),
@@ -369,6 +399,15 @@ export function normalizeInvoice(doc: any) {
     amount: safeNumber(doc?.amount, 0),
     amountChf: safeNumber(doc?.amountChf, safeNumber(doc?.amount, 0)),
     currency: safeString(doc?.currency) || "CHF",
+    discountPct: safeNumber(doc?.discountPct, 0),
+    discountChf: safeNumber(doc?.discountChf, 0),
+    skontoPct: safeNumber(doc?.skontoPct, 0),
+    skontoChf: safeNumber(doc?.skontoChf, 0),
+    skontoDays: Math.max(0, Math.trunc(safeNumber(doc?.skontoDays, 0))),
+    mwstIncluded: doc?.mwstIncluded !== false,
+    positionMenge: safeNumber(doc?.positionMenge, 1),
+    positionEinheit: safeString(doc?.positionEinheit) || "Pauschal",
+    positionPreis: safeNumber(doc?.positionPreis, amount),
     issueDate: issueDate ? issueDate.toISOString() : null,
     dueDate: dueDate ? dueDate.toISOString() : null,
     status: normalizeInvoiceStatus(doc?.status),
@@ -386,6 +425,80 @@ export function normalizeInvoice(doc: any) {
     updatedAt: parseDate(doc?.updatedAt)?.toISOString() ?? null,
     dunningEligible: Boolean(doc?.dunningEligible),
     dunningLevel: safeNumber(doc?.dunningLevel, 0),
+    daysOverdue,
+  };
+}
+
+export function computeInvoiceDaysOverdue(args: {
+  dueDate: Date | string | null | undefined;
+  paymentStatus: unknown;
+  now?: Date;
+}) {
+  const dueDate = parseDate(args.dueDate);
+  if (!dueDate) return 0;
+  if (normalizeInvoicePaymentStatus(args.paymentStatus) === "bezahlt") return 0;
+
+  const startOfToday = args.now instanceof Date ? new Date(args.now) : new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfDue = new Date(dueDate);
+  startOfDue.setHours(0, 0, 0, 0);
+  const diffDays = Math.floor((startOfToday.getTime() - startOfDue.getTime()) / 86_400_000);
+  return Math.max(0, diffDays);
+}
+
+export function resolveInvoicePaymentAndDunningState(args: {
+  amount: number;
+  status: unknown;
+  paidAmount?: unknown;
+  paymentStatus?: unknown;
+  paidAt?: unknown;
+  dunningLevel?: unknown;
+  now?: Date;
+}) {
+  const now = args.now instanceof Date ? args.now : new Date();
+  const totalAmountAbs = Math.abs(safeNumber(args.amount, 0));
+  let status = normalizeInvoiceStatus(args.status);
+  let paidAmount = Math.max(0, safeNumber(args.paidAmount, 0));
+  let paymentStatus = normalizeInvoicePaymentStatus(args.paymentStatus);
+  let paidAt = parseDate(args.paidAt);
+  let dunningLevel = normalizeEditableInvoiceDunningLevel(args.dunningLevel) ?? 0;
+
+  if (paymentStatus === "bezahlt" && paidAmount <= 0 && totalAmountAbs > 0) {
+    paidAmount = totalAmountAbs;
+  }
+  if (paymentStatus === "offen" && paidAmount <= 0.009) {
+    paidAmount = 0;
+  }
+
+  if (totalAmountAbs > 0 && paidAmount >= totalAmountAbs - 0.009) {
+    paidAmount = totalAmountAbs;
+    paymentStatus = "bezahlt";
+    paidAt = paidAt ?? now;
+  } else if (paidAmount > 0.009) {
+    paymentStatus = "teilweise";
+  } else {
+    paidAmount = 0;
+    paymentStatus = "offen";
+    paidAt = null;
+  }
+
+  if (paymentStatus === "bezahlt") {
+    dunningLevel = 0;
+    if (status === "mahnung") {
+      status = "versendet";
+    }
+  } else if (dunningLevel >= 1) {
+    status = "mahnung";
+  } else if (dunningLevel === 0 && status === "mahnung") {
+    status = "versendet";
+  }
+
+  return {
+    status,
+    paymentStatus,
+    paidAmount,
+    paidAt,
+    dunningLevel,
   };
 }
 
@@ -452,6 +565,15 @@ export async function createInvoicesForOrderIfMissing(args: CreateOrderInvoicesA
       amount,
       amountChf: amount,
       currency: safeString(args.company?.paymentDefaults?.currency) || "CHF",
+      discountPct: 0,
+      discountChf: 0,
+      skontoPct: 0,
+      skontoChf: 0,
+      skontoDays: 0,
+      mwstIncluded: true,
+      positionMenge: 1,
+      positionEinheit: "Pauschal",
+      positionPreis: amount,
       issueDate,
       dueDate: persistedDueDate,
       status: "entwurf",
