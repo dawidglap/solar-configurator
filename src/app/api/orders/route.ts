@@ -224,7 +224,12 @@ export async function GET(req: Request) {
                 invoicesOpenAmount: {
                   $sum: {
                     $cond: [
-                      { $eq: ["$paymentStatus", "bezahlt"] },
+                      {
+                        $or: [
+                          { $eq: ["$paymentStatus", "bezahlt"] },
+                          { $eq: ["$status", "storniert"] },
+                        ],
+                      },
                       0,
                       { $subtract: ["$amount", { $ifNull: ["$paidAmount", 0] }] },
                     ],

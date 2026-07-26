@@ -160,7 +160,9 @@ export async function POST(
       {
         $set: {
           pdfFileId: storedFile._id,
-          status: "heruntergeladen",
+          ...(safeString(loaded.context.invoice?.status).toLowerCase() === "storniert"
+            ? {}
+            : { status: "heruntergeladen" }),
           updatedAt: new Date(),
         },
       },

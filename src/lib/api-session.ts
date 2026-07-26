@@ -52,7 +52,15 @@ export function safeString(v: unknown) {
 
 export function toObjectIdOrNull(v: unknown) {
   try {
-    const s = safeString(v);
+    if (v instanceof ObjectId) return v;
+    const s =
+      typeof v === "string"
+        ? v.trim()
+        : typeof (v as any)?.$oid === "string"
+          ? String((v as any).$oid).trim()
+          : typeof (v as any)?.toString === "function"
+            ? String((v as any).toString()).trim()
+            : "";
     if (!s) return null;
     return new ObjectId(s);
   } catch {

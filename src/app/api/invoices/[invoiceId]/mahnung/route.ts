@@ -95,6 +95,9 @@ export async function POST(
     if (safeString(parentInvoice?.invoiceType) !== "rechnung") {
       return jsonResponse(origin, { ok: false, message: "Mahnungen können nur aus Rechnungen erstellt werden." }, 400);
     }
+    if (safeString(parentInvoice?.status).toLowerCase() === "storniert") {
+      return jsonResponse(origin, { ok: false, message: "Stornierte Rechnung ist schreibgeschützt." }, 409);
+    }
 
     if (safeString(parentInvoice?.paymentStatus) === "bezahlt") {
       return jsonResponse(origin, { ok: false, message: "Für bezahlte Rechnungen ist keine Mahnung möglich." }, 400);
@@ -160,6 +163,10 @@ export async function POST(
       createdByEmail: getSessionUserEmail(session) || null,
       dunningEligible: false,
       dunningLevel,
+      parentPreviousStatus:
+        ["versendet", "heruntergeladen"].includes(safeString(parentInvoice?.status).toLowerCase())
+          ? safeString(parentInvoice?.status).toLowerCase()
+          : null,
     };
 
     const insert = await invoices.insertOne(doc);

@@ -1,5 +1,5 @@
 import type { Db } from "mongodb";
-import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
+import { PDFDocument, PDFPage, PDFFont, degrees, rgb } from "pdf-lib";
 import { addPaymentSlipPage } from "@/app/api/plannings/[planningId]/offer/pdf/payment-slip-page";
 import { safeString, toObjectIdOrNull, type SessionPayload } from "@/lib/api-session";
 import { sanitizePdfText } from "@/lib/pdfText";
@@ -239,8 +239,24 @@ function getInvoiceFileLabel(invoice: any) {
   return `Rechnung_${safeString(invoice?.invoiceNumber) || "Dokument"}.pdf`;
 }
 
+function drawCancelledWatermark(page: PDFPage, bold: PDFFont) {
+  const text = "STORNIERT";
+  const size = 120;
+  const textWidth = bold.widthOfTextAtSize(text, size);
+  page.drawText(text, {
+    x: (page.getWidth() - textWidth) / 2,
+    y: page.getHeight() / 2 - 30,
+    size,
+    font: bold,
+    color: rgb(0.937, 0.267, 0.267),
+    rotate: degrees(-20),
+    opacity: 0.18,
+  });
+}
+
 export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   const pdf = await PDFDocument.create();
+  pdf.setTitle(`Rechnung ${safeString(args.invoice?.invoiceNumber) || "Dokument"}`);
   const page = pdf.addPage([595.28, 841.89]);
   const font = await pdf.embedFont("Helvetica");
   const bold = await pdf.embedFont("Helvetica-Bold");
@@ -249,7 +265,15 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   const cMuted = rgb(0.43, 0.49, 0.52);
   const cLine = rgb(0.82, 0.84, 0.86);
   const cSoft = rgb(0.96, 0.97, 0.97);
+  const cDanger = rgb(0.937, 0.267, 0.267);
   const marginX = 44;
+  const isCancelled = safeString(args.invoice?.status).toLowerCase() === "storniert";
+  const cancelledAt = parseDate(args.invoice?.cancelledAt);
+  const cancelledByName = safeString(args.invoice?.cancelledByName) || "Unbekannt";
+  if (isCancelled) {
+    pdf.setSubject("STORNIERT");
+    pdf.setKeywords(["STORNIERT", "storniert"]);
+  }
 
   page.drawRectangle({
     x: 0,
@@ -307,15 +331,28 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
     color: cLine,
   });
 
+  if (isCancelled) {
+    page.drawText(
+      `Storniert am ${formatDateCH(cancelledAt)} durch ${pdfText(cancelledByName)}`,
+      {
+        x: marginX,
+        y: 660,
+        size: 9,
+        font: bold,
+        color: cDanger,
+      },
+    );
+  }
+
   const recipientLines = buildRecipientLines(args.planning, args.invoice);
   page.drawText("Empfänger", {
     x: marginX,
-    y: 640,
+    y: isCancelled ? 624 : 640,
     size: 9,
     font: bold,
     color: cMuted,
   });
-  let recipientY = 622;
+  let recipientY = isCancelled ? 606 : 622;
   for (const line of recipientLines) {
     page.drawText(pdfText(line), {
       x: marginX,
@@ -496,7 +533,13 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
     });
   }
 
-  const pdfBytes = await pdf.save();
+  if (isCancelled) {
+    for (const currentPage of pdf.getPages()) {
+      drawCancelledWatermark(currentPage, bold);
+    }
+  }
+
+  const pdfBytes = await pdf.save({ useObjectStreams: false });
   return {
     pdfBytes: Buffer.from(pdfBytes),
     fileName: getInvoiceFileLabel(args.invoice),

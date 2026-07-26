@@ -1,8 +1,9 @@
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
-import { readSession, safeString } from "@/lib/api-session";
+import { readSession, safeString, toObjectIdOrNull } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import {
+  canManageInvoicePayments,
   canWriteInvoices,
   ensureInvoiceIndexes,
   getInvoiceByIdForCompany,
@@ -13,7 +14,12 @@ import {
   normalizeInvoice,
   resolveInvoicePaymentAndDunningState,
 } from "@/lib/invoices";
-import { safeNumber } from "@/lib/tasks";
+import {
+  buildPlanningFileDeletePatch,
+  getPlanningFilesCollection,
+  removePlanningFileCloudinaryAsset,
+} from "@/lib/planningFiles";
+import { getSessionUserMeta, safeNumber } from "@/lib/tasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +45,54 @@ function parseDate(value: unknown) {
 function parseOptionalDate(value: unknown) {
   if (value == null || safeString(value) === "") return null;
   return parseDate(value);
+}
+
+function resolveParentStatusAfterDeletingLastMahnung(invoice: any, parentInvoice: any) {
+  const preferred = [
+    safeString(invoice?.parentPreviousStatus).toLowerCase(),
+    safeString(parentInvoice?.previousStatusBeforeMahnung).toLowerCase(),
+  ].find((value) => value === "versendet" || value === "heruntergeladen");
+
+  if (preferred) return preferred;
+  return parentInvoice?.pdfFileId ? "heruntergeladen" : "versendet";
+}
+
+function isCancelledInvoice(invoice: any) {
+  return safeString(invoice?.status).toLowerCase() === "storniert";
+}
+
+async function cleanupInvoicePdfFile(args: {
+  db: Awaited<ReturnType<typeof getDb>>;
+  invoice: any;
+  session: any;
+}) {
+  const pdfFileObjectId = toObjectIdOrNull(args.invoice?.pdfFileId);
+  if (!pdfFileObjectId) return;
+
+  const files = getPlanningFilesCollection(args.db);
+  const existingFile = await files.findOne({
+    _id: pdfFileObjectId,
+    companyId: safeString(args.invoice?.companyId),
+    isDeleted: { $ne: true },
+  });
+  if (!existingFile) return;
+
+  try {
+    await removePlanningFileCloudinaryAsset(existingFile);
+  } catch (error) {
+    console.error("DELETE INVOICE PDF CLOUDINARY ERROR:", error);
+  }
+
+  try {
+    await files.updateOne(
+      { _id: existingFile._id },
+      {
+        $set: buildPlanningFileDeletePatch(args.session),
+      },
+    );
+  } catch (error) {
+    console.error("DELETE INVOICE PDF FILE DOC ERROR:", error);
+  }
 }
 
 export async function OPTIONS(req: Request) {
@@ -89,6 +143,152 @@ export async function GET(
   }
 }
 
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ invoiceId: string }> },
+) {
+  const origin = req.headers.get("origin");
+  const secret = process.env.SESSION_SECRET;
+
+  if (!secret) {
+    return jsonResponse(origin, { ok: false, message: "SESSION_SECRET fehlt." }, 500);
+  }
+
+  const session = readSession(req, secret);
+  if (!session?.activeCompanyId) {
+    return jsonResponse(origin, { ok: false, message: "Nicht eingeloggt." }, 401);
+  }
+
+  if (!canWriteInvoices(session)) {
+    return jsonResponse(origin, { ok: false, message: "Keine Berechtigung." }, 403);
+  }
+
+  const { invoiceId } = await params;
+
+  try {
+    const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session);
+    if (subscriptionError) return subscriptionError;
+
+    await ensureInvoiceIndexes(db);
+    const invoices = getInvoicesCollection(db);
+    const invoiceObjectId = toObjectIdOrNull(invoiceId);
+    if (!invoiceObjectId) {
+      return jsonResponse(origin, { ok: false, message: "Rechnung nicht gefunden." }, 404);
+    }
+
+    const existing = await invoices.findOne({ _id: invoiceObjectId });
+    if (!existing) {
+      return jsonResponse(origin, { ok: false, message: "Rechnung nicht gefunden." }, 404);
+    }
+
+    if (safeString(existing?.companyId) !== String(session.activeCompanyId)) {
+      return jsonResponse(origin, { ok: false, message: "Diese Rechnung gehört zu einer anderen Firma." }, 403);
+    }
+
+    const invoiceType = safeString(existing?.invoiceType).toLowerCase();
+    const paymentStatus = safeString(existing?.paymentStatus).toLowerCase();
+    const status = safeString(existing?.status).toLowerCase();
+    const companyId = String(session.activeCompanyId);
+
+    if (invoiceType === "mahnung" && paymentStatus === "bezahlt") {
+      return jsonResponse(
+        origin,
+        { ok: false, message: "Bezahlte Mahnungen können nicht gelöscht werden." },
+        409,
+      );
+    }
+
+    if (invoiceType === "rechnung") {
+      const childCount = await invoices.countDocuments({
+        companyId,
+        parentInvoiceId: existing._id,
+      });
+      const canDelete =
+        paymentStatus === "offen" &&
+        (status === "entwurf" || status === "heruntergeladen") &&
+        childCount === 0;
+      if (!canDelete) {
+        return jsonResponse(
+          origin,
+          {
+            ok: false,
+            message:
+              "Diese Rechnung kann nicht gelöscht werden, da sie bereits versendet/bezahlt oder mit Mahnung/Gutschrift verknüpft ist.",
+          },
+          409,
+        );
+      }
+    }
+
+    if (invoiceType === "mahnung") {
+      const parentInvoiceObjectId =
+        existing?.parentInvoiceId && typeof existing.parentInvoiceId === "object"
+          ? existing.parentInvoiceId
+          : toObjectIdOrNull(existing?.parentInvoiceId);
+
+      if (parentInvoiceObjectId) {
+        const remainingMahnungen = await invoices.countDocuments({
+          companyId,
+          parentInvoiceId: parentInvoiceObjectId,
+          invoiceType: "mahnung",
+          _id: { $ne: existing._id },
+        });
+
+        if (remainingMahnungen === 0) {
+          const parentInvoice = await invoices.findOne({
+            _id: parentInvoiceObjectId,
+            companyId,
+          });
+
+          if (!parentInvoice) {
+            return jsonResponse(
+              origin,
+              { ok: false, message: "Die zugehörige Elternrechnung konnte nicht gefunden werden." },
+              409,
+            );
+          }
+
+          if (safeString(parentInvoice?.status).toLowerCase() === "mahnung") {
+            if (safeNumber(parentInvoice?.dunningLevel, 0) > 0) {
+              return jsonResponse(
+                origin,
+                {
+                  ok: false,
+                  message:
+                    "Die letzte Mahnung kann nicht gelöscht werden, solange die Elternrechnung selbst auf Mahnstufe steht.",
+                },
+                409,
+              );
+            }
+
+            await invoices.updateOne(
+              { _id: parentInvoice._id },
+              {
+                $set: {
+                  status: resolveParentStatusAfterDeletingLastMahnung(existing, parentInvoice),
+                  updatedAt: new Date(),
+                },
+                $unset: {
+                  previousStatusBeforeMahnung: "",
+                },
+              },
+            );
+          }
+        }
+      }
+    }
+
+    await cleanupInvoicePdfFile({ db, invoice: existing, session });
+    await invoices.deleteOne({ _id: existing._id });
+
+    return jsonResponse(origin, { ok: true, deletedId: invoiceId }, 200);
+  } catch (error: any) {
+    console.error("DELETE INVOICE ERROR:", error);
+    return jsonResponse(origin, { ok: false, message: "Rechnung konnte nicht gelöscht werden." }, 500);
+  }
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ invoiceId: string }> },
@@ -127,8 +327,10 @@ export async function PATCH(
       return jsonResponse(origin, { ok: false, message: "Rechnung nicht gefunden." }, 404);
     }
 
+    const sessionUserMeta = getSessionUserMeta(session);
     const invoiceStatus = safeString(existing?.status).toLowerCase();
     const incomingKeys = Object.keys(body as Record<string, unknown>);
+    const requestedStatus = "status" in body ? safeString((body as any)?.status).toLowerCase() : "";
     const draftEditableFields = new Set([
       "anrede",
       "bodyText",
@@ -153,6 +355,102 @@ export async function PATCH(
       "paidAt",
       "dunningLevel",
     ]);
+
+    if (isCancelledInvoice(existing)) {
+      const allowedCancelledFields = new Set(["internalNote", "status"]);
+      const invalidCancelledField = incomingKeys.find((key) => !allowedCancelledFields.has(key));
+      if (invalidCancelledField) {
+        return jsonResponse(
+          origin,
+          { ok: false, message: "Stornierte Rechnung ist schreibgeschützt." },
+          409,
+        );
+      }
+
+      if (requestedStatus && !["storniert", "versendet", "entwurf"].includes(requestedStatus)) {
+        return jsonResponse(
+          origin,
+          { ok: false, message: "Stornierte Rechnung ist schreibgeschützt." },
+          409,
+        );
+      }
+
+      if ((requestedStatus === "versendet" || requestedStatus === "entwurf") && !canManageInvoicePayments(session)) {
+        return jsonResponse(origin, { ok: false, message: "Keine Berechtigung." }, 403);
+      }
+
+      const updateDoc: Record<string, any> = {
+        updatedAt: new Date(),
+      };
+      if ("internalNote" in body) {
+        updateDoc.internalNote = safeString((body as any)?.internalNote);
+      }
+
+      if (requestedStatus === "versendet" || requestedStatus === "entwurf") {
+        updateDoc.status = requestedStatus;
+        updateDoc.cancelledAt = null;
+        updateDoc.cancelledByUserId = null;
+        updateDoc.cancelledByName = null;
+        updateDoc.dunningEligible = safeString(existing?.paymentStatus).toLowerCase() !== "bezahlt";
+      } else if (requestedStatus === "storniert" || !requestedStatus) {
+        if (incomingKeys.length === 1 && requestedStatus === "storniert") {
+          return jsonResponse(origin, { ok: true, invoice: normalizeInvoice(existing) }, 200);
+        }
+      }
+
+      if (
+        Object.keys(updateDoc).length > 1 ||
+        ("internalNote" in body && safeString((body as any)?.internalNote) !== safeString(existing?.internalNote))
+      ) {
+        await invoices.updateOne(
+          { _id: existing._id },
+          {
+            $set: updateDoc,
+          },
+        );
+      }
+
+      const invoice = await invoices.findOne({ _id: existing._id });
+      return jsonResponse(origin, { ok: true, invoice: normalizeInvoice(invoice) }, 200);
+    }
+
+    if (requestedStatus === "storniert") {
+      const now = new Date();
+      const cancelledByName = sessionUserMeta?.name || "Unbekannt";
+      const cancelledByUserId = toObjectIdOrNull(sessionUserMeta?.id) ?? sessionUserMeta?.id ?? null;
+      const cancelPatch = {
+        status: "storniert",
+        dunningLevel: 0,
+        dunningEligible: false,
+        cancelledAt: now,
+        cancelledByUserId,
+        cancelledByName,
+        updatedAt: now,
+      };
+
+      await invoices.updateOne(
+        { _id: existing._id },
+        {
+          $set: cancelPatch,
+        },
+      );
+      await invoices.updateMany(
+        {
+          companyId: String(session.activeCompanyId),
+          parentInvoiceId: existing._id,
+          invoiceType: "mahnung",
+          status: { $ne: "storniert" },
+          paymentStatus: { $ne: "bezahlt" },
+        },
+        {
+          $set: cancelPatch,
+        },
+      );
+
+      const invoice = await invoices.findOne({ _id: existing._id });
+      return jsonResponse(origin, { ok: true, invoice: normalizeInvoice(invoice) }, 200);
+    }
+
     const lockedEditableFields = new Set([
       "internalNote",
       "dueDate",
@@ -315,7 +613,8 @@ export async function PATCH(
     updateDoc.paidAmount = resolvedState.paidAmount;
     updateDoc.paidAt = resolvedState.paidAt;
     updateDoc.dunningLevel = resolvedState.dunningLevel;
-    updateDoc.dunningEligible = resolvedState.paymentStatus !== "bezahlt";
+    updateDoc.dunningEligible =
+      updateDoc.status !== "storniert" && resolvedState.paymentStatus !== "bezahlt";
 
     await invoices.updateOne(
       { _id: existing._id },

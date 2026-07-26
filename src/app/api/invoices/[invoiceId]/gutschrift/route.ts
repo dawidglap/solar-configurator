@@ -75,6 +75,9 @@ export async function POST(
     if (!["rechnung", "mahnung"].includes(safeString(parentInvoice?.invoiceType))) {
       return jsonResponse(origin, { ok: false, message: "Gutschriften können nur aus Rechnungen oder Mahnungen erstellt werden." }, 400);
     }
+    if (safeString(parentInvoice?.status).toLowerCase() === "storniert") {
+      return jsonResponse(origin, { ok: false, message: "Stornierte Rechnung ist schreibgeschützt." }, 409);
+    }
 
     const now = new Date();
     const invoiceNumber = await nextInvoiceNumber(db, String(session.activeCompanyId), now);

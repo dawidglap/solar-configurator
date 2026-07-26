@@ -9,6 +9,8 @@
     "lint": "next lint",
     "test:customers": "npx tsx scripts/test-customers-route.ts",
     "test:generate-order": "npx tsx scripts/test-generate-order.ts",
+    "test:invoices-delete": "npx tsx scripts/test-invoices-delete.ts",
+    "test:invoices-storno": "npx tsx scripts/test-invoices-storno.ts",
     "test:invoices-state": "npx tsx scripts/test-invoices-state.ts",
     "test:auftrag-pipeline": "npx tsx scripts/test-auftrag-pipeline.ts",
     "test:checklist": "npx tsx scripts/test-checklist-patch.ts",

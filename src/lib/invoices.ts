@@ -376,11 +376,15 @@ export function normalizeInvoice(doc: any) {
   const issueDate = parseDate(doc?.issueDate);
   const dueDate = parseDate(doc?.dueDate);
   const paidAt = parseDate(doc?.paidAt);
+  const cancelledAt = parseDate(doc?.cancelledAt);
   const amount = safeNumber(doc?.amount, 0);
   const daysOverdue = computeInvoiceDaysOverdue({
     dueDate,
     paymentStatus: doc?.paymentStatus,
+    status: doc?.status,
   });
+  const status = normalizeInvoiceStatus(doc?.status);
+  const paymentStatus = normalizeInvoicePaymentStatus(doc?.paymentStatus);
 
   return {
     id: mongoIdToString(doc?._id),
@@ -410,10 +414,14 @@ export function normalizeInvoice(doc: any) {
     positionPreis: safeNumber(doc?.positionPreis, amount),
     issueDate: issueDate ? issueDate.toISOString() : null,
     dueDate: dueDate ? dueDate.toISOString() : null,
-    status: normalizeInvoiceStatus(doc?.status),
-    paymentStatus: normalizeInvoicePaymentStatus(doc?.paymentStatus),
+    status,
+    paymentStatus,
     paidAt: paidAt ? paidAt.toISOString() : null,
     paidAmount: safeNumber(doc?.paidAmount, 0),
+    cancelledAt: cancelledAt ? cancelledAt.toISOString() : null,
+    cancelledByUserId:
+      mongoIdToString(doc?.cancelledByUserId) || safeString(doc?.cancelledByUserId) || null,
+    cancelledByName: safeString(doc?.cancelledByName) || null,
     anrede: safeString(doc?.anrede),
     bodyText: safeString(doc?.bodyText),
     internalNote: safeString(doc?.internalNote),
@@ -423,7 +431,7 @@ export function normalizeInvoice(doc: any) {
     createdByEmail: safeString(doc?.createdByEmail) || null,
     createdAt: parseDate(doc?.createdAt)?.toISOString() ?? null,
     updatedAt: parseDate(doc?.updatedAt)?.toISOString() ?? null,
-    dunningEligible: Boolean(doc?.dunningEligible),
+    dunningEligible: status !== "storniert" && paymentStatus !== "bezahlt" && Boolean(doc?.dunningEligible),
     dunningLevel: safeNumber(doc?.dunningLevel, 0),
     daysOverdue,
   };
@@ -432,10 +440,12 @@ export function normalizeInvoice(doc: any) {
 export function computeInvoiceDaysOverdue(args: {
   dueDate: Date | string | null | undefined;
   paymentStatus: unknown;
+  status?: unknown;
   now?: Date;
 }) {
   const dueDate = parseDate(args.dueDate);
   if (!dueDate) return 0;
+  if (normalizeInvoiceStatus(args.status) === "storniert") return 0;
   if (normalizeInvoicePaymentStatus(args.paymentStatus) === "bezahlt") return 0;
 
   const startOfToday = args.now instanceof Date ? new Date(args.now) : new Date();
@@ -658,7 +668,11 @@ export async function resyncOrderInvoices(args: {
     .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
     .toArray();
 
-  if (existing.some((invoice) => normalizeInvoicePaymentStatus(invoice?.paymentStatus) === "bezahlt")) {
+  const existingRechnungen = existing.filter(
+    (invoice) => normalizeInvoiceType(invoice?.invoiceType) === "rechnung",
+  );
+
+  if (existingRechnungen.some((invoice) => normalizeInvoicePaymentStatus(invoice?.paymentStatus) === "bezahlt")) {
     return {
       ok: false as const,
       status: 409,
@@ -666,20 +680,156 @@ export async function resyncOrderInvoices(args: {
     };
   }
 
-  if (existing.length > 0) {
-    await invoices.deleteMany({
+  if (existingRechnungen.length === 0) {
+    const created = await createInvoicesForOrderIfMissing(args);
+    return {
+      ok: true as const,
+      status: 200,
+      invoices: created.invoices,
+    };
+  }
+
+  const createdAt = new Date();
+  const userMeta = getSessionUserMeta(args.session);
+  const createdByUserId = toObjectIdOrNull(userMeta.id) ?? userMeta.id ?? null;
+  const createdByEmail = getSessionUserEmail(args.session) || null;
+  const issueDate =
+    args.orderGeneratedAt instanceof Date && !Number.isNaN(args.orderGeneratedAt.getTime())
+      ? args.orderGeneratedAt
+      : createdAt;
+  const rates = extractInvoiceRates({
+    planning: args.planning,
+    company: args.company,
+    baseDate: issueDate,
+  });
+  const totalAmount = Number(safeNumber(args.totalInklMwst, 0).toFixed(2));
+  const existingRechnungCount = existingRechnungen.length;
+  const existingByRateIndex = new Map<number, any>();
+  for (const invoice of existingRechnungen) {
+    const rateIndex = Math.max(0, Math.trunc(safeNumber(invoice?.rateIndex, Number.NaN)));
+    if (!Number.isFinite(rateIndex) || existingByRateIndex.has(rateIndex)) continue;
+    existingByRateIndex.set(rateIndex, invoice);
+  }
+
+  let allocated = 0;
+  const newDocs: any[] = [];
+  for (let index = 0; index < rates.length; index += 1) {
+    const rate = rates[index];
+    const isLast = index === rates.length - 1;
+    const amount = isLast
+      ? Number((totalAmount - allocated).toFixed(2))
+      : Number(((safeNumber(args.totalInklMwst, 0) * rate.pct) / 100).toFixed(2));
+    allocated = Number((allocated + amount).toFixed(2));
+    const persistedDueDate = rate.dueDate ?? null;
+    const effectiveDueDateForText =
+      persistedDueDate ?? addDays(issueDate, safeNumber(args.company?.paymentDefaults?.termDays, 30));
+    const syncFields = {
+      position: rate.rateIndex,
+      label: rate.label,
+      rateLabel: rate.label,
+      pct: rate.pct,
+      percentage: rate.pct,
+      amount,
+      amountChf: amount,
+      currency: safeString(args.company?.paymentDefaults?.currency) || "CHF",
+      issueDate,
+      dueDate: persistedDueDate,
+      anrede: buildInvoiceAnrede(args.planning),
+      bodyText: buildInvoiceDefaultBodyText({
+        planning: args.planning,
+        company: args.company,
+        invoiceType: "rechnung",
+        rateIndex: rate.rateIndex,
+        pct: rate.pct,
+        dueDate: effectiveDueDateForText,
+      }),
+      updatedAt: createdAt,
+    };
+
+    const existingInvoice = existingByRateIndex.get(rate.rateIndex);
+    if (existingInvoice) {
+      await invoices.updateOne(
+        { _id: existingInvoice._id },
+        {
+          $set: syncFields,
+        },
+      );
+      continue;
+    }
+
+    if (rate.rateIndex < existingRechnungCount) {
+      continue;
+    }
+
+    const invoiceNumber = await nextInvoiceNumber(args.db, args.companyId, createdAt);
+    newDocs.push({
       companyId: args.companyId,
+      planningId: safeString(args.planning?._id?.toString?.() ?? args.planning?._id),
       orderId: args.orderId,
+      invoiceNumber,
       invoiceType: "rechnung",
-      paymentStatus: { $ne: "bezahlt" },
+      parentInvoiceId: null,
+      rateIndex: rate.rateIndex,
+      position: rate.rateIndex,
+      label: rate.label,
+      rateLabel: rate.label,
+      pct: rate.pct,
+      percentage: rate.pct,
+      amount,
+      amountChf: amount,
+      currency: safeString(args.company?.paymentDefaults?.currency) || "CHF",
+      discountPct: 0,
+      discountChf: 0,
+      skontoPct: 0,
+      skontoChf: 0,
+      skontoDays: 0,
+      mwstIncluded: true,
+      positionMenge: 1,
+      positionEinheit: "Pauschal",
+      positionPreis: amount,
+      issueDate,
+      dueDate: persistedDueDate,
+      status: "entwurf",
+      paymentStatus: "offen",
+      paidAt: null,
+      paidAmount: 0,
+      anrede: buildInvoiceAnrede(args.planning),
+      bodyText: buildInvoiceDefaultBodyText({
+        planning: args.planning,
+        company: args.company,
+        invoiceType: "rechnung",
+        rateIndex: rate.rateIndex,
+        pct: rate.pct,
+        dueDate: effectiveDueDateForText,
+      }),
+      internalNote: "",
+      pdfFileId: null,
+      createdAt,
+      updatedAt: createdAt,
+      createdByUserId,
+      createdByName: userMeta.name || "Unbekannt",
+      createdByEmail,
+      dunningEligible: false,
+      dunningLevel: 0,
     });
   }
 
-  const created = await createInvoicesForOrderIfMissing(args);
+  if (newDocs.length > 0) {
+    await invoices.insertMany(newDocs);
+  }
+
+  const synced = await invoices
+    .find({
+      companyId: args.companyId,
+      orderId: args.orderId,
+    })
+    .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
+    .toArray();
+
   return {
     ok: true as const,
     status: 200,
-    invoices: created.invoices,
+    invoices: synced,
   };
 }
 

@@ -64,6 +64,9 @@ export async function POST(
     if (!existing) {
       return jsonResponse(origin, { ok: false, message: "Rechnung nicht gefunden." }, 404);
     }
+    if (String(existing?.status).toLowerCase() === "storniert") {
+      return jsonResponse(origin, { ok: false, message: "Stornierte Rechnung ist schreibgeschützt." }, 409);
+    }
 
     const invoices = getInvoicesCollection(db);
     await invoices.updateOne(
@@ -83,4 +86,3 @@ export async function POST(
     return jsonResponse(origin, { ok: false, message: "Rechnung konnte nicht als versendet markiert werden." }, 500);
   }
 }
-
