@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test:customers": "npx tsx scripts/test-customers-route.ts",
+    "test:calendar-events": "npx tsx scripts/test-calendar-events.ts",
     "test:generate-order": "npx tsx scripts/test-generate-order.ts",
     "test:invoices-delete": "npx tsx scripts/test-invoices-delete.ts",
     "test:invoices-storno": "npx tsx scripts/test-invoices-storno.ts",
@@ -54,6 +55,7 @@
     "react-konva": "^19.0.7",
     "react-leaflet": "^5.0.0",
     "react-moveable": "^0.56.0",
+    "sanitize-html": "^2.17.6",
     "tailwind-merge": "^3.3.0",
     "zustand": "^5.0.8"
   },
@@ -64,6 +66,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sanitize-html": "^2.16.1",
     "autoprefixer": "^10.4.21",
     "dotenv": "^17.2.3",
     "eslint": "^9",
