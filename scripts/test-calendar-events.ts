@@ -26,7 +26,9 @@ async function main() {
   const companyId = companyObjectId.toString();
   const userId = new ObjectId().toString();
   const assigneeId = new ObjectId().toString();
+  const assigneeTwoId = new ObjectId().toString();
   const planningId = new ObjectId().toString();
+  const customerId = new ObjectId().toString();
   const taskId = new ObjectId().toString();
   const projectId = "PRJ-42";
   const sessionCookie = buildSessionCookie(
@@ -55,6 +57,27 @@ async function main() {
       updatedAt: now,
     });
 
+    await db.collection("customers").insertOne({
+      _id: new ObjectId(customerId),
+      companyId,
+      firstName: "Linked",
+      lastName: "Customer",
+      name: "Linked Customer",
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.collection("plannings").insertOne({
+      _id: new ObjectId(planningId),
+      companyId,
+      customerId,
+      title: "Linked Project",
+      projectId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
     await db.collection("users").insertMany([
       {
         _id: new ObjectId(userId),
@@ -72,6 +95,14 @@ async function main() {
         status: "active",
         memberships: [{ companyId: companyObjectId, role: "user", status: "active" }],
       },
+      {
+        _id: new ObjectId(assigneeTwoId),
+        firstName: "Second",
+        lastName: "Assignee",
+        email: "assignee2@example.com",
+        status: "active",
+        memberships: [{ companyId: companyObjectId, role: "user", status: "active" }],
+      },
     ]);
 
     const createRes = await postCalendarEvent(
@@ -83,19 +114,19 @@ async function main() {
         },
         body: JSON.stringify({
           title: "Montage Vorbereitung",
-          description: "Kurzbeschreibung fuer die Timeline",
+          description:
+            '<p>Rich <strong>Description</strong></p><script>alert(1)</script><span style="color:#ff0000">Rot</span>',
           startDate: "2026-07-28",
           endDate: "2026-07-29",
           startTime: "08:30",
           endTime: "12:00",
           allDay: false,
-          notes:
-            '<p style="text-align:center">Bitte <strong>Material</strong> pruefen</p><script>alert(1)</script><span style="color:#ff0000">Rot</span>',
-          assigneeUserIds: [assigneeId],
+          notes: 'Kurz <strong>Hinweis</strong> mit <a href="https://example.com">Link</a>',
+          assigneeUserIds: [userId, assigneeId],
           linkedTaskId: taskId,
           linkedPlanningId: planningId,
           linkedProjectId: projectId,
-          linkedCustomerId: "CUST-1",
+          linkedCustomerId: null,
         }),
       }),
     );
@@ -103,16 +134,30 @@ async function main() {
     const createJson = await createRes.json();
     assert.equal(createJson.ok, true);
     assert.equal(createJson.item.title, "Montage Vorbereitung");
-    assert.equal(createJson.item.description, "Kurzbeschreibung fuer die Timeline");
-    assert.equal(createJson.item.subtitle, "Kurzbeschreibung fuer die Timeline");
-    assert.equal(createJson.item.assigneeUserIds[0], assigneeId);
-    assert.equal(createJson.item.assignees[0].fullName, "Assignee User");
+    assert.equal(createJson.item.description.includes("<script"), false);
+    assert.equal(createJson.item.description.includes("<strong>Description</strong>"), true);
+    assert.equal(createJson.item.description.includes('style="color:#ff0000"'), true);
+    assert.equal(createJson.item.notes, "Kurz Hinweis mit Link");
+    assert.equal(createJson.item.subtitle, "Kurz Hinweis mit Link");
+    assert.deepEqual(createJson.item.assigneeUserIds, [userId, assigneeId]);
+    assert.equal(createJson.item.linkedProjectId, projectId);
+    assert.equal(createJson.item.linkedCustomerId, customerId);
+    assert.equal(
+      createJson.item.assignees.some((assignee: any) => assignee.id === assigneeId && assignee.fullName === "Assignee User"),
+      true,
+    );
     assert.equal(createJson.item.createdByName, "Calendar Tester");
-    assert.equal(createJson.item.notes.includes("<script"), false);
-    assert.equal(createJson.item.notes.includes('style="text-align:center"'), true);
-    assert.equal(createJson.item.notes.includes("<strong>Material</strong>"), true);
-    assert.equal(createJson.item.notes.includes('style="color:#ff0000"'), true);
-    assert.equal(createJson.item.notesPreviewHtml, createJson.item.notes);
+    assert.equal(createJson.item.notesPreviewHtml, createJson.item.description);
+
+    const notificationsAfterCreate = await db
+      .collection("notifications")
+      .find({ companyId })
+      .sort({ createdAt: 1, _id: 1 })
+      .toArray();
+    assert.equal(notificationsAfterCreate.length, 1);
+    assert.equal(String(notificationsAfterCreate[0]?.userId), assigneeId);
+    assert.equal(notificationsAfterCreate[0]?.type, "calendar_event_assigned");
+    assert.equal(notificationsAfterCreate[0]?.title, "Neuer Termin: Montage Vorbereitung");
 
     const createdId = createJson.item.id;
 
@@ -139,8 +184,10 @@ async function main() {
         },
         body: JSON.stringify({
           allDay: true,
-          description: "Ganztag Subtitle",
-          notes: '<h2 style="text-align:right">Ganztägiger Termin</h2><img src=x onerror=alert(1)>',
+          assigneeUserIds: [userId, assigneeId, assigneeTwoId],
+          description:
+            '<h2>Ganztägiger Termin</h2><img src=x onerror=alert(1)><mark style="background-color:#ffff00">Wichtig</mark>',
+          notes: "<b>Ganztag Hinweis</b>",
         }),
       }),
       { params: Promise.resolve({ eventId: createdId }) },
@@ -150,10 +197,22 @@ async function main() {
     assert.equal(patchJson.item.allDay, true);
     assert.equal(patchJson.item.startTime, null);
     assert.equal(patchJson.item.endTime, null);
-    assert.equal(patchJson.item.description, "Ganztag Subtitle");
-    assert.equal(patchJson.item.subtitle, "Ganztag Subtitle");
-    assert.equal(patchJson.item.notes.includes("<img"), false);
-    assert.equal(patchJson.item.notes.includes('style="text-align:right"'), true);
+    assert.equal(patchJson.item.description.includes("<img"), false);
+    assert.equal(patchJson.item.description.includes("<h2>Ganztägiger Termin</h2>"), true);
+    assert.equal(patchJson.item.description.includes('style="background-color:#ffff00"'), true);
+    assert.equal(patchJson.item.notes, "Ganztag Hinweis");
+    assert.equal(patchJson.item.subtitle, "Ganztag Hinweis");
+    assert.equal(patchJson.item.notesPreviewHtml, patchJson.item.description);
+
+    const notificationsAfterPatch = await db
+      .collection("notifications")
+      .find({ companyId })
+      .sort({ createdAt: 1, _id: 1 })
+      .toArray();
+    assert.equal(notificationsAfterPatch.length, 2);
+    assert.equal(String(notificationsAfterPatch[1]?.userId), assigneeTwoId);
+    assert.equal(notificationsAfterPatch[1]?.type, "calendar_event_assigned");
+    assert.equal(notificationsAfterPatch[1]?.meta?.eventId, createdId);
 
     const deleteRes = await deleteCalendarEvent(
       new Request(`http://localhost/api/calendar-events/${createdId}`, {

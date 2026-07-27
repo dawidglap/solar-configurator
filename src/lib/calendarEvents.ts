@@ -14,7 +14,8 @@ let ensureCalendarEventIndexesPromise: Promise<void> | null = null;
 
 const CALENDAR_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const CALENDAR_TIME_RE = /^\d{2}:\d{2}$/;
-const CALENDAR_DESCRIPTION_MAX_LENGTH = 500;
+const CALENDAR_DESCRIPTION_MAX_BYTES = 20 * 1024;
+const CALENDAR_NOTES_MAX_LENGTH = 500;
 const CALENDAR_ALLOWED_HTML_TAGS = [
   "p",
   "br",
@@ -89,9 +90,32 @@ function buildAssigneeFullName(user: any) {
 }
 
 function sanitizeCalendarEventDescription(value: unknown) {
-  const normalized = safeString(value);
+  const normalized = typeof value === "string" ? value.trim() : "";
   if (!normalized) return null;
-  return normalized.slice(0, CALENDAR_DESCRIPTION_MAX_LENGTH);
+  if (Buffer.byteLength(normalized, "utf8") > CALENDAR_DESCRIPTION_MAX_BYTES) {
+    throw new Error("Beschreibung ist zu lang.");
+  }
+
+  const sanitized = sanitizeHtml(normalized, {
+    allowedTags: [...CALENDAR_ALLOWED_HTML_TAGS],
+    allowedAttributes: {
+      a: ["href"],
+      span: ["style"],
+      mark: ["style"],
+    },
+    allowedSchemes: ["http", "https", "mailto", "tel"],
+    allowedStyles: {
+      span: {
+        color: [/^#[0-9a-fA-F]{3,8}$/, /^rgb(a)?\([^)]*\)$/, /^[a-zA-Z]+$/],
+      },
+      mark: {
+        color: [/^#[0-9a-fA-F]{3,8}$/, /^rgb(a)?\([^)]*\)$/, /^[a-zA-Z]+$/],
+        "background-color": [/^#[0-9a-fA-F]{3,8}$/, /^rgb(a)?\([^)]*\)$/, /^[a-zA-Z]+$/],
+      },
+    },
+  }).trim();
+
+  return sanitized || null;
 }
 
 function sanitizeCalendarEventNotes(value: unknown) {
@@ -99,40 +123,79 @@ function sanitizeCalendarEventNotes(value: unknown) {
   if (!normalized) return null;
 
   const sanitized = sanitizeHtml(normalized, {
-    allowedTags: [...CALENDAR_ALLOWED_HTML_TAGS],
-    allowedAttributes: {
-      a: ["href", "title"],
-      span: ["style"],
-      mark: ["style"],
-      p: ["style"],
-      h1: ["style"],
-      h2: ["style"],
-      h3: ["style"],
-    },
-    allowedSchemes: ["http", "https", "mailto", "tel"],
-    allowedStyles: {
-      p: {
-        "text-align": [/^(left|center|right)$/],
-      },
-      h1: {
-        "text-align": [/^(left|center|right)$/],
-      },
-      h2: {
-        "text-align": [/^(left|center|right)$/],
-      },
-      h3: {
-        "text-align": [/^(left|center|right)$/],
-      },
-      span: {
-        color: [/^#[0-9a-fA-F]{3,8}$/, /^rgb(a)?\([^)]*\)$/, /^[a-zA-Z]+$/],
-      },
-      mark: {
-        "background-color": [/^#[0-9a-fA-F]{3,8}$/, /^rgb(a)?\([^)]*\)$/, /^[a-zA-Z]+$/],
-      },
-    },
-  }).trim();
+    allowedTags: [],
+    allowedAttributes: {},
+  })
+    .replace(/\s+/g, " ")
+    .trim();
 
-  return sanitized || null;
+  if (!sanitized) return null;
+  return sanitized.slice(0, CALENDAR_NOTES_MAX_LENGTH);
+}
+
+function getPlanningProjectId(planning: any) {
+  return (
+    mongoIdToString(planning?.projectId) ||
+    safeString(planning?.projectId) ||
+    safeString(planning?.data?.projectId) ||
+    mongoIdToString(planning?._id)
+  );
+}
+
+async function resolveLinkedProjectAndCustomer(args: {
+  db: Db;
+  companyId: string;
+  linkedProjectId: string | null;
+  linkedCustomerId: string | null;
+}) {
+  let resolvedLinkedProjectId = args.linkedProjectId;
+  let resolvedLinkedCustomerId = args.linkedCustomerId;
+
+  if (resolvedLinkedProjectId) {
+    const planningObjectId = toObjectIdOrNull(resolvedLinkedProjectId);
+    const planning = await args.db.collection("plannings").findOne({
+      companyId: args.companyId,
+      $or: [
+        ...(planningObjectId ? [{ _id: planningObjectId }] : []),
+        { projectId: resolvedLinkedProjectId },
+        { "data.projectId": resolvedLinkedProjectId },
+      ],
+    });
+
+    if (!planning) {
+      throw new Error("Verknüpftes Projekt wurde im aktuellen Mandanten nicht gefunden.");
+    }
+
+    resolvedLinkedProjectId = getPlanningProjectId(planning);
+    const projectCustomerId =
+      mongoIdToString(planning?.customerId) || safeString(planning?.customerId) || null;
+
+    if (!resolvedLinkedCustomerId && projectCustomerId) {
+      resolvedLinkedCustomerId = projectCustomerId;
+    }
+  }
+
+  if (resolvedLinkedCustomerId) {
+    const customerObjectId = toObjectIdOrNull(resolvedLinkedCustomerId);
+    if (!customerObjectId) {
+      throw new Error("Verknüpfter Kunde ist ungültig.");
+    }
+
+    const customer = await args.db.collection("customers").findOne({
+      _id: customerObjectId,
+      companyId: args.companyId,
+    });
+    if (!customer) {
+      throw new Error("Verknüpfter Kunde wurde im aktuellen Mandanten nicht gefunden.");
+    }
+
+    resolvedLinkedCustomerId = mongoIdToString(customer?._id) || resolvedLinkedCustomerId;
+  }
+
+  return {
+    linkedProjectId: resolvedLinkedProjectId,
+    linkedCustomerId: resolvedLinkedCustomerId,
+  };
 }
 
 export async function resolveCalendarEventAssignees(
@@ -188,14 +251,14 @@ export function normalizeCalendarEvent(doc: any) {
     companyId: safeString(doc?.companyId),
     title: safeString(doc?.title),
     description: safeString(doc?.description) || null,
-    subtitle: safeString(doc?.description) || null,
+    subtitle: safeString(doc?.notes) || null,
     startDate: safeString(doc?.startDate),
     endDate: safeString(doc?.endDate),
     startTime: safeString(doc?.startTime) || null,
     endTime: safeString(doc?.endTime) || null,
     allDay: doc?.allDay !== false,
     notes: safeString(doc?.notes) || null,
-    notesPreviewHtml: safeString(doc?.notes) || null,
+    notesPreviewHtml: safeString(doc?.description) || null,
     assigneeUserIds: Array.isArray(doc?.assigneeUserIds)
       ? doc.assigneeUserIds.map((value: any) => safeString(value)).filter(Boolean)
       : [],
@@ -348,6 +411,13 @@ export async function buildCalendarEventInput(args: BuildCalendarEventInputArgs)
       ? safeString(args.body?.[field]) || null
       : (existingNormalized?.[field] ?? null);
 
+  const linkedReferences = await resolveLinkedProjectAndCustomer({
+    db: args.db,
+    companyId: args.companyId,
+    linkedProjectId: normalizeLinkedField("linkedProjectId"),
+    linkedCustomerId: normalizeLinkedField("linkedCustomerId"),
+  });
+
   return {
     title,
     description,
@@ -364,8 +434,8 @@ export async function buildCalendarEventInput(args: BuildCalendarEventInputArgs)
     assignees,
     linkedTaskId: normalizeLinkedField("linkedTaskId"),
     linkedPlanningId: normalizeLinkedField("linkedPlanningId"),
-    linkedProjectId: normalizeLinkedField("linkedProjectId"),
-    linkedCustomerId: normalizeLinkedField("linkedCustomerId"),
+    linkedProjectId: linkedReferences.linkedProjectId,
+    linkedCustomerId: linkedReferences.linkedCustomerId,
   } satisfies CalendarEventInput;
 }
 
@@ -381,4 +451,20 @@ export function buildCalendarEventCreatedBy(session: SessionPayload) {
 export function buildCalendarEventObjectId(value: string) {
   const objectId = toObjectIdOrNull(value);
   return objectId instanceof ObjectId ? objectId : null;
+}
+
+export function buildCalendarEventNotificationBody(event: {
+  startDate: string;
+  endDate: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  allDay?: boolean;
+}) {
+  const start = event.allDay
+    ? event.startDate
+    : [event.startDate, safeString(event.startTime)].filter(Boolean).join(" ");
+  const end = event.allDay
+    ? event.endDate
+    : [event.endDate, safeString(event.endTime)].filter(Boolean).join(" ");
+  return `${start} – ${end}`;
 }

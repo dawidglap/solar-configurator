@@ -3,12 +3,15 @@ import { getCorsHeaders } from "@/lib/cors";
 import { readSession, safeString } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import {
+  buildCalendarEventNotificationBody,
   buildCalendarEventInput,
   buildCalendarEventObjectId,
   ensureCalendarEventIndexes,
   getCalendarEventsCollection,
   normalizeCalendarEvent,
 } from "@/lib/calendarEvents";
+import { ensureNotificationIndexes, getNotificationsCollection } from "@/lib/notifications";
+import { getSessionUserMeta } from "@/lib/tasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,6 +84,7 @@ export async function PATCH(
       body,
       existing,
     });
+    const existingNormalized = normalizeCalendarEvent(existing);
 
     await collection.updateOne(
       { _id: existing._id },
@@ -93,7 +97,41 @@ export async function PATCH(
     );
 
     const stored = await collection.findOne({ _id: existing._id });
-    return jsonResponse(origin, { ok: true, item: normalizeCalendarEvent(stored) }, 200);
+    const normalized = normalizeCalendarEvent(stored);
+    const previousAssignees = new Set(existingNormalized.assigneeUserIds);
+    const addedAssigneeUserIds = normalized.assigneeUserIds.filter(
+      (userId: string) => !previousAssignees.has(userId),
+    );
+    const actorUserId = String(getSessionUserMeta(session)?.id || session?.userId || "");
+
+    if (addedAssigneeUserIds.some((userId: string) => userId !== actorUserId)) {
+      const now = new Date();
+      await ensureNotificationIndexes(db);
+      await getNotificationsCollection(db).insertMany(
+        addedAssigneeUserIds
+          .filter((userId: string) => userId !== actorUserId)
+          .map((assigneeUserId: string) => ({
+            companyId: String(session.activeCompanyId),
+            userId: assigneeUserId,
+            type: "calendar_event_assigned",
+            title: `Neuer Termin: ${normalized.title}`,
+            body: buildCalendarEventNotificationBody(normalized),
+            link: `/kalender/${normalized.id}`,
+            meta: {
+              eventId: normalized.id,
+              assignedByUserId: actorUserId || null,
+              startDate: normalized.startDate,
+              startTime: normalized.startTime,
+              allDay: normalized.allDay,
+            },
+            readAt: null,
+            createdAt: now,
+            updatedAt: now,
+          })),
+      );
+    }
+
+    return jsonResponse(origin, { ok: true, item: normalized }, 200);
   } catch (error: any) {
     const message = safeString(error?.message) || "Kalendereintrag konnte nicht aktualisiert werden.";
     const status =

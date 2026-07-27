@@ -3,6 +3,7 @@ import { getCorsHeaders } from "@/lib/cors";
 import { readSession, safeString } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import {
+  buildCalendarEventNotificationBody,
   buildCalendarEventCreatedBy,
   buildCalendarEventInput,
   ensureCalendarEventIndexes,
@@ -10,6 +11,7 @@ import {
   normalizeCalendarDate,
   normalizeCalendarEvent,
 } from "@/lib/calendarEvents";
+import { ensureNotificationIndexes, getNotificationsCollection } from "@/lib/notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -134,8 +136,36 @@ export async function POST(req: Request) {
 
     const result = await getCalendarEventsCollection(db).insertOne(doc);
     const stored = await getCalendarEventsCollection(db).findOne({ _id: result.insertedId });
+    const normalized = normalizeCalendarEvent(stored);
 
-    return jsonResponse(origin, { ok: true, item: normalizeCalendarEvent(stored) }, 200);
+    const assigneeUserIds = input.assigneeUserIds.filter(
+      (assigneeUserId: string) => assigneeUserId !== createdBy.createdByUserId,
+    );
+    if (assigneeUserIds.length > 0) {
+      await ensureNotificationIndexes(db);
+      await getNotificationsCollection(db).insertMany(
+        assigneeUserIds.map((assigneeUserId: string) => ({
+          companyId,
+          userId: assigneeUserId,
+          type: "calendar_event_assigned",
+          title: `Neuer Termin: ${normalized.title}`,
+          body: buildCalendarEventNotificationBody(normalized),
+          link: `/kalender/${normalized.id}`,
+          meta: {
+            eventId: normalized.id,
+            assignedByUserId: createdBy.createdByUserId,
+            startDate: normalized.startDate,
+            startTime: normalized.startTime,
+            allDay: normalized.allDay,
+          },
+          readAt: null,
+          createdAt: now,
+          updatedAt: now,
+        })),
+      );
+    }
+
+    return jsonResponse(origin, { ok: true, item: normalized }, 200);
   } catch (error: any) {
     const message = safeString(error?.message) || "Kalendereintrag konnte nicht erstellt werden.";
     const status =
