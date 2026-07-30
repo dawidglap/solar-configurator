@@ -34,13 +34,16 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
-function getDunningFee(company: any, level: number) {
+function getDunningFee(company: any) {
   const fees = company?.paymentDefaults?.dunningFees;
   if (Array.isArray(fees)) {
-    return Math.max(0, safeNumber(fees[level - 1], 0));
+    return Math.max(0, safeNumber(fees[0], 0));
   }
   if (fees && typeof fees === "object") {
-    return Math.max(0, safeNumber(fees[level] ?? fees[String(level)], 0));
+    return Math.max(
+      0,
+      safeNumber(fees[1] ?? fees["1"] ?? fees.default ?? fees[0] ?? fees["0"], 0),
+    );
   }
   return 0;
 }
@@ -110,30 +113,35 @@ export async function POST(
     }
 
     const invoices = getInvoicesCollection(db);
-    const existingLevel = await invoices.countDocuments({
+    const existingMahnung = await invoices.findOne({
       companyId: String(session.activeCompanyId),
       parentInvoiceId: parentInvoice._id,
       invoiceType: "mahnung",
+      status: { $ne: "storniert" },
+    }, {
+      sort: { createdAt: -1, _id: -1 },
     });
-    const dunningLevel = existingLevel + 1;
-    const fee = getDunningFee(context.company, dunningLevel);
+    const fee = getDunningFee(context.company);
     const openAmount = Math.max(0, safeNumber(parentInvoice?.amount, 0) - safeNumber(parentInvoice?.paidAmount, 0));
     const amount = Math.round((openAmount + fee) * 20) / 20;
     const issueDate = now;
     const nextDueDate = addDays(now, safeNumber(context.company?.paymentDefaults?.dunningTermDays, 10));
-    const invoiceNumber = await nextInvoiceNumber(db, String(session.activeCompanyId), now);
     const meta = getSessionUserMeta(session);
     const createdByUserId = toObjectIdOrNull(meta.id) ?? meta.id ?? null;
+    const parentPreviousStatus =
+      safeString(parentInvoice?.status).toLowerCase() === "mahnung"
+        ? safeString(parentInvoice?.previousStatusBeforeMahnung).toLowerCase() || null
+        : ["versendet", "heruntergeladen"].includes(safeString(parentInvoice?.status).toLowerCase())
+          ? safeString(parentInvoice?.status).toLowerCase()
+          : null;
 
     const doc = {
       companyId: String(session.activeCompanyId),
       planningId: safeString(parentInvoice?.planningId),
       orderId: safeString(parentInvoice?.orderId),
-      invoiceNumber,
       invoiceType: "mahnung",
       parentInvoiceId: parentInvoice._id,
       rateIndex: safeNumber(parentInvoice?.rateIndex, 0),
-      rateLabel: `${invoiceNumber}-${safeNumber(parentInvoice?.rateIndex, 0) + 1}`,
       pct: safeNumber(parentInvoice?.pct, 0),
       amount,
       baseAmount: openAmount,
@@ -141,9 +149,9 @@ export async function POST(
       issueDate,
       dueDate: nextDueDate,
       status: "mahnung",
-      paymentStatus: "offen",
-      paidAt: null,
-      paidAmount: 0,
+      paymentStatus: safeString(existingMahnung?.paymentStatus) || "offen",
+      paidAt: existingMahnung?.paidAt ?? null,
+      paidAmount: safeNumber(existingMahnung?.paidAmount, 0),
       anrede: safeString(parentInvoice?.anrede),
       bodyText: buildInvoiceDefaultBodyText({
         planning: context.planning,
@@ -152,25 +160,55 @@ export async function POST(
         rateIndex: safeNumber(parentInvoice?.rateIndex, 0),
         pct: safeNumber(parentInvoice?.pct, 0),
         dueDate: nextDueDate,
-        dunningLevel,
       }),
-      internalNote: "",
-      pdfFileId: null,
-      createdAt: now,
+      internalNote: safeString(existingMahnung?.internalNote),
       updatedAt: now,
-      createdByUserId,
-      createdByName: meta.name || "Unbekannt",
-      createdByEmail: getSessionUserEmail(session) || null,
+      dunningSentAt: now,
       dunningEligible: false,
-      dunningLevel,
-      parentPreviousStatus:
-        ["versendet", "heruntergeladen"].includes(safeString(parentInvoice?.status).toLowerCase())
-          ? safeString(parentInvoice?.status).toLowerCase()
-          : null,
+      dunningLevel: 1,
+      parentPreviousStatus,
     };
 
-    const insert = await invoices.insertOne(doc);
-    const invoice = await invoices.findOne({ _id: insert.insertedId });
+    await invoices.updateOne(
+      { _id: parentInvoice._id },
+      {
+        $set: {
+          status: "mahnung",
+          dunningSentAt: now,
+          dunningEligible: false,
+          dunningLevel: 1,
+          updatedAt: now,
+          previousStatusBeforeMahnung: parentPreviousStatus,
+        },
+      },
+    );
+
+    let reminderInvoiceId = existingMahnung?._id ?? null;
+    if (existingMahnung?._id) {
+      await invoices.updateOne(
+        { _id: existingMahnung._id },
+        {
+          $set: doc,
+        },
+      );
+    } else {
+      const invoiceNumber = await nextInvoiceNumber(db, String(session.activeCompanyId), now);
+      const rateLabel = `${invoiceNumber}-${safeNumber(parentInvoice?.rateIndex, 0) + 1}`;
+      const insert = await invoices.insertOne({
+        ...doc,
+        invoiceNumber,
+        rateLabel,
+        label: rateLabel,
+        pdfFileId: null,
+        createdAt: now,
+        createdByUserId,
+        createdByName: meta.name || "Unbekannt",
+        createdByEmail: getSessionUserEmail(session) || null,
+      });
+      reminderInvoiceId = insert.insertedId;
+    }
+
+    const invoice = reminderInvoiceId ? await invoices.findOne({ _id: reminderInvoiceId }) : null;
     return jsonResponse(origin, { ok: true, invoice: normalizeInvoice(invoice) }, 200);
   } catch (error: any) {
     console.error("POST INVOICE DUNNING ERROR:", error);

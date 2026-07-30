@@ -159,7 +159,7 @@ async function main() {
         createdAt: now,
         updatedAt: now,
         dunningEligible: true,
-        dunningLevel: 0,
+        dunningLevel: 1,
       },
       {
         _id: mahnungId,

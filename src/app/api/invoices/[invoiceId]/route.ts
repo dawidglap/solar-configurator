@@ -9,7 +9,6 @@ import {
   getInvoiceByIdForCompany,
   getInvoicesCollection,
   INVOICE_PAYMENT_STATUSES,
-  normalizeEditableInvoiceDunningLevel,
   normalizeEditableInvoiceStatus,
   normalizeInvoice,
   resolveInvoicePaymentAndDunningState,
@@ -250,18 +249,6 @@ export async function DELETE(
           }
 
           if (safeString(parentInvoice?.status).toLowerCase() === "mahnung") {
-            if (safeNumber(parentInvoice?.dunningLevel, 0) > 0) {
-              return jsonResponse(
-                origin,
-                {
-                  ok: false,
-                  message:
-                    "Die letzte Mahnung kann nicht gelöscht werden, solange die Elternrechnung selbst auf Mahnstufe steht.",
-                },
-                409,
-              );
-            }
-
             await invoices.updateOne(
               { _id: parentInvoice._id },
               {
@@ -579,13 +566,6 @@ export async function PATCH(
       }
       updateDoc.paidAt = paidAt;
     }
-    if ("dunningLevel" in body) {
-      const dunningLevel = normalizeEditableInvoiceDunningLevel((body as any)?.dunningLevel);
-      if (dunningLevel == null) {
-        return jsonResponse(origin, { ok: false, message: "Mahnstufe ist ungültig." }, 400);
-      }
-      updateDoc.dunningLevel = dunningLevel;
-    }
     if ("paymentStatus" in body) {
       const paymentStatus = safeString((body as any)?.paymentStatus).toLowerCase();
       if (!INVOICE_PAYMENT_STATUSES.includes(paymentStatus as any)) {
@@ -606,7 +586,6 @@ export async function PATCH(
       paidAmount: "paidAmount" in updateDoc ? updateDoc.paidAmount : existing?.paidAmount,
       paymentStatus: "paymentStatus" in updateDoc ? updateDoc.paymentStatus : existing?.paymentStatus,
       paidAt: "paidAt" in updateDoc ? updateDoc.paidAt : existing?.paidAt,
-      dunningLevel: "dunningLevel" in updateDoc ? updateDoc.dunningLevel : existing?.dunningLevel,
     });
     updateDoc.status = resolvedState.status;
     updateDoc.paymentStatus = resolvedState.paymentStatus;

@@ -210,7 +210,7 @@ async function main() {
         createdAt: now,
         updatedAt: now,
         dunningEligible: false,
-        dunningLevel: 2,
+        dunningLevel: 1,
       },
     ]);
 

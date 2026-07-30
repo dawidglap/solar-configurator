@@ -226,8 +226,7 @@ function buildRecipientLines(planning: any, invoice: any) {
 function getInvoiceHeading(invoice: any) {
   const invoiceType = safeString(invoice?.invoiceType).toLowerCase() as InvoiceType;
   if (invoiceType === "mahnung") {
-    const level = Math.max(1, safeNumber(invoice?.dunningLevel, 1));
-    return `${level}. Mahnung`;
+    return "Mahnung";
   }
   if (invoiceType === "gutschrift") {
     return "Gutschrift";

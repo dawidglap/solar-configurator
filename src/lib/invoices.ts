@@ -35,7 +35,7 @@ export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 export type InvoicePaymentStatus = (typeof INVOICE_PAYMENT_STATUSES)[number];
 export type PaymentTerms = (typeof VALID_PAYMENT_TERMS)[number];
 
-export type InvoiceDunningLevel = 0 | 1 | 2;
+export type InvoiceDunningLevel = 0 | 1;
 
 type InvoiceRateSpec = {
   rateIndex: number;
@@ -105,8 +105,12 @@ export function normalizeEditableInvoiceStatus(value: unknown): InvoiceStatus | 
 export function normalizeEditableInvoiceDunningLevel(value: unknown): InvoiceDunningLevel | null {
   if (value == null || value === "") return null;
   const normalized = Math.trunc(safeNumber(value, Number.NaN));
-  if (![0, 1, 2].includes(normalized)) return null;
-  return normalized as InvoiceDunningLevel;
+  if (!Number.isFinite(normalized)) return null;
+  return normalized >= 1 ? 1 : 0;
+}
+
+function deriveLegacyDunningLevel(status: unknown): InvoiceDunningLevel {
+  return normalizeInvoiceStatus(status) === "mahnung" ? 1 : 0;
 }
 
 function extractRateSource(planning: any) {
@@ -351,7 +355,7 @@ export function buildInvoiceDefaultBodyText(args: {
       "",
       `für die Rate ${args.rateIndex + 1} unserer Photovoltaik-Anlage ist der offene Betrag weiterhin ausstehend.`,
       `Bitte begleichen Sie die Forderung bis spätestens ${dueDateLabel}.`,
-      args.dunningLevel ? `${args.dunningLevel}. Mahnung` : "Mahnung",
+      "Mahnung",
     ].join("\n");
   }
 
@@ -377,6 +381,7 @@ export function normalizeInvoice(doc: any) {
   const dueDate = parseDate(doc?.dueDate);
   const paidAt = parseDate(doc?.paidAt);
   const cancelledAt = parseDate(doc?.cancelledAt);
+  const dunningSentAt = parseDate(doc?.dunningSentAt);
   const amount = safeNumber(doc?.amount, 0);
   const daysOverdue = computeInvoiceDaysOverdue({
     dueDate,
@@ -418,6 +423,7 @@ export function normalizeInvoice(doc: any) {
     paymentStatus,
     paidAt: paidAt ? paidAt.toISOString() : null,
     paidAmount: safeNumber(doc?.paidAmount, 0),
+    dunningSentAt: dunningSentAt ? dunningSentAt.toISOString() : null,
     cancelledAt: cancelledAt ? cancelledAt.toISOString() : null,
     cancelledByUserId:
       mongoIdToString(doc?.cancelledByUserId) || safeString(doc?.cancelledByUserId) || null,
@@ -432,7 +438,7 @@ export function normalizeInvoice(doc: any) {
     createdAt: parseDate(doc?.createdAt)?.toISOString() ?? null,
     updatedAt: parseDate(doc?.updatedAt)?.toISOString() ?? null,
     dunningEligible: status !== "storniert" && paymentStatus !== "bezahlt" && Boolean(doc?.dunningEligible),
-    dunningLevel: safeNumber(doc?.dunningLevel, 0),
+    dunningLevel: deriveLegacyDunningLevel(status),
     daysOverdue,
   };
 }
@@ -471,7 +477,6 @@ export function resolveInvoicePaymentAndDunningState(args: {
   let paidAmount = Math.max(0, safeNumber(args.paidAmount, 0));
   let paymentStatus = normalizeInvoicePaymentStatus(args.paymentStatus);
   let paidAt = parseDate(args.paidAt);
-  let dunningLevel = normalizeEditableInvoiceDunningLevel(args.dunningLevel) ?? 0;
 
   if (paymentStatus === "bezahlt" && paidAmount <= 0 && totalAmountAbs > 0) {
     paidAmount = totalAmountAbs;
@@ -493,14 +498,9 @@ export function resolveInvoicePaymentAndDunningState(args: {
   }
 
   if (paymentStatus === "bezahlt") {
-    dunningLevel = 0;
     if (status === "mahnung") {
       status = "versendet";
     }
-  } else if (dunningLevel >= 1) {
-    status = "mahnung";
-  } else if (dunningLevel === 0 && status === "mahnung") {
-    status = "versendet";
   }
 
   return {
@@ -508,7 +508,7 @@ export function resolveInvoicePaymentAndDunningState(args: {
     paymentStatus,
     paidAmount,
     paidAt,
-    dunningLevel,
+    dunningLevel: deriveLegacyDunningLevel(status),
   };
 }
 

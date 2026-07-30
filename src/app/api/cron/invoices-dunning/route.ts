@@ -61,41 +61,34 @@ export async function POST(req: Request) {
     let updated = 0;
     let events = 0;
     for (const invoice of candidates) {
-      const currentLevel = Math.max(0, Math.trunc(Number(invoice?.dunningLevel ?? 0)));
       const daysOverdue = computeInvoiceDaysOverdue({
         dueDate: invoice?.dueDate,
         paymentStatus: invoice?.paymentStatus,
+        status: invoice?.status,
       });
-      let nextLevel = currentLevel;
-
-      if (daysOverdue >= 10 && currentLevel === 1) {
-        nextLevel = 2;
-      } else if (daysOverdue >= 5 && currentLevel === 0) {
-        nextLevel = 1;
-      }
-
-      if (nextLevel === currentLevel) {
+      const currentStatus = String(invoice?.status ?? "").toLowerCase();
+      if (daysOverdue <= 0 || currentStatus === "mahnung") {
         continue;
       }
 
+      const now = new Date();
       await invoices.updateOne(
         { _id: invoice._id },
         {
           $set: {
-            dunningLevel: nextLevel,
             status: "mahnung",
-            updatedAt: new Date(),
-            dunningEligible: true,
+            dunningSentAt: now,
+            dunningLevel: 1,
+            updatedAt: now,
+            dunningEligible: false,
           },
         },
       );
       await invoiceEvents.insertOne({
         companyId: invoice.companyId,
         invoiceId: invoice._id,
-        type: "dunning_level_up",
-        from: currentLevel,
-        to: nextLevel,
-        at: new Date(),
+        type: "dunning_sent",
+        at: now,
       });
       updated += 1;
       events += 1;

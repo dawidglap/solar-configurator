@@ -575,8 +575,6 @@ export async function POST(req: Request) {
     let rateIndex = nextRateNumber - 1;
     let position = nextPosition;
     let normalizedRateLabel = rateLabel || `Rate ${nextRateNumber}`;
-    let dunningLevel = 0;
-
     if (parentInvoiceId) {
       const parentInvoiceObjectId = toObjectIdOrNull(parentInvoiceId);
       if (!parentInvoiceObjectId) {
@@ -611,14 +609,6 @@ export async function POST(req: Request) {
     }
 
     const now = new Date();
-    if (invoiceType === "mahnung") {
-      dunningLevel =
-        (await invoices.countDocuments({
-          companyId,
-          parentInvoiceId: parentInvoice._id,
-          invoiceType: "mahnung",
-        })) + 1;
-    }
     const invoiceNumber =
       invoiceType === "rechnung" && parentInvoice
         ? `${orderId}-R${nextRateNumber}`
@@ -643,7 +633,6 @@ export async function POST(req: Request) {
       paidAmount: 0,
       paymentStatus: "offen",
       paidAt: null,
-      dunningLevel,
       now,
     });
 
@@ -678,6 +667,7 @@ export async function POST(req: Request) {
       paymentStatus: draftFinancialDefaults.paymentStatus,
       paidAt: draftFinancialDefaults.paidAt,
       paidAmount: draftFinancialDefaults.paidAmount,
+      dunningSentAt: invoiceType === "mahnung" ? now : null,
       anrede: safeString((body as any)?.anrede) || undefined,
       bodyText:
         safeString((body as any)?.bodyText) ||
@@ -688,7 +678,6 @@ export async function POST(req: Request) {
           rateIndex,
           pct,
           dueDate: dueDateForText,
-          dunningLevel,
         }),
       internalNote,
       pdfFileId: null,

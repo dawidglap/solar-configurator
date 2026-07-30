@@ -242,6 +242,7 @@ async function main() {
         rateLabel: "Neue Rate",
         bodyText: "Geaenderter Text",
         amount: 1500,
+        dunningLevel: 2,
         discountPct: 5,
         discountChf: 75,
         skontoPct: 2,
@@ -262,6 +263,7 @@ async function main() {
     assert.equal(draftPatchJson?.invoice?.amount, 1500);
     assert.equal(draftPatchJson?.invoice?.discountPct, 5);
     assert.equal(draftPatchJson?.invoice?.positionEinheit, "Stk");
+    assert.equal(draftPatchJson?.invoice?.dunningLevel, 0);
 
     const draftGetRes = await getInvoiceById(
       new Request(`http://localhost/api/invoices/${draftInvoiceId}`, {
@@ -320,9 +322,10 @@ async function main() {
     const overdueAfterCron = await db.collection("invoices").findOne({ _id: overdueInvoiceId });
     assert.equal(overdueAfterCron?.dunningLevel, 1);
     assert.equal(overdueAfterCron?.status, "mahnung");
+    assert.ok(overdueAfterCron?.dunningSentAt);
     const event = await db.collection("invoice_events").findOne({
       invoiceId: overdueInvoiceId,
-      type: "dunning_level_up",
+      type: "dunning_sent",
     });
     assert.ok(event, "missing dunning event");
 

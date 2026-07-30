@@ -18,6 +18,7 @@
     "test:execution-tasks": "npx tsx scripts/test-execution-tasks.ts",
     "backfill:auftrag-pipeline": "npx tsx scripts/backfill-auftrag-pipeline.ts",
     "backfill:company-subscriptions": "npx tsx scripts/backfill-company-subscriptions.ts",
+    "backfill:invoice-dunning-status": "npx tsx scripts/backfill-invoice-dunning-status.ts",
     "backfill:execution-tasks": "npx tsx scripts/backfill-execution-tasks.ts",
     "backfill:order-files": "npx tsx scripts/backfill-order-files.ts",
     "migrate:montages-to-execution-tasks": "npx tsx scripts/migrate-montages-to-execution-tasks.ts",
