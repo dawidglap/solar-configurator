@@ -32,6 +32,8 @@ type PaymentSlipPageData = {
   additionalInformation: string;
   showPreviewWatermark?: boolean;
   showIbanWarning?: boolean;
+  paymentPartPdfBytes?: Buffer | null;
+  showPaymentPartPlaceholder?: boolean;
 };
 
 const PAGE_W = 595.28;
@@ -565,4 +567,24 @@ export async function addPaymentSlipPage(pdf: PDFDocument, data: PaymentSlipPage
 
   drawLine(page, MARGIN_X, BOTTOM_Y, PAGE_W - MARGIN_X, BOTTOM_Y, 0.6);
   drawText(page, safeString(data.documentNumberLabel), MARGIN_X, BOTTOM_Y - 16, 7.5, font, C.muted);
+
+  if (data.paymentPartPdfBytes || data.showPaymentPartPlaceholder === false) {
+    page.drawRectangle({
+      x: 0,
+      y: 0,
+      width: PAGE_W,
+      height: cutY,
+      color: C.white,
+    });
+  }
+
+  if (data.paymentPartPdfBytes) {
+    const [paymentPart] = await pdf.embedPdf(data.paymentPartPdfBytes, [0]);
+    page.drawPage(paymentPart, {
+      x: 0,
+      y: 0,
+      width: mmToPt(210),
+      height: mmToPt(105),
+    });
+  }
 }

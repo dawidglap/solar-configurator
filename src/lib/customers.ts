@@ -24,6 +24,7 @@ export const CUSTOMER_PUBLIC_PROJECTION = {
   streetNo: 1,
   zip: 1,
   city: 1,
+  country: 1,
   buildingStreet: 1,
   buildingStreetNo: 1,
   buildingZip: 1,
@@ -86,6 +87,11 @@ export function normalizeStoredCustomerEmail(v: unknown) {
   return value || null;
 }
 
+export function normalizeStoredCustomerCountry(v: unknown) {
+  const value = safeCustomerString(v).toUpperCase();
+  return /^[A-Z]{2}$/.test(value) ? value : "CH";
+}
+
 export function computeCustomerAddress(doc: any) {
   const street = safeCustomerString(doc?.street);
   const streetNo = safeCustomerString(doc?.streetNo);
@@ -126,6 +132,7 @@ export function normalizeCustomerDoc(doc: any) {
     streetNo: doc.streetNo ?? "",
     zip: doc.zip ?? "",
     city: doc.city ?? "",
+    country: normalizeStoredCustomerCountry(doc.country),
     buildingStreet: doc.buildingStreet ?? "",
     buildingStreetNo: doc.buildingStreetNo ?? "",
     buildingZip: doc.buildingZip ?? "",
@@ -161,6 +168,7 @@ export function buildCustomerCreateDoc(body: any, companyId: string) {
     streetNo: normalizeStoredCustomerString(body?.streetNo),
     zip: normalizeStoredCustomerString(body?.zip),
     city: normalizeStoredCustomerString(body?.city),
+    country: normalizeStoredCustomerCountry(body?.country),
     buildingStreet: normalizeStoredCustomerString(body?.buildingStreet),
     buildingStreetNo: normalizeStoredCustomerString(body?.buildingStreetNo),
     buildingZip: normalizeStoredCustomerString(body?.buildingZip),
@@ -189,6 +197,10 @@ export function buildCustomerPatchSet(body: any) {
 
   if (hasOwn("companyName") || hasOwn("company")) {
     setObj.companyName = normalizeStoredCustomerString(body?.companyName ?? body?.company);
+  }
+
+  if (hasOwn("country")) {
+    setObj.country = normalizeStoredCustomerCountry(body?.country);
   }
 
   if (hasOwn("tags")) {
@@ -311,6 +323,10 @@ export function ensureCustomerIndexes(db: Db) {
       await customers.updateMany(
         { lastName: "" },
         { $set: { lastName: null } }
+      );
+      await customers.updateMany(
+        { $or: [{ country: { $exists: false } }, { country: null }, { country: "" }] },
+        { $set: { country: "CH" } },
       );
 
       await customers.createIndex(

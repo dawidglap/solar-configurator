@@ -200,6 +200,8 @@ export async function POST(
         rateLabel,
         label: rateLabel,
         pdfFileId: null,
+        qrReference: null,
+        qrReferenceType: null,
         createdAt: now,
         createdByUserId,
         createdByName: meta.name || "Unbekannt",

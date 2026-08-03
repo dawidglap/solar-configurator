@@ -69,6 +69,38 @@ function safeNullableObjectIdString(v: unknown) {
   }
 }
 
+function isPlainObject(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
+}
+
+function deepMergeProfile(base: any, patch: any): any {
+  if (!isPlainObject(patch)) return patch;
+  const merged: Record<string, any> = isPlainObject(base) ? { ...base } : {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (["__proto__", "prototype", "constructor"].includes(key) || value === undefined) continue;
+    merged[key] = isPlainObject(value) ? deepMergeProfile(merged[key], value) : value;
+  }
+  return merged;
+}
+
+function normalizeQrBill(value: any) {
+  const referenceType = safeString(value?.referenceType).toUpperCase();
+  const language = safeString(value?.language).toLowerCase();
+  return {
+    enabled: typeof value?.enabled === "boolean" ? value.enabled : true,
+    referenceType: ["QRR", "SCOR", "NON"].includes(referenceType) ? referenceType : "NON",
+    qrIban: safeString(value?.qrIban),
+    language: ["de", "fr", "it", "en"].includes(language) ? language : "de",
+    creditor: {
+      street: safeString(value?.creditor?.street),
+      houseNumber: safeString(value?.creditor?.houseNumber),
+      zip: safeString(value?.creditor?.zip),
+      city: safeString(value?.creditor?.city),
+      country: safeString(value?.creditor?.country).toUpperCase(),
+    },
+  };
+}
+
 function jsonResponse(origin: string | null, body: any, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -117,6 +149,8 @@ function buildDefaultCompanyProfile(company: any, documents?: any) {
         safeString(company?.bank?.accountHolder) || safeString(company?.billing?.accountHolder),
       bicSwift: safeString(company?.bank?.bicSwift) || safeString(company?.billing?.bic),
     },
+
+    qrBill: normalizeQrBill(company?.qrBill),
 
     paymentDefaults: {
       termDays:
@@ -222,6 +256,8 @@ function normalizePatchInput(body: any) {
       accountHolder: safeString(body?.bank?.accountHolder),
       bicSwift: safeString(body?.bank?.bicSwift),
     },
+
+    qrBill: normalizeQrBill(body?.qrBill),
 
     paymentDefaults: {
       termDays:
@@ -373,14 +409,13 @@ export async function PATCH(req: Request) {
     return jsonResponse(origin, { ok: false, error: "Invalid JSON body" }, 400);
   }
 
-  const normalized = normalizePatchInput(body);
-
-
   try {
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const companies = db.collection("companies");
+    const existingCompany = await companies.findOne({ _id: companyObjectId });
+    const normalized = normalizePatchInput(deepMergeProfile(existingCompany ?? {}, body));
 
     const updateDoc = {
       $set: {
@@ -395,6 +430,7 @@ export async function PATCH(req: Request) {
         contact: normalized.contact,
         billing: normalized.billing,
         bank: normalized.bank,
+        qrBill: normalized.qrBill,
         paymentDefaults: normalized.paymentDefaults,
         templates: normalized.templates,
         branding: normalized.branding,

@@ -114,6 +114,8 @@ export async function POST(
       }),
       internalNote: "",
       pdfFileId: null,
+      qrReference: null,
+      qrReferenceType: null,
       createdAt: now,
       updatedAt: now,
       createdByUserId,

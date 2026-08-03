@@ -12,11 +12,13 @@ import {
 } from "@/lib/planningFiles";
 import { getSessionUserEmail, getSessionUserMeta, safeNumber } from "@/lib/tasks";
 import { getInvoiceByIdForCompany, type InvoiceType } from "@/lib/invoices";
+import { createInvoiceQrPaymentPart } from "@/lib/swissQrBill";
 
 type BuildInvoicePdfArgs = {
   invoice: any;
   planning: any;
   company: any;
+  customer?: any | null;
 };
 
 type PersistInvoicePdfArgs = {
@@ -497,7 +499,16 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
     color: cMuted,
   });
 
+  let qrBillWarning: string | null = null;
   if (safeString(args.invoice?.invoiceType) !== "gutschrift") {
+    const qrPaymentPart = await createInvoiceQrPaymentPart({
+      invoice: args.invoice,
+      planning: args.planning,
+      company: args.company,
+      customer: args.customer,
+    });
+    qrBillWarning = qrPaymentPart.qrBillWarning;
+
     await addPaymentSlipPage(pdf, {
       documentType: "auftrag",
       documentNumber: pdfText(args.invoice?.invoiceNumber) || "-",
@@ -529,6 +540,8 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
       additionalInformation: `${pdfText(args.invoice?.orderId) || pdfText(args.invoice?.invoiceNumber)} vom ${formatDateCH(issueDate)}`,
       showPreviewWatermark: false,
       showIbanWarning: !safeString(bank.iban),
+      paymentPartPdfBytes: qrPaymentPart.paymentPartPdfBytes,
+      showPaymentPartPlaceholder: false,
     });
   }
 
@@ -542,6 +555,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   return {
     pdfBytes: Buffer.from(pdfBytes),
     fileName: getInvoiceFileLabel(args.invoice),
+    qrBillWarning,
   };
 }
 
@@ -640,5 +654,13 @@ export async function getInvoiceContextById(args: {
   });
   if (!company) return null;
 
-  return { invoice, planning, company };
+  const customerObjectId = toObjectIdOrNull(planning.customerId);
+  const customer = customerObjectId
+    ? await args.db.collection("customers").findOne({
+        _id: customerObjectId,
+        companyId: { $in: [args.companyId, companyObjectId] },
+      })
+    : null;
+
+  return { invoice, planning, company, customer };
 }

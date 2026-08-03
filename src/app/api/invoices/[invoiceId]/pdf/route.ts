@@ -4,6 +4,7 @@ import { readSession, safeString } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { canWriteInvoices, ensureInvoiceIndexes, getInvoicesCollection } from "@/lib/invoices";
 import { buildInvoicePdf, getInvoiceContextById, persistInvoicePdfFile } from "@/lib/invoicePdf";
+import { ensureInvoiceQrReference } from "@/lib/swissQrBill";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,10 +106,17 @@ export async function GET(
       return loaded.response;
     }
 
-    const { pdfBytes, fileName } = await buildInvoicePdf({
+    const invoice = await ensureInvoiceQrReference({
+      db: loaded.db,
+      companyId: String(loaded.session.activeCompanyId),
       invoice: loaded.context.invoice,
+      company: loaded.context.company,
+    });
+    const { pdfBytes, fileName, qrBillWarning } = await buildInvoicePdf({
+      invoice,
       planning: loaded.context.planning,
       company: loaded.context.company,
+      customer: loaded.context.customer,
     });
 
     return new Response(pdfBytes, {
@@ -117,6 +125,7 @@ export async function GET(
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename=\"${fileName}\"`,
         "Cache-Control": "private, max-age=30",
+        ...(qrBillWarning ? { "X-QR-Bill-Warning": qrBillWarning } : {}),
         ...getCorsHeaders(loaded.origin),
       },
     });
@@ -138,10 +147,17 @@ export async function POST(
       return loaded.response;
     }
 
-    const { pdfBytes, fileName } = await buildInvoicePdf({
+    const invoice = await ensureInvoiceQrReference({
+      db: loaded.db,
+      companyId: String(loaded.session.activeCompanyId),
       invoice: loaded.context.invoice,
+      company: loaded.context.company,
+    });
+    const { pdfBytes, fileName, qrBillWarning } = await buildInvoicePdf({
+      invoice,
       planning: loaded.context.planning,
       company: loaded.context.company,
+      customer: loaded.context.customer,
     });
 
     const storedFile = await persistInvoicePdfFile({
@@ -150,7 +166,7 @@ export async function POST(
       invoiceId,
       planningId: String(loaded.context.invoice.planningId),
       customerId: safeString(loaded.context.planning?.customerId) || null,
-      invoice: loaded.context.invoice,
+      invoice,
       buffer: pdfBytes,
       session: loaded.session,
     });
@@ -174,6 +190,7 @@ export async function POST(
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename=\"${fileName}\"`,
         "Cache-Control": "no-store",
+        ...(qrBillWarning ? { "X-QR-Bill-Warning": qrBillWarning } : {}),
         ...getCorsHeaders(loaded.origin),
       },
     });
