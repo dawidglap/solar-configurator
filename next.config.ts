@@ -2,6 +2,10 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["pdfkit"],
+  outputFileTracingIncludes: {
+    "/api/invoices/*/pdf": ["./node_modules/pdfkit/js/data/*.afm"],
+  },
   eslint: {
     // ✅ Disabilita i controlli ESLint durante il build (anche su Vercel)
     ignoreDuringBuilds: true,

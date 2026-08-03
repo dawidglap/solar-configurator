@@ -28,7 +28,10 @@ export function getCorsHeaders(origin: string | null) {
     ...(isAllowed ? { "Access-Control-Allow-Origin": origin } : {}),
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Methods": "GET,POST, PUT, PATCH,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    // The CRM uses authenticated cross-origin requests and explicitly sends
+    // Cache-Control for uncached PDF previews. Both headers must pass the
+    // preflight before the invoice renderer can be reached.
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Cache-Control",
     "Access-Control-Expose-Headers": "X-QR-Bill-Warning",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",

@@ -17,6 +17,7 @@
     "test:checklist": "npx tsx scripts/test-checklist-patch.ts",
     "test:execution-tasks": "npx tsx scripts/test-execution-tasks.ts",
     "test:swiss-qr-bill": "tsx --test tests/swissQrBill.test.ts",
+    "test:cors": "tsx --test tests/cors.test.ts",
     "backfill:auftrag-pipeline": "npx tsx scripts/backfill-auftrag-pipeline.ts",
     "backfill:company-subscriptions": "npx tsx scripts/backfill-company-subscriptions.ts",
     "backfill:invoice-dunning-status": "npx tsx scripts/backfill-invoice-dunning-status.ts",
