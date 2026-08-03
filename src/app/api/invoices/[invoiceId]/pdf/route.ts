@@ -81,6 +81,43 @@ async function loadInvoicePdfContext(args: {
   };
 }
 
+async function renderLoadedInvoicePdf(args: {
+  loaded: any;
+  invoiceId: string;
+  method: "GET" | "POST";
+}) {
+  const { loaded, invoiceId, method } = args;
+  console.info("[QR-BILL] invoice_pdf_render_started", {
+    method,
+    invoiceId,
+    invoiceNumber: safeString(loaded.context.invoice?.invoiceNumber),
+    invoiceType: safeString(loaded.context.invoice?.invoiceType),
+  });
+
+  const invoice = await ensureInvoiceQrReference({
+    db: loaded.db,
+    companyId: String(loaded.session.activeCompanyId),
+    invoice: loaded.context.invoice,
+    company: loaded.context.company,
+  });
+  const rendered = await buildInvoicePdf({
+    invoice,
+    planning: loaded.context.planning,
+    company: loaded.context.company,
+    customer: loaded.context.customer,
+  });
+
+  console.info("[QR-BILL] invoice_pdf_render_finished", {
+    method,
+    invoiceId,
+    invoiceNumber: safeString(invoice?.invoiceNumber),
+    pdfBytes: rendered.pdfBytes.length,
+    hasWarning: Boolean(rendered.qrBillWarning),
+    warning: rendered.qrBillWarning,
+  });
+  return { invoice, ...rendered };
+}
+
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
   return new Response(null, {
@@ -106,17 +143,10 @@ export async function GET(
       return loaded.response;
     }
 
-    const invoice = await ensureInvoiceQrReference({
-      db: loaded.db,
-      companyId: String(loaded.session.activeCompanyId),
-      invoice: loaded.context.invoice,
-      company: loaded.context.company,
-    });
-    const { pdfBytes, fileName, qrBillWarning } = await buildInvoicePdf({
-      invoice,
-      planning: loaded.context.planning,
-      company: loaded.context.company,
-      customer: loaded.context.customer,
+    const { pdfBytes, fileName, qrBillWarning } = await renderLoadedInvoicePdf({
+      loaded,
+      invoiceId,
+      method: "GET",
     });
 
     return new Response(pdfBytes, {
@@ -124,7 +154,7 @@ export async function GET(
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename=\"${fileName}\"`,
-        "Cache-Control": "private, max-age=30",
+        "Cache-Control": "private, no-store, no-cache, must-revalidate",
         ...(qrBillWarning ? { "X-QR-Bill-Warning": qrBillWarning } : {}),
         ...getCorsHeaders(loaded.origin),
       },
@@ -147,17 +177,10 @@ export async function POST(
       return loaded.response;
     }
 
-    const invoice = await ensureInvoiceQrReference({
-      db: loaded.db,
-      companyId: String(loaded.session.activeCompanyId),
-      invoice: loaded.context.invoice,
-      company: loaded.context.company,
-    });
-    const { pdfBytes, fileName, qrBillWarning } = await buildInvoicePdf({
-      invoice,
-      planning: loaded.context.planning,
-      company: loaded.context.company,
-      customer: loaded.context.customer,
+    const { invoice, pdfBytes, fileName, qrBillWarning } = await renderLoadedInvoicePdf({
+      loaded,
+      invoiceId,
+      method: "POST",
     });
 
     const storedFile = await persistInvoicePdfFile({

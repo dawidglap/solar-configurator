@@ -12,7 +12,7 @@ import {
 } from "@/lib/planningFiles";
 import { getSessionUserEmail, getSessionUserMeta, safeNumber } from "@/lib/tasks";
 import { getInvoiceByIdForCompany, type InvoiceType } from "@/lib/invoices";
-import { createInvoiceQrPaymentPart } from "@/lib/swissQrBill";
+import { createInvoiceQrPaymentPart, resolveQrReferenceType } from "@/lib/swissQrBill";
 
 type BuildInvoicePdfArgs = {
   invoice: any;
@@ -499,50 +499,81 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
     color: cMuted,
   });
 
-  let qrBillWarning: string | null = null;
-  if (safeString(args.invoice?.invoiceType) !== "gutschrift") {
-    const qrPaymentPart = await createInvoiceQrPaymentPart({
+  let qrPaymentPart: Awaited<ReturnType<typeof createInvoiceQrPaymentPart>> = {
+    paymentPartPdfBytes: null,
+    qrBillWarning: null,
+  };
+  try {
+    qrPaymentPart = await createInvoiceQrPaymentPart({
       invoice: args.invoice,
       planning: args.planning,
       company: args.company,
       customer: args.customer,
     });
-    qrBillWarning = qrPaymentPart.qrBillWarning;
-
-    await addPaymentSlipPage(pdf, {
-      documentType: "auftrag",
-      documentNumber: pdfText(args.invoice?.invoiceNumber) || "-",
-      documentNumberLabel: `Rechnung Nr. ${pdfText(args.invoice?.invoiceNumber) || "-"}`,
-      invoiceDate: formatDateCH(issueDate),
-      dueDate: formatDateCH(dueDate ?? addDays(issueDate ?? new Date(), 30)),
-      invoiceDateIso: issueDate,
-      companyName: pdfText(args.company?.name) || "Ihre Firma",
-      companyLogoUrl: safeString(args.company?.branding?.logoUrl),
-      companyAddressLines: companyLines,
-      customerAddressLines: recipientLines,
-      paymentRows: [
-        {
-          label: description,
-          pct: safeNumber(args.invoice?.pct, 0),
-          amountChf: safeNumber(args.invoice?.amount, 0),
-          dueAt: formatDateCH(dueDate),
-        },
-      ],
-      totalAmountChf: safeNumber(args.invoice?.amount, 0),
-      currency: safeString(args.invoice?.currency) || "CHF",
-      bankDetails: {
-        accountHolder: bank.accountHolder,
-        iban: formatIban(bank.iban),
-        bankName: bank.bankName,
-        bicSwift: bank.bicSwift,
-      },
-      reference: pdfText(args.invoice?.invoiceNumber) || pdfText(args.invoice?._id),
-      additionalInformation: `${pdfText(args.invoice?.orderId) || pdfText(args.invoice?.invoiceNumber)} vom ${formatDateCH(issueDate)}`,
-      showPreviewWatermark: false,
-      showIbanWarning: !safeString(bank.iban),
-      paymentPartPdfBytes: qrPaymentPart.paymentPartPdfBytes,
-      showPaymentPartPlaceholder: false,
+  } catch (error: any) {
+    console.error("[QR-BILL] preparation_failed", {
+      invoiceNumber: safeString(args.invoice?.invoiceNumber),
+      message: safeString(error?.message) || "Unbekannter Fehler",
     });
+    qrPaymentPart = {
+      paymentPartPdfBytes: null,
+      qrBillWarning: "Der QR-Zahlteil konnte nicht vorbereitet werden und wurde deshalb nicht gedruckt.",
+    };
+  }
+
+  let qrBillWarning: string | null = qrPaymentPart.qrBillWarning;
+  if (safeString(args.invoice?.invoiceType) !== "gutschrift") {
+    const qrReferenceType = resolveQrReferenceType(
+      args.invoice?.qrReferenceType ?? args.company?.qrBill?.referenceType,
+    );
+    const paymentIban =
+      qrReferenceType === "QRR"
+        ? safeString(args.company?.qrBill?.qrIban)
+        : safeString(bank.iban);
+    try {
+      await addPaymentSlipPage(pdf, {
+        documentType: "auftrag",
+        documentNumber: pdfText(args.invoice?.invoiceNumber) || "-",
+        documentNumberLabel: `Rechnung Nr. ${pdfText(args.invoice?.invoiceNumber) || "-"}`,
+        invoiceDate: formatDateCH(issueDate),
+        dueDate: formatDateCH(dueDate ?? addDays(issueDate ?? new Date(), 30)),
+        invoiceDateIso: issueDate,
+        companyName: pdfText(args.company?.name) || "Ihre Firma",
+        companyLogoUrl: safeString(args.company?.branding?.logoUrl),
+        companyAddressLines: companyLines,
+        customerAddressLines: recipientLines,
+        paymentRows: [
+          {
+            label: description,
+            pct: safeNumber(args.invoice?.pct, 0),
+            amountChf: safeNumber(args.invoice?.amount, 0),
+            dueAt: formatDateCH(dueDate),
+          },
+        ],
+        totalAmountChf: safeNumber(args.invoice?.amount, 0),
+        currency: safeString(args.invoice?.currency) || "CHF",
+        bankDetails: {
+          accountHolder: bank.accountHolder,
+          iban: formatIban(bank.iban),
+          bankName: bank.bankName,
+          bicSwift: bank.bicSwift,
+        },
+        reference: pdfText(args.invoice?.invoiceNumber) || pdfText(args.invoice?._id),
+        additionalInformation: `${pdfText(args.invoice?.orderId) || pdfText(args.invoice?.invoiceNumber)} vom ${formatDateCH(issueDate)}`,
+        showPreviewWatermark: false,
+        showIbanWarning: !paymentIban,
+        paymentPartPdfBytes: qrPaymentPart.paymentPartPdfBytes,
+        showPaymentPartPlaceholder: false,
+      });
+    } catch (error: any) {
+      console.error("[QR-BILL] payment_part_embedding_failed", {
+        invoiceNumber: safeString(args.invoice?.invoiceNumber),
+        bytes: qrPaymentPart.paymentPartPdfBytes?.length ?? 0,
+        message: safeString(error?.message) || "Unbekannter Fehler",
+      });
+      qrBillWarning =
+        "Der QR-Zahlteil konnte nicht in das Rechnungs-PDF eingebettet werden und wurde deshalb nicht gedruckt.";
+    }
   }
 
   if (isCancelled) {

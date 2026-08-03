@@ -11,6 +11,11 @@ export type QrReferenceType = (typeof QR_REFERENCE_TYPES)[number];
 const MODULO_10_TABLE = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5] as const;
 const MAX_QR_MESSAGE_LENGTH = 140;
 
+function logQrBill(level: "info" | "warn" | "error", event: string, details: Record<string, unknown>) {
+  const logger = level === "error" ? console.error : level === "warn" ? console.warn : console.info;
+  logger(`[QR-BILL] ${event}`, details);
+}
+
 function normalizeCompact(value: unknown) {
   return safeString(value).replace(/\s+/g, "").toUpperCase();
 }
@@ -96,15 +101,51 @@ export function getQrEligibility(invoice: any, qrBill: any = {}) {
     safeNumber(invoice?.amount, 0) - safeNumber(invoice?.paidAmount, 0),
   );
   const invoiceType = safeString(invoice?.invoiceType).toLowerCase();
-  const eligible =
-    qrBill?.enabled !== false &&
-    ["rechnung", "mahnung"].includes(invoiceType) &&
-    safeString(invoice?.status).toLowerCase() !== "storniert" &&
-    invoiceType !== "gutschrift" &&
-    safeString(invoice?.paymentStatus).toLowerCase() !== "bezahlt" &&
-    openAmount > 0;
+  const status = safeString(invoice?.status).toLowerCase();
+  const paymentStatus = safeString(invoice?.paymentStatus).toLowerCase();
 
-  return { eligible, openAmount };
+  if (qrBill?.enabled === false) {
+    return {
+      eligible: false,
+      openAmount,
+      reason: "disabled" as const,
+      warning: "Der QR-Zahlteil ist in den Firmeneinstellungen deaktiviert.",
+    };
+  }
+  if (!["rechnung", "mahnung"].includes(invoiceType)) {
+    return {
+      eligible: false,
+      openAmount,
+      reason: "invoice_type" as const,
+      warning: "Für diesen Dokumenttyp wird bewusst kein QR-Zahlteil gedruckt.",
+    };
+  }
+  if (status === "storniert") {
+    return {
+      eligible: false,
+      openAmount,
+      reason: "cancelled" as const,
+      warning: "Für eine stornierte Rechnung wird kein QR-Zahlteil gedruckt.",
+    };
+  }
+  if (paymentStatus === "bezahlt") {
+    return {
+      eligible: false,
+      openAmount,
+      reason: "paid" as const,
+      warning: "Für eine bezahlte Rechnung wird kein QR-Zahlteil gedruckt.",
+    };
+  }
+  if (openAmount <= 0) {
+    return {
+      eligible: false,
+      openAmount,
+      reason: "no_open_amount" as const,
+      warning: "Der offene Rechnungsbetrag ist nicht positiv; deshalb wird kein QR-Zahlteil gedruckt.",
+    };
+  }
+
+  return { eligible: true, openAmount, reason: null, warning: null };
 }
 
 export function round2(value: number) {
@@ -134,46 +175,79 @@ export async function ensureInvoiceQrReference(args: {
   company: any;
 }) {
   const eligibility = getQrEligibility(args.invoice, args.company?.qrBill);
-  if (!eligibility.eligible) return args.invoice;
-
-  const persistedType = safeString(args.invoice?.qrReferenceType).toUpperCase();
-  if (QR_REFERENCE_TYPES.includes(persistedType as QrReferenceType)) {
+  if (!eligibility.eligible) {
+    logQrBill("warn", "reference_skipped", {
+      invoiceNumber: safeString(args.invoice?.invoiceNumber),
+      invoiceType: safeString(args.invoice?.invoiceType),
+      reason: eligibility.reason,
+      openAmount: eligibility.openAmount,
+    });
     return args.invoice;
   }
 
-  const referenceType = resolveQrReferenceType(args.company?.qrBill?.referenceType);
-  const qrReference =
-    referenceType === "QRR"
-      ? generateQrReference(getInvoiceReferenceSeed(args.invoice))
-      : referenceType === "SCOR"
-        ? generateScorReference(
-            safeString(args.invoice?.invoiceNumber) ||
-              safeString(args.invoice?._id?.toString?.() ?? args.invoice?._id),
-          )
-        : null;
-  const invoices = args.db.collection("invoices");
+  const persistedType = safeString(args.invoice?.qrReferenceType).toUpperCase();
+  if (QR_REFERENCE_TYPES.includes(persistedType as QrReferenceType)) {
+    logQrBill("info", "reference_reused", {
+      invoiceNumber: safeString(args.invoice?.invoiceNumber),
+      referenceType: persistedType,
+      hasReference: Boolean(safeString(args.invoice?.qrReference)) || persistedType === "NON",
+    });
+    return args.invoice;
+  }
 
-  const updated = await invoices.findOneAndUpdate(
-    {
-      _id: args.invoice._id,
-      companyId: args.companyId,
-      $or: [
-        { qrReferenceType: { $exists: false } },
-        { qrReferenceType: null },
-      ],
-    },
-    {
-      $set: {
-        qrReference,
-        qrReferenceType: referenceType,
-        updatedAt: new Date(),
+  try {
+    const referenceType = resolveQrReferenceType(args.company?.qrBill?.referenceType);
+    const qrReference =
+      referenceType === "QRR"
+        ? generateQrReference(getInvoiceReferenceSeed(args.invoice))
+        : referenceType === "SCOR"
+          ? generateScorReference(
+              safeString(args.invoice?.invoiceNumber) ||
+                safeString(args.invoice?._id?.toString?.() ?? args.invoice?._id),
+            )
+          : null;
+    const invoices = args.db.collection("invoices");
+
+    const updated = await invoices.findOneAndUpdate(
+      {
+        _id: args.invoice._id,
+        companyId: args.companyId,
+        $or: [
+          { qrReferenceType: { $exists: false } },
+          { qrReferenceType: null },
+        ],
       },
-    },
-    { returnDocument: "after" },
-  );
+      {
+        $set: {
+          qrReference,
+          qrReferenceType: referenceType,
+          updatedAt: new Date(),
+        },
+      },
+      { returnDocument: "after" },
+    );
 
-  if (updated) return updated;
-  return (await invoices.findOne({ _id: args.invoice._id, companyId: args.companyId })) ?? args.invoice;
+    const persisted =
+      updated ??
+      (await invoices.findOne({ _id: args.invoice._id, companyId: args.companyId })) ??
+      args.invoice;
+    logQrBill("info", "reference_persisted", {
+      invoiceNumber: safeString(args.invoice?.invoiceNumber),
+      referenceType: safeString(persisted?.qrReferenceType) || referenceType,
+      hasReference: Boolean(safeString(persisted?.qrReference)) || referenceType === "NON",
+    });
+    return persisted;
+  } catch (error: any) {
+    logQrBill("error", "reference_persistence_failed", {
+      invoiceNumber: safeString(args.invoice?.invoiceNumber),
+      message: safeString(error?.message) || "Unbekannter Fehler",
+    });
+    return {
+      ...args.invoice,
+      __qrBillWarning:
+        "Die QR-Referenz konnte nicht gespeichert werden; deshalb wurde kein QR-Zahlteil gedruckt.",
+    };
+  }
 }
 
 function normalizeLanguage(value: unknown): Language {
@@ -287,8 +361,26 @@ export async function createInvoiceQrPaymentPart(args: {
 }) {
   const qrBill = args.company?.qrBill ?? {};
   const eligibility = getQrEligibility(args.invoice, qrBill);
+  logQrBill(eligibility.eligible ? "info" : "warn", "eligibility_checked", {
+    invoiceNumber: safeString(args.invoice?.invoiceNumber),
+    invoiceType: safeString(args.invoice?.invoiceType),
+    status: safeString(args.invoice?.status),
+    paymentStatus: safeString(args.invoice?.paymentStatus),
+    enabled: qrBill?.enabled !== false,
+    eligible: eligibility.eligible,
+    reason: eligibility.reason,
+    openAmount: eligibility.openAmount,
+  });
   if (!eligibility.eligible) {
-    return { paymentPartPdfBytes: null, qrBillWarning: null };
+    return { paymentPartPdfBytes: null, qrBillWarning: eligibility.warning };
+  }
+  if (safeString(args.invoice?.__qrBillWarning)) {
+    const qrBillWarning = safeString(args.invoice.__qrBillWarning);
+    logQrBill("error", "render_skipped_after_reference_failure", {
+      invoiceNumber: safeString(args.invoice?.invoiceNumber),
+      warning: qrBillWarning,
+    });
+    return { paymentPartPdfBytes: null, qrBillWarning };
   }
 
   const referenceType = resolveQrReferenceType(
@@ -310,24 +402,39 @@ export async function createInvoiceQrPaymentPart(args: {
   };
   const warning = validateQrBillData({ account, referenceType, creditor });
   if (warning) {
+    logQrBill("warn", "validation_failed", {
+      invoiceNumber: safeString(args.invoice?.invoiceNumber),
+      referenceType,
+      hasAccount: Boolean(account),
+      hasCreditorAddress: Boolean(creditor.address && creditor.zip && creditor.city && creditor.country),
+      warning,
+    });
     return { paymentPartPdfBytes: null, qrBillWarning: warning };
   }
 
+  const invoiceNumber = safeString(args.invoice?.invoiceNumber);
   const reference = normalizeCompact(args.invoice?.qrReference);
   if (referenceType === "QRR" && !isValidQrReference(reference)) {
+    logQrBill("warn", "reference_validation_failed", {
+      invoiceNumber,
+      referenceType,
+    });
     return {
       paymentPartPdfBytes: null,
       qrBillWarning: "Die QR-Referenz ist ungültig und der Zahlteil wurde nicht gedruckt.",
     };
   }
   if (referenceType === "SCOR" && !isValidScorReference(reference)) {
+    logQrBill("warn", "reference_validation_failed", {
+      invoiceNumber,
+      referenceType,
+    });
     return {
       paymentPartPdfBytes: null,
       qrBillWarning: "Die Creditor Reference ist ungültig und der Zahlteil wurde nicht gedruckt.",
     };
   }
 
-  const invoiceNumber = safeString(args.invoice?.invoiceNumber);
   const rateLabel =
     safeString(args.invoice?.rateLabel) ||
     safeString(args.invoice?.label) ||
@@ -359,9 +466,19 @@ export async function createInvoiceQrPaymentPart(args: {
       data,
       normalizeLanguage(qrBill?.language || args.company?.defaults?.language || "de"),
     );
+    logQrBill("info", "payment_part_rendered", {
+      invoiceNumber,
+      referenceType,
+      openAmount: eligibility.openAmount,
+      bytes: paymentPartPdfBytes.length,
+    });
     return { paymentPartPdfBytes, qrBillWarning: null };
   } catch (error: any) {
-    console.warn("SWISS QR BILL RENDER ERROR:", error);
+    logQrBill("error", "payment_part_render_failed", {
+      invoiceNumber,
+      referenceType,
+      message: safeString(error?.message) || "Unbekannter Fehler",
+    });
     return {
       paymentPartPdfBytes: null,
       qrBillWarning: "Der QR-Zahlteil konnte wegen ungültiger Zahlungsdaten nicht gedruckt werden.",

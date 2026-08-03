@@ -430,6 +430,47 @@ export async function addPaymentSlipPage(pdf: PDFDocument, data: PaymentSlipPage
   drawDashedLine(page, MARGIN_X, cutY, PAGE_W - MARGIN_X, cutY, 5, 3);
   drawText(page, "Hier abtrennen", MARGIN_X + 4, cutY + 6, 8, font, C.muted);
 
+  if (data.paymentPartPdfBytes || data.showPaymentPartPlaceholder === false) {
+    if (!data.paymentPartPdfBytes) {
+      console.warn("[QR-BILL] payment_part_omitted", {
+        documentNumber: data.documentNumber,
+        pageWidth: PAGE_W,
+        pageHeight: PAGE_H,
+      });
+      return;
+    }
+
+    const paymentPartWidth = mmToPt(210);
+    const paymentPartHeight = mmToPt(105);
+    const targetX = 0;
+    const targetY = 0;
+    console.info("[QR-BILL] payment_part_embedding", {
+      documentNumber: data.documentNumber,
+      bytes: data.paymentPartPdfBytes.length,
+      pageWidth: PAGE_W,
+      pageHeight: PAGE_H,
+      targetX,
+      targetY,
+      paymentPartWidth,
+      paymentPartHeight,
+      pdfKitBottomOffset: PAGE_H - paymentPartHeight,
+    });
+
+    const [paymentPart] = await pdf.embedPdf(data.paymentPartPdfBytes, [0]);
+    page.drawPage(paymentPart, {
+      x: targetX,
+      y: targetY,
+      width: paymentPartWidth,
+      height: paymentPartHeight,
+    });
+    console.info("[QR-BILL] payment_part_embedded", {
+      documentNumber: data.documentNumber,
+      targetX,
+      targetY,
+    });
+    return;
+  }
+
   const sectionY = 82;
   const sectionH = 248;
   const gap = 12;
@@ -568,23 +609,4 @@ export async function addPaymentSlipPage(pdf: PDFDocument, data: PaymentSlipPage
   drawLine(page, MARGIN_X, BOTTOM_Y, PAGE_W - MARGIN_X, BOTTOM_Y, 0.6);
   drawText(page, safeString(data.documentNumberLabel), MARGIN_X, BOTTOM_Y - 16, 7.5, font, C.muted);
 
-  if (data.paymentPartPdfBytes || data.showPaymentPartPlaceholder === false) {
-    page.drawRectangle({
-      x: 0,
-      y: 0,
-      width: PAGE_W,
-      height: cutY,
-      color: C.white,
-    });
-  }
-
-  if (data.paymentPartPdfBytes) {
-    const [paymentPart] = await pdf.embedPdf(data.paymentPartPdfBytes, [0]);
-    page.drawPage(paymentPart, {
-      x: 0,
-      y: 0,
-      width: mmToPt(210),
-      height: mmToPt(105),
-    });
-  }
 }
