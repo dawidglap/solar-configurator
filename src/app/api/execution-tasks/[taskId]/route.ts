@@ -1,6 +1,5 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/db";
-import { activeDocumentFilter } from "@/lib/trash";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   jsonResponse,
@@ -22,6 +21,14 @@ import {
   resolveExecutionActorMeta,
   validateExecutionAssignees,
 } from "@/lib/executionTasks";
+import {
+  deriveAssignedUserIds,
+  ensureTeamIndexes,
+  getTeamsCollection,
+  normalizeAndValidateTeamOverrides,
+  normalizeStoredTeamOverrides,
+  TeamRequestError,
+} from "@/lib/teams";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -73,7 +80,7 @@ export async function GET(req: Request, { params }: Params) {
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session);
     if (subscriptionError) return subscriptionError;
-    await ensureExecutionTaskIndexes(db);
+    await Promise.all([ensureExecutionTaskIndexes(db), ensureTeamIndexes(db)]);
 
     const doc = await getScopedExecutionTask(db, String(session.activeCompanyId), taskId);
     if (!doc) {
@@ -112,7 +119,7 @@ export async function PATCH(req: Request, { params }: Params) {
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session);
     if (subscriptionError) return subscriptionError;
-    await ensureExecutionTaskIndexes(db);
+    await Promise.all([ensureExecutionTaskIndexes(db), ensureTeamIndexes(db)]);
 
     const existing = await getScopedExecutionTask(db, companyId, taskId);
     if (!existing) {
@@ -138,16 +145,16 @@ export async function PATCH(req: Request, { params }: Params) {
     const endTime =
       body?.endTime === undefined ? undefined : normalizeExecutionTime(body?.endTime);
 
-    if (scheduledStart === undefined) {
+    if (body?.scheduledStart !== undefined && scheduledStart === undefined) {
       return jsonResponse(origin, { ok: false, error: "Invalid scheduledStart" }, 400);
     }
-    if (scheduledEnd === undefined) {
+    if (body?.scheduledEnd !== undefined && scheduledEnd === undefined) {
       return jsonResponse(origin, { ok: false, error: "Invalid scheduledEnd" }, 400);
     }
-    if (startTime === undefined) {
+    if (body?.startTime !== undefined && startTime === undefined) {
       return jsonResponse(origin, { ok: false, error: "Invalid startTime" }, 400);
     }
-    if (endTime === undefined) {
+    if (body?.endTime !== undefined && endTime === undefined) {
       return jsonResponse(origin, { ok: false, error: "Invalid endTime" }, 400);
     }
 
@@ -177,7 +184,17 @@ export async function PATCH(req: Request, { params }: Params) {
       updateSet.endTime = endTime;
     }
 
-    if (body?.assignedUserIds !== undefined) {
+    const actor = await resolveExecutionActorMeta(db, session);
+    const existingTeamId =
+      (existing as any)?.teamId instanceof ObjectId
+        ? (existing as any).teamId.toString()
+        : safeString((existing as any)?.teamId) || null;
+    const teamHistoryEntries: Record<string, any>[] = [];
+    const hasTeamInput = body?.teamId !== undefined || body?.teamOverrides !== undefined;
+    const isLegacyDirectAssignment =
+      body?.assignedUserIds !== undefined && !hasTeamInput;
+
+    if (isLegacyDirectAssignment) {
       const { assignedUserIds } = await validateExecutionAssignees(
         db,
         companyId,
@@ -185,9 +202,131 @@ export async function PATCH(req: Request, { params }: Params) {
         body?.assignedUserIds,
       );
       updateSet.assignedUserIds = assignedUserIds;
+      if (existingTeamId) {
+        updateSet.teamId = null;
+        updateSet.teamOverrides = [];
+        teamHistoryEntries.push({
+          type: "team_changed",
+          previousTeamId: new ObjectId(existingTeamId),
+          teamId: null,
+          changedAt: new Date(),
+          changedByUserId: ObjectId.isValid(actor.id || "") ? new ObjectId(actor.id!) : actor.id,
+          changedByName: actor.name,
+          reason: "legacy_direct_assignment",
+        });
+      }
+    } else if (hasTeamInput) {
+      const selectedTeamId =
+        body?.teamId === undefined
+          ? existingTeamId
+          : body?.teamId == null || safeString(body?.teamId) === ""
+            ? null
+            : safeString(body?.teamId);
+
+      if (selectedTeamId && !ObjectId.isValid(selectedTeamId)) {
+        throw new TeamRequestError("Ungültige Team-ID.", { code: "INVALID_TEAM_ID" });
+      }
+
+      if (!selectedTeamId) {
+        if (body?.teamOverrides !== undefined && (!Array.isArray(body.teamOverrides) || body.teamOverrides.length)) {
+          throw new TeamRequestError("Overrides benötigen ein aktives Team.", {
+            code: "TEAM_REQUIRED_FOR_OVERRIDES",
+          });
+        }
+        updateSet.teamId = null;
+        updateSet.teamOverrides = [];
+        if (body?.assignedUserIds !== undefined) {
+          const { assignedUserIds } = await validateExecutionAssignees(
+            db,
+            companyId,
+            (existing as any).track,
+            body.assignedUserIds,
+          );
+          updateSet.assignedUserIds = assignedUserIds;
+        }
+      } else {
+        const team = await getTeamsCollection(db).findOne({
+          _id: new ObjectId(selectedTeamId),
+          companyId: { $in: buildIdVariants(companyId) },
+          status: "active",
+          tracks: (existing as any).track,
+        });
+        if (!team) {
+          throw new TeamRequestError(
+            "Das Team ist nicht aktiv, gehört nicht zur Firma oder deckt den Auftragstyp nicht ab.",
+            { code: "INVALID_TASK_TEAM" },
+          );
+        }
+        const teamMemberIds = Array.from<string>(
+          new Set<string>(
+            (Array.isArray((team as any).members) ? (team as any).members : [])
+              .map((member: any) =>
+                member?.userId instanceof ObjectId
+                  ? member.userId.toString()
+                  : safeString(member?.userId),
+              )
+              .filter(Boolean) as string[],
+          ),
+        );
+        const previousOverrides =
+          selectedTeamId === existingTeamId
+            ? Array.isArray((existing as any)?.teamOverrides)
+              ? (existing as any).teamOverrides
+              : []
+            : [];
+        const incomingOverrides =
+          body?.teamOverrides === undefined ? previousOverrides : body.teamOverrides;
+        const normalizedIncoming = await normalizeAndValidateTeamOverrides({
+          db,
+          companyId,
+          input: incomingOverrides,
+          teamMemberIds,
+          existing: previousOverrides,
+          actorUserId: actor.id,
+        });
+
+        const previousNormalized = normalizeStoredTeamOverrides(previousOverrides);
+        const previousKeys = new Set(
+          previousNormalized.map((override) => JSON.stringify(override)),
+        );
+        const mergedOverrides = [...previousOverrides];
+        for (const override of normalizedIncoming) {
+          const [normalized] = normalizeStoredTeamOverrides([override]);
+          const key = JSON.stringify(normalized);
+          if (!previousKeys.has(key)) {
+            mergedOverrides.push(override);
+            previousKeys.add(key);
+            teamHistoryEntries.push({
+              type: "member_replaced",
+              outUserId: (override as any).outUserId,
+              inUserId: (override as any).inUserId,
+              reason: (override as any).reason,
+              changedAt: new Date(),
+              changedByUserId:
+                ObjectId.isValid(actor.id || "") ? new ObjectId(actor.id!) : actor.id,
+              changedByName: actor.name,
+            });
+          }
+        }
+        const assignedIds = deriveAssignedUserIds(teamMemberIds, mergedOverrides);
+        updateSet.teamId = new ObjectId(selectedTeamId);
+        updateSet.teamOverrides = mergedOverrides;
+        updateSet.assignedUserIds = assignedIds.map((userId) => new ObjectId(userId));
+      }
+
+      if (selectedTeamId !== existingTeamId) {
+        teamHistoryEntries.unshift({
+          type: "team_changed",
+          previousTeamId: existingTeamId ? new ObjectId(existingTeamId) : null,
+          teamId: selectedTeamId ? new ObjectId(selectedTeamId) : null,
+          changedAt: new Date(),
+          changedByUserId: ObjectId.isValid(actor.id || "") ? new ObjectId(actor.id!) : actor.id,
+          changedByName: actor.name,
+          reason: null,
+        });
+      }
     }
 
-    const actor = await resolveExecutionActorMeta(db, session);
     const scheduleChanged = hasExecutionScheduleChanged(existing, {
       scheduledStart,
       scheduledEnd,
@@ -208,15 +347,21 @@ export async function PATCH(req: Request, { params }: Params) {
       };
     }
 
+    const scheduleHistoryEntries = [
+      ...(scheduleHistoryEntry ? [scheduleHistoryEntry] : []),
+      ...teamHistoryEntries,
+    ];
     await getExecutionTasksCollection(db).updateOne(
       { _id: new ObjectId(taskId), ...buildExecutionCompanyFilter(companyId) },
       {
         $set: updateSet,
-        ...((pushStageHistory || scheduleHistoryEntry)
+        ...((pushStageHistory || scheduleHistoryEntries.length)
           ? {
               $push: {
                 ...(pushStageHistory ? { stageHistory: pushStageHistory } : {}),
-                ...(scheduleHistoryEntry ? { scheduleHistory: scheduleHistoryEntry } : {}),
+                ...(scheduleHistoryEntries.length
+                  ? { scheduleHistory: { $each: scheduleHistoryEntries } }
+                  : {}),
               },
             }
           : {}),
@@ -231,6 +376,18 @@ export async function PATCH(req: Request, { params }: Params) {
     const [item] = await hydrateExecutionTasks(db, companyId, [updated]);
     return jsonResponse(origin, { ok: true, item }, 200);
   } catch (e: any) {
+    if (e instanceof TeamRequestError) {
+      return jsonResponse(
+        origin,
+        {
+          ok: false,
+          error: e.message,
+          code: e.code,
+          ...(e.conflictUserIds.length ? { conflictUserIds: e.conflictUserIds } : {}),
+        },
+        e.status,
+      );
+    }
     console.error("PATCH EXECUTION TASK ERROR:", e);
     return jsonResponse(origin, { ok: false, error: e?.message || "Unknown error" }, 500);
   }

@@ -16,6 +16,7 @@ import {
   isAdminLikeRole,
 } from "@/lib/tasks";
 import { extractAddressFromPlanning } from "@/lib/montages";
+import { normalizeStoredTeamOverrides } from "@/lib/teams";
 
 export const EXECUTION_TRACKS = ["montage", "elektro"] as const;
 export const EXECUTION_STAGES = [
@@ -49,6 +50,8 @@ type NormalizedExecutionTask = {
   scheduledEnd: string | null;
   startTime: string | null;
   endTime: string | null;
+  teamId: string | null;
+  teamOverrides: ReturnType<typeof normalizeStoredTeamOverrides>;
   assignedUserIds: string[];
   assignees: NormalizedExecutionAssignee[];
   address: {
@@ -67,6 +70,7 @@ type NormalizedExecutionTask = {
 };
 
 type NormalizedExecutionScheduleHistoryEntry = {
+  type?: "schedule_changed" | "team_changed" | "member_replaced";
   scheduledStart: string | null;
   scheduledEnd: string | null;
   startTime: string | null;
@@ -75,6 +79,10 @@ type NormalizedExecutionScheduleHistoryEntry = {
   changedByUserId: string | null;
   changedByName: string;
   reason: string | null;
+  previousTeamId?: string | null;
+  teamId?: string | null;
+  outUserId?: string;
+  inUserId?: string | null;
 };
 
 type NormalizedExecutionActivity = {
@@ -268,7 +276,8 @@ export function normalizeExecutionScheduleHistoryEntry(
       : safeString(entry?.changedAt);
   if (!changedAt) return null;
 
-  return {
+  const type = safeString(entry?.type);
+  const common = {
     scheduledStart: normalizeExecutionDateValueForOutput(entry?.scheduledStart),
     scheduledEnd: normalizeExecutionDateValueForOutput(entry?.scheduledEnd),
     startTime: safeString(entry?.startTime) || null,
@@ -279,6 +288,24 @@ export function normalizeExecutionScheduleHistoryEntry(
     changedByName: safeString(entry?.changedByName) || "unknown",
     reason: safeString(entry?.reason) || null,
   };
+  if (type === "team_changed") {
+    return {
+      ...common,
+      type,
+      previousTeamId:
+        mongoIdToString(entry?.previousTeamId) || safeString(entry?.previousTeamId) || null,
+      teamId: mongoIdToString(entry?.teamId) || safeString(entry?.teamId) || null,
+    };
+  }
+  if (type === "member_replaced") {
+    return {
+      ...common,
+      type,
+      outUserId: mongoIdToString(entry?.outUserId) || safeString(entry?.outUserId),
+      inUserId: mongoIdToString(entry?.inUserId) || safeString(entry?.inUserId) || null,
+    };
+  }
+  return { ...common, ...(type === "schedule_changed" ? { type } : {}) };
 }
 
 export function normalizeExecutionScheduleHistory(history: unknown) {
@@ -338,6 +365,7 @@ export function buildExecutionScheduleHistoryEntry(
   const userObjectId = toObjectIdOrNull(changedByUserId);
 
   return {
+    type: "schedule_changed" as const,
     scheduledStart: normalizeExecutionDateValueForStorage(existing?.scheduledStart),
     scheduledEnd: normalizeExecutionDateValueForStorage(existing?.scheduledEnd),
     startTime: safeString(existing?.startTime) || null,
@@ -484,6 +512,8 @@ export function normalizeExecutionTask(doc: any, opts?: {
         : safeString(doc?.scheduledEnd) || null,
     startTime: safeString(doc?.startTime) || null,
     endTime: safeString(doc?.endTime) || null,
+    teamId: mongoIdToString(doc?.teamId) || safeString(doc?.teamId) || null,
+    teamOverrides: normalizeStoredTeamOverrides(doc?.teamOverrides),
     assignedUserIds,
     assignees,
     address: normalizeExecutionAddress(doc?.address),
@@ -627,6 +657,8 @@ function buildExecutionTaskSeed(params: {
     scheduledEnd: null,
     startTime: null,
     endTime: null,
+    teamId: null,
+    teamOverrides: [],
     assignedUserIds: [] as ObjectId[],
     address: buildExecutionAddress(params.planning, params.customer),
     notes: "",
@@ -788,6 +820,8 @@ export async function migrateMontagesToExecutionTasks(
           scheduledEnd: montage?.endDate ? new Date(montage.endDate) : null,
           startTime: safeString(montage?.startTime) || null,
           endTime: safeString(montage?.endTime) || null,
+          teamId: null,
+          teamOverrides: [],
           assignedUserIds: Array.isArray(montage?.assignedInstallerIds)
             ? montage.assignedInstallerIds
                 .map((value: any) => toObjectIdOrNull(value))
