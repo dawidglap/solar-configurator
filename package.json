@@ -20,6 +20,7 @@
     "test:cors": "tsx --test tests/cors.test.ts",
     "test:teams": "tsx --test tests/teams.test.ts",
     "test:execution-teams": "tsx scripts/test-execution-teams.ts",
+    "test:order-signatures": "tsx --test tests/orderSignatures.test.ts",
     "backfill:auftrag-pipeline": "npx tsx scripts/backfill-auftrag-pipeline.ts",
     "backfill:company-subscriptions": "npx tsx scripts/backfill-company-subscriptions.ts",
     "backfill:invoice-dunning-status": "npx tsx scripts/backfill-invoice-dunning-status.ts",
@@ -28,6 +29,7 @@
     "migrate:montages-to-execution-tasks": "npx tsx scripts/migrate-montages-to-execution-tasks.ts",
     "migrate:swiss-qr-bill": "tsx scripts/migrate-swiss-qr-bill.ts",
     "migrate:execution-teams": "tsx scripts/migrate-execution-teams.ts",
+    "migrate:order-signatures": "tsx scripts/migrate-order-signatures.ts",
     "audit:customer-duplicates": "node scripts/audit-customer-duplicates.js",
     "audit:customer-duplicates:mark": "node scripts/audit-customer-duplicates.js --mark",
     "ensure:customer-indexes": "node scripts/ensure-customer-indexes.js"

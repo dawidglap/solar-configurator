@@ -15,6 +15,7 @@ import { getDb } from "@/lib/db";
 import { getSessionUserName } from "@/lib/tasks";
 import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
 import { normalizeOrderFields } from "@/lib/orders";
+import { buildDefaultOrderSignatureFields } from "@/lib/orderSignatures";
 
 export const runtime = "nodejs";
 
@@ -274,6 +275,7 @@ export async function POST(req: Request) {
       commercialLockedAt: null,
       orderSnapshotFileId: null,
       angebotSnapshotFileId: null,
+      ...buildDefaultOrderSignatureFields(),
 
       createdAt: now,
       updatedAt: now,

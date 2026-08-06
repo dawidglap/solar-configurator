@@ -9,7 +9,6 @@ import {
   getPlanningFilesCollection,
   uploadGeneratedPlanningFileBuffer,
 } from "@/lib/planningFiles";
-import { sanitizePdfText } from "@/lib/pdfText";
 import { buildIdVariants, getSessionUserMeta } from "@/lib/tasks";
 import { ensureNotificationIndexes, getNotificationsCollection } from "@/lib/notifications";
 import {
@@ -35,6 +34,17 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_SIGNATURE_BYTES = 2 * 1024 * 1024;
 
 let ensureSignatureIndexesPromise: Promise<void> | null = null;
+
+function signaturePdfText(value: unknown) {
+  const text = safeString(value)
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[—–]/g, "-")
+    .replace(/…/g, "...")
+    .replace(/•/g, "-")
+    .replace(/\u00a0/g, " ");
+  return text.normalize("NFC").replace(/[^\n\r\t\x20-\x7e\xa0-\xff]/g, "");
+}
 
 export function getAppBaseUrl() {
   return (safeString(process.env.APP_BASE_URL) || "https://app.helionic.ch").replace(/\/+$/, "");
@@ -106,6 +116,32 @@ export function normalizeSignatureFields(planning: any) {
   };
 }
 
+export function buildDefaultOrderSignatureFields() {
+  return {
+    signatureStatus: "none" as const,
+    signatureToken: null,
+    signatureTokenHash: null,
+    signatureTokenExpiresAt: null,
+    signatureRequestedAt: null,
+    signatureRequestedByUserId: null,
+    signatureRequestedByName: null,
+    signatureSentToEmail: null,
+    signatureViewedAt: null,
+    signedAt: null,
+    signerName: null,
+    signerEmail: null,
+    signerIp: null,
+    signerUserAgent: null,
+    signatureImageFileId: null,
+    signedPdfFileId: null,
+    signedPdfSha256: null,
+    sourcePdfSha256: null,
+    signatureDeclinedAt: null,
+    signatureDeclinedReason: null,
+    signatureAudit: [],
+  };
+}
+
 export function buildSignatureResponse(planning: any) {
   const signature = normalizeSignatureFields(planning);
   const expiresAt = planning?.signatureTokenExpiresAt
@@ -170,9 +206,9 @@ export function canManageOrderSignatures(session: SessionPayload | null | undefi
 export async function ensureOrderSignatureIndexes(db: Db) {
   if (ensureSignatureIndexesPromise) return ensureSignatureIndexesPromise;
   ensureSignatureIndexesPromise = Promise.all([
-    db.collection("plannings").createIndex({ signatureToken: 1 }),
-    db.collection("plannings").createIndex({ signatureTokenHash: 1 }),
-    db.collection("plannings").createIndex({ signatureStatus: 1, signatureTokenExpiresAt: 1 }),
+    db.collection<any>("plannings").createIndex({ signatureToken: 1 }),
+    db.collection<any>("plannings").createIndex({ signatureTokenHash: 1 }),
+    db.collection<any>("plannings").createIndex({ signatureStatus: 1, signatureTokenExpiresAt: 1 }),
     db.collection("signatureRateLimits").createIndex({ key: 1 }, { unique: true }),
     db.collection("signatureRateLimits").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
   ])
@@ -225,31 +261,29 @@ export function isValidSignatureToken(token: unknown) {
   return TOKEN_PATTERN.test(safeString(token));
 }
 
-export async function findPlanningByPublicSignatureToken(db: Db, token: string) {
+export async function findPlanningByPublicSignatureToken(db: Db, token: string): Promise<any | null> {
   if (!isValidSignatureToken(token)) return null;
-  const active = await db.collection("plannings").findOne({ signatureToken: token });
+  const active = await db.collection<any>("plannings").findOne({ signatureToken: token });
   if (active) return active;
-  return db.collection("plannings").findOne({
+  return db.collection<any>("plannings").findOne({
     signatureTokenHash: sha256(token),
     signatureStatus: { $in: ["signed", "expired"] },
   });
 }
 
-export async function expireSignatureIfNeeded(db: Db, planning: any, token?: string) {
+export async function expireSignatureIfNeeded(db: Db, planning: any, token?: string): Promise<any | null> {
   const status = normalizeSignatureStatus(planning?.signatureStatus);
   const expiresAt = planning?.signatureTokenExpiresAt
     ? new Date(planning.signatureTokenExpiresAt)
     : null;
-  if (
-    !["sent", "viewed"].includes(status) ||
-    !expiresAt ||
-    Number.isNaN(expiresAt.getTime()) ||
-    expiresAt.getTime() >= Date.now()
-  ) {
+  if (!["sent", "viewed"].includes(status)) {
+    return planning;
+  }
+  if (expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() >= Date.now()) {
     return planning;
   }
   const now = new Date();
-  await db.collection("plannings").updateOne(
+  const updated = await db.collection<any>("plannings").findOneAndUpdate(
     { _id: planning._id, signatureStatus: { $in: ["sent", "viewed"] } },
     {
       $set: {
@@ -258,23 +292,33 @@ export async function expireSignatureIfNeeded(db: Db, planning: any, token?: str
         signatureTokenHash: safeString(planning?.signatureTokenHash) || (token ? sha256(token) : null),
         updatedAt: now,
       },
-      $push: { signatureAudit: buildSignatureAuditEntry({ event: "expired", at: now }) },
+      $push: {
+        signatureAudit: buildSignatureAuditEntry({ event: "expired", at: now }) as never,
+      },
     },
+    { returnDocument: "after", includeResultMetadata: false },
   );
-  return { ...planning, signatureStatus: "expired", signatureToken: null, updatedAt: now };
+  if (updated) return updated;
+  if (token) return findPlanningByPublicSignatureToken(db, token);
+  return db.collection<any>("plannings").findOne({ _id: planning._id });
 }
 
 export function parseSignatureRequestInput(body: any) {
   const email = safeString(body?.email).toLowerCase();
   if (email && !EMAIL_PATTERN.test(email)) throw new Error("Ungültige E-Mail-Adresse.");
   const requestedDays = Number(body?.expiresInDays ?? 14);
-  if (!Number.isFinite(requestedDays) || requestedDays < 1 || requestedDays > 90) {
-    throw new Error("expiresInDays muss zwischen 1 und 90 liegen.");
+  if (
+    !Number.isFinite(requestedDays) ||
+    !Number.isInteger(requestedDays) ||
+    requestedDays < 1 ||
+    requestedDays > 90
+  ) {
+    throw new Error("expiresInDays muss eine ganze Zahl zwischen 1 und 90 sein.");
   }
   return {
     email,
     message: safeString(body?.message).slice(0, 4000),
-    expiresInDays: Math.trunc(requestedDays),
+    expiresInDays: requestedDays,
     sendEmail: body?.sendEmail !== false,
   };
 }
@@ -348,7 +392,7 @@ export function validateSignatureImage(value: unknown) {
 }
 
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number) {
-  const words = sanitizePdfText(text).split(/\s+/).filter(Boolean);
+  const words = signaturePdfText(text).split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
@@ -463,7 +507,7 @@ export async function createSignedOrderPdf(args: {
   page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1) });
   page.drawRectangle({ x: margin, y: 764, width: 6, height: 34, color: teal });
   page.drawText("Unterschriftsprotokoll", { x: margin + 18, y: 780, size: 20, font: bold, color: dark });
-  page.drawText(`Auftrag ${sanitizePdfText(args.orderId)}`, { x: margin + 18, y: 760, size: 9, font, color: muted });
+  page.drawText(`Auftrag ${signaturePdfText(args.orderId)}`, { x: margin + 18, y: 760, size: 9, font, color: muted });
 
   const rows = [
     ["Auftragsnummer", args.orderId],
@@ -473,8 +517,8 @@ export async function createSignedOrderPdf(args: {
   ];
   let y = 710;
   for (const [label, value] of rows) {
-    page.drawText(sanitizePdfText(label), { x: margin, y, size: 8, font, color: muted });
-    page.drawText(sanitizePdfText(value || "-"), { x: 190, y, size: 10, font: bold, color: dark });
+    page.drawText(signaturePdfText(label), { x: margin, y, size: 8, font, color: muted });
+    page.drawText(signaturePdfText(value || "-"), { x: 190, y, size: 10, font: bold, color: dark });
     page.drawLine({ start: { x: margin, y: y - 10 }, end: { x: 549, y: y - 10 }, thickness: 0.6, color: border });
     y -= 38;
   }
@@ -502,8 +546,8 @@ export async function createSignedOrderPdf(args: {
   ];
   y = 342;
   for (const [label, value] of detailRows) {
-    page.drawText(sanitizePdfText(label), { x: margin, y, size: 7.5, font, color: muted });
-    page.drawText(sanitizePdfText(value || "-"), { x: 190, y, size: 8.5, font, color: dark });
+    page.drawText(signaturePdfText(label), { x: margin, y, size: 7.5, font, color: muted });
+    page.drawText(signaturePdfText(value || "-"), { x: 190, y, size: 8.5, font, color: dark });
     y -= 23;
   }
   page.drawText("User-Agent", { x: margin, y, size: 7.5, font, color: muted });
@@ -535,7 +579,7 @@ export async function createSignedOrderPdf(args: {
   page.drawRectangle({ x: margin, y: 44, width: 503, height: 58, color: rgb(0.94, 0.98, 0.97), borderColor: teal, borderWidth: 0.8 });
   drawWrappedText({
     page,
-    text: "Einfache elektronische Signatur (EES) gemaess Art. 14 OR / ZertES.",
+    text: "Einfache elektronische Signatur (EES) gemäss Art. 14 OR / ZertES.",
     x: margin + 14,
     y: 78,
     width: 475,
@@ -545,11 +589,11 @@ export async function createSignedOrderPdf(args: {
   });
   page.drawText(
     placedInField
-      ? "Das Unterschriftsbild wurde zusaetzlich im PDF-Formularfeld platziert."
-      : "Das Originaldokument wurde unveraendert vor dieser Protokollseite uebernommen.",
+      ? "Das Unterschriftsbild wurde zusätzlich im PDF-Formularfeld platziert."
+      : "Das Originaldokument wurde unverändert vor dieser Protokollseite übernommen.",
     { x: margin + 14, y: 57, size: 6.8, font, color: muted },
   );
-  pdf.setTitle(`${sanitizePdfText(args.orderId)} - unterschrieben`);
+  pdf.setTitle(`${signaturePdfText(args.orderId)} - unterschrieben`);
   pdf.setSubject("EES Unterschriftsprotokoll");
   pdf.setModificationDate(args.signedAt);
   return Buffer.from(await pdf.save());
@@ -599,14 +643,36 @@ export async function loadPlanningCustomer(db: Db, planning: any) {
 }
 
 function normalizePayments(planning: any, totalInklMwst: number) {
-  const source =
+  const configured =
     planning?.data?.angebot?.payments ??
+    planning?.data?.angebot?.n ??
     planning?.data?.offer?.payments ??
     planning?.data?.reportOptions?.payments ??
     [];
+  const paymentTerms = safeString(
+    planning?.data?.reportOptions?.paymentTerms ??
+      planning?.data?.reportOptions?.zahlungsbedingungen,
+  );
+  const source =
+    Array.isArray(configured) && configured.length === 0
+      ? paymentTerms === "50 % / 50 %"
+        ? [
+            { label: "Anzahlung", pct: 50 },
+            { label: "Schlussrechnung", pct: 50 },
+          ]
+        : paymentTerms === "50 % / 40 % / 10 %"
+          ? [
+              { label: "Anzahlung", pct: 50 },
+              { label: "Zwischenrate", pct: 40 },
+              { label: "Schlussrechnung", pct: 10 },
+            ]
+          : paymentTerms === "100 %"
+            ? [{ label: "Schlussrechnung", pct: 100 }]
+            : configured
+      : configured;
   if (!Array.isArray(source)) return [];
   return source.map((row: any, index: number) => {
-    const pct = Number(row?.pct ?? row?.percent ?? row?.percentage ?? 0);
+    const pct = Number(row?.pct ?? row?.percent ?? row?.percentage ?? row?.sharePct ?? 0);
     const directAmount = Number(row?.amount ?? row?.amountChf);
     const amount = Number.isFinite(directAmount)
       ? directAmount
@@ -677,7 +743,7 @@ export async function notifySignatureParticipants(args: {
     .collection("users")
     .find(
       {
-        status: "active",
+        status: { $ne: "inactive" },
         memberships: {
           $elemMatch: {
             companyId: { $in: companyVariants },

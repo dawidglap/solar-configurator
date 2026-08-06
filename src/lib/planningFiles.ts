@@ -32,6 +32,8 @@ export const PLANNING_FILE_CATEGORIES = [
   "photo",
   "auftrag",
   "angebot_snapshot",
+  "auftrag_signiert",
+  "signature",
 ] as const;
 
 export const PLANNING_FILE_TYPES = [
@@ -64,6 +66,8 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const SYSTEM_MANAGED_PLANNING_FILE_CATEGORIES = [
   "auftrag",
   "angebot_snapshot",
+  "auftrag_signiert",
+  "signature",
 ] as const;
 
 export function normalizePlanningFileCategory(value: unknown): PlanningFileCategory | null {

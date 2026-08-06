@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/subscription-status",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/signatures-expire",
+      "schedule": "0 * * * *"
     }
   ]
 }

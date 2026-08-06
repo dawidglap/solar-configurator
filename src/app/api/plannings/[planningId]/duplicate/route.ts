@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { normalizeOrderFields } from "@/lib/orders";
+import { buildDefaultOrderSignatureFields } from "@/lib/orderSignatures";
 
 export const runtime = "nodejs";
 
@@ -183,6 +184,7 @@ export async function POST(
       commercialLockedAt: null,
       orderSnapshotFileId: null,
       angebotSnapshotFileId: null,
+      ...buildDefaultOrderSignatureFields(),
     };
 
     const res = await plannings.insertOne(duplicated);

@@ -946,7 +946,14 @@ if (ist && typeof ist === "object") {
           ).map((invoice) => normalizeInvoice(invoice))
         : []);
 
-    const { comments: _comments, ...updatedWithoutComments } = updated as any;
+    const {
+      comments: _comments,
+      signatureToken: _signatureToken,
+      signatureTokenHash: _signatureTokenHash,
+      signerIp: _signerIp,
+      signerUserAgent: _signerUserAgent,
+      ...updatedWithoutComments
+    } = updated as any;
     const normalized = {
       ...updatedWithoutComments,
       _id: String((updated as any)._id),
@@ -1051,7 +1058,14 @@ export async function GET(
         ).map((invoice) => normalizeInvoice(invoice))
       : [];
 
-    const { comments: _comments, ...docWithoutComments } = doc as any;
+    const {
+      comments: _comments,
+      signatureToken: _signatureToken,
+      signatureTokenHash: _signatureTokenHash,
+      signerIp: _signerIp,
+      signerUserAgent: _signerUserAgent,
+      ...docWithoutComments
+    } = doc as any;
     const normalized = {
       ...docWithoutComments,
       _id: String((doc as any)._id),
