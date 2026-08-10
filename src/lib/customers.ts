@@ -31,6 +31,7 @@ export const CUSTOMER_PUBLIC_PROJECTION = {
   buildingCity: 1,
   egid: 1,
   buildingNumber: 1,
+  buildingNumberSource: 1,
   parcelNumber: 1,
   parcelNumberSource: 1,
   geoAdminFeatureId: 1,
@@ -152,6 +153,7 @@ export function normalizeCustomerDoc(doc: any) {
     buildingCity: doc.buildingCity ?? "",
     egid: doc.egid ?? null,
     buildingNumber: doc.buildingNumber ?? doc.egid ?? null,
+    buildingNumberSource: doc.buildingNumberSource === "manual" ? "manual" : "auto",
     parcelNumber: doc.parcelNumber ?? null,
     parcelNumberSource: doc.parcelNumberSource === "manual" ? "manual" : "auto",
     subsidyPayoutAccountHolder: doc.subsidyPayoutAccountHolder ?? "",
@@ -194,6 +196,12 @@ export function buildCustomerCreateDoc(body: any, companyId: string) {
     buildingCity: normalizeStoredCustomerString(body?.buildingCity),
     egid: normalizeStoredCustomerString(body?.egid),
     buildingNumber: normalizeStoredCustomerString(body?.buildingNumber ?? body?.egid),
+    buildingNumberSource:
+      body?.buildingNumberSource === "manual" ||
+      (safeCustomerString(body?.buildingNumber ?? body?.egid) &&
+        body?.buildingNumberSource !== "auto")
+        ? "manual"
+        : "auto",
     parcelNumber: normalizeStoredCustomerString(body?.parcelNumber),
     parcelNumberSource: body?.parcelNumberSource === "manual" ||
       (safeCustomerString(body?.parcelNumber) && body?.parcelNumberSource !== "auto")
@@ -243,6 +251,12 @@ export function buildCustomerPatchSet(body: any) {
     setObj.parcelNumberSource = body?.parcelNumberSource === "manual" ? "manual" : "auto";
   } else if (hasOwn("parcelNumber")) {
     setObj.parcelNumberSource = "manual";
+  }
+
+  if (hasOwn("buildingNumberSource")) {
+    setObj.buildingNumberSource = body?.buildingNumberSource === "manual" ? "manual" : "auto";
+  } else if (hasOwn("buildingNumber") || hasOwn("egid")) {
+    setObj.buildingNumberSource = "manual";
   }
 
   for (const field of PATCHABLE_CUSTOMER_STRING_FIELDS) {

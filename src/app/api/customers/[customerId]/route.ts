@@ -427,8 +427,17 @@ export async function PATCH(
       setObj.buildingStreetNo = resolved?.addressHouseNumber || nextBuildingAddress.houseNumber || null;
       setObj.buildingZip = resolved?.addressZip || nextBuildingAddress.zip || null;
       setObj.buildingCity = resolved?.addressCity || nextBuildingAddress.city || null;
-      setObj.egid = resolved?.egid ?? null;
-      setObj.buildingNumber = resolved?.buildingNumber ?? null;
+      const manualBuildingRequested =
+        body?.buildingNumberSource === "manual" ||
+        ((Object.prototype.hasOwnProperty.call(body, "buildingNumber") ||
+          Object.prototype.hasOwnProperty.call(body, "egid")) &&
+          body?.buildingNumberSource !== "auto");
+      const existingManualBuilding = existing?.buildingNumberSource === "manual";
+      if (!manualBuildingRequested && !existingManualBuilding) {
+        setObj.egid = resolved?.egid ?? null;
+        setObj.buildingNumber = resolved?.buildingNumber ?? null;
+        setObj.buildingNumberSource = "auto";
+      }
       const manualParcelRequested =
         body?.parcelNumberSource === "manual" ||
         (Object.prototype.hasOwnProperty.call(body, "parcelNumber") &&

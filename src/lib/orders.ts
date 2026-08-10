@@ -93,6 +93,26 @@ export function normalizeOrderFields(planning: any) {
     cancelReason: safeString(planning?.cancelReason) || null,
     subsidyPayoutAccountHolder: safeString(planning?.subsidyPayoutAccountHolder) || null,
     subsidyPayoutIban: safeString(planning?.subsidyPayoutIban) || null,
+    propertyStreet:
+      safeString(planning?.propertyStreet ?? planning?.data?.profile?.buildingStreet) || null,
+    propertyHouseNumber:
+      safeString(planning?.propertyHouseNumber ?? planning?.data?.profile?.buildingStreetNo) || null,
+    propertyZip:
+      safeString(planning?.propertyZip ?? planning?.data?.profile?.buildingZip) || null,
+    propertyCity:
+      safeString(planning?.propertyCity ?? planning?.data?.profile?.buildingCity) || null,
+    buildingNumber:
+      safeString(planning?.buildingNumber ?? planning?.egid ?? planning?.data?.profile?.buildingNumber ?? planning?.data?.profile?.egid) || null,
+    buildingNumberSource:
+      safeString(planning?.buildingNumberSource ?? planning?.data?.profile?.buildingNumberSource) === "manual"
+        ? "manual"
+        : "auto",
+    parcelNumber:
+      safeString(planning?.parcelNumber ?? planning?.data?.profile?.parcelNumber) || null,
+    parcelNumberSource:
+      safeString(planning?.parcelNumberSource ?? planning?.data?.profile?.parcelNumberSource) === "manual"
+        ? "manual"
+        : "auto",
     ...normalizeSignatureFields(planning),
     ...normalizeOfferSignatureFields(planning),
   };

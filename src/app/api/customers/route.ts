@@ -202,8 +202,11 @@ export async function POST(req: Request) {
       doc.buildingStreetNo = resolved.addressHouseNumber || doc.buildingStreetNo;
       doc.buildingZip = resolved.addressZip || doc.buildingZip;
       doc.buildingCity = resolved.addressCity || doc.buildingCity;
-      doc.egid = resolved.egid;
-      doc.buildingNumber = resolved.buildingNumber;
+      if (doc.buildingNumberSource !== "manual") {
+        doc.egid = resolved.egid;
+        doc.buildingNumber = resolved.buildingNumber;
+        doc.buildingNumberSource = "auto";
+      }
       if (doc.parcelNumberSource !== "manual") {
         doc.parcelNumber = resolved.parcelNumber;
         doc.parcelNumberSource = "auto";

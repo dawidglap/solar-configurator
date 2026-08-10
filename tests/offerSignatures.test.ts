@@ -84,11 +84,37 @@ test("serializes public customer and GeoAdmin offer fields", async () => {
 });
 
 test("normalizes and validates the optional payout IBAN", async () => {
-  const { isValidIban, normalizeIban } = await import("../src/lib/swissQrBill");
-  const normalized = normalizeIban("ch93 0076 2011 6238 5295 7");
-  assert.equal(normalized, "CH9300762011623852957");
-  assert.equal(isValidIban(normalized), true);
-  assert.equal(isValidIban("CH9300762011623852958"), false);
+  const { parseOfferAcceptanceDetails } = await loadOffer();
+  assert.deepEqual(
+    parseOfferAcceptanceDetails({
+      propertyStreet: "  Schachenstrasse ",
+      propertyHouseNumber: " 4 ",
+      propertyZip: " 9450 ",
+      propertyCity: " Lüchingen ",
+      buildingNumber: " 1234567 ",
+      parcelNumber: " 1042 ",
+      bankAccountHolder: " Nicola Rizzoli ",
+      bankIban: "ch93 0076 2011 6238 5295 7",
+    }),
+    {
+      propertyStreet: "Schachenstrasse",
+      propertyHouseNumber: "4",
+      propertyZip: "9450",
+      propertyCity: "Lüchingen",
+      buildingNumber: "1234567",
+      parcelNumber: "1042",
+      bankAccountHolder: "Nicola Rizzoli",
+      bankIban: "CH9300762011623852957",
+    },
+  );
+  assert.throws(
+    () => parseOfferAcceptanceDetails({ bankIban: "CH9300762011623852958" }),
+    /Ungültige IBAN/,
+  );
+  assert.throws(
+    () => parseOfferAcceptanceDetails({ propertyHouseNumber: "x".repeat(21) }),
+    /maximal 20/,
+  );
 });
 
 test("creates signed offer protocol and confirmation pages", async () => {
@@ -128,6 +154,14 @@ test("creates signed offer protocol and confirmation pages", async () => {
     signedAt,
     totalInklMwst: 35_940,
     payments: [{ label: "Anzahlung", pct: 50, amount: 17_970 }],
+    propertyStreet: "Schachenstrasse",
+    propertyHouseNumber: "4",
+    propertyZip: "9450",
+    propertyCity: "Lüchingen",
+    buildingNumber: "1234567",
+    parcelNumber: "1042",
+    bankAccountHolder: "Nicola Rizzoli",
+    bankIban: "CH9300762011623852957",
     withdrawalRightApplies: true,
     withdrawalUntil: new Date("2026-08-24T12:00:00.000Z"),
   });

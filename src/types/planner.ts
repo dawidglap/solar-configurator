@@ -148,6 +148,7 @@ export type ProfileData = {
   buildingZip: string;
   egid?: string | null;
   buildingNumber?: string | null;
+  buildingNumberSource?: 'auto' | 'manual';
   parcelNumber?: string | null;
   parcelNumberSource?: 'auto' | 'manual';
   geoAdminFeatureId?: string | null;

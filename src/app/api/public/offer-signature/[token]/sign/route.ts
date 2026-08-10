@@ -25,6 +25,7 @@ import {
   findOfferByToken,
   getOfferSnapshot,
   normalizeOfferSignaturePlace,
+  parseOfferAcceptanceDetails,
 } from "@/lib/offerSignatures";
 import {
   fetchPlanningFileBuffer,
@@ -32,7 +33,6 @@ import {
   upsertManagedPlanningFile,
 } from "@/lib/planningFiles";
 import { POST as generateOrder } from "@/app/api/plannings/[planningId]/generate-order/route";
-import { isValidIban, normalizeIban } from "@/lib/swissQrBill";
 import { buildIdVariants } from "@/lib/tasks";
 
 export const runtime = "nodejs";
@@ -79,14 +79,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const signerEmail = safeString(body?.signerEmail).toLowerCase().slice(0, 320);
     const placeName = safeString(body?.placeName).slice(0, 200);
     const place = normalizeOfferSignaturePlace(body?.place);
-    const bankAccountHolder = safeString(body?.bankAccountHolder).slice(0, 200);
-    const bankIban = normalizeIban(body?.bankIban);
+    const acceptance = parseOfferAcceptanceDetails(body);
+    const bankAccountHolder = acceptance.bankAccountHolder;
+    const bankIban = acceptance.bankIban;
     if (!signerName) return response(origin, { ok: false, message: "Name ist erforderlich." }, 400);
     if (!EMAIL_PATTERN.test(signerEmail)) return response(origin, { ok: false, message: "Ungültige E-Mail-Adresse." }, 400);
     if (!place) return response(origin, { ok: false, message: "Ungültiger Abschlussort." }, 400);
-    if (bankIban && !isValidIban(bankIban)) {
-      return response(origin, { ok: false, message: "Ungültige IBAN." }, 400);
-    }
     if (planning.offerSignaturePlace && planning.offerSignaturePlace !== place) return response(origin, { ok: false, message: "Der Abschlussort stimmt nicht mit der Signaturanfrage überein." }, 409);
     const signaturePng = validateSignatureImage(body?.signatureImage);
 
@@ -116,6 +114,32 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
 
     const snapshot = await getOfferSnapshot(db, planning);
     const customer = await loadPlanningCustomer(db, planning);
+    const profile = planning?.data?.profile ?? {};
+    const propertyStreet =
+      acceptance.propertyStreet || safeString(profile?.buildingStreet) || safeString(customer?.buildingStreet) || null;
+    const propertyHouseNumber =
+      acceptance.propertyHouseNumber || safeString(profile?.buildingStreetNo) || safeString(customer?.buildingStreetNo) || null;
+    const propertyZip =
+      acceptance.propertyZip || safeString(profile?.buildingZip) || safeString(customer?.buildingZip) || null;
+    const propertyCity =
+      acceptance.propertyCity || safeString(profile?.buildingCity) || safeString(customer?.buildingCity) || null;
+    const buildingNumber =
+      acceptance.buildingNumber ||
+      safeString(profile?.buildingNumber ?? profile?.egid) ||
+      safeString(customer?.buildingNumber ?? customer?.egid) ||
+      null;
+    const parcelNumber =
+      acceptance.parcelNumber || safeString(profile?.parcelNumber) || safeString(customer?.parcelNumber) || null;
+    const buildingNumberSource = acceptance.buildingNumber
+      ? "manual"
+      : safeString(profile?.buildingNumberSource ?? customer?.buildingNumberSource) === "manual"
+        ? "manual"
+        : "auto";
+    const parcelNumberSource = acceptance.parcelNumber
+      ? "manual"
+      : safeString(profile?.parcelNumberSource ?? customer?.parcelNumberSource) === "manual"
+        ? "manual"
+        : "auto";
     const commercial = await computePlanningCommercialSummary(db, planning);
     const signedAt = new Date();
     const tokenHash = sha256(token);
@@ -194,6 +218,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       signedAt,
       totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
       payments,
+      propertyStreet,
+      propertyHouseNumber,
+      propertyZip,
+      propertyCity,
+      buildingNumber,
+      parcelNumber,
+      bankAccountHolder,
+      bankIban,
       withdrawalRightApplies,
       withdrawalUntil,
     });
@@ -231,6 +263,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
           withdrawalUntil,
           subsidyPayoutAccountHolder: bankAccountHolder || null,
           subsidyPayoutIban: bankIban || null,
+          propertyStreet,
+          propertyHouseNumber,
+          propertyZip,
+          propertyCity,
+          buildingNumber,
+          egid: buildingNumber,
+          buildingNumberSource,
+          parcelNumber,
+          parcelNumberSource,
+          "data.profile.buildingStreet": propertyStreet,
+          "data.profile.buildingStreetNo": propertyHouseNumber,
+          "data.profile.buildingZip": propertyZip,
+          "data.profile.buildingCity": propertyCity,
+          "data.profile.buildingNumber": buildingNumber,
+          "data.profile.egid": buildingNumber,
+          "data.profile.buildingNumberSource": buildingNumberSource,
+          "data.profile.parcelNumber": parcelNumber,
+          "data.profile.parcelNumberSource": parcelNumberSource,
           offerSignatureProcessingId: null,
           offerSignatureProcessingAt: null,
           updatedAt: signedAt,
@@ -257,7 +307,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     );
     if (!result.matchedCount) throw new Error("Signaturstatus konnte nicht abgeschlossen werden.");
     const customerId = toObjectIdOrNull(planning?.customerId);
-    if (bankAccountHolder || bankIban) {
+    if (
+      propertyStreet || propertyHouseNumber || propertyZip || propertyCity ||
+      buildingNumber || parcelNumber || bankAccountHolder || bankIban
+    ) {
       await db.collection("auftraege").updateOne(
         {
           companyId: { $in: buildIdVariants(safeString(planning.companyId)) },
@@ -267,12 +320,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
           $set: {
             subsidyPayoutAccountHolder: bankAccountHolder || null,
             subsidyPayoutIban: bankIban || null,
+            propertyStreet,
+            propertyHouseNumber,
+            propertyZip,
+            propertyCity,
+            buildingNumber,
+            egid: buildingNumber,
+            buildingNumberSource,
+            parcelNumber,
+            parcelNumberSource,
             updatedAt: new Date(),
           },
         },
       ).catch((error) => console.error("STORE ORDER PAYOUT ACCOUNT ERROR:", error));
     }
-    if (customerId && (bankAccountHolder || bankIban)) {
+    if (
+      customerId &&
+      (propertyStreet || propertyHouseNumber || propertyZip || propertyCity ||
+        buildingNumber || parcelNumber || bankAccountHolder || bankIban)
+    ) {
       await db.collection("customers").updateOne(
         {
           _id: customerId,
@@ -282,6 +348,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
           $set: {
             subsidyPayoutAccountHolder: bankAccountHolder || null,
             subsidyPayoutIban: bankIban || null,
+            buildingStreet: propertyStreet,
+            buildingStreetNo: propertyHouseNumber,
+            buildingZip: propertyZip,
+            buildingCity: propertyCity,
+            buildingNumber,
+            egid: buildingNumber,
+            buildingNumberSource,
+            parcelNumber,
+            parcelNumberSource,
             updatedAt: new Date(),
           },
         },
@@ -298,7 +373,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       ).catch(() => undefined);
     }
     const message = safeString(error?.message) || "Offerte konnte nicht unterschrieben werden.";
-    const status = /PNG|2 MB|Name|E-Mail|Bedingungen|Abschlussort/.test(message) ? 400 : /bereits|nicht gefunden|nicht gespeichert/.test(message) ? 409 : 500;
+    const status = /PNG|2 MB|Name|E-Mail|Bedingungen|Abschlussort|IBAN|Zeichen/.test(message) ? 400 : /bereits|nicht gefunden|nicht gespeichert/.test(message) ? 409 : 500;
     if (status === 500) console.error("PUBLIC OFFER SIGN ERROR:", error);
     return response(origin, { ok: false, message }, status);
   }

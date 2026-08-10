@@ -576,6 +576,15 @@ export async function PATCH(
         (parcelWasExplicitlyChanged && profile?.parcelNumberSource !== "auto") ||
         (existingProfile?.parcelNumberSource === "manual" &&
           profile?.parcelNumberSource !== "auto");
+      const buildingNumberWasExplicitlyChanged =
+        (hasOwn(profile, "buildingNumber") || hasOwn(profile, "egid")) &&
+        safeString(profile?.buildingNumber ?? profile?.egid) !==
+          safeString(existingProfile?.buildingNumber ?? existingProfile?.egid);
+      const manualBuildingNumber =
+        profile?.buildingNumberSource === "manual" ||
+        (buildingNumberWasExplicitlyChanged && profile?.buildingNumberSource !== "auto") ||
+        (existingProfile?.buildingNumberSource === "manual" &&
+          profile?.buildingNumberSource !== "auto");
 
       if (
         addressWasChanged ||
@@ -590,8 +599,13 @@ export async function PATCH(
           buildingStreetNo: resolved?.addressHouseNumber || nextBuildingAddress.houseNumber,
           buildingZip: resolved?.addressZip || nextBuildingAddress.zip,
           buildingCity: resolved?.addressCity || nextBuildingAddress.city,
-          egid: resolved?.egid ?? null,
-          buildingNumber: resolved?.buildingNumber ?? null,
+          egid: manualBuildingNumber
+            ? safeString(profile?.buildingNumber ?? profile?.egid ?? existingProfile?.buildingNumber ?? existingProfile?.egid) || null
+            : resolved?.egid ?? null,
+          buildingNumber: manualBuildingNumber
+            ? safeString(profile?.buildingNumber ?? profile?.egid ?? existingProfile?.buildingNumber ?? existingProfile?.egid) || null
+            : resolved?.buildingNumber ?? null,
+          buildingNumberSource: manualBuildingNumber ? "manual" : "auto",
           parcelNumber: manualParcel
             ? safeString(profile?.parcelNumber ?? existingProfile?.parcelNumber) || null
             : resolved?.parcelNumber ?? null,
@@ -604,10 +618,24 @@ export async function PATCH(
       } else {
         profile = {
           ...profile,
-          egid: hasOwn(profile, "egid") ? profile.egid : existingProfile.egid ?? null,
+          egid: manualBuildingNumber
+            ? safeString(
+                profile?.buildingNumber ??
+                  profile?.egid ??
+                  existingProfile?.buildingNumber ??
+                  existingProfile?.egid,
+              ) || null
+            : hasOwn(profile, "egid")
+              ? profile.egid
+              : existingProfile.egid ?? null,
           buildingNumber: hasOwn(profile, "buildingNumber")
             ? profile.buildingNumber
-            : existingProfile.buildingNumber ?? existingProfile.egid ?? null,
+            : hasOwn(profile, "egid")
+              ? profile.egid
+              : existingProfile.buildingNumber ?? existingProfile.egid ?? null,
+          buildingNumberSource: manualBuildingNumber
+            ? "manual"
+            : profile?.buildingNumberSource || existingProfile?.buildingNumberSource || "auto",
           parcelNumber: hasOwn(profile, "parcelNumber")
             ? profile.parcelNumber
             : existingProfile.parcelNumber ?? null,

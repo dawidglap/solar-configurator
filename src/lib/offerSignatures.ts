@@ -25,6 +25,7 @@ import {
   storeGeneratedSignatureFile,
 } from "@/lib/orderSignatures";
 import { downloadCompanyDocumentBuffer } from "@/lib/companyDocuments";
+import { isValidIban, normalizeIban } from "@/lib/swissQrBill";
 
 export const OFFER_SIGNATURE_STATUSES = [
   "none",
@@ -150,6 +151,34 @@ export function parseOfferSignatureRequest(body: any) {
     expiresInDays,
     sendEmail: body?.sendEmail === true,
     place,
+  };
+}
+
+function optionalLimitedString(value: unknown, label: string, maxLength: number) {
+  const normalized = safeString(value);
+  if (normalized.length > maxLength) {
+    throw new Error(`${label} darf maximal ${maxLength} Zeichen lang sein.`);
+  }
+  return normalized || null;
+}
+
+export function parseOfferAcceptanceDetails(body: any) {
+  const bankIban = normalizeIban(body?.bankIban) || null;
+  if (bankIban && bankIban.length > 34) {
+    throw new Error("IBAN darf maximal 34 Zeichen lang sein.");
+  }
+  if (bankIban && !isValidIban(bankIban)) {
+    throw new Error("Ungültige IBAN.");
+  }
+  return {
+    propertyStreet: optionalLimitedString(body?.propertyStreet, "Objektstrasse", 120),
+    propertyHouseNumber: optionalLimitedString(body?.propertyHouseNumber, "Hausnummer", 20),
+    propertyZip: optionalLimitedString(body?.propertyZip, "Postleitzahl", 12),
+    propertyCity: optionalLimitedString(body?.propertyCity, "Ort", 100),
+    buildingNumber: optionalLimitedString(body?.buildingNumber, "Gebäudenummer (EGID)", 30),
+    parcelNumber: optionalLimitedString(body?.parcelNumber, "Grundstücknummer", 60),
+    bankAccountHolder: optionalLimitedString(body?.bankAccountHolder, "Kontoinhaber", 200),
+    bankIban,
   };
 }
 

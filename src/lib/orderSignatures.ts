@@ -621,6 +621,14 @@ export async function createOfferConfirmationPdf(args: {
   signedAt: Date;
   totalInklMwst: number;
   payments: Array<{ label: string; pct: number; amount: number }>;
+  propertyStreet?: string | null;
+  propertyHouseNumber?: string | null;
+  propertyZip?: string | null;
+  propertyCity?: string | null;
+  buildingNumber?: string | null;
+  parcelNumber?: string | null;
+  bankAccountHolder?: string | null;
+  bankIban?: string | null;
   withdrawalRightApplies: boolean;
   withdrawalUntil: Date | null;
 }) {
@@ -650,7 +658,7 @@ export async function createOfferConfirmationPdf(args: {
     page.drawText(signaturePdfText(label), { x: margin, y, size: 8, font, color: muted });
     page.drawText(signaturePdfText(value || "-"), { x: 190, y, size: 9.5, font: bold, color: dark });
     page.drawLine({ start: { x: margin, y: y - 10 }, end: { x: 549, y: y - 10 }, thickness: 0.6, color: border });
-    y -= 36;
+    y -= 32;
   }
   page.drawText("Leistungsumfang", { x: margin, y: y - 4, size: 10, font: bold, color: dark });
   y = drawWrappedText({
@@ -662,6 +670,66 @@ export async function createOfferConfirmationPdf(args: {
     font,
     size: 9,
   }) - 15;
+
+  const drawInfoSection = (
+    title: string,
+    sectionRows: Array<[string, string]>,
+  ) => {
+    if (!sectionRows.length) return;
+    page.drawText(title, { x: margin, y, size: 10, font: bold, color: dark });
+    y -= 19;
+    for (const [label, value] of sectionRows) {
+      page.drawText(signaturePdfText(label), { x: margin, y, size: 7.8, font, color: muted });
+      const nextY = drawWrappedText({
+        page,
+        text: value,
+        x: 190,
+        y,
+        width: 359,
+        font: bold,
+        size: 8.5,
+        lineHeight: 10.5,
+      });
+      y = Math.min(y - 16, nextY - 4);
+    }
+    y -= 6;
+  };
+
+  const propertyStreetLine = [safeString(args.propertyStreet), safeString(args.propertyHouseNumber)]
+    .filter(Boolean)
+    .join(" ");
+  const propertyPlaceLine = [safeString(args.propertyZip), safeString(args.propertyCity)]
+    .filter(Boolean)
+    .join(" ");
+  const propertyAddress = [propertyStreetLine, propertyPlaceLine].filter(Boolean).join(", ");
+  drawInfoSection(
+    "Objekt & Grundstück",
+    [
+      ...(propertyAddress ? [["Objektadresse", propertyAddress] as [string, string]] : []),
+      ...(safeString(args.buildingNumber)
+        ? [["Gebäudenummer (EGID)", safeString(args.buildingNumber)] as [string, string]]
+        : []),
+      ...(safeString(args.parcelNumber)
+        ? [["Parzelle / Grundstück-Nr.", safeString(args.parcelNumber)] as [string, string]]
+        : []),
+    ],
+  );
+
+  const formattedIban = safeString(args.bankIban)
+    .replace(/\s+/g, "")
+    .toUpperCase()
+    .replace(/(.{4})/g, "$1 ")
+    .trim();
+  drawInfoSection(
+    "Auszahlungskonto für Förderungen",
+    [
+      ...(safeString(args.bankAccountHolder)
+        ? [["Kontoinhaber", safeString(args.bankAccountHolder)] as [string, string]]
+        : []),
+      ...(formattedIban ? [["IBAN", formattedIban] as [string, string]] : []),
+    ],
+  );
+
   page.drawText("Zahlungsplan", { x: margin, y, size: 10, font: bold, color: dark });
   y -= 24;
   for (const payment of args.payments.slice(0, 5)) {
