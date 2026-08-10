@@ -952,6 +952,14 @@ if (ist && typeof ist === "object") {
       signatureTokenHash: _signatureTokenHash,
       signerIp: _signerIp,
       signerUserAgent: _signerUserAgent,
+      offerSignatureTokenHash: _offerSignatureTokenHash,
+      offerSignerIp: _offerSignerIp,
+      offerSignerUserAgent: _offerSignerUserAgent,
+      offerSignatureImage: _offerSignatureImage,
+      offerSignatureProcessingId: _offerSignatureProcessingId,
+      offerSignatureProcessingAt: _offerSignatureProcessingAt,
+      offerSignatureAudit: _offerSignatureAudit,
+      offerSignedPdfSha256: _offerSignedPdfSha256,
       ...updatedWithoutComments
     } = updated as any;
     const normalized = {
@@ -1064,6 +1072,14 @@ export async function GET(
       signatureTokenHash: _signatureTokenHash,
       signerIp: _signerIp,
       signerUserAgent: _signerUserAgent,
+      offerSignatureTokenHash: _offerSignatureTokenHash,
+      offerSignerIp: _offerSignerIp,
+      offerSignerUserAgent: _offerSignerUserAgent,
+      offerSignatureImage: _offerSignatureImage,
+      offerSignatureProcessingId: _offerSignatureProcessingId,
+      offerSignatureProcessingAt: _offerSignatureProcessingAt,
+      offerSignatureAudit: _offerSignatureAudit,
+      offerSignedPdfSha256: _offerSignedPdfSha256,
       ...docWithoutComments
     } = doc as any;
     const normalized = {

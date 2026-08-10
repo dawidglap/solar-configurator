@@ -16,6 +16,7 @@ import { getSessionUserName } from "@/lib/tasks";
 import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
 import { normalizeOrderFields } from "@/lib/orders";
 import { buildDefaultOrderSignatureFields } from "@/lib/orderSignatures";
+import { buildDefaultOfferSignatureFields } from "@/lib/offerSignatures";
 
 export const runtime = "nodejs";
 
@@ -276,6 +277,7 @@ export async function POST(req: Request) {
       orderSnapshotFileId: null,
       angebotSnapshotFileId: null,
       ...buildDefaultOrderSignatureFields(),
+      ...buildDefaultOfferSignatureFields(),
 
       createdAt: now,
       updatedAt: now,
@@ -383,6 +385,8 @@ export async function GET(req: Request) {
            commercialLockedAt: 1,
            orderSnapshotFileId: 1,
            angebotSnapshotFileId: 1,
+           offerSignatureStatus: 1,
+           offerSignedAt: 1,
            createdAt: 1,
            updatedAt: 1,
           "data.profile.contactFirstName": 1,

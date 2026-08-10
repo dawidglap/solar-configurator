@@ -6,6 +6,7 @@ import {
   ensureOrderSignatureIndexes,
   sha256,
 } from "@/lib/orderSignatures";
+import { buildOfferAuditEntry, ensureOfferSignatureIndexes } from "@/lib/offerSignatures";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,10 +51,9 @@ async function run(req: Request) {
         { projection: { _id: 1, signatureToken: 1, signatureTokenHash: 1 } },
       )
       .toArray();
-    if (!expired.length) return response(origin, { ok: true, expired: 0 });
-
-    const result = await plannings.bulkWrite(
-      expired.map((planning) => ({
+    const result = expired.length
+      ? await plannings.bulkWrite(
+          expired.map((planning) => ({
         updateOne: {
           filter: {
             _id: planning._id,
@@ -76,10 +76,35 @@ async function run(req: Request) {
             },
           },
         },
-      })),
-      { ordered: false },
+          })),
+          { ordered: false },
+        )
+      : { modifiedCount: 0 };
+    await ensureOfferSignatureIndexes(db);
+    const offerResult = await plannings.updateMany(
+      {
+        offerSignatureStatus: { $in: ["sent", "viewed"] },
+        offerSignatureTokenExpiresAt: { $lt: now },
+      },
+      {
+        $set: {
+          offerSignatureStatus: "expired",
+          offerSignatureTokenHash: null,
+          offerSignatureProcessingId: null,
+          offerSignatureProcessingAt: null,
+          updatedAt: now,
+        },
+        $push: {
+          offerSignatureAudit: buildOfferAuditEntry({ event: "expired", at: now }) as never,
+        },
+      },
     );
-    return response(origin, { ok: true, expired: result.modifiedCount });
+    return response(origin, {
+      ok: true,
+      expired: result.modifiedCount + offerResult.modifiedCount,
+      orderExpired: result.modifiedCount,
+      offerExpired: offerResult.modifiedCount,
+    });
   } catch (error: any) {
     console.error("SIGNATURE EXPIRY CRON ERROR:", error);
     return response(

@@ -491,6 +491,11 @@ export async function createSignedOrderPdf(args: {
   signerIp: string;
   signerUserAgent: string;
   sourcePdfSha256: string;
+  documentKind?: "Auftrag" | "Offerte";
+  openedAt?: Date | null;
+  tokenId?: string;
+  signaturePlace?: string;
+  legalText?: string;
 }) {
   const pdf = await PDFDocument.load(args.sourcePdf);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -507,10 +512,11 @@ export async function createSignedOrderPdf(args: {
   page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1) });
   page.drawRectangle({ x: margin, y: 764, width: 6, height: 34, color: teal });
   page.drawText("Unterschriftsprotokoll", { x: margin + 18, y: 780, size: 20, font: bold, color: dark });
-  page.drawText(`Auftrag ${signaturePdfText(args.orderId)}`, { x: margin + 18, y: 760, size: 9, font, color: muted });
+  const documentKind = args.documentKind ?? "Auftrag";
+  page.drawText(`${documentKind} ${signaturePdfText(args.orderId)}`, { x: margin + 18, y: 760, size: 9, font, color: muted });
 
   const rows = [
-    ["Auftragsnummer", args.orderId],
+    [documentKind === "Offerte" ? "Offertennummer" : "Auftragsnummer", args.orderId],
     ["Kunde", args.customerName],
     ["Projekt", args.projectTitle],
     ["Betrag inkl. MwSt.", `CHF ${Number(args.totalInklMwst || 0).toFixed(2)}`],
@@ -543,12 +549,16 @@ export async function createSignedOrderPdf(args: {
     ["Zeitstempel ISO (Europe/Zurich)", timestamp.iso],
     ["Zeitstempel lesbar", timestamp.readable],
     ["IP-Adresse", args.signerIp],
+    ...(args.openedAt ? [["Erstmals geöffnet (UTC)", args.openedAt.toISOString()]] : []),
+    ...(safeString(args.tokenId) ? [["Token-ID (SHA-256)", safeString(args.tokenId)]] : []),
+    ...(safeString(args.signaturePlace) ? [["Abschlussart", safeString(args.signaturePlace)]] : []),
   ];
   y = 342;
+  const detailRowSpacing = args.documentKind === "Offerte" ? 18 : 23;
   for (const [label, value] of detailRows) {
     page.drawText(signaturePdfText(label), { x: margin, y, size: 7.5, font, color: muted });
     page.drawText(signaturePdfText(value || "-"), { x: 190, y, size: 8.5, font, color: dark });
-    y -= 23;
+    y -= detailRowSpacing;
   }
   page.drawText("User-Agent", { x: margin, y, size: 7.5, font, color: muted });
   y = drawWrappedText({
@@ -579,7 +589,9 @@ export async function createSignedOrderPdf(args: {
   page.drawRectangle({ x: margin, y: 44, width: 503, height: 58, color: rgb(0.94, 0.98, 0.97), borderColor: teal, borderWidth: 0.8 });
   drawWrappedText({
     page,
-    text: "Einfache elektronische Signatur (EES) gemäss Art. 14 OR / ZertES.",
+    text:
+      args.legalText ||
+      "Einfache elektronische Signatur (EES) gemäss Art. 14 OR / ZertES.",
     x: margin + 14,
     y: 78,
     width: 475,
@@ -599,10 +611,100 @@ export async function createSignedOrderPdf(args: {
   return Buffer.from(await pdf.save());
 }
 
+export async function createOfferConfirmationPdf(args: {
+  sourcePdf: Buffer;
+  orderId: string;
+  offerNumber: string;
+  customerName: string;
+  projectTitle: string;
+  signerName: string;
+  signedAt: Date;
+  totalInklMwst: number;
+  payments: Array<{ label: string; pct: number; amount: number }>;
+  withdrawalRightApplies: boolean;
+  withdrawalUntil: Date | null;
+}) {
+  const pdf = await PDFDocument.load(args.sourcePdf);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const page = pdf.addPage([595.28, 841.89]);
+  const dark = rgb(0.1, 0.16, 0.2);
+  const muted = rgb(0.38, 0.44, 0.48);
+  const teal = rgb(0.1, 0.55, 0.48);
+  const border = rgb(0.84, 0.87, 0.88);
+  const margin = 46;
+  page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1) });
+  page.drawRectangle({ x: margin, y: 764, width: 6, height: 34, color: teal });
+  page.drawText("Auftragsbestätigung", { x: margin + 18, y: 780, size: 20, font: bold, color: dark });
+  page.drawText(`Auftrag ${signaturePdfText(args.orderId)}`, { x: margin + 18, y: 760, size: 9, font, color: muted });
+  const rows = [
+    ["Vertragsdatum", args.signedAt.toISOString()],
+    ["Angenommene Offerte", args.offerNumber],
+    ["Kunde", args.customerName],
+    ["Unterzeichner", args.signerName],
+    ["Projekt", args.projectTitle],
+    ["Vertragssumme inkl. MwSt.", `CHF ${Number(args.totalInklMwst || 0).toFixed(2)}`],
+  ];
+  let y = 710;
+  for (const [label, value] of rows) {
+    page.drawText(signaturePdfText(label), { x: margin, y, size: 8, font, color: muted });
+    page.drawText(signaturePdfText(value || "-"), { x: 190, y, size: 9.5, font: bold, color: dark });
+    page.drawLine({ start: { x: margin, y: y - 10 }, end: { x: 549, y: y - 10 }, thickness: 0.6, color: border });
+    y -= 36;
+  }
+  page.drawText("Leistungsumfang", { x: margin, y: y - 4, size: 10, font: bold, color: dark });
+  y = drawWrappedText({
+    page,
+    text: `Der Leistungsumfang entspricht vollständig der elektronisch angenommenen Offerte ${args.offerNumber}.`,
+    x: margin,
+    y: y - 24,
+    width: 503,
+    font,
+    size: 9,
+  }) - 15;
+  page.drawText("Zahlungsplan", { x: margin, y, size: 10, font: bold, color: dark });
+  y -= 24;
+  for (const payment of args.payments.slice(0, 5)) {
+    page.drawText(signaturePdfText(payment.label), { x: margin, y, size: 8.5, font, color: dark });
+    page.drawText(`${payment.pct.toFixed(2)} %`, { x: 315, y, size: 8.5, font, color: muted });
+    page.drawText(`CHF ${payment.amount.toFixed(2)}`, { x: 420, y, size: 8.5, font: bold, color: dark });
+    y -= 20;
+  }
+  if (args.withdrawalRightApplies && args.withdrawalUntil) {
+    page.drawRectangle({ x: margin, y: 70, width: 503, height: 125, color: rgb(1, 0.97, 0.9), borderColor: rgb(0.88, 0.61, 0.12), borderWidth: 0.8 });
+    page.drawText("Widerrufsbelehrung", { x: margin + 14, y: 170, size: 10, font: bold, color: dark });
+    drawWrappedText({
+      page,
+      text: `Dieser Vertrag wurde ausserhalb der Geschäftsräume beim Kunden abgeschlossen. Das Widerrufsrecht gemäss Art. 40a ff. OR kann bis ${args.withdrawalUntil.toISOString()} ausgeübt werden. Der Widerruf ist der Anbieterin in nachweisbarer Form mitzuteilen.`,
+      x: margin + 14,
+      y: 148,
+      width: 475,
+      font,
+      size: 8.5,
+      lineHeight: 12,
+    });
+  } else {
+    page.drawRectangle({ x: margin, y: 70, width: 503, height: 58, color: rgb(0.94, 0.98, 0.97), borderColor: teal, borderWidth: 0.8 });
+    drawWrappedText({
+      page,
+      text: "Die Auftragsbestätigung dokumentiert die elektronische Annahme der Offerte und den Vertragsschluss.",
+      x: margin + 14,
+      y: 104,
+      width: 475,
+      font,
+      size: 8.5,
+    });
+  }
+  pdf.setTitle(`Auftragsbestätigung ${signaturePdfText(args.orderId)}`);
+  pdf.setSubject("Elektronisch angenommene Offerte und Auftragsbestätigung");
+  pdf.setModificationDate(args.signedAt);
+  return Buffer.from(await pdf.save());
+}
+
 export async function storeGeneratedSignatureFile(args: {
   db: Db;
   planning: any;
-  category: "signature" | "auftrag_signiert";
+  category: "signature" | "auftrag_signiert" | "offer_snapshot" | "offer_signiert";
   title: string;
   fileName: string;
   mimeType: "image/png" | "application/pdf";
@@ -642,7 +744,7 @@ export async function loadPlanningCustomer(db: Db, planning: any) {
   });
 }
 
-function normalizePayments(planning: any, totalInklMwst: number) {
+export function normalizeSignaturePayments(planning: any, totalInklMwst: number) {
   const configured =
     planning?.data?.angebot?.payments ??
     planning?.data?.angebot?.n ??
@@ -716,7 +818,7 @@ export async function buildPublicSignatureOrder(args: {
     objectAddress: resolveObjectAddress(args.planning),
     totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
     currency: "CHF",
-    payments: normalizePayments(args.planning, Number(commercial?.grossPriceChf ?? 0)),
+    payments: normalizeSignaturePayments(args.planning, Number(commercial?.grossPriceChf ?? 0)),
     pdfUrl: canReadPdf
       ? `${apiBase}/api/public/signature/${encodeURIComponent(args.token)}/pdf`
       : null,

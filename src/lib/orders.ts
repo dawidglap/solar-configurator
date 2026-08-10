@@ -3,6 +3,7 @@ import { ObjectId, ReturnDocument } from "mongodb";
 import { mongoIdToString, safeString, toObjectIdOrNull, type SessionPayload } from "@/lib/api-session";
 import { getSessionUserMeta, isAdminLikeRole } from "@/lib/tasks";
 import { normalizeSignatureFields } from "@/lib/orderSignatures";
+import { normalizeOfferSignatureFields } from "@/lib/offerSignatures";
 
 export function canManageCompanyBank(session: SessionPayload | null | undefined) {
   return isAdminLikeRole(session);
@@ -91,6 +92,7 @@ export function normalizeOrderFields(planning: any) {
     cancelledByName: safeString(planning?.cancelledByName) || null,
     cancelReason: safeString(planning?.cancelReason) || null,
     ...normalizeSignatureFields(planning),
+    ...normalizeOfferSignatureFields(planning),
   };
 }
 

@@ -34,6 +34,8 @@ export const PLANNING_FILE_CATEGORIES = [
   "angebot_snapshot",
   "auftrag_signiert",
   "signature",
+  "offer_snapshot",
+  "offer_signiert",
 ] as const;
 
 export const PLANNING_FILE_TYPES = [
@@ -68,6 +70,8 @@ export const SYSTEM_MANAGED_PLANNING_FILE_CATEGORIES = [
   "angebot_snapshot",
   "auftrag_signiert",
   "signature",
+  "offer_snapshot",
+  "offer_signiert",
 ] as const;
 
 export function normalizePlanningFileCategory(value: unknown): PlanningFileCategory | null {
