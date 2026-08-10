@@ -46,6 +46,51 @@ test("offer signature status serialization exposes no token hash", async () => {
   assert.equal("offerSignatureTokenHash" in response, false);
 });
 
+test("serializes public customer and GeoAdmin offer fields", async () => {
+  const { buildPublicOfferCustomerFields } = await loadOffer();
+  assert.deepEqual(
+    buildPublicOfferCustomerFields(
+      {
+        data: {
+          profile: {
+            customerType: "private",
+            contactSalutation: "Herr",
+            contactLastName: "Rizzoli",
+            buildingStreet: "Schachenstrasse",
+            buildingStreetNo: "4",
+            buildingZip: "9450",
+            buildingCity: "Lüchingen",
+            egid: "1234567",
+            parcelNumber: "1042",
+          },
+        },
+      },
+      null,
+    ),
+    {
+      salutation: "herr",
+      customerLastName: "Rizzoli",
+      customerType: "private",
+      customerCompanyName: null,
+      addressStreet: "Schachenstrasse",
+      addressHouseNumber: "4",
+      addressZip: "9450",
+      addressCity: "Lüchingen",
+      egid: "1234567",
+      buildingNumber: "1234567",
+      parcelNumber: "1042",
+    },
+  );
+});
+
+test("normalizes and validates the optional payout IBAN", async () => {
+  const { isValidIban, normalizeIban } = await import("../src/lib/swissQrBill");
+  const normalized = normalizeIban("ch93 0076 2011 6238 5295 7");
+  assert.equal(normalized, "CH9300762011623852957");
+  assert.equal(isValidIban(normalized), true);
+  assert.equal(isValidIban("CH9300762011623852958"), false);
+});
+
 test("creates signed offer protocol and confirmation pages", async () => {
   const { createOfferConfirmationPdf, createSignedOrderPdf, sha256 } = await loadOrder();
   const source = await PDFDocument.create();
@@ -90,4 +135,3 @@ test("creates signed offer protocol and confirmation pages", async () => {
   assert.equal(loadedConfirmation.getPageCount(), 2);
   assert.equal(loadedConfirmation.getTitle(), "Auftragsbestätigung AUF-2026-0007");
 });
-

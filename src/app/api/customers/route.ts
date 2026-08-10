@@ -12,6 +12,7 @@ import {
 } from "@/lib/customers";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { activeDocumentFilter } from "@/lib/trash";
+import { hasResolvableObjectAddress, resolveGeoAdminProperty } from "@/lib/geoAdmin";
 
 export const runtime = "nodejs";
 
@@ -188,6 +189,30 @@ export async function POST(req: Request) {
     if (subscriptionError) return subscriptionError;
     const customers = db.collection("customers");
     await ensureCustomerIndexes(db);
+
+    const buildingAddress = {
+      street: safeString(doc.buildingStreet),
+      houseNumber: safeString(doc.buildingStreetNo),
+      zip: safeString(doc.buildingZip),
+      city: safeString(doc.buildingCity),
+    };
+    if (hasResolvableObjectAddress(buildingAddress)) {
+      const resolved = await resolveGeoAdminProperty(db, buildingAddress);
+      doc.buildingStreet = resolved.addressStreet || doc.buildingStreet;
+      doc.buildingStreetNo = resolved.addressHouseNumber || doc.buildingStreetNo;
+      doc.buildingZip = resolved.addressZip || doc.buildingZip;
+      doc.buildingCity = resolved.addressCity || doc.buildingCity;
+      doc.egid = resolved.egid;
+      doc.buildingNumber = resolved.buildingNumber;
+      if (doc.parcelNumberSource !== "manual") {
+        doc.parcelNumber = resolved.parcelNumber;
+        doc.parcelNumberSource = "auto";
+      }
+      doc.geoAdminFeatureId = resolved.featureId;
+      doc.geoAdminEasting = resolved.easting;
+      doc.geoAdminNorthing = resolved.northing;
+      doc.geoAdminResolvedAt = resolved.lookupSucceeded ? new Date() : null;
+    }
 
     const now = new Date();
     const result = await customers.findOneAndUpdate(

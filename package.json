@@ -22,6 +22,7 @@
     "test:execution-teams": "tsx scripts/test-execution-teams.ts",
     "test:order-signatures": "tsx --test tests/orderSignatures.test.ts",
     "test:offer-signatures": "tsx --test tests/offerSignatures.test.ts",
+    "test:geo-admin": "tsx --test tests/geoAdmin.test.ts",
     "backfill:auftrag-pipeline": "npx tsx scripts/backfill-auftrag-pipeline.ts",
     "backfill:company-subscriptions": "npx tsx scripts/backfill-company-subscriptions.ts",
     "backfill:invoice-dunning-status": "npx tsx scripts/backfill-invoice-dunning-status.ts",

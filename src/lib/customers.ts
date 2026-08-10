@@ -29,6 +29,16 @@ export const CUSTOMER_PUBLIC_PROJECTION = {
   buildingStreetNo: 1,
   buildingZip: 1,
   buildingCity: 1,
+  egid: 1,
+  buildingNumber: 1,
+  parcelNumber: 1,
+  parcelNumberSource: 1,
+  geoAdminFeatureId: 1,
+  geoAdminEasting: 1,
+  geoAdminNorthing: 1,
+  geoAdminResolvedAt: 1,
+  subsidyPayoutAccountHolder: 1,
+  subsidyPayoutIban: 1,
   source: 1,
   tags: 1,
   address: 1,
@@ -57,6 +67,9 @@ const PATCHABLE_CUSTOMER_STRING_FIELDS = [
   "buildingStreetNo",
   "buildingZip",
   "buildingCity",
+  "egid",
+  "buildingNumber",
+  "parcelNumber",
   "source",
   "address",
   "notes",
@@ -137,6 +150,12 @@ export function normalizeCustomerDoc(doc: any) {
     buildingStreetNo: doc.buildingStreetNo ?? "",
     buildingZip: doc.buildingZip ?? "",
     buildingCity: doc.buildingCity ?? "",
+    egid: doc.egid ?? null,
+    buildingNumber: doc.buildingNumber ?? doc.egid ?? null,
+    parcelNumber: doc.parcelNumber ?? null,
+    parcelNumberSource: doc.parcelNumberSource === "manual" ? "manual" : "auto",
+    subsidyPayoutAccountHolder: doc.subsidyPayoutAccountHolder ?? "",
+    subsidyPayoutIban: doc.subsidyPayoutIban ?? "",
     source: doc.source ?? "",
     tags: Array.isArray(doc.tags) ? doc.tags : [],
     address: computeCustomerAddress(doc),
@@ -173,6 +192,19 @@ export function buildCustomerCreateDoc(body: any, companyId: string) {
     buildingStreetNo: normalizeStoredCustomerString(body?.buildingStreetNo),
     buildingZip: normalizeStoredCustomerString(body?.buildingZip),
     buildingCity: normalizeStoredCustomerString(body?.buildingCity),
+    egid: normalizeStoredCustomerString(body?.egid),
+    buildingNumber: normalizeStoredCustomerString(body?.buildingNumber ?? body?.egid),
+    parcelNumber: normalizeStoredCustomerString(body?.parcelNumber),
+    parcelNumberSource: body?.parcelNumberSource === "manual" ||
+      (safeCustomerString(body?.parcelNumber) && body?.parcelNumberSource !== "auto")
+      ? "manual"
+      : "auto",
+    geoAdminFeatureId: null,
+    geoAdminEasting: null,
+    geoAdminNorthing: null,
+    geoAdminResolvedAt: null,
+    subsidyPayoutAccountHolder: normalizeStoredCustomerString(body?.subsidyPayoutAccountHolder),
+    subsidyPayoutIban: normalizeStoredCustomerString(body?.subsidyPayoutIban)?.replace(/\s+/g, "").toUpperCase() || null,
     source: normalizeStoredCustomerString(body?.source),
     tags: normalizeStoredCustomerTags(body?.tags),
     notes: normalizeStoredCustomerString(body?.notes),
@@ -205,6 +237,12 @@ export function buildCustomerPatchSet(body: any) {
 
   if (hasOwn("tags")) {
     setObj.tags = normalizeStoredCustomerTags(body?.tags);
+  }
+
+  if (hasOwn("parcelNumberSource")) {
+    setObj.parcelNumberSource = body?.parcelNumberSource === "manual" ? "manual" : "auto";
+  } else if (hasOwn("parcelNumber")) {
+    setObj.parcelNumberSource = "manual";
   }
 
   for (const field of PATCHABLE_CUSTOMER_STRING_FIELDS) {

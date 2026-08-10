@@ -26,6 +26,11 @@ import {
   validatePlanningPayments,
 } from "@/lib/invoices";
 import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
+import {
+  hasResolvableObjectAddress,
+  objectAddressChanged,
+  resolveGeoAdminProperty,
+} from "@/lib/geoAdmin";
 
 export const runtime = "nodejs";
 
@@ -461,7 +466,7 @@ export async function PATCH(
 
   const body = await req.json().catch(() => ({} as any));
 
-  const profile = body?.profile;
+  let profile = body?.profile;
   const ist = body?.ist;
   const planner = body?.planner;
 
@@ -543,6 +548,78 @@ export async function PATCH(
 
     if (!existingPlanning) {
       return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
+    }
+
+    if (profile && typeof profile === "object") {
+      const existingProfile = (existingPlanning as any)?.data?.profile ?? {};
+      const previousBuildingAddress = {
+        street: safeString(existingProfile?.buildingStreet),
+        houseNumber: safeString(existingProfile?.buildingStreetNo),
+        zip: safeString(existingProfile?.buildingZip),
+        city: safeString(existingProfile?.buildingCity),
+      };
+      const nextBuildingAddress = {
+        street: safeString(profile?.buildingStreet),
+        houseNumber: safeString(profile?.buildingStreetNo),
+        zip: safeString(profile?.buildingZip),
+        city: safeString(profile?.buildingCity),
+      };
+      const addressWasChanged = objectAddressChanged(
+        previousBuildingAddress,
+        nextBuildingAddress,
+      );
+      const parcelWasExplicitlyChanged =
+        hasOwn(profile, "parcelNumber") &&
+        safeString(profile?.parcelNumber) !== safeString(existingProfile?.parcelNumber);
+      const manualParcel =
+        profile?.parcelNumberSource === "manual" ||
+        (parcelWasExplicitlyChanged && profile?.parcelNumberSource !== "auto") ||
+        (existingProfile?.parcelNumberSource === "manual" &&
+          profile?.parcelNumberSource !== "auto");
+
+      if (
+        addressWasChanged ||
+        (!existingProfile?.geoAdminResolvedAt && hasResolvableObjectAddress(nextBuildingAddress))
+      ) {
+        const resolved = hasResolvableObjectAddress(nextBuildingAddress)
+          ? await resolveGeoAdminProperty(db, nextBuildingAddress)
+          : null;
+        profile = {
+          ...profile,
+          buildingStreet: resolved?.addressStreet || nextBuildingAddress.street,
+          buildingStreetNo: resolved?.addressHouseNumber || nextBuildingAddress.houseNumber,
+          buildingZip: resolved?.addressZip || nextBuildingAddress.zip,
+          buildingCity: resolved?.addressCity || nextBuildingAddress.city,
+          egid: resolved?.egid ?? null,
+          buildingNumber: resolved?.buildingNumber ?? null,
+          parcelNumber: manualParcel
+            ? safeString(profile?.parcelNumber ?? existingProfile?.parcelNumber) || null
+            : resolved?.parcelNumber ?? null,
+          parcelNumberSource: manualParcel ? "manual" : "auto",
+          geoAdminFeatureId: resolved?.featureId ?? null,
+          geoAdminEasting: resolved?.easting ?? null,
+          geoAdminNorthing: resolved?.northing ?? null,
+          geoAdminResolvedAt: resolved?.lookupSucceeded ? new Date().toISOString() : null,
+        };
+      } else {
+        profile = {
+          ...profile,
+          egid: hasOwn(profile, "egid") ? profile.egid : existingProfile.egid ?? null,
+          buildingNumber: hasOwn(profile, "buildingNumber")
+            ? profile.buildingNumber
+            : existingProfile.buildingNumber ?? existingProfile.egid ?? null,
+          parcelNumber: hasOwn(profile, "parcelNumber")
+            ? profile.parcelNumber
+            : existingProfile.parcelNumber ?? null,
+          parcelNumberSource: manualParcel
+            ? "manual"
+            : profile?.parcelNumberSource || existingProfile?.parcelNumberSource || "auto",
+          geoAdminFeatureId: existingProfile.geoAdminFeatureId ?? null,
+          geoAdminEasting: existingProfile.geoAdminEasting ?? null,
+          geoAdminNorthing: existingProfile.geoAdminNorthing ?? null,
+          geoAdminResolvedAt: existingProfile.geoAdminResolvedAt ?? null,
+        };
+      }
     }
 
     const paymentTermsLocked =

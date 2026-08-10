@@ -209,6 +209,8 @@ export async function GET(req: Request) {
             signatureDeclinedAt: 1,
             signatureDeclinedReason: 1,
             signatureAudit: 1,
+            subsidyPayoutAccountHolder: 1,
+            subsidyPayoutIban: 1,
           },
         },
         { $sort: { orderGeneratedAt: -1, _id: -1 } },

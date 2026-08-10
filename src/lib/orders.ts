@@ -91,6 +91,8 @@ export function normalizeOrderFields(planning: any) {
       null,
     cancelledByName: safeString(planning?.cancelledByName) || null,
     cancelReason: safeString(planning?.cancelReason) || null,
+    subsidyPayoutAccountHolder: safeString(planning?.subsidyPayoutAccountHolder) || null,
+    subsidyPayoutIban: safeString(planning?.subsidyPayoutIban) || null,
     ...normalizeSignatureFields(planning),
     ...normalizeOfferSignatureFields(planning),
   };

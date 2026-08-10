@@ -387,6 +387,8 @@ export async function GET(req: Request) {
            angebotSnapshotFileId: 1,
            offerSignatureStatus: 1,
            offerSignedAt: 1,
+           subsidyPayoutAccountHolder: 1,
+           subsidyPayoutIban: 1,
            createdAt: 1,
            updatedAt: 1,
           "data.profile.contactFirstName": 1,

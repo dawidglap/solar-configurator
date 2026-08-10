@@ -146,6 +146,14 @@ export type ProfileData = {
   buildingStreetNo: string;
   buildingCity: string;
   buildingZip: string;
+  egid?: string | null;
+  buildingNumber?: string | null;
+  parcelNumber?: string | null;
+  parcelNumberSource?: 'auto' | 'manual';
+  geoAdminFeatureId?: string | null;
+  geoAdminEasting?: number | null;
+  geoAdminNorthing?: number | null;
+  geoAdminResolvedAt?: string | null;
 
   // Dati attività (Geschäft)
   businessName: string;

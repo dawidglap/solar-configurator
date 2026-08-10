@@ -323,6 +323,50 @@ export async function getOfferPublicFile(db: Db, planning: any, kind: string) {
   return { file, buffer: await fetchPlanningFileBuffer(file) };
 }
 
+export function buildPublicOfferCustomerFields(planning: any, customer: any) {
+  const profile = planning?.data?.profile ?? {};
+  const rawCustomerType = safeString(profile?.customerType ?? profile?.type ?? customer?.type).toLowerCase();
+  const customerType = rawCustomerType === "company" || rawCustomerType === "firma"
+    ? "company"
+    : "private";
+  const rawSalutation = safeString(
+    profile?.contactSalutation ?? profile?.salutation ?? profile?.gender ?? customer?.salutation,
+  ).toLowerCase();
+  const salutation = customerType === "company"
+    ? "firma"
+    : ["herr", "mr", "male", "mann", "m"].includes(rawSalutation)
+      ? "herr"
+      : ["frau", "mrs", "ms", "female", "weiblich", "w"].includes(rawSalutation)
+        ? "frau"
+        : null;
+  return {
+    salutation,
+    customerLastName:
+      safeString(profile?.contactLastName ?? profile?.lastName) ||
+      safeString(customer?.lastName),
+    customerType,
+    customerCompanyName:
+      safeString(profile?.businessName ?? profile?.companyName) ||
+      safeString(customer?.companyName) ||
+      null,
+    addressStreet:
+      safeString(profile?.buildingStreet) || safeString(customer?.buildingStreet) || null,
+    addressHouseNumber:
+      safeString(profile?.buildingStreetNo) || safeString(customer?.buildingStreetNo) || null,
+    addressZip:
+      safeString(profile?.buildingZip) || safeString(customer?.buildingZip) || null,
+    addressCity:
+      safeString(profile?.buildingCity) || safeString(customer?.buildingCity) || null,
+    egid: safeString(profile?.egid) || safeString(customer?.egid) || null,
+    buildingNumber:
+      safeString(profile?.buildingNumber ?? profile?.egid) ||
+      safeString(customer?.buildingNumber ?? customer?.egid) ||
+      null,
+    parcelNumber:
+      safeString(profile?.parcelNumber) || safeString(customer?.parcelNumber) || null,
+  };
+}
+
 export async function buildPublicOffer(args: { db: Db; planning: any; token: string; req: Request }) {
   const companyId = safeString(args.planning?.companyId);
   const companyObjectId = toObjectIdOrNull(companyId);
@@ -345,6 +389,7 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
     companyLogoUrl: safeString(company?.branding?.logoUrl),
     customerName: resolveCustomerName(args.planning, customer),
     customerEmail: resolveCustomerEmail(args.planning, customer),
+    ...buildPublicOfferCustomerFields(args.planning, customer),
     projectTitle: safeString(args.planning?.title) || safeString(args.planning?.planningNumber),
     objectAddress: resolveObjectAddress(args.planning),
     totalInklMwst: Number(commercial?.grossPriceChf ?? 0),

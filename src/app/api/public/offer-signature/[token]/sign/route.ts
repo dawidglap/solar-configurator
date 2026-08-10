@@ -32,6 +32,8 @@ import {
   upsertManagedPlanningFile,
 } from "@/lib/planningFiles";
 import { POST as generateOrder } from "@/app/api/plannings/[planningId]/generate-order/route";
+import { isValidIban, normalizeIban } from "@/lib/swissQrBill";
+import { buildIdVariants } from "@/lib/tasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,9 +79,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const signerEmail = safeString(body?.signerEmail).toLowerCase().slice(0, 320);
     const placeName = safeString(body?.placeName).slice(0, 200);
     const place = normalizeOfferSignaturePlace(body?.place);
+    const bankAccountHolder = safeString(body?.bankAccountHolder).slice(0, 200);
+    const bankIban = normalizeIban(body?.bankIban);
     if (!signerName) return response(origin, { ok: false, message: "Name ist erforderlich." }, 400);
     if (!EMAIL_PATTERN.test(signerEmail)) return response(origin, { ok: false, message: "Ungültige E-Mail-Adresse." }, 400);
     if (!place) return response(origin, { ok: false, message: "Ungültiger Abschlussort." }, 400);
+    if (bankIban && !isValidIban(bankIban)) {
+      return response(origin, { ok: false, message: "Ungültige IBAN." }, 400);
+    }
     if (planning.offerSignaturePlace && planning.offerSignaturePlace !== place) return response(origin, { ok: false, message: "Der Abschlussort stimmt nicht mit der Signaturanfrage überein." }, 409);
     const signaturePng = validateSignatureImage(body?.signatureImage);
 
@@ -222,6 +229,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
           orderSnapshotFileId: confirmation.doc._id,
           withdrawalRightApplies,
           withdrawalUntil,
+          subsidyPayoutAccountHolder: bankAccountHolder || null,
+          subsidyPayoutIban: bankIban || null,
           offerSignatureProcessingId: null,
           offerSignatureProcessingAt: null,
           updatedAt: signedAt,
@@ -247,6 +256,37 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       },
     );
     if (!result.matchedCount) throw new Error("Signaturstatus konnte nicht abgeschlossen werden.");
+    const customerId = toObjectIdOrNull(planning?.customerId);
+    if (bankAccountHolder || bankIban) {
+      await db.collection("auftraege").updateOne(
+        {
+          companyId: { $in: buildIdVariants(safeString(planning.companyId)) },
+          orderId,
+        },
+        {
+          $set: {
+            subsidyPayoutAccountHolder: bankAccountHolder || null,
+            subsidyPayoutIban: bankIban || null,
+            updatedAt: new Date(),
+          },
+        },
+      ).catch((error) => console.error("STORE ORDER PAYOUT ACCOUNT ERROR:", error));
+    }
+    if (customerId && (bankAccountHolder || bankIban)) {
+      await db.collection("customers").updateOne(
+        {
+          _id: customerId,
+          companyId: { $in: buildIdVariants(safeString(planning.companyId)) },
+        },
+        {
+          $set: {
+            subsidyPayoutAccountHolder: bankAccountHolder || null,
+            subsidyPayoutIban: bankIban || null,
+            updatedAt: new Date(),
+          },
+        },
+      ).catch((error) => console.error("STORE CUSTOMER PAYOUT ACCOUNT ERROR:", error));
+    }
     const completed = await db.collection("plannings").findOne({ _id: planning._id });
     return response(origin, signedResult(req, completed, token));
   } catch (error: any) {

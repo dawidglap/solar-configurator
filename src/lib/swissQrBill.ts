@@ -20,6 +20,10 @@ function normalizeCompact(value: unknown) {
   return safeString(value).replace(/\s+/g, "").toUpperCase();
 }
 
+export function normalizeIban(value: unknown) {
+  return normalizeCompact(value);
+}
+
 function mod97(value: string) {
   let remainder = 0;
   for (const character of value) {

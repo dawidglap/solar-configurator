@@ -11,6 +11,11 @@ import {
   normalizeCustomerDoc,
   safeCustomerString,
 } from "@/lib/customers";
+import {
+  hasResolvableObjectAddress,
+  objectAddressChanged,
+  resolveGeoAdminProperty,
+} from "@/lib/geoAdmin";
 
 export const runtime = "nodejs";
 const CUSTOMER_DETAIL_CACHE_TTL_MS = 120_000;
@@ -376,6 +381,68 @@ export async function PATCH(
     const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
     if (subscriptionError) return subscriptionError;
     const customers = db.collection("customers");
+
+    const existing = await customers.findOne({
+      _id: customerObjectId,
+      companyId: buildCustomerCompanyFilter(safeString(session.activeCompanyId)),
+      ...activeDocumentFilter(),
+    });
+    if (!existing) {
+      return jsonResponse(origin, { ok: false, error: "Customer not found" }, 404);
+    }
+    const previousBuildingAddress = {
+      street: safeString(existing.buildingStreet),
+      houseNumber: safeString(existing.buildingStreetNo),
+      zip: safeString(existing.buildingZip),
+      city: safeString(existing.buildingCity),
+    };
+    const nextBuildingAddress = {
+      street: Object.prototype.hasOwnProperty.call(body, "buildingStreet")
+        ? safeString(body.buildingStreet)
+        : previousBuildingAddress.street,
+      houseNumber: Object.prototype.hasOwnProperty.call(body, "buildingStreetNo")
+        ? safeString(body.buildingStreetNo)
+        : previousBuildingAddress.houseNumber,
+      zip: Object.prototype.hasOwnProperty.call(body, "buildingZip")
+        ? safeString(body.buildingZip)
+        : previousBuildingAddress.zip,
+      city: Object.prototype.hasOwnProperty.call(body, "buildingCity")
+        ? safeString(body.buildingCity)
+        : previousBuildingAddress.city,
+    };
+    const buildingAddressWasSubmitted = [
+      "buildingStreet",
+      "buildingStreetNo",
+      "buildingZip",
+      "buildingCity",
+    ].some((field) => Object.prototype.hasOwnProperty.call(body, field));
+    if (
+      objectAddressChanged(previousBuildingAddress, nextBuildingAddress) ||
+      (buildingAddressWasSubmitted && !existing.geoAdminResolvedAt)
+    ) {
+      const resolved = hasResolvableObjectAddress(nextBuildingAddress)
+        ? await resolveGeoAdminProperty(db, nextBuildingAddress)
+        : null;
+      setObj.buildingStreet = resolved?.addressStreet || nextBuildingAddress.street || null;
+      setObj.buildingStreetNo = resolved?.addressHouseNumber || nextBuildingAddress.houseNumber || null;
+      setObj.buildingZip = resolved?.addressZip || nextBuildingAddress.zip || null;
+      setObj.buildingCity = resolved?.addressCity || nextBuildingAddress.city || null;
+      setObj.egid = resolved?.egid ?? null;
+      setObj.buildingNumber = resolved?.buildingNumber ?? null;
+      const manualParcelRequested =
+        body?.parcelNumberSource === "manual" ||
+        (Object.prototype.hasOwnProperty.call(body, "parcelNumber") &&
+          body?.parcelNumberSource !== "auto");
+      const existingManualParcel = existing?.parcelNumberSource === "manual";
+      if (!manualParcelRequested && !existingManualParcel) {
+        setObj.parcelNumber = resolved?.parcelNumber ?? null;
+        setObj.parcelNumberSource = "auto";
+      }
+      setObj.geoAdminFeatureId = resolved?.featureId ?? null;
+      setObj.geoAdminEasting = resolved?.easting ?? null;
+      setObj.geoAdminNorthing = resolved?.northing ?? null;
+      setObj.geoAdminResolvedAt = resolved?.lookupSucceeded ? new Date() : null;
+    }
 
     const res = await customers.updateOne(
       {
