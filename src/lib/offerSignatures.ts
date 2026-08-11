@@ -433,6 +433,10 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
     totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
     subsidyChf: Number(commercial?.subsidyChf ?? 0),
     effectiveCostChf: Number(commercial?.effectiveCostChf ?? 0),
+    optionalTotalChf: Number(commercial?.optionalTotalChf ?? 0),
+    optionalItems: Array.isArray(commercial?.optionalItems)
+      ? commercial.optionalItems
+      : [],
     paymentTerms:
       safeString(args.planning?.data?.reportOptions?.paymentTerms) ||
       safeString(args.planning?.data?.reportOptions?.zahlungsbedingungen),

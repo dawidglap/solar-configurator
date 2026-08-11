@@ -592,6 +592,13 @@ function getNormalizedIncludedParts(
     .filter((item) => shouldIncludePartItem(item, reportOptions));
 }
 
+function getNormalizedParts(doc: any) {
+  const rawItems = getRawPartsItemsFromPlanning(doc);
+  return Array.isArray(rawItems)
+    ? rawItems.map(normalizePartItem)
+    : ([] as NormalizedPartItem[]);
+}
+
 function getCostBreakdownFromIncludedParts(items: NormalizedPartItem[]) {
   const moduleItems = items.filter((item) => isModuleCategory(item.category));
   const nonModuleItems = items.filter((item) => !isModuleCategory(item.category));
@@ -633,31 +640,35 @@ function getCostBreakdownFromIncludedParts(items: NormalizedPartItem[]) {
 
 function inferEnergyFlagsFromIncludedParts(args: {
   items: NormalizedPartItem[];
+  optionalItems?: NormalizedPartItem[];
   reportOptions: ReturnType<typeof normalizeReportOptions>;
   ist: any;
 }) {
-  const { items, reportOptions, ist } = args;
+  const { items, optionalItems = [], reportOptions, ist } = args;
 
   const hasBatteryFromParts = items.some((item) => isBatteryCategory(item.category));
   const hasEvFromParts = items.some((item) => isWallboxCategory(item.category));
   const hasHeatPumpFromParts = items.some((item) => isHeatPumpCategory(item.category));
+  const hasOptionalBattery = optionalItems.some((item) => isBatteryCategory(item.category));
+  const hasOptionalEv = optionalItems.some((item) => isWallboxCategory(item.category));
+  const hasOptionalHeatPump = optionalItems.some((item) => isHeatPumpCategory(item.category));
 
   const hasBattery =
     hasBatteryFromParts ||
     (typeof reportOptions.battery === "boolean"
-      ? reportOptions.battery
+      ? reportOptions.battery && !hasOptionalBattery
       : !!ist?.hasBattery);
 
   const hasEv =
     hasEvFromParts ||
     (typeof reportOptions.charging === "boolean"
-      ? reportOptions.charging
+      ? reportOptions.charging && !hasOptionalEv
       : !!ist?.hasEV);
 
   const hasHeatPump =
     hasHeatPumpFromParts ||
     (typeof reportOptions.heatPump === "boolean"
-      ? reportOptions.heatPump
+      ? reportOptions.heatPump && !hasOptionalHeatPump
       : !!ist?.hasHeatPump);
 
   return { hasBattery, hasEv, hasHeatPump };
@@ -761,7 +772,16 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   const annualProductionKwh =
     dcPowerKw > 0 ? Math.round(dcPowerKw * yearlyYieldKwhPerKwp) : 0;
 
-  const includedParts = getNormalizedIncludedParts(doc, reportOptions);
+  const normalizedParts = getNormalizedParts(doc);
+  const eligibleParts = getNormalizedIncludedParts(doc, reportOptions);
+  const includedParts = eligibleParts.filter((item) => !item.optional);
+  const optionalParts = normalizedParts.filter((item) => item.optional);
+  const optionalTotalChf = round2(
+    optionalParts.reduce(
+      (sum, item) => sum + safeNumber(item.lineTotalNet, 0),
+      0,
+    ),
+  );
   const costBreakdown = getCostBreakdownFromIncludedParts(includedParts);
 
   let modulesTotalChf = costBreakdown.modulesTotalChf;
@@ -770,7 +790,12 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   const totalMargeChf = costBreakdown.totalMargeChf;
   const margePct = costBreakdown.margePct;
 
-  if (grossInvestmentChf <= 0 && moduleCount > 0 && fallbackModuleUnitPriceChf > 0) {
+  if (
+    grossInvestmentChf <= 0 &&
+    normalizedParts.length === 0 &&
+    moduleCount > 0 &&
+    fallbackModuleUnitPriceChf > 0
+  ) {
     modulesTotalChf = round2(moduleCount * fallbackModuleUnitPriceChf);
     partsTotalChf = 0;
     grossInvestmentChf = round2(modulesTotalChf + partsTotalChf);
@@ -786,8 +811,8 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
     reportOptions.selectedWallboxItemId
   );
 
-  const batteryAlreadyInParts = hasEquivalentPart(includedParts, "battery");
-  const wallboxAlreadyInParts = hasEquivalentPart(includedParts, "wallbox");
+  const batteryAlreadyInParts = hasEquivalentPart(normalizedParts, "battery");
+  const wallboxAlreadyInParts = hasEquivalentPart(normalizedParts, "wallbox");
 
   const extraBatteryCostChf =
     reportOptions.battery !== false &&
@@ -813,6 +838,7 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
 
   const { hasBattery, hasEv, hasHeatPump } = inferEnergyFlagsFromIncludedParts({
     items: includedParts,
+    optionalItems: optionalParts,
     reportOptions,
     ist,
   });
@@ -941,6 +967,8 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
     paymentTerms: reportOptions.paymentTerms,
     mwstIncluded: reportOptions.mwstIncluded,
     includedPartsCount: includedParts.length,
+    optionalTotalChf,
+    optionalItemsCount: optionalParts.length,
 
     extraBatteryCostChf,
     extraWallboxCostChf,

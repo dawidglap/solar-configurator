@@ -41,6 +41,7 @@ type DetailItem = {
   warranty?: string;
   compatibility?: string;
   notes?: string;
+  optional?: boolean;
 };
 
 type AddDetailPagesArgs = {
@@ -67,6 +68,8 @@ const COLOR_MUTED = rgb(0.36, 0.43, 0.47);
 const COLOR_LINE = rgb(0.82, 0.84, 0.86);
 const COLOR_SOFT = rgb(0.95, 0.95, 0.95);
 const COLOR_ACCENT = rgb(0.12, 0.32, 0.37);
+const COLOR_OPTIONAL_BG = rgb(254 / 255, 246 / 255, 220 / 255);
+const COLOR_OPTIONAL_BORDER = rgb(240 / 255, 198 / 255, 76 / 255);
 
 const TABLE_COL = {
   posX: MARGIN_X + 6,
@@ -331,10 +334,9 @@ function estimateItemHeight(item: DetailItem, font: PDFFont, bold: PDFFont) {
   const bodyWidth = PAGE_W - MARGIN_X * 2;
   const { descWidth } = getTableColumnLayout();
 
-  let h = 0;
-
-  h += 22; // table row
-  h += 8;
+  let h = Math.max(1, wrapTextStrict(buildItemTitle(item), descWidth, bold, 9.6).length) * 11;
+  const subline = buildItemSubline(item);
+  h += subline ? wrapTextStrict(subline, descWidth, font, 8.2).length * 10 : 2;
 
   const description = safeString(item.description);
   const longDescription = safeString(item.longDescription);
@@ -381,6 +383,8 @@ function estimateSectionHeaderHeight() {
 export async function addDetailPages(pdf: PDFDocument, args: AddDetailPagesArgs) {
   const items = Array.isArray(args.offer?.detailItems) ? args.offer.detailItems : [];
   if (!items.length) return;
+  const includedItems = items.filter((item) => item.optional !== true);
+  const optionalItems = items.filter((item) => item.optional === true);
 
   const font = await pdf.embedFont("Helvetica");
   const bold = await pdf.embedFont("Helvetica-Bold");
@@ -403,7 +407,7 @@ export async function addDetailPages(pdf: PDFDocument, args: AddDetailPagesArgs)
   let y = page.cursorY;
   let currentSection = "";
 
-  for (const item of items) {
+  for (const item of includedItems) {
     const section = normalizeSection(item.pdfSection || "");
     const needsSectionHeader = section !== currentSection;
 
@@ -445,6 +449,116 @@ export async function addDetailPages(pdf: PDFDocument, args: AddDetailPagesArgs)
       bold,
     });
   }
+
+  if (!optionalItems.length) return;
+
+  const createNextPage = () => {
+    pageNumber += 1;
+    page = createPage(pdf, {
+      pageNumber,
+      offerTitle: safeString(args.offer?.title) || "Photovoltaik-Angebot",
+      planningNumber: safeString(args.offer?.planningNumber),
+      company: args.company,
+      font,
+      bold,
+      footerLines,
+      documentTitle: args.documentTitle,
+      documentNumberLabel: args.documentNumberLabel,
+    });
+    y = page.cursorY;
+  };
+
+  if (y - 82 < MARGIN_BOTTOM + 70) {
+    createNextPage();
+  }
+  y = drawOptionalSectionHeader(page.page, { y, font, bold });
+
+  for (const item of optionalItems) {
+    const itemHeight = estimateItemHeight(item, font, bold) + 10;
+    if (y - itemHeight < MARGIN_BOTTOM + 70) {
+      createNextPage();
+      y = drawOptionalSectionHeader(page.page, { y, font, bold });
+    }
+
+    y = drawDetailItem(page.page, {
+      y,
+      item,
+      font,
+      bold,
+      optionalStyle: true,
+    });
+  }
+
+  if (y - 62 < MARGIN_BOTTOM + 70) {
+    createNextPage();
+    y = drawOptionalSectionHeader(page.page, { y, font, bold });
+  }
+
+  const optionalTotal = optionalItems.reduce(
+    (sum, item) => sum + safeNumber(item.lineTotalNet, 0),
+    0,
+  );
+  y = drawOptionalTotal(page.page, { y, total: optionalTotal, font, bold });
+}
+
+function drawOptionalSectionHeader(
+  page: PDFPage,
+  args: { y: number; font: PDFFont; bold: PDFFont },
+) {
+  const tableCol = getTableColumnLayout();
+  const boxY = args.y - 45;
+  page.drawRectangle({
+    x: MARGIN_X,
+    y: boxY,
+    width: PAGE_W - MARGIN_X * 2,
+    height: 52,
+    color: COLOR_OPTIONAL_BG,
+    borderColor: COLOR_OPTIONAL_BORDER,
+    borderWidth: 1,
+  });
+  drawText(page, "Optionale Positionen", MARGIN_X + 9, args.y - 11, 12, args.bold, COLOR_TEXT);
+  drawText(page, "Beschreibung", tableCol.descX, args.y - 33, 8.5, args.bold, COLOR_TEXT);
+  drawText(page, "Menge · Einheit", tableCol.qtyLeft - 14, args.y - 33, 8.2, args.bold, COLOR_TEXT);
+  drawText(page, "VK Preis", tableCol.priceLeft, args.y - 33, 8.2, args.bold, COLOR_TEXT);
+  drawText(page, "Zeilentotal", tableCol.totalLeft, args.y - 33, 8.2, args.bold, COLOR_TEXT);
+  return args.y - 59;
+}
+
+function drawOptionalTotal(
+  page: PDFPage,
+  args: { y: number; total: number; font: PDFFont; bold: PDFFont },
+) {
+  const boxY = args.y - 50;
+  page.drawRectangle({
+    x: MARGIN_X,
+    y: boxY,
+    width: PAGE_W - MARGIN_X * 2,
+    height: 56,
+    color: COLOR_OPTIONAL_BG,
+    borderColor: COLOR_OPTIONAL_BORDER,
+    borderWidth: 1,
+  });
+  drawText(page, "Total optionale Positionen", MARGIN_X + 10, args.y - 14, 9.5, args.bold, COLOR_TEXT);
+  const totalText = `${money(args.total)} CHF`;
+  drawText(
+    page,
+    totalText,
+    PAGE_W - MARGIN_X - 10 - args.bold.widthOfTextAtSize(totalText, 9.5),
+    args.y - 14,
+    9.5,
+    args.bold,
+    COLOR_TEXT,
+  );
+  drawText(
+    page,
+    "Diese Positionen sind nicht im Total enthalten und können auf Wunsch ergänzt werden.",
+    MARGIN_X + 10,
+    args.y - 35,
+    8.5,
+    args.font,
+    COLOR_TEXT,
+  );
+  return boxY - 10;
 }
 
 function createPage(
@@ -565,6 +679,7 @@ function drawDetailItem(
     item: DetailItem;
     font: PDFFont;
     bold: PDFFont;
+    optionalStyle?: boolean;
   }
 ) {
   const { item, font, bold } = args;
@@ -579,7 +694,28 @@ function drawDetailItem(
   const unitPriceText = `${money(item.unitPriceNet)} CHF`;
   const lineTotalText = `${money(item.lineTotalNet)} CHF`;
 
-  drawText(page, String(item.position || "—"), tableCol.posX, y, 9.2, font, COLOR_TEXT);
+  if (args.optionalStyle) {
+    const estimatedHeight = estimateItemHeight(item, font, bold) + 4;
+    page.drawRectangle({
+      x: MARGIN_X,
+      y: args.y - estimatedHeight + 9,
+      width: PAGE_W - MARGIN_X * 2,
+      height: estimatedHeight,
+      color: COLOR_OPTIONAL_BG,
+      borderColor: COLOR_OPTIONAL_BORDER,
+      borderWidth: 0.8,
+    });
+    page.drawRectangle({
+      x: tableCol.posX,
+      y: y - 4,
+      width: 32,
+      height: 13,
+      color: COLOR_OPTIONAL_BORDER,
+    });
+    drawText(page, "Optional", tableCol.posX + 3, y, 6.4, bold, COLOR_TEXT);
+  } else {
+    drawText(page, String(item.position || "—"), tableCol.posX, y, 9.2, font, COLOR_TEXT);
+  }
 
   const titleLines = wrapTextStrict(title, tableCol.descWidth, bold, 9.6);
   for (const line of titleLines) {
@@ -660,7 +796,15 @@ function drawDetailItem(
   }
 
   y -= 4;
-  drawLine(page, MARGIN_X, y, PAGE_W - MARGIN_X, y, 0.6, COLOR_LINE);
+  drawLine(
+    page,
+    MARGIN_X,
+    y,
+    PAGE_W - MARGIN_X,
+    y,
+    args.optionalStyle ? 0.8 : 0.6,
+    args.optionalStyle ? COLOR_OPTIONAL_BORDER : COLOR_LINE,
+  );
   y -= 12;
 
   return y;

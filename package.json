@@ -26,6 +26,7 @@
     "test:geo-admin": "tsx --test tests/geoAdmin.test.ts",
     "test:user-profiles": "tsx --test tests/userProfilesPasswordReset.test.ts",
     "test:user-profile-backfill": "tsx --test tests/userProfileBackfill.test.ts",
+    "test:optional-positions": "tsx --test tests/optionalPositions.test.ts",
     "backfill:auftrag-pipeline": "npx tsx scripts/backfill-auftrag-pipeline.ts",
     "backfill:company-subscriptions": "npx tsx scripts/backfill-company-subscriptions.ts",
     "backfill:invoice-dunning-status": "npx tsx scripts/backfill-invoice-dunning-status.ts",

@@ -34,6 +34,15 @@ type ResolvedBankDetails = {
   bicSwift: string;
 };
 
+export type OptionalCommercialItem = {
+  label: string;
+  name: string;
+  note: string;
+  qty: number;
+  unit: string;
+  priceChf: number;
+};
+
 type BuildPlanningDocumentPdfArgs = {
   db: Db;
   planning: any;
@@ -245,6 +254,35 @@ function getItemLineTotal(item: any) {
   return qty * unitPrice;
 }
 
+function isOptionalItem(item: any) {
+  return item?.optional === true;
+}
+
+function buildOptionalCommercialItem(item: any): OptionalCommercialItem {
+  const itemName = safeString(item?.name ?? item?.beschreibung);
+  const brand = safeString(item?.brand ?? item?.marke);
+  const identity = safeString(item?.model) || itemName;
+  const productName =
+    brand && identity && !identity.toLowerCase().startsWith(brand.toLowerCase())
+      ? `${brand} ${identity}`
+      : identity || brand;
+
+  return {
+    label:
+      safeString(item?.label) ||
+      itemName ||
+      safeString(item?.category ?? item?.kategorie) ||
+      "Optionale Position",
+    name: productName || itemName,
+    note:
+      safeString(item?.note ?? item?.notes) ||
+      safeString(item?.longDescription),
+    qty: safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0),
+    unit: safeString(item?.unitLabel ?? item?.unit ?? item?.einheit) || "Stk.",
+    priceChf: Number(getItemLineTotal(item).toFixed(2)),
+  };
+}
+
 function buildCatalogLookupKey(input: {
   category?: unknown;
   brand?: unknown;
@@ -405,6 +443,16 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
   const reportOptions = data?.reportOptions ?? {};
   const summary = planning?.summary ?? {};
   const items = Array.isArray(parts?.items) ? parts.items : [];
+  const includedItems = items.filter((item: any) => !isOptionalItem(item));
+  const optionalSourceItems = items.filter(isOptionalItem);
+  const optionalItems: OptionalCommercialItem[] = optionalSourceItems.map(
+    buildOptionalCommercialItem,
+  );
+  const optionalTotalChf = Number(
+    optionalSourceItems
+      .reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0)
+      .toFixed(2),
+  );
 
   const catalogDocs = await db
     .collection("catalogItems")
@@ -422,7 +470,9 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
     ) ?? true;
 
   const partsTotalNet = Number(
-    items.reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0).toFixed(2),
+    includedItems
+      .reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0)
+      .toFixed(2),
   );
 
   const discountChf = safeNumber(
@@ -480,6 +530,8 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
     catalogDocs,
     reportSummary,
     partsTotalNet,
+    optionalTotalChf,
+    optionalItems,
     discountChf,
     discountPct,
     discountFromPctChf,
@@ -622,10 +674,12 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   const customerType = safeString(profile?.type ?? profile?.customerType).toLowerCase();
 
   const batteryItems = items.filter((item: any) => {
+    if (isOptionalItem(item)) return false;
     const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
     return category === "batterie" || category === "battery" || category === "speicher";
   });
   const wallboxItems = items.filter((item: any) => {
+    if (isOptionalItem(item)) return false;
     const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
     return category === "ladestation" || category === "wallbox";
   });
@@ -742,6 +796,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
         warranty: safeString(item?.catalogWarranty),
         compatibility: safeString(item?.catalogCompatibility),
         notes: safeString(item?.notes) || safeString(item?.catalogNotes),
+        optional: isOptionalItem(item),
       };
     }),
   };
