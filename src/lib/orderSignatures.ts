@@ -496,6 +496,7 @@ export async function createSignedOrderPdf(args: {
   tokenId?: string;
   signaturePlace?: string;
   legalText?: string;
+  sourceHashLabel?: string;
 }) {
   const pdf = await PDFDocument.load(args.sourcePdf);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -573,7 +574,10 @@ export async function createSignedOrderPdf(args: {
     lineHeight: 9,
   });
 
-  page.drawText("SHA-256 des Original-PDF", { x: margin, y: y - 8, size: 7.5, font, color: muted });
+  page.drawText(
+    signaturePdfText(args.sourceHashLabel || "SHA-256 des Original-PDF"),
+    { x: margin, y: y - 8, size: 7.5, font, color: muted },
+  );
   drawWrappedText({
     page,
     text: args.sourcePdfSha256,
@@ -609,6 +613,41 @@ export async function createSignedOrderPdf(args: {
   pdf.setSubject("EES Unterschriftsprotokoll");
   pdf.setModificationDate(args.signedAt);
   return Buffer.from(await pdf.save());
+}
+
+export async function appendOfferConfirmationSignatureProtocol(args: {
+  confirmationPdf: Buffer;
+  signaturePng: Buffer;
+  orderId: string;
+  customerName: string;
+  projectTitle: string;
+  totalInklMwst: number;
+  signerName: string;
+  signerEmail: string;
+  place: string;
+  signedAt: Date;
+  signerIp: string;
+  signerUserAgent: string;
+  signedOfferSha256: string;
+}) {
+  return createSignedOrderPdf({
+    sourcePdf: args.confirmationPdf,
+    signaturePng: args.signaturePng,
+    orderId: args.orderId,
+    customerName: args.customerName,
+    projectTitle: args.projectTitle,
+    totalInklMwst: args.totalInklMwst,
+    signerName: args.signerName,
+    signerEmail: args.signerEmail,
+    place: args.place,
+    signedAt: args.signedAt,
+    signerIp: args.signerIp,
+    signerUserAgent: args.signerUserAgent,
+    sourcePdfSha256: args.signedOfferSha256,
+    documentKind: "Auftrag",
+    legalText: "Einfache elektronische Signatur (EES) gemäss Art. 14 OR.",
+    sourceHashLabel: "SHA-256 der signierten Offerte",
+  });
 }
 
 export async function createOfferConfirmationPdf(args: {

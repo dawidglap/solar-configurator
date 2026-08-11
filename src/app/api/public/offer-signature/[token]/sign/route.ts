@@ -4,6 +4,7 @@ import { getCorsHeaders } from "@/lib/cors";
 import { safeString, toObjectIdOrNull } from "@/lib/api-session";
 import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
 import {
+  appendOfferConfirmationSignatureProtocol,
   createOfferConfirmationPdf,
   createSignedOrderPdf,
   extractRequestIp,
@@ -168,6 +169,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       signaturePlace: place,
       legalText: "Elektronische Annahme der Offerte und einfache elektronische Signatur (EES) gemäss Art. 1/3 ff. und Art. 14 OR.",
     });
+    const signedPdfSha256 = sha256(signedOffer);
     const signedOfferFile = await storeGeneratedSignatureFile({
       db,
       planning,
@@ -176,12 +178,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       fileName: `offerte-${offerNumber}-unterschrieben.pdf`,
       mimeType: "application/pdf",
       buffer: signedOffer,
-      actorName: signerName,
+      actorName: "System",
     });
 
     const secret = process.env.SESSION_SECRET;
     if (!secret) throw new Error("SESSION_SECRET fehlt.");
     const internalSession = buildInternalOrderSession(planning, signerName);
+    const systemSession = {
+      ...internalSession,
+      userId: null,
+      name: "System",
+    };
     const internalRequest = new Request(`${new URL(req.url).origin}/api/plannings/${planning._id}/generate-order`, {
       method: "POST",
       headers: {
@@ -197,6 +204,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       throw new Error(safeString(orderBody?.message) || "Auftrag konnte nicht automatisch generiert werden.");
     }
     const orderId = safeString(orderBody.orderId);
+    const signedOfferSnapshot = await upsertManagedPlanningFile({
+      db,
+      companyId: safeString(planning.companyId),
+      planningId: String(planning._id),
+      category: "angebot_snapshot",
+      title: `Offerte ${offerNumber} (unterschrieben)`,
+      originalFileName: `offerte-${offerNumber}-unterschrieben.pdf`,
+      mimeType: "application/pdf",
+      buffer: signedOffer,
+      customerId: safeString(planning.customerId) || undefined,
+      session: systemSession,
+    });
     const generatedPlanning = await db.collection<any>("plannings").findOne({ _id: planning._id });
     const orderFileId = toObjectIdOrNull(generatedPlanning?.orderSnapshotFileId);
     if (!orderFileId) throw new Error("Auftrags-PDF wurde nicht gespeichert.");
@@ -208,7 +227,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       ? new Date(signedAt.getTime() + 14 * 86_400_000)
       : null;
     const payments = normalizeSignaturePayments(planning, Number(commercial?.grossPriceChf ?? 0));
-    const confirmationPdf = await createOfferConfirmationPdf({
+    const confirmationBasePdf = await createOfferConfirmationPdf({
       sourcePdf: orderPdf,
       orderId,
       offerNumber,
@@ -229,6 +248,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       withdrawalRightApplies,
       withdrawalUntil,
     });
+    const protocolPlace = placeName || (
+      place === "onsite_customer"
+        ? "Beim Kunden"
+        : place === "onsite_company"
+          ? "Geschäftsräume der Anbieterin"
+          : "Remote"
+    );
+    const confirmationPdf = await appendOfferConfirmationSignatureProtocol({
+      confirmationPdf: confirmationBasePdf,
+      signaturePng,
+      orderId,
+      customerName,
+      projectTitle,
+      totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
+      signerName,
+      signerEmail,
+      place: protocolPlace,
+      signedAt,
+      signerIp,
+      signerUserAgent,
+      signedOfferSha256: signedPdfSha256,
+    });
     const confirmation = await upsertManagedPlanningFile({
       db,
       companyId: safeString(planning.companyId),
@@ -239,9 +280,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       mimeType: "application/pdf",
       buffer: confirmationPdf,
       customerId: safeString(planning.customerId) || undefined,
-      session: internalSession,
+      session: systemSession,
     });
-    const signedPdfSha256 = sha256(signedOffer);
     const result = await db.collection<any>("plannings").updateOne(
       { _id: planning._id, offerSignatureTokenHash: tokenHash, offerSignatureProcessingId: processingId },
       {
@@ -259,6 +299,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
           offerConfirmationPdfFileId: confirmation.doc._id,
           offerSignedPdfSha256: signedPdfSha256,
           orderSnapshotFileId: confirmation.doc._id,
+          angebotSnapshotFileId: signedOfferSnapshot.doc._id,
           withdrawalRightApplies,
           withdrawalUntil,
           subsidyPayoutAccountHolder: bankAccountHolder || null,

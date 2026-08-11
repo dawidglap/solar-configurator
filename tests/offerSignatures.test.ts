@@ -117,8 +117,13 @@ test("normalizes and validates the optional payout IBAN", async () => {
   );
 });
 
-test("creates signed offer protocol and confirmation pages", async () => {
-  const { createOfferConfirmationPdf, createSignedOrderPdf, sha256 } = await loadOrder();
+test("creates signed offer and confirmation PDFs with protocol pages", async () => {
+  const {
+    appendOfferConfirmationSignatureProtocol,
+    createOfferConfirmationPdf,
+    createSignedOrderPdf,
+    sha256,
+  } = await loadOrder();
   const source = await PDFDocument.create();
   source.addPage([595.28, 841.89]);
   const sourcePdf = Buffer.from(await source.save());
@@ -168,4 +173,23 @@ test("creates signed offer protocol and confirmation pages", async () => {
   const loadedConfirmation = await PDFDocument.load(confirmation);
   assert.equal(loadedConfirmation.getPageCount(), 2);
   assert.equal(loadedConfirmation.getTitle(), "Auftragsbestätigung AUF-2026-0007");
+
+  const signedConfirmation = await appendOfferConfirmationSignatureProtocol({
+    confirmationPdf: confirmation,
+    signaturePng: Buffer.from(TRANSPARENT_PNG, "base64"),
+    orderId: "AUF-2026-0007",
+    customerName: "Max Muster",
+    projectTitle: "Solaranlage Zürich",
+    totalInklMwst: 35_940,
+    signerName: "Max Muster",
+    signerEmail: "max@example.ch",
+    place: "Zürich",
+    signedAt,
+    signerIp: "192.0.2.42",
+    signerUserAgent: "QA Browser",
+    signedOfferSha256: sha256(signedOffer),
+  });
+  const loadedSignedConfirmation = await PDFDocument.load(signedConfirmation);
+  assert.equal(loadedSignedConfirmation.getPageCount(), 3);
+  assert.equal(loadedSignedConfirmation.getTitle(), "AUF-2026-0007 - unterschrieben");
 });
