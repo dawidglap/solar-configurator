@@ -6,6 +6,7 @@ import {
   buildCompanySubscriptionResponse,
   ensureCompanySubscriptionFields,
 } from "@/lib/subscription";
+import { hasCurrentSessionVersion, normalizeUserProfile } from "@/lib/userProfiles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,6 +67,9 @@ export async function GET(req: Request) {
     if (!user) {
       return jsonResponse(origin, { ok: false, error: "User not found" }, 401);
     }
+    if (!hasCurrentSessionVersion(user, session)) {
+      return jsonResponse(origin, { ok: false, message: "Sitzung ungültig. Bitte erneut anmelden." }, 401);
+    }
 
     let activeCompany: any = null;
 
@@ -112,6 +116,10 @@ export async function GET(req: Request) {
         email: user.email,
         firstName: user.firstName ?? "",
         lastName: user.lastName ?? "",
+        workEmail: normalizeUserProfile(user).workEmail,
+        phone: normalizeUserProfile(user).phone,
+        jobTitle: normalizeUserProfile(user).jobTitle,
+        emailSignature: normalizeUserProfile(user).emailSignature,
         isPlatformSuperAdmin: !!user.isPlatformSuperAdmin,
         status: user.status ?? "active",
         mustChangePassword: !!user.mustChangePassword,

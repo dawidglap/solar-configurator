@@ -4,6 +4,11 @@ import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { normalizeExecutionRoles } from "@/lib/executionTasks";
+import {
+  parseUserProfilePatch,
+  USER_EMAIL_PATTERN,
+  UserProfileValidationError,
+} from "@/lib/userProfiles";
 
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
@@ -67,12 +72,25 @@ export async function POST(req: Request) {
   const tempPassword = String(body.tempPassword ?? "").trim();
   const executionRoles = normalizeExecutionRoles(body.executionRoles);
 
+  let profileFields: Record<string, string | null>;
+  try {
+    profileFields = parseUserProfilePatch(body, { includeNames: true });
+  } catch (error) {
+    if (error instanceof UserProfileValidationError) {
+      return jsonResponse(origin, { ok: false, message: error.message }, 400);
+    }
+    throw error;
+  }
+
   if (!email || !tempPassword) {
     return jsonResponse(
       origin,
       { ok: false, error: "Missing email or tempPassword" },
       400
     );
+  }
+  if (!USER_EMAIL_PATTERN.test(email)) {
+    return jsonResponse(origin, { ok: false, message: "Die E-Mail-Adresse ist ungültig." }, 400);
   }
 
   const allowedRoles = new Set(["owner", "admin", "sales", "planner", "viewer"]);
@@ -110,6 +128,7 @@ export async function POST(req: Request) {
     const res = await users.insertOne({
       email,
       name: name || null,
+      ...profileFields,
       passwordHash,
       executionRoles,
       memberships: [{ companyId: activeCompanyId, role, status: "active" }],
@@ -123,6 +142,10 @@ export async function POST(req: Request) {
       email,
       role,
       executionRoles,
+      workEmail: profileFields.workEmail ?? null,
+      phone: profileFields.phone ?? null,
+      jobTitle: profileFields.jobTitle ?? null,
+      emailSignature: profileFields.emailSignature ?? null,
       tempPassword, // solo per test, poi lo togliamo
     });
   } catch (e: any) {

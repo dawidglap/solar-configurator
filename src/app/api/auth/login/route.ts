@@ -144,6 +144,7 @@ export async function POST(req: Request) {
           ? [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || null
           : (typeof user.name === "string" ? user.name : null),
       email: typeof user.email === "string" ? user.email : null,
+      sessionVersion: Number.isInteger(user.sessionVersion) ? user.sessionVersion : 0,
       iat: Date.now(),
     };
 

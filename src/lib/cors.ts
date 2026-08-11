@@ -1,4 +1,4 @@
-export function getCorsHeaders(origin: string | null) {
+export function isAllowedCorsOrigin(origin: string | null) {
   // origini statiche consentite
   const staticAllowed = [
     "https://app.helionic.ch",
@@ -16,16 +16,21 @@ export function getCorsHeaders(origin: string | null) {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const isAllowed =
+  return (
     !!origin &&
     (
       staticAllowed.includes(origin) ||
       envAllowed.includes(origin) ||
       isLovablePreview
-    );
+    )
+  );
+}
+
+export function getCorsHeaders(origin: string | null): Record<string, string> {
+  const isAllowed = isAllowedCorsOrigin(origin);
 
   return {
-    ...(isAllowed ? { "Access-Control-Allow-Origin": origin } : {}),
+    ...(isAllowed && origin ? { "Access-Control-Allow-Origin": origin } : {}),
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Methods": "GET,POST, PUT, PATCH,DELETE,OPTIONS",
     // The CRM uses authenticated cross-origin requests and explicitly sends

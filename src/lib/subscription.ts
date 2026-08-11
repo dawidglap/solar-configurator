@@ -2,6 +2,7 @@ import type { Db } from "mongodb";
 import { ObjectId } from "mongodb";
 import { jsonResponse, mongoIdToString, safeString, toObjectIdOrNull, type SessionPayload } from "@/lib/api-session";
 import { getSessionUserId, getSessionUserName } from "@/lib/tasks";
+import { isCurrentSessionValid } from "@/lib/userProfiles";
 
 export const COMPANY_PLANS = [
   "starter",
@@ -302,6 +303,10 @@ export async function enforceActiveSubscription(
   origin: string | null,
   session: SessionPayload | null | undefined,
 ) {
+  if (!(await isCurrentSessionValid(db, session))) {
+    return jsonResponse(origin, { ok: false, message: "Sitzung ungültig. Bitte erneut anmelden." }, 401);
+  }
+
   if (!session?.activeCompanyId || isPlatformSuperAdmin(session)) {
     return null;
   }

@@ -26,6 +26,7 @@ import {
 } from "@/lib/orderSignatures";
 import { downloadCompanyDocumentBuffer } from "@/lib/companyDocuments";
 import { isValidIban, normalizeIban } from "@/lib/swissQrBill";
+import { resolvePlanningSellerContact } from "@/lib/userProfiles";
 
 export const OFFER_SIGNATURE_STATUSES = [
   "none",
@@ -406,6 +407,11 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
     downloadCompanyDocumentBuffer(args.db, companyId, "agb").catch(() => null),
   ]);
   const status = normalizeOfferSignatureStatus(args.planning?.offerSignatureStatus);
+  const seller = await resolvePlanningSellerContact({
+    db: args.db,
+    planning: args.planning,
+    company,
+  });
   const base = getPublicApiBaseUrl(args.req);
   const requestedAt = args.planning?.offerSignatureRequestedAt
     ? new Date(args.planning.offerSignatureRequestedAt)
@@ -416,6 +422,9 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
     planningId: mongoIdToString(args.planning?._id),
     companyName: safeString(company?.name),
     companyLogoUrl: safeString(company?.branding?.logoUrl),
+    sellerName: seller.sellerName,
+    sellerEmail: seller.sellerEmail,
+    sellerPhone: seller.sellerPhone,
     customerName: resolveCustomerName(args.planning, customer),
     customerEmail: resolveCustomerEmail(args.planning, customer),
     ...buildPublicOfferCustomerFields(args.planning, customer),
@@ -459,6 +468,7 @@ export function buildInternalOrderSession(planning: any, signerName: string): Se
     userId: mongoIdToString(requester.id) || safeString(requester.id),
     name: safeString(signerName) || requester.name || "Offer Signature",
     activeRole: "owner",
+    isServiceSession: true,
   };
 }
 

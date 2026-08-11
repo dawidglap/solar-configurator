@@ -17,6 +17,7 @@ import {
   logAuftragAdvance,
   persistAuftragStepsState,
 } from "@/lib/auftragPipeline";
+import { resolvePlanningSellerContact } from "@/lib/userProfiles";
 
 export const SIGNATURE_STATUSES = [
   "none",
@@ -913,12 +914,20 @@ export async function buildPublicSignatureOrder(args: {
     computePlanningCommercialSummary(args.db, args.planning),
   ]);
   const status = normalizeSignatureStatus(args.planning?.signatureStatus);
+  const seller = await resolvePlanningSellerContact({
+    db: args.db,
+    planning: args.planning,
+    company,
+  });
   const apiBase = getPublicApiBaseUrl(args.req);
   const canReadPdf = status !== "expired";
   return {
     orderId: safeString(args.planning?.orderId),
     companyName: safeString(company?.name),
     companyLogoUrl: safeString(company?.branding?.logoUrl),
+    sellerName: seller.sellerName,
+    sellerEmail: seller.sellerEmail,
+    sellerPhone: seller.sellerPhone,
     customerName: resolveCustomerName(args.planning, customer),
     customerEmail: resolveCustomerEmail(args.planning, customer),
     projectTitle: safeString(args.planning?.title) || safeString(args.planning?.planningNumber),

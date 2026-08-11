@@ -10,6 +10,11 @@ import {
   noStoreHeaders,
 } from "@/lib/tasks";
 import { normalizeExecutionRoles } from "@/lib/executionTasks";
+import {
+  normalizeUserProfile,
+  parseUserProfilePatch,
+  UserProfileValidationError,
+} from "@/lib/userProfiles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +50,10 @@ function normalizeUser(doc: any, activeCompanyId: string) {
     lastName,
     name: fullName,
     email: safeString(doc?.email),
+    workEmail: normalizeUserProfile(doc).workEmail,
+    phone: normalizeUserProfile(doc).phone,
+    jobTitle: normalizeUserProfile(doc).jobTitle,
+    emailSignature: normalizeUserProfile(doc).emailSignature,
     role: safeString(membership?.role),
     executionRoles: normalizeExecutionRoles(doc?.executionRoles),
     status: safeString(membership?.status) || safeString(doc?.status) || "active",
@@ -100,16 +109,20 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!session?.activeCompanyId) {
     return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
   }
-  if (!isAdminLikeRole(session)) {
-    return jsonResponse(origin, { ok: false, error: "Forbidden" }, 403);
-  }
-
   const { userId } = await params;
   if (!ObjectId.isValid(userId)) {
     return jsonResponse(origin, { ok: false, error: "Invalid userId" }, 400);
   }
 
   const body = await req.json().catch(() => ({} as any));
+  const isSelf = mongoIdToString(session.userId) === userId;
+  const isAdmin = isAdminLikeRole(session);
+  if (!isAdmin && !isSelf) {
+    return jsonResponse(origin, { ok: false, error: "Forbidden" }, 403);
+  }
+  if (!isAdmin && body?.executionRoles !== undefined) {
+    return jsonResponse(origin, { ok: false, error: "Forbidden" }, 403);
+  }
   if (body?.executionRoles !== undefined && !Array.isArray(body.executionRoles)) {
     return jsonResponse(origin, { ok: false, error: "Invalid executionRoles" }, 400);
   }
@@ -124,14 +137,23 @@ export async function PATCH(req: Request, { params }: Params) {
       return jsonResponse(origin, { ok: false, error: "User not found" }, 404);
     }
 
-    const executionRoles = normalizeExecutionRoles(body?.executionRoles);
+    let profilePatch: Record<string, string | null>;
+    try {
+      profilePatch = parseUserProfilePatch(body, { includeNames: true });
+    } catch (error) {
+      if (error instanceof UserProfileValidationError) {
+        return jsonResponse(origin, { ok: false, message: error.message }, 400);
+      }
+      throw error;
+    }
+    const setPatch: Record<string, unknown> = { ...profilePatch, updatedAt: new Date() };
+    if (body?.executionRoles !== undefined) {
+      setPatch.executionRoles = normalizeExecutionRoles(body.executionRoles);
+    }
     await db.collection("users").updateOne(
       { _id: new ObjectId(userId) },
       {
-        $set: {
-          executionRoles,
-          updatedAt: new Date(),
-        },
+        $set: setPatch,
       },
     );
 

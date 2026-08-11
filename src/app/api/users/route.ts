@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
+import { normalizeUserProfile } from "@/lib/userProfiles";
 
 export const runtime = "nodejs";
 
@@ -101,6 +102,10 @@ function normalizeUser(doc: any, activeCompanyId: string) {
     lastName,
     name: fullName,
     email: safeString(doc?.email),
+    workEmail: normalizeUserProfile(doc).workEmail,
+    phone: normalizeUserProfile(doc).phone,
+    jobTitle: normalizeUserProfile(doc).jobTitle,
+    emailSignature: normalizeUserProfile(doc).emailSignature,
     role: safeString(membership?.role) || "",
     executionRoles: Array.isArray(doc?.executionRoles)
       ? doc.executionRoles

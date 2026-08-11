@@ -10,6 +10,7 @@ import {
   requirePlatformSuperAdmin,
 } from "@/lib/subscription";
 import { activeDocumentFilter } from "@/lib/trash";
+import { isCurrentSessionValid } from "@/lib/userProfiles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,6 +50,9 @@ export async function GET(req: Request) {
 
   try {
     const db = await getDb();
+    if (!(await isCurrentSessionValid(db, session))) {
+      return jsonResponse(origin, { ok: false, message: "Sitzung ungültig. Bitte erneut anmelden." }, 401);
+    }
     const companiesCol = db.collection("companies");
     const usersCol = db.collection("users");
     const planningsCol = db.collection("plannings");

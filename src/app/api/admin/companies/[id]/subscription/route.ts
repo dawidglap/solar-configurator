@@ -12,6 +12,7 @@ import {
   parseFutureDateInput,
   requirePlatformSuperAdmin,
 } from "@/lib/subscription";
+import { isCurrentSessionValid } from "@/lib/userProfiles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,6 +119,9 @@ export async function PATCH(
 
   try {
     const db = await getDb();
+    if (!(await isCurrentSessionValid(db, session))) {
+      return jsonResponse(origin, { ok: false, message: "Sitzung ungültig. Bitte erneut anmelden." }, 401);
+    }
     const companies = db.collection("companies");
     const existing = await companies.findOne({
       _id: companyObjectId,

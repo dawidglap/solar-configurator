@@ -14,6 +14,8 @@ export type SessionPayload = {
   firstName?: string | null;
   lastName?: string | null;
   name?: string | null;
+  sessionVersion?: number;
+  isServiceSession?: boolean;
   [key: string]: unknown;
 };
 

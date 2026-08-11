@@ -19,6 +19,7 @@ import {
   requirePlatformSuperAdmin,
 } from "@/lib/subscription";
 import { ensureCompanyAuftragPipelineTemplate } from "@/lib/auftragPipeline";
+import { isCurrentSessionValid } from "@/lib/userProfiles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,6 +59,9 @@ export async function GET(req: Request) {
 
   try {
     const db = await getDb();
+    if (!(await isCurrentSessionValid(db, session))) {
+      return jsonResponse(origin, { ok: false, message: "Sitzung ungültig. Bitte erneut anmelden." }, 401);
+    }
     await ensureCompanySubscriptionIndexes(db);
     const companiesCol = db.collection("companies");
     const usersCol = db.collection("users");
@@ -166,6 +170,9 @@ export async function POST(req: Request) {
 
   try {
     const db = await getDb();
+    if (!(await isCurrentSessionValid(db, session))) {
+      return jsonResponse(origin, { ok: false, message: "Sitzung ungültig. Bitte erneut anmelden." }, 401);
+    }
     const companies = db.collection("companies");
     const users = db.collection("users");
     await ensureCompanySubscriptionIndexes(db);

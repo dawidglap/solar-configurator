@@ -14,6 +14,7 @@ import {
   hasStoredCompanySubscription,
   requirePlatformSuperAdmin,
 } from "@/lib/subscription";
+import { isCurrentSessionValid } from "@/lib/userProfiles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,6 +86,9 @@ export async function GET(
 
   try {
     const db = await getDb();
+    if (!(await isCurrentSessionValid(db, session))) {
+      return jsonResponse(origin, { ok: false, message: "Sitzung ungültig. Bitte erneut anmelden." }, 401);
+    }
     const company = await db.collection("companies").findOne({
       _id: companyObjectId,
       ...buildActiveCompanyFilter(),
@@ -179,6 +183,9 @@ export async function DELETE(
 
   try {
     const db = await getDb();
+    if (!(await isCurrentSessionValid(db, session))) {
+      return jsonResponse(origin, { ok: false, message: "Sitzung ungültig. Bitte erneut anmelden." }, 401);
+    }
     const companies = db.collection("companies");
     const users = db.collection("users");
     const company = await companies.findOne({
