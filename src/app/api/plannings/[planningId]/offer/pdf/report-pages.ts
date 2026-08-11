@@ -92,7 +92,7 @@ function header(
 ) {
   txt(page, title, 44, 792, 19, bold, C.dark);
 
-  const numberLabel = safeString(documentNumberLabel) || (planningNumber ? `Offerte Nr. ${planningNumber}` : "");
+  const numberLabel = safeString(documentNumberLabel) || (planningNumber ? `Angebot Nr. ${planningNumber}` : "");
   if (numberLabel) {
     rightTxt(page, numberLabel, 551, 797, 8.8, font, C.muted);
   }

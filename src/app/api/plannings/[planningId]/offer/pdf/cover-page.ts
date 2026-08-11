@@ -425,7 +425,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
 
   drawText(
     page,
-    safeText(data.documentNumberLabel) || `Offerte Nr. ${data.planningNumber || "—"}`,
+    safeText(data.documentNumberLabel) || `Angebot Nr. ${data.planningNumber || "—"}`,
     titleBoxX + 16,
     titleBoxY + 9,
     9.5,
@@ -705,7 +705,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
 
   if (data.documentType !== "auftrag") {
     y -= 22;
-    drawText(page, "Offerte gültig bis:", tableX, y, 9.4, font, textDark);
+    drawText(page, "Angebot gültig bis:", tableX, y, 9.4, font, textDark);
     drawText(page, data.validUntil || "—", tableX + 118, y, 9.4, bold, textDark);
     drawLine(page, tableX, y - 7, tableX + 270, y - 7, 1, lineGray);
   }

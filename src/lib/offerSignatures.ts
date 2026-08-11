@@ -304,14 +304,14 @@ export async function buildAndStoreOfferSnapshot(args: {
         })
       ).pdfBytes;
   if (buffer.subarray(0, 5).toString("ascii") !== "%PDF-") {
-    throw new Error("Offerten-PDF ist ungültig.");
+    throw new Error("Angebots-PDF ist ungültig.");
   }
   const file = await storeGeneratedSignatureFile({
     db: args.db,
     planning: args.planning,
     category: "offer_snapshot",
-    title: `Offerten-Snapshot ${safeString(args.planning?.planningNumber)}`,
-    fileName: `offerte-${safeString(args.planning?.planningNumber) || planningId}-snapshot.pdf`,
+    title: `Angebots-Snapshot ${safeString(args.planning?.planningNumber)}`,
+    fileName: `angebot-${safeString(args.planning?.planningNumber) || planningId}-snapshot.pdf`,
     mimeType: "application/pdf",
     buffer,
     actorName: safeString(args.session?.name) || "System",
@@ -321,7 +321,7 @@ export async function buildAndStoreOfferSnapshot(args: {
 
 export async function getOfferSnapshot(db: Db, planning: any) {
   const fileId = toObjectIdOrNull(planning?.offerSnapshotFileId);
-  if (!fileId) throw new Error("Offerten-Snapshot nicht gefunden.");
+  if (!fileId) throw new Error("Angebots-Snapshot nicht gefunden.");
   const file = await getPlanningFilesCollection(db).findOne({
     _id: fileId,
     companyId: safeString(planning?.companyId),
@@ -329,7 +329,7 @@ export async function getOfferSnapshot(db: Db, planning: any) {
     category: "offer_snapshot",
     isDeleted: { $ne: true },
   });
-  if (!file) throw new Error("Offerten-Snapshot nicht gefunden.");
+  if (!file) throw new Error("Angebots-Snapshot nicht gefunden.");
   const buffer = await fetchPlanningFileBuffer(file);
   return { file, buffer, hash: sha256(buffer) };
 }

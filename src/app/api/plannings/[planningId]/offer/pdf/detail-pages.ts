@@ -1,5 +1,6 @@
 import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
 import { sanitizePdfText } from "@/lib/pdfText";
+import { htmlToPlainText } from "@/lib/htmlToPlainText";
 
 type CompanyLike = {
   name?: string;
@@ -70,6 +71,10 @@ const COLOR_SOFT = rgb(0.95, 0.95, 0.95);
 const COLOR_ACCENT = rgb(0.12, 0.32, 0.37);
 const COLOR_OPTIONAL_BG = rgb(254 / 255, 246 / 255, 220 / 255);
 const COLOR_OPTIONAL_BORDER = rgb(240 / 255, 198 / 255, 76 / 255);
+const COLOR_OPTIONAL_NOTE = rgb(0.46, 0.38, 0.2);
+const OPTIONAL_HEADER_HEIGHT = 26;
+const OPTIONAL_SUMMARY_HEIGHT = 36;
+const CONTENT_BOTTOM = MARGIN_BOTTOM + 70;
 
 const TABLE_COL = {
   posX: MARGIN_X + 6,
@@ -113,8 +118,12 @@ function safeNumber(v: unknown, fallback = 0) {
 
 function safeStringArray(v: unknown) {
   return Array.isArray(v)
-    ? v.map((x) => safeString(x)).filter(Boolean)
+    ? v.map(htmlToPlainText).filter(Boolean)
     : [];
+}
+
+function plainText(value: unknown) {
+  return safeString(htmlToPlainText(value));
 }
 
 function money(n?: number) {
@@ -334,12 +343,20 @@ function estimateItemHeight(item: DetailItem, font: PDFFont, bold: PDFFont) {
   const bodyWidth = PAGE_W - MARGIN_X * 2;
   const { descWidth } = getTableColumnLayout();
 
-  let h = Math.max(1, wrapTextStrict(buildItemTitle(item), descWidth, bold, 9.6).length) * 11;
+  const titleLines = wrapTextStrict(buildItemTitle(item), descWidth, bold, 9.6);
+  let h = Math.max(1, titleLines.length) * 11;
+  if (
+    item.optional === true &&
+    titleLines[0] &&
+    bold.widthOfTextAtSize(titleLines[0], 9.6) + 6 + 34 > descWidth
+  ) {
+    h += 12;
+  }
   const subline = buildItemSubline(item);
   h += subline ? wrapTextStrict(subline, descWidth, font, 8.2).length * 10 : 2;
 
-  const description = safeString(item.description);
-  const longDescription = safeString(item.longDescription);
+  const description = plainText(item.description);
+  const longDescription = plainText(item.longDescription);
 
   if (description) {
     h += wrapTextStrict(description, descWidth, font, 9.5).length * 11;
@@ -361,9 +378,9 @@ function estimateItemHeight(item: DetailItem, font: PDFFont, bold: PDFFont) {
   }
 
   const extras = [
-    safeString(item.warranty) ? `Garantie: ${safeString(item.warranty)}` : "",
-    safeString(item.compatibility) ? `Kompatibilität: ${safeString(item.compatibility)}` : "",
-    safeString(item.notes) ? `Hinweise: ${safeString(item.notes)}` : "",
+    plainText(item.warranty) ? `Garantie: ${plainText(item.warranty)}` : "",
+    plainText(item.compatibility) ? `Kompatibilität: ${plainText(item.compatibility)}` : "",
+    plainText(item.notes) ? `Hinweise: ${plainText(item.notes)}` : "",
   ].filter(Boolean);
 
   for (const extra of extras) {
@@ -383,8 +400,12 @@ function estimateSectionHeaderHeight() {
 export async function addDetailPages(pdf: PDFDocument, args: AddDetailPagesArgs) {
   const items = Array.isArray(args.offer?.detailItems) ? args.offer.detailItems : [];
   if (!items.length) return;
-  const includedItems = items.filter((item) => item.optional !== true);
-  const optionalItems = items.filter((item) => item.optional === true);
+  const includedItems = items
+    .filter((item) => item.optional !== true)
+    .map((item, index) => ({ ...item, position: index + 1 }));
+  const optionalItems = items
+    .filter((item) => item.optional === true)
+    .map((item, index) => ({ ...item, position: index + 1 }));
 
   const font = await pdf.embedFont("Helvetica");
   const bold = await pdf.embedFont("Helvetica-Bold");
@@ -468,97 +489,141 @@ export async function addDetailPages(pdf: PDFDocument, args: AddDetailPagesArgs)
     y = page.cursorY;
   };
 
-  if (y - 82 < MARGIN_BOTTOM + 70) {
-    createNextPage();
-  }
-  y = drawOptionalSectionHeader(page.page, { y, font, bold });
-
-  for (const item of optionalItems) {
-    const itemHeight = estimateItemHeight(item, font, bold) + 10;
-    if (y - itemHeight < MARGIN_BOTTOM + 70) {
-      createNextPage();
-      y = drawOptionalSectionHeader(page.page, { y, font, bold });
-    }
-
-    y = drawDetailItem(page.page, {
-      y,
-      item,
-      font,
-      bold,
-      optionalStyle: true,
-    });
-  }
-
-  if (y - 62 < MARGIN_BOTTOM + 70) {
-    createNextPage();
-    y = drawOptionalSectionHeader(page.page, { y, font, bold });
-  }
-
   const optionalTotal = optionalItems.reduce(
     (sum, item) => sum + safeNumber(item.lineTotalNet, 0),
     0,
   );
-  y = drawOptionalTotal(page.page, { y, total: optionalTotal, font, bold });
+  let remainingItems = [...optionalItems];
+  let summaryPending = true;
+
+  while (remainingItems.length || summaryPending) {
+    const nextItemHeight = remainingItems.length
+      ? estimateItemHeight(remainingItems[0], font, bold)
+      : OPTIONAL_SUMMARY_HEIGHT;
+    if (y - OPTIONAL_HEADER_HEIGHT - nextItemHeight < CONTENT_BOTTOM) {
+      createNextPage();
+    }
+
+    const topY = y;
+    const availableHeight = topY - CONTENT_BOTTOM;
+    const chunk: DetailItem[] = [];
+    let segmentHeight = OPTIONAL_HEADER_HEIGHT;
+
+    for (const item of remainingItems) {
+      const itemHeight = estimateItemHeight(item, font, bold);
+      if (chunk.length > 0 && segmentHeight + itemHeight > availableHeight) {
+        break;
+      }
+      chunk.push(item);
+      segmentHeight += itemHeight;
+      if (segmentHeight >= availableHeight) break;
+    }
+
+    const consumesAllItems = chunk.length === remainingItems.length;
+    if (
+      consumesAllItems &&
+      summaryPending &&
+      segmentHeight + OPTIONAL_SUMMARY_HEIGHT > availableHeight &&
+      chunk.length > 1
+    ) {
+      const movedItem = chunk.pop();
+      if (movedItem) {
+        segmentHeight -= estimateItemHeight(movedItem, font, bold);
+      }
+    }
+
+    const itemsAfterChunk = remainingItems.length - chunk.length;
+    const includeSummary =
+      summaryPending &&
+      itemsAfterChunk === 0 &&
+      segmentHeight + OPTIONAL_SUMMARY_HEIGHT <= availableHeight;
+    if (includeSummary) segmentHeight += OPTIONAL_SUMMARY_HEIGHT;
+
+    page.page.drawRectangle({
+      x: MARGIN_X,
+      y: topY - segmentHeight,
+      width: PAGE_W - MARGIN_X * 2,
+      height: segmentHeight + 6,
+      color: COLOR_OPTIONAL_BG,
+      borderColor: COLOR_OPTIONAL_BORDER,
+      borderWidth: 1,
+    });
+
+    let contentY = drawOptionalSectionHeader(page.page, { y: topY, bold });
+    for (const item of chunk) {
+      contentY = drawDetailItem(page.page, {
+        y: contentY,
+        item,
+        font,
+        bold,
+        optionalStyle: true,
+      });
+    }
+    remainingItems = remainingItems.slice(chunk.length);
+
+    if (includeSummary) {
+      contentY = drawOptionalSummary(page.page, {
+        y: contentY,
+        total: optionalTotal,
+        font,
+        bold,
+      });
+      summaryPending = false;
+    }
+
+    y = Math.min(contentY, topY - segmentHeight) - 10;
+    if (remainingItems.length || summaryPending) {
+      createNextPage();
+    }
+  }
 }
 
 function drawOptionalSectionHeader(
   page: PDFPage,
-  args: { y: number; font: PDFFont; bold: PDFFont },
+  args: { y: number; bold: PDFFont },
 ) {
-  const tableCol = getTableColumnLayout();
-  const boxY = args.y - 45;
-  page.drawRectangle({
-    x: MARGIN_X,
-    y: boxY,
-    width: PAGE_W - MARGIN_X * 2,
-    height: 52,
-    color: COLOR_OPTIONAL_BG,
-    borderColor: COLOR_OPTIONAL_BORDER,
-    borderWidth: 1,
-  });
-  drawText(page, "Optionale Positionen", MARGIN_X + 9, args.y - 11, 12, args.bold, COLOR_TEXT);
-  drawText(page, "Beschreibung", tableCol.descX, args.y - 33, 8.5, args.bold, COLOR_TEXT);
-  drawText(page, "Menge · Einheit", tableCol.qtyLeft - 14, args.y - 33, 8.2, args.bold, COLOR_TEXT);
-  drawText(page, "VK Preis", tableCol.priceLeft, args.y - 33, 8.2, args.bold, COLOR_TEXT);
-  drawText(page, "Zeilentotal", tableCol.totalLeft, args.y - 33, 8.2, args.bold, COLOR_TEXT);
-  return args.y - 59;
+  drawText(page, "Optionale Positionen", MARGIN_X + 6, args.y - 6, 9.2, args.bold, COLOR_TEXT);
+  drawLine(
+    page,
+    MARGIN_X,
+    args.y - 15,
+    PAGE_W - MARGIN_X,
+    args.y - 15,
+    0.8,
+    COLOR_OPTIONAL_BORDER,
+  );
+  return args.y - OPTIONAL_HEADER_HEIGHT;
 }
 
-function drawOptionalTotal(
+function drawOptionalSummary(
   page: PDFPage,
   args: { y: number; total: number; font: PDFFont; bold: PDFFont },
 ) {
-  const boxY = args.y - 50;
-  page.drawRectangle({
-    x: MARGIN_X,
-    y: boxY,
-    width: PAGE_W - MARGIN_X * 2,
-    height: 56,
-    color: COLOR_OPTIONAL_BG,
-    borderColor: COLOR_OPTIONAL_BORDER,
-    borderWidth: 1,
-  });
-  drawText(page, "Total optionale Positionen", MARGIN_X + 10, args.y - 14, 9.5, args.bold, COLOR_TEXT);
+  const tableCol = getTableColumnLayout();
+  let y = args.y + 1;
+  drawText(page, "Total optionale Positionen", tableCol.descX, y, 9.2, args.bold, COLOR_TEXT);
   const totalText = `${money(args.total)} CHF`;
   drawText(
     page,
     totalText,
-    PAGE_W - MARGIN_X - 10 - args.bold.widthOfTextAtSize(totalText, 9.5),
-    args.y - 14,
-    9.5,
+    tableCol.totalRight - args.bold.widthOfTextAtSize(totalText, 9.2),
+    y,
+    9.2,
     args.bold,
     COLOR_TEXT,
   );
-  drawText(
-    page,
+  y -= 18;
+  const noteLines = wrapTextStrict(
     "Diese Positionen sind nicht im Total enthalten und können auf Wunsch ergänzt werden.",
-    MARGIN_X + 10,
-    args.y - 35,
-    8.5,
+    tableCol.totalRight - tableCol.descX,
     args.font,
-    COLOR_TEXT,
+    8.2,
   );
-  return boxY - 10;
+  for (const line of noteLines) {
+    drawText(page, line, tableCol.descX, y, 8.2, args.font, COLOR_OPTIONAL_NOTE);
+    y -= 10;
+  }
+  return y - 5;
 }
 
 function createPage(
@@ -588,7 +653,7 @@ function createPage(
   // Header
   const headerRight = [
     safeString(args.documentNumberLabel) ||
-      (args.planningNumber ? `Offerte Nr. ${args.planningNumber}` : ""),
+      (args.planningNumber ? `Angebot Nr. ${args.planningNumber}` : ""),
     `Seite ${args.pageNumber}`,
   ]
     .filter(Boolean)
@@ -694,33 +759,41 @@ function drawDetailItem(
   const unitPriceText = `${money(item.unitPriceNet)} CHF`;
   const lineTotalText = `${money(item.lineTotalNet)} CHF`;
 
-  if (args.optionalStyle) {
-    const estimatedHeight = estimateItemHeight(item, font, bold) + 4;
-    page.drawRectangle({
-      x: MARGIN_X,
-      y: args.y - estimatedHeight + 9,
-      width: PAGE_W - MARGIN_X * 2,
-      height: estimatedHeight,
-      color: COLOR_OPTIONAL_BG,
-      borderColor: COLOR_OPTIONAL_BORDER,
-      borderWidth: 0.8,
-    });
-    page.drawRectangle({
-      x: tableCol.posX,
-      y: y - 4,
-      width: 32,
-      height: 13,
-      color: COLOR_OPTIONAL_BORDER,
-    });
-    drawText(page, "Optional", tableCol.posX + 3, y, 6.4, bold, COLOR_TEXT);
-  } else {
-    drawText(page, String(item.position || "—"), tableCol.posX, y, 9.2, font, COLOR_TEXT);
-  }
+  drawText(page, String(item.position || "—"), tableCol.posX, y, 9.2, font, COLOR_TEXT);
 
   const titleLines = wrapTextStrict(title, tableCol.descWidth, bold, 9.6);
-  for (const line of titleLines) {
+  let badgeDeferred = false;
+  for (let index = 0; index < titleLines.length; index += 1) {
+    const line = titleLines[index];
     drawText(page, line, tableCol.descX, y, 9.6, bold, COLOR_TEXT);
+    if (args.optionalStyle && index === 0) {
+      const badgeWidth = 34;
+      const badgeX = tableCol.descX + bold.widthOfTextAtSize(line, 9.6) + 6;
+      if (badgeX + badgeWidth <= tableCol.descX + tableCol.descWidth) {
+        page.drawRectangle({
+          x: badgeX,
+          y: y - 3,
+          width: badgeWidth,
+          height: 12,
+          color: COLOR_OPTIONAL_BORDER,
+        });
+        drawText(page, "Optional", badgeX + 4, y, 6.3, bold, COLOR_TEXT);
+      } else {
+        badgeDeferred = true;
+      }
+    }
     y -= 11;
+  }
+  if (args.optionalStyle && badgeDeferred) {
+    page.drawRectangle({
+      x: tableCol.descX,
+      y: y - 3,
+      width: 34,
+      height: 12,
+      color: COLOR_OPTIONAL_BORDER,
+    });
+    drawText(page, "Optional", tableCol.descX + 4, y, 6.3, bold, COLOR_TEXT);
+    y -= 12;
   }
 
   const qtyW = font.widthOfTextAtSize(qtyText, 9);
@@ -743,7 +816,7 @@ function drawDetailItem(
     y -= 2;
   }
 
-  const description = safeString(item.description);
+  const description = plainText(item.description);
   if (description) {
     const lines = wrapTextStrict(description, tableCol.descWidth, font, 9.5);
     for (const line of lines) {
@@ -753,7 +826,7 @@ function drawDetailItem(
     y -= 2;
   }
 
-  const longDescription = safeString(item.longDescription);
+  const longDescription = plainText(item.longDescription);
   if (longDescription) {
     const lines = wrapTextStrict(longDescription, tableCol.descWidth, font, 9.2);
     for (const line of lines) {
@@ -782,9 +855,9 @@ function drawDetailItem(
   }
 
   const extras = [
-    safeString(item.warranty) ? `Garantie: ${safeString(item.warranty)}` : "",
-    safeString(item.compatibility) ? `Kompatibilität: ${safeString(item.compatibility)}` : "",
-    safeString(item.notes) ? `Hinweise: ${safeString(item.notes)}` : "",
+    plainText(item.warranty) ? `Garantie: ${plainText(item.warranty)}` : "",
+    plainText(item.compatibility) ? `Kompatibilität: ${plainText(item.compatibility)}` : "",
+    plainText(item.notes) ? `Hinweise: ${plainText(item.notes)}` : "",
   ].filter(Boolean);
 
   for (const extra of extras) {
@@ -796,15 +869,7 @@ function drawDetailItem(
   }
 
   y -= 4;
-  drawLine(
-    page,
-    MARGIN_X,
-    y,
-    PAGE_W - MARGIN_X,
-    y,
-    args.optionalStyle ? 0.8 : 0.6,
-    args.optionalStyle ? COLOR_OPTIONAL_BORDER : COLOR_LINE,
-  );
+  drawLine(page, MARGIN_X, y, PAGE_W - MARGIN_X, y, 0.6, COLOR_LINE);
   y -= 12;
 
   return y;

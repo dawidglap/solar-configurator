@@ -142,12 +142,14 @@ test("creates signed offer and confirmation PDFs with protocol pages", async () 
     signerIp: "192.0.2.42",
     signerUserAgent: "QA Browser",
     sourcePdfSha256: sha256(sourcePdf),
-    documentKind: "Offerte",
+    documentKind: "Angebot",
     openedAt: new Date("2026-08-10T11:55:00.000Z"),
     tokenId: sha256("token"),
     signaturePlace: "onsite_customer",
   });
-  assert.equal((await PDFDocument.load(signedOffer)).getPageCount(), 2);
+  const loadedSignedOffer = await PDFDocument.load(signedOffer);
+  assert.equal(loadedSignedOffer.getPageCount(), 2);
+  assert.equal(loadedSignedOffer.getTitle(), "Angebot OFF-2026-0042 - unterschrieben");
 
   const confirmation = await createOfferConfirmationPdf({
     sourcePdf,
@@ -191,5 +193,5 @@ test("creates signed offer and confirmation PDFs with protocol pages", async () 
   });
   const loadedSignedConfirmation = await PDFDocument.load(signedConfirmation);
   assert.equal(loadedSignedConfirmation.getPageCount(), 3);
-  assert.equal(loadedSignedConfirmation.getTitle(), "AUF-2026-0007 - unterschrieben");
+  assert.equal(loadedSignedConfirmation.getTitle(), "Auftrag AUF-2026-0007 - unterschrieben");
 });

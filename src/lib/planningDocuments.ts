@@ -11,6 +11,7 @@ import {
 import { renderAnalyse } from "@/lib/pdf/sections/analyse";
 import { renderProjektuebersicht } from "@/lib/pdf/sections/projektuebersicht";
 import { renderTechnischeEckdaten } from "@/lib/pdf/sections/technischeEckdaten";
+import { htmlToPlainText } from "@/lib/htmlToPlainText";
 
 export type PlanningDocumentType = "angebot" | "auftrag";
 export type PlanningReportSections = {
@@ -38,6 +39,7 @@ export type OptionalCommercialItem = {
   label: string;
   name: string;
   note: string;
+  description: string;
   qty: number;
   unit: string;
   priceChf: number;
@@ -107,7 +109,7 @@ function addDays(date: Date, days: number) {
 }
 
 function splitFeatureLines(value: unknown) {
-  return safeString(value)
+  return htmlToPlainText(value)
     .split(/\r?\n/)
     .map((line) => safeString(line))
     .filter(Boolean);
@@ -267,6 +269,11 @@ function buildOptionalCommercialItem(item: any): OptionalCommercialItem {
       ? `${brand} ${identity}`
       : identity || brand;
 
+  const description = htmlToPlainText(
+    item?.description ?? item?.longDescription,
+  );
+  const note = htmlToPlainText(item?.note ?? item?.notes) || description;
+
   return {
     label:
       safeString(item?.label) ||
@@ -274,9 +281,8 @@ function buildOptionalCommercialItem(item: any): OptionalCommercialItem {
       safeString(item?.category ?? item?.kategorie) ||
       "Optionale Position",
     name: productName || itemName,
-    note:
-      safeString(item?.note ?? item?.notes) ||
-      safeString(item?.longDescription),
+    note,
+    description,
     qty: safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0),
     unit: safeString(item?.unitLabel ?? item?.unit ?? item?.einheit) || "Stk.",
     priceChf: Number(getItemLineTotal(item).toFixed(2)),
@@ -327,7 +333,7 @@ function getDocumentIdentifiers(args: {
   return {
     documentTitle: "Angebot",
     documentNumber: planningNumber,
-    documentNumberLabel: `Offerte Nr. ${planningNumber}`,
+    documentNumberLabel: `Angebot Nr. ${planningNumber}`,
     fileStem: `Angebot_${planningNumber}`,
   };
 }
@@ -755,9 +761,11 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       wallboxPriceChf,
     },
     detailItems: enrichedItems.map((item: any, index: number) => {
-      const rowLongDescription = safeString(item?.longDescription);
-      const catalogLongDescription = safeString(item?.catalogLongDescription);
-      const explicitFeatures = safeStringArray(item?.features);
+      const rowLongDescription = htmlToPlainText(item?.longDescription);
+      const catalogLongDescription = htmlToPlainText(item?.catalogLongDescription);
+      const explicitFeatures = safeStringArray(item?.features)
+        .map(htmlToPlainText)
+        .filter(Boolean);
       const fallbackFeatures =
         explicitFeatures.length > 0
           ? explicitFeatures
@@ -787,21 +795,31 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
         lineTotalNet: getItemLineTotal(item),
         catalogItemId: safeString(item?.catalogItemId),
         pdfSection: safeString(item?.pdfSection),
-        description: safeString(item?.catalogDescription),
+        description: htmlToPlainText(item?.catalogDescription),
         longDescription: finalLongDescription,
         features:
           fallbackFeatures.length > 0
             ? fallbackFeatures
-            : safeStringArray(item?.catalogFeatures),
+            : safeStringArray(item?.catalogFeatures)
+                .map(htmlToPlainText)
+                .filter(Boolean),
         warranty: safeString(item?.catalogWarranty),
         compatibility: safeString(item?.catalogCompatibility),
-        notes: safeString(item?.notes) || safeString(item?.catalogNotes),
+        notes:
+          htmlToPlainText(item?.notes) ||
+          htmlToPlainText(item?.catalogNotes),
         optional: isOptionalItem(item),
       };
     }),
   };
 
   const pdf = await PDFDocument.create();
+  pdf.setTitle(`${identifiers.documentTitle} ${identifiers.documentNumber}`);
+  pdf.setSubject(
+    documentType === "angebot"
+      ? "Angebot für eine Photovoltaikanlage"
+      : "Auftrag für eine Photovoltaikanlage",
+  );
   const snapshotEntry = await snapshotCache.findOne({
     planningId: String(planning?._id),
     companyId: planning?.companyId,

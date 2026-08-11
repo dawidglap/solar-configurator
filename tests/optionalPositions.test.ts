@@ -9,6 +9,7 @@ const loadReport = () =>
 const loadDocuments = () => import("../src/lib/planningDocuments");
 const loadOfferSignatures = () => import("../src/lib/offerSignatures");
 const loadOrderSignatures = () => import("../src/lib/orderSignatures");
+const loadHtmlToPlainText = () => import("../src/lib/htmlToPlainText");
 
 const requiredItem = {
   id: "pv-system",
@@ -141,6 +142,7 @@ test("commercial summary and signature item shape keep options outside VAT total
       label: "Speicher 10 kWh",
       name: "BYD HVM 10.2",
       note: "inkl. Montage",
+      description: "",
       qty: 1,
       unit: "Stk.",
       priceChf: 5_000,
@@ -178,10 +180,38 @@ test("public offer and order signature payloads expose the same optional values"
         label: "Speicher 10 kWh",
         name: "BYD HVM 10.2",
         note: "inkl. Montage",
+        description: "",
         qty: 1,
         unit: "Stk.",
         priceChf: 5_000,
       },
     ]);
   }
+});
+
+test("HTML descriptions become plain text and empty editor markup disappears", async () => {
+  const [{ htmlToPlainText }, { computePlanningCommercialSummary }] = await Promise.all([
+    loadHtmlToPlainText(),
+    loadDocuments(),
+  ]);
+  assert.equal(htmlToPlainText("<p></p>"), "");
+  assert.equal(htmlToPlainText("<p><br></p>&nbsp;"), "");
+  assert.equal(
+    htmlToPlainText("<p>Erste Zeile<br>Zweite&nbsp;&amp;&nbsp;dritte</p>"),
+    "Erste Zeile\nZweite & dritte",
+  );
+
+  const commercial = await computePlanningCommercialSummary(
+    catalogOnlyDb(),
+    planningWith([
+      requiredItem,
+      {
+        ...optionalItem,
+        note: "<p></p>",
+        description: "<p><br></p>&nbsp;",
+      },
+    ]),
+  );
+  assert.equal(commercial.optionalItems[0].note, "");
+  assert.equal(commercial.optionalItems[0].description, "");
 });

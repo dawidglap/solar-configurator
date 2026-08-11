@@ -492,7 +492,7 @@ export async function createSignedOrderPdf(args: {
   signerIp: string;
   signerUserAgent: string;
   sourcePdfSha256: string;
-  documentKind?: "Auftrag" | "Offerte";
+  documentKind?: "Auftrag" | "Angebot";
   openedAt?: Date | null;
   tokenId?: string;
   signaturePlace?: string;
@@ -518,7 +518,7 @@ export async function createSignedOrderPdf(args: {
   page.drawText(`${documentKind} ${signaturePdfText(args.orderId)}`, { x: margin + 18, y: 760, size: 9, font, color: muted });
 
   const rows = [
-    [documentKind === "Offerte" ? "Offertennummer" : "Auftragsnummer", args.orderId],
+    [documentKind === "Angebot" ? "Angebotsnummer" : "Auftragsnummer", args.orderId],
     ["Kunde", args.customerName],
     ["Projekt", args.projectTitle],
     ["Betrag inkl. MwSt.", `CHF ${Number(args.totalInklMwst || 0).toFixed(2)}`],
@@ -556,7 +556,7 @@ export async function createSignedOrderPdf(args: {
     ...(safeString(args.signaturePlace) ? [["Abschlussart", safeString(args.signaturePlace)]] : []),
   ];
   y = 342;
-  const detailRowSpacing = args.documentKind === "Offerte" ? 18 : 23;
+  const detailRowSpacing = args.documentKind === "Angebot" ? 18 : 23;
   for (const [label, value] of detailRows) {
     page.drawText(signaturePdfText(label), { x: margin, y, size: 7.5, font, color: muted });
     page.drawText(signaturePdfText(value || "-"), { x: 190, y, size: 8.5, font, color: dark });
@@ -610,8 +610,8 @@ export async function createSignedOrderPdf(args: {
       : "Das Originaldokument wurde unverändert vor dieser Protokollseite übernommen.",
     { x: margin + 14, y: 57, size: 6.8, font, color: muted },
   );
-  pdf.setTitle(`${signaturePdfText(args.orderId)} - unterschrieben`);
-  pdf.setSubject("EES Unterschriftsprotokoll");
+  pdf.setTitle(`${documentKind} ${signaturePdfText(args.orderId)} - unterschrieben`);
+  pdf.setSubject(`EES Unterschriftsprotokoll zum ${documentKind}`);
   pdf.setModificationDate(args.signedAt);
   return Buffer.from(await pdf.save());
 }

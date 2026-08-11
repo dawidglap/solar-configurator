@@ -18,7 +18,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     if (kind !== "snapshot" && planning.offerSignatureStatus !== "signed") return errorResponse(origin, "Dokument noch nicht verfügbar.", 404);
     const payload = await getOfferPublicFile(db, planning, kind); if (!payload) return errorResponse(origin, "PDF nicht gefunden.", 404);
     if (payload.buffer.subarray(0, 5).toString("ascii") !== "%PDF-") return errorResponse(origin, "PDF ist ungültig.", 502);
-    return new Response(payload.buffer, { status: 200, headers: { ...getCorsHeaders(origin), "Content-Type": "application/pdf", "Content-Disposition": buildContentDispositionInline(safeString(payload.file?.originalFileName) || "offerte.pdf"), "Content-Length": String(payload.buffer.byteLength), "Content-Security-Policy": "frame-ancestors https://app.helionic.ch https://*.lovableproject.com", "Cache-Control": "private, no-store, max-age=0" } });
+    return new Response(payload.buffer, { status: 200, headers: { ...getCorsHeaders(origin), "Content-Type": "application/pdf", "Content-Disposition": buildContentDispositionInline(safeString(payload.file?.originalFileName) || "angebot.pdf"), "Content-Length": String(payload.buffer.byteLength), "Content-Security-Policy": "frame-ancestors https://app.helionic.ch https://*.lovableproject.com", "Cache-Control": "private, no-store, max-age=0" } });
   } catch (error) { console.error("GET PUBLIC OFFER PDF ERROR:", error); return errorResponse(origin, "PDF konnte nicht geladen werden.", 500); }
 }
-
