@@ -20,6 +20,7 @@
     "test:cors": "tsx --test tests/cors.test.ts",
     "test:teams": "tsx --test tests/teams.test.ts",
     "test:execution-teams": "tsx scripts/test-execution-teams.ts",
+    "test:execution-crew": "tsx --test tests/executionCrew.test.ts",
     "test:order-signatures": "tsx --test tests/orderSignatures.test.ts",
     "test:offer-signatures": "tsx --test tests/offerSignatures.test.ts",
     "test:geo-admin": "tsx --test tests/geoAdmin.test.ts",

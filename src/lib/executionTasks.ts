@@ -17,6 +17,11 @@ import {
 } from "@/lib/tasks";
 import { extractAddressFromPlanning } from "@/lib/montages";
 import { normalizeStoredTeamOverrides } from "@/lib/teams";
+import {
+  normalizeStoredAdditionalTeamIds,
+  normalizeStoredExtraAssignments,
+  type ExtraAssignment,
+} from "@/lib/executionCrew";
 
 export const EXECUTION_TRACKS = ["montage", "elektro"] as const;
 export const EXECUTION_STAGES = [
@@ -52,6 +57,8 @@ type NormalizedExecutionTask = {
   endTime: string | null;
   teamId: string | null;
   teamOverrides: ReturnType<typeof normalizeStoredTeamOverrides>;
+  additionalTeamIds: string[];
+  extraAssignments: ExtraAssignment[];
   assignedUserIds: string[];
   assignees: NormalizedExecutionAssignee[];
   address: {
@@ -70,7 +77,7 @@ type NormalizedExecutionTask = {
 };
 
 type NormalizedExecutionScheduleHistoryEntry = {
-  type?: "schedule_changed" | "team_changed" | "member_replaced";
+  type?: "schedule_changed" | "team_changed" | "member_replaced" | "additional_team_changed" | "extra_assignment_changed";
   scheduledStart: string | null;
   scheduledEnd: string | null;
   startTime: string | null;
@@ -83,6 +90,10 @@ type NormalizedExecutionScheduleHistoryEntry = {
   teamId?: string | null;
   outUserId?: string;
   inUserId?: string | null;
+  additionalTeamId?: string | null;
+  userId?: string | null;
+  action?: string;
+  text?: string;
 };
 
 type NormalizedExecutionActivity = {
@@ -168,6 +179,8 @@ export async function ensureExecutionTaskIndexes(db: Db) {
     ),
     executionTasks.createIndex({ companyId: 1, planningId: 1 }),
     executionTasks.createIndex({ companyId: 1, assignedUserIds: 1 }),
+    executionTasks.createIndex({ companyId: 1, additionalTeamIds: 1 }),
+    executionTasks.createIndex({ companyId: 1, "extraAssignments.userId": 1 }),
     executionTasks.createIndex({ companyId: 1, scheduledStart: 1, scheduledEnd: 1 }),
   ])
     .then(() => undefined)
@@ -303,6 +316,24 @@ export function normalizeExecutionScheduleHistoryEntry(
       type,
       outUserId: mongoIdToString(entry?.outUserId) || safeString(entry?.outUserId),
       inUserId: mongoIdToString(entry?.inUserId) || safeString(entry?.inUserId) || null,
+    };
+  }
+  if (type === "additional_team_changed") {
+    return {
+      ...common,
+      type,
+      additionalTeamId: mongoIdToString(entry?.additionalTeamId) || safeString(entry?.additionalTeamId) || null,
+      action: safeString(entry?.action),
+      text: safeString(entry?.text),
+    };
+  }
+  if (type === "extra_assignment_changed") {
+    return {
+      ...common,
+      type,
+      userId: mongoIdToString(entry?.userId) || safeString(entry?.userId) || null,
+      action: safeString(entry?.action),
+      text: safeString(entry?.text),
     };
   }
   return { ...common, ...(type === "schedule_changed" ? { type } : {}) };
@@ -514,6 +545,8 @@ export function normalizeExecutionTask(doc: any, opts?: {
     endTime: safeString(doc?.endTime) || null,
     teamId: mongoIdToString(doc?.teamId) || safeString(doc?.teamId) || null,
     teamOverrides: normalizeStoredTeamOverrides(doc?.teamOverrides),
+    additionalTeamIds: normalizeStoredAdditionalTeamIds(doc?.additionalTeamIds),
+    extraAssignments: normalizeStoredExtraAssignments(doc?.extraAssignments),
     assignedUserIds,
     assignees,
     address: normalizeExecutionAddress(doc?.address),
@@ -659,6 +692,8 @@ function buildExecutionTaskSeed(params: {
     endTime: null,
     teamId: null,
     teamOverrides: [],
+    additionalTeamIds: [],
+    extraAssignments: [],
     assignedUserIds: [] as ObjectId[],
     address: buildExecutionAddress(params.planning, params.customer),
     notes: "",
@@ -822,6 +857,8 @@ export async function migrateMontagesToExecutionTasks(
           endTime: safeString(montage?.endTime) || null,
           teamId: null,
           teamOverrides: [],
+          additionalTeamIds: [],
+          extraAssignments: [],
           assignedUserIds: Array.isArray(montage?.assignedInstallerIds)
             ? montage.assignedInstallerIds
                 .map((value: any) => toObjectIdOrNull(value))

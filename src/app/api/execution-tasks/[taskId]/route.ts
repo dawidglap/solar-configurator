@@ -29,6 +29,14 @@ import {
   normalizeStoredTeamOverrides,
   TeamRequestError,
 } from "@/lib/teams";
+import {
+  deriveExecutionCrewUserIds,
+  ExecutionCrewRequestError,
+  findExecutionCrewConflicts,
+  normalizeAndValidateAdditionalCrew,
+  normalizeStoredAdditionalTeamIds,
+  normalizeStoredExtraAssignments,
+} from "@/lib/executionCrew";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -191,8 +199,11 @@ export async function PATCH(req: Request, { params }: Params) {
         : safeString((existing as any)?.teamId) || null;
     const teamHistoryEntries: Record<string, any>[] = [];
     const hasTeamInput = body?.teamId !== undefined || body?.teamOverrides !== undefined;
+    const hasAdditionalCrewInput =
+      body?.additionalTeamIds !== undefined || body?.extraAssignments !== undefined;
+    const hasStructuredCrewInput = hasTeamInput || hasAdditionalCrewInput;
     const isLegacyDirectAssignment =
-      body?.assignedUserIds !== undefined && !hasTeamInput;
+      body?.assignedUserIds !== undefined && !hasStructuredCrewInput;
 
     if (isLegacyDirectAssignment) {
       const { assignedUserIds } = await validateExecutionAssignees(
@@ -202,9 +213,11 @@ export async function PATCH(req: Request, { params }: Params) {
         body?.assignedUserIds,
       );
       updateSet.assignedUserIds = assignedUserIds;
+      updateSet.teamId = null;
+      updateSet.teamOverrides = [];
+      updateSet.additionalTeamIds = [];
+      updateSet.extraAssignments = [];
       if (existingTeamId) {
-        updateSet.teamId = null;
-        updateSet.teamOverrides = [];
         teamHistoryEntries.push({
           type: "team_changed",
           previousTeamId: new ObjectId(existingTeamId),
@@ -333,6 +346,150 @@ export async function PATCH(req: Request, { params }: Params) {
       startTime,
       endTime,
     });
+    const existingAdditionalTeamIds = normalizeStoredAdditionalTeamIds((existing as any)?.additionalTeamIds);
+    const existingExtraAssignments = normalizeStoredExtraAssignments((existing as any)?.extraAssignments);
+    const shouldResolveStructuredCrew =
+      !isLegacyDirectAssignment &&
+      (hasStructuredCrewInput ||
+        (scheduleChanged && (existingAdditionalTeamIds.length > 0 || existingExtraAssignments.length > 0)));
+
+    if (shouldResolveStructuredCrew) {
+      const finalMainTeamValue = updateSet.teamId !== undefined ? updateSet.teamId : (existing as any)?.teamId;
+      const finalMainTeamId =
+        finalMainTeamValue instanceof ObjectId
+          ? finalMainTeamValue.toString()
+          : safeString(finalMainTeamValue) || null;
+      const finalTeamOverrides =
+        updateSet.teamOverrides !== undefined ? updateSet.teamOverrides : (existing as any)?.teamOverrides ?? [];
+      const finalScheduledStart =
+        scheduledStart !== undefined ? scheduledStart : (existing as any)?.scheduledStart ?? null;
+      const finalScheduledEnd =
+        scheduledEnd !== undefined ? scheduledEnd : (existing as any)?.scheduledEnd ?? finalScheduledStart;
+
+      const mainTeam = finalMainTeamId
+        ? await getTeamsCollection(db).findOne({
+            _id: new ObjectId(finalMainTeamId),
+            companyId: { $in: buildIdVariants(companyId) },
+          })
+        : null;
+      if (finalMainTeamId && !mainTeam) {
+        throw new ExecutionCrewRequestError("Das Haupt-Team gehört nicht zur Firma oder existiert nicht.", "INVALID_TASK_TEAM");
+      }
+      const mainTeamMemberIds = Array.from(new Set(
+        Array.isArray((mainTeam as any)?.members)
+          ? (mainTeam as any).members
+              .map((member: any) => member?.userId instanceof ObjectId
+                ? member.userId.toString()
+                : safeString(member?.userId))
+              .filter(Boolean)
+          : [],
+      )) as string[];
+
+      const additionalCrew = await normalizeAndValidateAdditionalCrew({
+        db,
+        companyId,
+        mainTeamId: finalMainTeamId,
+        additionalTeamIds:
+          body?.additionalTeamIds !== undefined ? body.additionalTeamIds : existingAdditionalTeamIds,
+        extraAssignments:
+          body?.extraAssignments !== undefined ? body.extraAssignments : existingExtraAssignments,
+        scheduledStart: finalScheduledStart,
+        scheduledEnd: finalScheduledEnd,
+      });
+
+      let directBaseUserIds: string[] = [];
+      if (!finalMainTeamId && !existingTeamId) {
+        const previousAdditionalTeams = existingAdditionalTeamIds.length
+          ? await getTeamsCollection(db).find({
+              _id: { $in: existingAdditionalTeamIds.map((id) => new ObjectId(id)) },
+              companyId: { $in: buildIdVariants(companyId) },
+            }).toArray()
+          : [];
+        const previousStructuredUsers = new Set([
+          ...previousAdditionalTeams.flatMap((team: any) =>
+            Array.isArray(team?.members)
+              ? team.members.map((member: any) =>
+                  member?.userId instanceof ObjectId ? member.userId.toString() : safeString(member?.userId),
+                ).filter(Boolean)
+              : [],
+          ),
+          ...existingExtraAssignments.map((assignment) => assignment.userId),
+        ]);
+        directBaseUserIds = (Array.isArray((existing as any)?.assignedUserIds)
+          ? (existing as any).assignedUserIds.map((value: any) =>
+              value instanceof ObjectId ? value.toString() : safeString(value),
+            ).filter(Boolean)
+          : []).filter((userId: string) => !previousStructuredUsers.has(userId));
+      }
+
+      const assignedIds = Array.from(new Set([
+        ...directBaseUserIds,
+        ...deriveExecutionCrewUserIds({
+          mainTeamMemberIds,
+          teamOverrides: finalTeamOverrides,
+          additionalTeamMemberIds: additionalCrew.additionalTeamMemberIds,
+          extraAssignments: additionalCrew.extraAssignments,
+        }),
+      ]));
+      updateSet.additionalTeamIds = additionalCrew.additionalTeamIds;
+      updateSet.extraAssignments = additionalCrew.extraAssignments;
+      updateSet.assignedUserIds = assignedIds.map((userId) => new ObjectId(userId));
+
+      const now = new Date();
+      const historyBase = {
+        changedAt: now,
+        changedByUserId: ObjectId.isValid(actor.id || "") ? new ObjectId(actor.id!) : actor.id,
+        changedByName: actor.name,
+      };
+      const oldTeamSet = new Set(existingAdditionalTeamIds);
+      const newTeamSet = new Set(additionalCrew.additionalTeamIds);
+      const teamNameById = new Map(additionalCrew.teams.map((team: any) => [
+        team._id.toString(),
+        safeString(team?.name) || team._id.toString(),
+      ]));
+      for (const teamId of newTeamSet) {
+        if (!oldTeamSet.has(teamId)) {
+          const text = `Zusatzteam ${teamNameById.get(teamId) || teamId} hinzugefügt`;
+          teamHistoryEntries.push({ ...historyBase, type: "additional_team_changed", action: "added", additionalTeamId: new ObjectId(teamId), text, reason: text });
+        }
+      }
+      for (const teamId of oldTeamSet) {
+        if (!newTeamSet.has(teamId)) {
+          const text = `Zusatzteam ${teamId} entfernt`;
+          teamHistoryEntries.push({ ...historyBase, type: "additional_team_changed", action: "removed", additionalTeamId: new ObjectId(teamId), text, reason: text });
+        }
+      }
+
+      const userNameById = new Map(additionalCrew.users.map((user: any) => [
+        user._id.toString(),
+        [safeString(user?.firstName), safeString(user?.lastName)].filter(Boolean).join(" ") ||
+          safeString(user?.name) || safeString(user?.email) || user._id.toString(),
+      ]));
+      const oldExtraByUser = new Map(existingExtraAssignments.map((assignment) => [assignment.userId, assignment]));
+      const newExtra = normalizeStoredExtraAssignments(additionalCrew.extraAssignments);
+      const newExtraByUser = new Map(newExtra.map((assignment) => [assignment.userId, assignment]));
+      for (const [userId, assignment] of newExtraByUser) {
+        const previous = oldExtraByUser.get(userId);
+        if (!previous || JSON.stringify(previous) !== JSON.stringify(assignment)) {
+          const dayText = assignment.days?.length
+            ? assignment.days.map((day) => day.split("-").reverse().join(".")).join(", ")
+            : "gesamten Termin";
+          const timeText = assignment.startTime && assignment.endTime
+            ? ` ${assignment.startTime}–${assignment.endTime}`
+            : " ganztags";
+          const action = previous ? "updated" : "added";
+          const text = `Zusatzkraft ${userNameById.get(userId) || userId} am ${dayText}${timeText} ${previous ? "geändert" : "hinzugefügt"}`;
+          teamHistoryEntries.push({ ...historyBase, type: "extra_assignment_changed", action, userId: new ObjectId(userId), text, reason: text });
+        }
+      }
+      for (const userId of oldExtraByUser.keys()) {
+        if (!newExtraByUser.has(userId)) {
+          const text = `Zusatzkraft ${userId} entfernt`;
+          teamHistoryEntries.push({ ...historyBase, type: "extra_assignment_changed", action: "removed", userId: new ObjectId(userId), text, reason: text });
+        }
+      }
+    }
+
     const scheduleHistoryEntry = scheduleChanged
       ? buildExecutionScheduleHistoryEntry(existing, actor, body?.rescheduleReason)
       : null;
@@ -374,8 +531,13 @@ export async function PATCH(req: Request, { params }: Params) {
     }
 
     const [item] = await hydrateExecutionTasks(db, companyId, [updated]);
-    return jsonResponse(origin, { ok: true, item }, 200);
+    const validate = new URL(req.url).searchParams.get("validate") === "1";
+    const conflicts = validate ? await findExecutionCrewConflicts({ db, companyId, task: updated }) : null;
+    return jsonResponse(origin, { ok: true, item, ...(validate ? { conflicts } : {}) }, 200);
   } catch (e: any) {
+    if (e instanceof ExecutionCrewRequestError) {
+      return jsonResponse(origin, { ok: false, error: e.message, message: e.message, code: e.code }, e.status);
+    }
     if (e instanceof TeamRequestError) {
       return jsonResponse(
         origin,

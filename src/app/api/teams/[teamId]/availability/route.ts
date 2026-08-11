@@ -4,7 +4,8 @@ import { mongoIdToString, readSession, safeString } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { buildIdVariants, getCompanyMembersByIds, jsonResponse, noStoreHeaders } from "@/lib/tasks";
 import { ensureExecutionTaskIndexes, getExecutionTasksCollection, hydrateExecutionTasks, normalizeExecutionTime } from "@/lib/executionTasks";
-import { ensureTeamIndexes, getTeamsCollection, hasAvailabilityOverlap, parseAvailabilityDate } from "@/lib/teams";
+import { ensureTeamIndexes, getTeamsCollection, parseAvailabilityDate } from "@/lib/teams";
+import { getExecutionBookingOverlap, getExecutionUserBooking } from "@/lib/executionCrew";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,14 +86,8 @@ export async function GET(req: Request, { params }: Params) {
     if (excludeTaskId) filter._id = { $ne: new ObjectId(excludeTaskId) };
 
     const candidates = await getExecutionTasksCollection(db).find(filter).toArray();
-    const overlapping = candidates.filter((task) =>
-      hasAvailabilityOverlap(
-        { start, end, startTime: startTime ?? null, endTime: endTime ?? null },
-        task as any,
-      ),
-    );
     const [hydrated, users] = await Promise.all([
-      hydrateExecutionTasks(db, companyId, overlapping),
+      hydrateExecutionTasks(db, companyId, candidates),
       getCompanyMembersByIds(db, companyId, memberIds),
     ]);
     const usersById = new Map(
@@ -104,7 +99,7 @@ export async function GET(req: Request, { params }: Params) {
       ]),
     );
 
-    const conflicts = overlapping.flatMap((task: any, index) => {
+    const conflicts = candidates.flatMap((task: any, index) => {
       const item = hydrated[index] as any;
       const assignedIds = new Set(
         Array.isArray(task?.assignedUserIds)
@@ -113,26 +108,39 @@ export async function GET(req: Request, { params }: Params) {
       );
       return memberIds
         .filter((userId) => assignedIds.has(userId))
-        .map((userId) => ({
-          userId,
-          fullName: usersById.get(userId) || "",
-          taskId: mongoIdToString(task?._id),
-          taskTitle:
-            item?.planningTitle ||
-            item?.customerName ||
-            item?.projectNumber ||
-            `${safeString(task?.track) || "Auftrag"} ${mongoIdToString(task?._id)}`,
-          scheduledStart:
-            task?.scheduledStart instanceof Date
-              ? task.scheduledStart.toISOString()
-              : safeString(task?.scheduledStart),
-          scheduledEnd:
-            task?.scheduledEnd instanceof Date
-              ? task.scheduledEnd.toISOString()
-              : safeString(task?.scheduledEnd),
-          startTime: safeString(task?.startTime) || null,
-          endTime: safeString(task?.endTime) || null,
-        }));
+        .flatMap((userId) => {
+          const requestedBooking = getExecutionUserBooking({
+            scheduledStart: start,
+            scheduledEnd: end,
+            startTime: startTime ?? null,
+            endTime: endTime ?? null,
+            assignedUserIds: [userId],
+          }, userId);
+          const taskBooking = getExecutionUserBooking(task, userId);
+          const days = getExecutionBookingOverlap(requestedBooking, taskBooking);
+          if (!days.length) return [];
+          return [{
+            userId,
+            fullName: usersById.get(userId) || "",
+            taskId: mongoIdToString(task?._id),
+            taskTitle:
+              item?.planningTitle ||
+              item?.customerName ||
+              item?.projectNumber ||
+              `${safeString(task?.track) || "Auftrag"} ${mongoIdToString(task?._id)}`,
+            scheduledStart:
+              task?.scheduledStart instanceof Date
+                ? task.scheduledStart.toISOString()
+                : safeString(task?.scheduledStart),
+            scheduledEnd:
+              task?.scheduledEnd instanceof Date
+                ? task.scheduledEnd.toISOString()
+                : safeString(task?.scheduledEnd),
+            days,
+            startTime: taskBooking?.startTime ?? null,
+            endTime: taskBooking?.endTime ?? null,
+          }];
+        });
     });
 
     return jsonResponse(origin, { ok: true, conflicts }, 200);
