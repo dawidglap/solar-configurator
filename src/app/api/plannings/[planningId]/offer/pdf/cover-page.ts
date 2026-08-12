@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
 import { sanitizePdfText } from "@/lib/pdfText";
+import { allocateChf05, roundChf05 } from "@/lib/chf";
 
 type OfferCoverData = {
   title: string;
@@ -67,7 +68,7 @@ type PaymentTermRow = {
 };
 
 function money(n?: number) {
-  const value = Number(n ?? 0);
+  const value = roundChf05(Number(n ?? 0));
   return new Intl.NumberFormat("de-CH", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -178,19 +179,21 @@ function safeText(value: unknown) {
 function buildPaymentTermRows(paymentTerms: string, finalTotal: number): PaymentTermRow[] {
   const normalized = safeText(paymentTerms);
   if (normalized === "100 %") {
-    return [{ label: "100 % bei Rechnungsstellung", amount: finalTotal }];
+    return [{ label: "100 % bei Rechnungsstellung", amount: roundChf05(finalTotal) }];
   }
   if (normalized === "50 % / 50 %") {
+    const amounts = allocateChf05(finalTotal, [50, 50]);
     return [
-      { label: "50 % Anzahlung", amount: finalTotal * 0.5 },
-      { label: "50 % nach Montage", amount: finalTotal * 0.5 },
+      { label: "50 % Anzahlung", amount: amounts[0] },
+      { label: "50 % nach Montage", amount: amounts[1] },
     ];
   }
   if (normalized === "50 % / 40 % / 10 %") {
+    const amounts = allocateChf05(finalTotal, [50, 40, 10]);
     return [
-      { label: "50 % Anzahlung", amount: finalTotal * 0.5 },
-      { label: "40 % nach Montage", amount: finalTotal * 0.4 },
-      { label: "10 % nach Inbetriebnahme", amount: finalTotal * 0.1 },
+      { label: "50 % Anzahlung", amount: amounts[0] },
+      { label: "40 % nach Montage", amount: amounts[1] },
+      { label: "10 % nach Inbetriebnahme", amount: amounts[2] },
     ];
   }
   if (normalized === "Nach Absprache") {
@@ -466,27 +469,27 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   drawText(page, "Photovoltaik-Anlage", pageMarginX, y, 12.2, bold, textDark);
   y -= 16;
 
-  const grossPrice = Number(data.grossPriceChf || 0);
-  const finalTotal = grossPrice;
+  const grossPrice = roundChf05(Number(data.grossPriceChf || 0));
+  const finalTotal = roundChf05(Number(data.totalInvestmentChf || 0));
   const mwstIncluded = data.mwstIncluded !== false;
-  const automaticPvSubsidy = Number(data.automaticPvSubsidyChf || 0);
-  const manualAdditionalSubsidy = Number(data.manualAdditionalSubsidyChf || 0);
-  const totalSubsidy = Number(data.subsidyChf || 0);
-  const taxSavings = Number(data.taxSavingsChf || 0);
+  const automaticPvSubsidy = roundChf05(Number(data.automaticPvSubsidyChf || 0));
+  const manualAdditionalSubsidy = roundChf05(Number(data.manualAdditionalSubsidyChf || 0));
+  const totalSubsidy = roundChf05(Number(data.subsidyChf || 0));
+  const taxSavings = roundChf05(Number(data.taxSavingsChf || 0));
   const effectiveCost =
     typeof data.effectiveCostChf === "number"
-      ? Number(data.effectiveCostChf)
-      : Math.max(0, Number(data.totalInvestmentChf || 0) - taxSavings);
+      ? roundChf05(Number(data.effectiveCostChf))
+      : roundChf05(Math.max(0, Number(data.totalInvestmentChf || 0) - taxSavings));
 
-  const discountChf = Number(data.discountChf || 0);
+  const discountChf = roundChf05(Number(data.discountChf || 0));
   const discountPct = Number(data.discountPct || 0);
-  const discountFromPctChf = Number(data.discountFromPctChf || 0);
-  const totalDiscountChf = Number(data.totalDiscountChf || 0);
+  const discountFromPctChf = roundChf05(Number(data.discountFromPctChf || 0));
+  const totalDiscountChf = roundChf05(Number(data.totalDiscountChf || 0));
   const paymentTerms = safeText(data.paymentTerms) || "Nach Absprache";
   const paymentTermRows = buildPaymentTermRows(paymentTerms, finalTotal);
   const skontoPctValue = Number(data.skontoPct || 0);
   const skontoDays = Number(data.skontoDays || 10);
-  const skontoValue = Number((finalTotal * (skontoPctValue / 100)).toFixed(2));
+  const skontoValue = roundChf05(finalTotal * (skontoPctValue / 100));
 
   const systemSummary = [
     data.kWp > 0 ? `${money(data.kWp)} kWp` : "",

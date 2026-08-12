@@ -13,6 +13,7 @@ import {
 } from "@/lib/invoices";
 import { getInvoiceContextById } from "@/lib/invoicePdf";
 import { getSessionUserEmail, getSessionUserMeta, safeNumber } from "@/lib/tasks";
+import { roundChf05 } from "@/lib/chf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -122,8 +123,8 @@ export async function POST(
       sort: { createdAt: -1, _id: -1 },
     });
     const fee = getDunningFee(context.company);
-    const openAmount = Math.max(0, safeNumber(parentInvoice?.amount, 0) - safeNumber(parentInvoice?.paidAmount, 0));
-    const amount = Math.round((openAmount + fee) * 20) / 20;
+    const openAmount = roundChf05(Math.max(0, safeNumber(parentInvoice?.amount, 0) - safeNumber(parentInvoice?.paidAmount, 0)));
+    const amount = roundChf05(openAmount + fee);
     const issueDate = now;
     const nextDueDate = addDays(now, safeNumber(context.company?.paymentDefaults?.dunningTermDays, 10));
     const meta = getSessionUserMeta(session);

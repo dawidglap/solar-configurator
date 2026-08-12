@@ -92,7 +92,7 @@ describe("invoice QR eligibility", () => {
   test("uses the rounded open amount", () => {
     const result = getQrEligibility({ ...invoice, amount: 100.005, paidAmount: 20 });
     assert.equal(result.eligible, true);
-    assert.equal(result.openAmount, 80.01);
+    assert.equal(result.openAmount, 80);
     assert.equal(result.warning, null);
   });
 

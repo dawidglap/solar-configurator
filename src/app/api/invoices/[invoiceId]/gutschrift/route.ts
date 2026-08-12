@@ -11,6 +11,7 @@ import {
 } from "@/lib/invoices";
 import { getInvoiceContextById } from "@/lib/invoicePdf";
 import { getSessionUserEmail, getSessionUserMeta, safeNumber } from "@/lib/tasks";
+import { roundChf05 } from "@/lib/chf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,7 +84,7 @@ export async function POST(
     const invoiceNumber = await nextInvoiceNumber(db, String(session.activeCompanyId), now);
     const meta = getSessionUserMeta(session);
     const createdByUserId = toObjectIdOrNull(meta.id) ?? meta.id ?? null;
-    const amount = -Math.abs(safeNumber(parentInvoice?.amount, 0));
+    const amount = -Math.abs(roundChf05(safeNumber(parentInvoice?.amount, 0)));
 
     const doc = {
       companyId: String(session.activeCompanyId),

@@ -1023,7 +1023,7 @@ if (ist && typeof ist === "object") {
           (updated as any)?.orderGeneratedAt instanceof Date
             ? (updated as any).orderGeneratedAt
             : new Date(String((updated as any)?.orderGeneratedAt || new Date().toISOString())),
-        totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
+        totalInklMwst: Number(commercial?.totalInvestmentChf ?? 0),
       });
 
       if (!resyncResult.ok) {

@@ -86,7 +86,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       orderId: safeString(planning?.orderId),
       customerName: resolveCustomerName(planning, customer),
       projectTitle: safeString(planning?.title) || safeString(planning?.planningNumber),
-      totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
+      totalInklMwst: Number(commercial?.totalInvestmentChf ?? 0),
       signerName,
       signerEmail,
       place,

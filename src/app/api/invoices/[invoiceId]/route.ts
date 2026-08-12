@@ -19,6 +19,7 @@ import {
   removePlanningFileCloudinaryAsset,
 } from "@/lib/planningFiles";
 import { getSessionUserMeta, safeNumber } from "@/lib/tasks";
+import { roundChf05 } from "@/lib/chf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -500,7 +501,11 @@ export async function PATCH(
       if (!Number.isFinite(amount) || amount <= 0) {
         return jsonResponse(origin, { ok: false, message: "Betrag muss grösser als 0 sein." }, 400);
       }
-      const normalizedAmount = safeString(existing?.invoiceType) === "gutschrift" ? -Math.abs(amount) : Math.abs(amount);
+      const roundedAmount = roundChf05(Math.abs(amount));
+      if (roundedAmount <= 0) {
+        return jsonResponse(origin, { ok: false, message: "Betrag muss mindestens CHF 0.05 sein." }, 400);
+      }
+      const normalizedAmount = safeString(existing?.invoiceType) === "gutschrift" ? -roundedAmount : roundedAmount;
       updateDoc.amount = normalizedAmount;
       updateDoc.amountChf = normalizedAmount;
       if (!("positionPreis" in body)) {
@@ -537,7 +542,9 @@ export async function PATCH(
       if (!Number.isFinite(value) || value < 0) {
         return jsonResponse(origin, { ok: false, message: `${label} ist ungültig.` }, 400);
       }
-      updateDoc[field] = value;
+      updateDoc[field] = ["discountChf", "skontoChf", "positionPreis", "paidAmount"].includes(field)
+        ? roundChf05(value)
+        : value;
     }
 
     if ("skontoDays" in body) {

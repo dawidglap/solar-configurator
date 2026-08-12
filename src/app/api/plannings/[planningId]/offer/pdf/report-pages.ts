@@ -1,5 +1,6 @@
 import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
 import { sanitizePdfText } from "@/lib/pdfText";
+import { roundChf05 } from "@/lib/chf";
 
 type ReportPagesData = {
   planningNumber?: string;
@@ -49,7 +50,7 @@ function fmtNum(v: any, digits = 0) {
 }
 
 function fmtChf(v: any) {
-  return `CHF ${fmtNum(v, 0)}`;
+  return `CHF ${fmtNum(roundChf05(n(v)), 2)}`;
 }
 
 function fmtPct(v: any, digits = 1) {

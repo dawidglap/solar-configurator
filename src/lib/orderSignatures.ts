@@ -18,6 +18,7 @@ import {
   persistAuftragStepsState,
 } from "@/lib/auftragPipeline";
 import { resolvePlanningSellerContact } from "@/lib/userProfiles";
+import { allocateChf05, formatChf05, roundChf05 } from "@/lib/chf";
 
 export const SIGNATURE_STATUSES = [
   "none",
@@ -521,7 +522,7 @@ export async function createSignedOrderPdf(args: {
     [documentKind === "Angebot" ? "Angebotsnummer" : "Auftragsnummer", args.orderId],
     ["Kunde", args.customerName],
     ["Projekt", args.projectTitle],
-    ["Betrag inkl. MwSt.", `CHF ${Number(args.totalInklMwst || 0).toFixed(2)}`],
+    ["Betrag inkl. MwSt.", `CHF ${formatChf05(Number(args.totalInklMwst || 0))}`],
   ];
   let y = 710;
   for (const [label, value] of rows) {
@@ -691,7 +692,7 @@ export async function createOfferConfirmationPdf(args: {
     ["Kunde", args.customerName],
     ["Unterzeichner", args.signerName],
     ["Projekt", args.projectTitle],
-    ["Vertragssumme inkl. MwSt.", `CHF ${Number(args.totalInklMwst || 0).toFixed(2)}`],
+    ["Vertragssumme inkl. MwSt.", `CHF ${formatChf05(Number(args.totalInklMwst || 0))}`],
   ];
   let y = 710;
   for (const [label, value] of rows) {
@@ -775,7 +776,7 @@ export async function createOfferConfirmationPdf(args: {
   for (const payment of args.payments.slice(0, 5)) {
     page.drawText(signaturePdfText(payment.label), { x: margin, y, size: 8.5, font, color: dark });
     page.drawText(`${payment.pct.toFixed(2)} %`, { x: 315, y, size: 8.5, font, color: muted });
-    page.drawText(`CHF ${payment.amount.toFixed(2)}`, { x: 420, y, size: 8.5, font: bold, color: dark });
+    page.drawText(signaturePdfText(`CHF ${formatChf05(payment.amount)}`), { x: 420, y, size: 8.5, font: bold, color: dark });
     y -= 20;
   }
   if (args.withdrawalRightApplies && args.withdrawalUntil) {
@@ -881,20 +882,24 @@ export function normalizeSignaturePayments(planning: any, totalInklMwst: number)
             : configured
       : configured;
   if (!Array.isArray(source)) return [];
+  const percentages = source.map((row: any) =>
+    Number(row?.pct ?? row?.percent ?? row?.percentage ?? row?.sharePct ?? 0),
+  );
+  const allocatedAmounts = allocateChf05(totalInklMwst, percentages);
   return source.map((row: any, index: number) => {
     const pct = Number(row?.pct ?? row?.percent ?? row?.percentage ?? row?.sharePct ?? 0);
     const directAmount = Number(row?.amount ?? row?.amountChf);
     const amount = Number.isFinite(directAmount)
       ? directAmount
       : Number.isFinite(pct)
-        ? (totalInklMwst * pct) / 100
+        ? allocatedAmounts[index]
         : 0;
     const due = row?.dueDate ?? row?.dueAt ?? row?.date;
     const dueDate = due ? new Date(due) : null;
     return {
       label: safeString(row?.label ?? row?.name) || `Rate ${index + 1}`,
       pct: Number.isFinite(pct) ? pct : 0,
-      amount: Math.round(amount * 100) / 100,
+      amount: roundChf05(amount),
       dueDate: dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate.toISOString() : null,
     };
   });
@@ -932,7 +937,7 @@ export async function buildPublicSignatureOrder(args: {
     customerEmail: resolveCustomerEmail(args.planning, customer),
     projectTitle: safeString(args.planning?.title) || safeString(args.planning?.planningNumber),
     objectAddress: resolveObjectAddress(args.planning),
-    totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
+    totalInklMwst: Number(commercial?.totalInvestmentChf ?? 0),
     subsidyChf: Number(commercial?.subsidyChf ?? 0),
     effectiveCostChf: Number(commercial?.effectiveCostChf ?? 0),
     optionalTotalChf: Number(commercial?.optionalTotalChf ?? 0),
@@ -940,7 +945,7 @@ export async function buildPublicSignatureOrder(args: {
       ? commercial.optionalItems
       : [],
     currency: "CHF",
-    payments: normalizeSignaturePayments(args.planning, Number(commercial?.grossPriceChf ?? 0)),
+    payments: normalizeSignaturePayments(args.planning, Number(commercial?.totalInvestmentChf ?? 0)),
     pdfUrl: canReadPdf
       ? `${apiBase}/api/public/signature/${encodeURIComponent(args.token)}/pdf`
       : null,

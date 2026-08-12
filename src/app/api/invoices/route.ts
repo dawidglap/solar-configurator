@@ -23,6 +23,7 @@ import {
 } from "@/lib/invoices";
 import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
 import { getSessionUserEmail, getSessionUserMeta, safeNumber } from "@/lib/tasks";
+import { roundChf05 } from "@/lib/chf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -488,6 +489,9 @@ export async function POST(req: Request) {
   const parentInvoiceId = safeString((body as any)?.parentInvoiceId);
   const rateLabel = safeString((body as any)?.rateLabel);
   const amountInput = Number((body as any)?.amount);
+  const roundedAmountInput = Number.isFinite(amountInput)
+    ? roundChf05(Math.abs(amountInput))
+    : Number.NaN;
   const dueDateInput = (body as any)?.dueDate;
   const internalNote = safeString((body as any)?.internalNote);
 
@@ -499,7 +503,7 @@ export async function POST(req: Request) {
     return jsonResponse(origin, { ok: false, message: "Rechnungstyp ist ungültig." }, 400);
   }
 
-  if (!Number.isFinite(amountInput) || amountInput <= 0) {
+  if (!Number.isFinite(roundedAmountInput) || roundedAmountInput <= 0) {
     return jsonResponse(origin, { ok: false, message: "Betrag muss grösser als 0 sein." }, 400);
   }
 
@@ -550,7 +554,7 @@ export async function POST(req: Request) {
       : null;
 
     const commercial = await computePlanningCommercialSummary(db, planningAny);
-    const orderTotalChf = Number(commercial?.grossPriceChf ?? 0);
+    const orderTotalChf = Number(commercial?.totalInvestmentChf ?? 0);
     const existingOrderInvoices = await invoices
       .find({
         companyId,
@@ -615,8 +619,7 @@ export async function POST(req: Request) {
         : await nextInvoiceNumber(db, companyId, now);
     const meta = getSessionUserMeta(session);
     const createdByUserId = toObjectIdOrNull(meta.id) ?? meta.id ?? null;
-    const amount =
-      invoiceType === "gutschrift" ? -Math.abs(amountInput) : Math.abs(amountInput);
+    const amount = invoiceType === "gutschrift" ? -roundedAmountInput : roundedAmountInput;
     const issueDate = now;
     const dueDate =
       parsedDueDate ??
@@ -653,14 +656,14 @@ export async function POST(req: Request) {
       amountChf: amount,
       currency: safeString(companyDoc?.paymentDefaults?.currency) || "CHF",
       discountPct: safeNumber((body as any)?.discountPct, 0),
-      discountChf: safeNumber((body as any)?.discountChf, 0),
+      discountChf: roundChf05(safeNumber((body as any)?.discountChf, 0)),
       skontoPct: safeNumber((body as any)?.skontoPct, 0),
-      skontoChf: safeNumber((body as any)?.skontoChf, 0),
+      skontoChf: roundChf05(safeNumber((body as any)?.skontoChf, 0)),
       skontoDays: Math.max(0, Math.trunc(safeNumber((body as any)?.skontoDays, 0))),
       mwstIncluded: (body as any)?.mwstIncluded !== false,
       positionMenge: Math.max(0, safeNumber((body as any)?.positionMenge, 1)),
       positionEinheit: safeString((body as any)?.positionEinheit) || "Pauschal",
-      positionPreis: safeNumber((body as any)?.positionPreis, amount),
+      positionPreis: roundChf05(safeNumber((body as any)?.positionPreis, amount)),
       issueDate,
       dueDate,
       status: draftFinancialDefaults.status,

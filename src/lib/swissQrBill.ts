@@ -4,6 +4,7 @@ import { SwissQRBill } from "swissqrbill/pdf";
 import type { Data, Language } from "swissqrbill/types";
 import { safeString } from "@/lib/api-session";
 import { safeNumber } from "@/lib/tasks";
+import { roundChf05 } from "@/lib/chf";
 
 export const QR_REFERENCE_TYPES = ["QRR", "SCOR", "NON"] as const;
 export type QrReferenceType = (typeof QR_REFERENCE_TYPES)[number];
@@ -101,7 +102,7 @@ export function isQrIban(iban: unknown) {
 }
 
 export function getQrEligibility(invoice: any, qrBill: any = {}) {
-  const openAmount = round2(
+  const openAmount = roundChf05(
     safeNumber(invoice?.amount, 0) - safeNumber(invoice?.paidAmount, 0),
   );
   const invoiceType = safeString(invoice?.invoiceType).toLowerCase();
@@ -150,10 +151,6 @@ export function getQrEligibility(invoice: any, qrBill: any = {}) {
   }
 
   return { eligible: true, openAmount, reason: null, warning: null };
-}
-
-export function round2(value: number) {
-  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
 
 export function resolveQrReferenceType(value: unknown): QrReferenceType {
@@ -456,7 +453,7 @@ export async function createInvoiceQrPaymentPart(args: {
     },
     debtor: buildDebtor(args.customer, args.planning),
     currency: "CHF",
-    amount: eligibility.openAmount,
+    amount: roundChf05(eligibility.openAmount),
     ...(referenceType === "NON"
       ? { additionalInformation: paymentInformation.slice(0, MAX_QR_MESSAGE_LENGTH) }
       : {

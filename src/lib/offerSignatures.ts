@@ -430,7 +430,7 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
     ...buildPublicOfferCustomerFields(args.planning, customer),
     projectTitle: safeString(args.planning?.title) || safeString(args.planning?.planningNumber),
     objectAddress: resolveObjectAddress(args.planning),
-    totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
+    totalInklMwst: Number(commercial?.totalInvestmentChf ?? 0),
     subsidyChf: Number(commercial?.subsidyChf ?? 0),
     effectiveCostChf: Number(commercial?.effectiveCostChf ?? 0),
     optionalTotalChf: Number(commercial?.optionalTotalChf ?? 0),
@@ -440,7 +440,7 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
     paymentTerms:
       safeString(args.planning?.data?.reportOptions?.paymentTerms) ||
       safeString(args.planning?.data?.reportOptions?.zahlungsbedingungen),
-    payments: normalizeSignaturePayments(args.planning, Number(commercial?.grossPriceChf ?? 0)),
+    payments: normalizeSignaturePayments(args.planning, Number(commercial?.totalInvestmentChf ?? 0)),
     validUntil: validUntil.toISOString(),
     pdfUrl: `${base}/api/public/offer-signature/${encodeURIComponent(args.token)}/pdf`,
     termsUrl: terms

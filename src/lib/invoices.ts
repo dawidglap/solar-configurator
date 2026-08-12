@@ -13,6 +13,7 @@ import {
   safeNumber,
 } from "@/lib/tasks";
 import { canGenerateOrders } from "@/lib/orders";
+import { allocateChf05, roundChf05 } from "@/lib/chf";
 
 export const INVOICE_TYPES = ["rechnung", "mahnung", "gutschrift"] as const;
 export const INVOICE_STATUSES = [
@@ -482,9 +483,9 @@ export function resolveInvoicePaymentAndDunningState(args: {
   now?: Date;
 }) {
   const now = args.now instanceof Date ? args.now : new Date();
-  const totalAmountAbs = Math.abs(safeNumber(args.amount, 0));
+  const totalAmountAbs = Math.abs(roundChf05(safeNumber(args.amount, 0)));
   let status = normalizeInvoiceStatus(args.status);
-  let paidAmount = Math.max(0, safeNumber(args.paidAmount, 0));
+  let paidAmount = roundChf05(Math.max(0, safeNumber(args.paidAmount, 0)));
   let paymentStatus = normalizeInvoicePaymentStatus(args.paymentStatus);
   let paidAt = parseDate(args.paidAt);
 
@@ -556,16 +557,12 @@ export async function createInvoicesForOrderIfMissing(args: CreateOrderInvoicesA
   });
 
   const docs = [];
-  const totalAmount = Number(safeNumber(args.totalInklMwst, 0).toFixed(2));
-  let allocated = 0;
+  const totalAmount = roundChf05(safeNumber(args.totalInklMwst, 0));
+  const rateAmounts = allocateChf05(totalAmount, rates.map((rate) => rate.pct));
   for (let index = 0; index < rates.length; index += 1) {
     const rate = rates[index];
     const invoiceNumber = await nextInvoiceNumber(args.db, args.companyId, createdAt);
-    const isLast = index === rates.length - 1;
-    const amount = isLast
-      ? Number((totalAmount - allocated).toFixed(2))
-      : Number(((safeNumber(args.totalInklMwst, 0) * rate.pct) / 100).toFixed(2));
-    allocated = Number((allocated + amount).toFixed(2));
+    const amount = rateAmounts[index];
     const persistedDueDate = rate.dueDate ?? null;
     const effectiveDueDateForText =
       persistedDueDate ?? addDays(issueDate, safeNumber(args.company?.paymentDefaults?.termDays, 30));
@@ -714,7 +711,7 @@ export async function resyncOrderInvoices(args: {
     company: args.company,
     baseDate: issueDate,
   });
-  const totalAmount = Number(safeNumber(args.totalInklMwst, 0).toFixed(2));
+  const totalAmount = roundChf05(safeNumber(args.totalInklMwst, 0));
   const existingRechnungCount = existingRechnungen.length;
   const existingByRateIndex = new Map<number, any>();
   for (const invoice of existingRechnungen) {
@@ -723,15 +720,11 @@ export async function resyncOrderInvoices(args: {
     existingByRateIndex.set(rateIndex, invoice);
   }
 
-  let allocated = 0;
+  const rateAmounts = allocateChf05(totalAmount, rates.map((rate) => rate.pct));
   const newDocs: any[] = [];
   for (let index = 0; index < rates.length; index += 1) {
     const rate = rates[index];
-    const isLast = index === rates.length - 1;
-    const amount = isLast
-      ? Number((totalAmount - allocated).toFixed(2))
-      : Number(((safeNumber(args.totalInklMwst, 0) * rate.pct) / 100).toFixed(2));
-    allocated = Number((allocated + amount).toFixed(2));
+    const amount = rateAmounts[index];
     const persistedDueDate = rate.dueDate ?? null;
     const effectiveDueDateForText =
       persistedDueDate ?? addDays(issueDate, safeNumber(args.company?.paymentDefaults?.termDays, 30));

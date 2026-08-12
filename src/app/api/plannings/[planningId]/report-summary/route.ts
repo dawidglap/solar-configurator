@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { getDb } from "@/lib/db";
 import { enforceActiveSubscription } from "@/lib/subscription";
+import { allocateChf05, roundChf05, sumChf05 } from "@/lib/chf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,7 +65,7 @@ function round2(n: number) {
 function calculatePvSubsidyChf(dcPowerKw: number) {
   if (dcPowerKw <= 0) return 0;
   const rate = dcPowerKw <= 30 ? 360 : 300;
-  return round2(dcPowerKw * rate);
+  return roundChf05(dcPowerKw * rate);
 }
 
 function toObjectIdOrNull(v: any) {
@@ -546,6 +547,44 @@ function normalizeReportOptions(raw: any) {
   };
 }
 
+function buildPaymentSummary(doc: any, paymentTerms: string, totalInvestmentChf: number) {
+  const configured =
+    doc?.data?.angebot?.payments ??
+    doc?.data?.angebot?.n ??
+    doc?.data?.offer?.payments ??
+    doc?.data?.reportOptions?.payments ??
+    [];
+  const source = Array.isArray(configured) && configured.length > 0
+    ? configured
+    : paymentTerms === "50 % / 50 %"
+      ? [
+          { label: "Anzahlung", pct: 50 },
+          { label: "Schlussrechnung", pct: 50 },
+        ]
+      : paymentTerms === "50 % / 40 % / 10 %"
+        ? [
+            { label: "Anzahlung", pct: 50 },
+            { label: "Zwischenrate", pct: 40 },
+            { label: "Schlussrechnung", pct: 10 },
+          ]
+        : paymentTerms === "100 %"
+          ? [{ label: "Schlussrechnung", pct: 100 }]
+          : [];
+
+  const rows = source
+    .map((row: any, index: number) => ({
+      label: safeString(row?.label ?? row?.name) || `Rate ${index + 1}`,
+      pct: safeNumber(row?.pct ?? row?.percent ?? row?.percentage ?? row?.sharePct, 0),
+    }))
+    .filter((row: { pct: number }) => row.pct > 0);
+  const amounts = allocateChf05(totalInvestmentChf, rows.map((row: { pct: number }) => row.pct));
+
+  return rows.map((row: { label: string; pct: number }, index: number) => ({
+    ...row,
+    amountChf: amounts[index],
+  }));
+}
+
 function isModuleCategory(category: string) {
   const c = safeString(category).toLowerCase();
   return ["module", "modules", "modul", "modulele", "pv-module"].includes(c);
@@ -603,26 +642,20 @@ function getCostBreakdownFromIncludedParts(items: NormalizedPartItem[]) {
   const moduleItems = items.filter((item) => isModuleCategory(item.category));
   const nonModuleItems = items.filter((item) => !isModuleCategory(item.category));
 
-  const modulesTotalChf = Number(
-    moduleItems
-      .reduce((sum, item) => sum + safeNumber(item.lineTotalNet, 0), 0)
-      .toFixed(2)
+  const modulesTotalChf = sumChf05(
+    moduleItems.map((item) => safeNumber(item.lineTotalNet, 0)),
   );
 
-  const partsTotalChf = Number(
-    nonModuleItems
-      .reduce((sum, item) => sum + safeNumber(item.lineTotalNet, 0), 0)
-      .toFixed(2)
+  const partsTotalChf = sumChf05(
+    nonModuleItems.map((item) => safeNumber(item.lineTotalNet, 0)),
   );
 
-  const grossInvestmentChf = Number((modulesTotalChf + partsTotalChf).toFixed(2));
-  const totalMargeChf = Number(
-    items
-      .reduce((sum, item) => {
-        if (safeNumber(item.costNet, 0) <= 0) return sum;
-        return sum + (safeNumber(item.unitPriceNet, 0) - safeNumber(item.costNet, 0)) * safeNumber(item.quantity, 0);
-      }, 0)
-      .toFixed(2)
+  const grossInvestmentChf = roundChf05(modulesTotalChf + partsTotalChf);
+  const totalMargeChf = sumChf05(
+    items.map((item) => {
+      if (safeNumber(item.costNet, 0) <= 0) return 0;
+      return (safeNumber(item.unitPriceNet, 0) - safeNumber(item.costNet, 0)) * safeNumber(item.quantity, 0);
+    }),
   );
   const margePct =
     grossInvestmentChf > 0 ? round2((totalMargeChf / grossInvestmentChf) * 100) : null;
@@ -776,11 +809,8 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   const eligibleParts = getNormalizedIncludedParts(doc, reportOptions);
   const includedParts = eligibleParts.filter((item) => !item.optional);
   const optionalParts = normalizedParts.filter((item) => item.optional);
-  const optionalTotalChf = round2(
-    optionalParts.reduce(
-      (sum, item) => sum + safeNumber(item.lineTotalNet, 0),
-      0,
-    ),
+  const optionalTotalChf = sumChf05(
+    optionalParts.map((item) => safeNumber(item.lineTotalNet, 0)),
   );
   const costBreakdown = getCostBreakdownFromIncludedParts(includedParts);
 
@@ -796,9 +826,9 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
     moduleCount > 0 &&
     fallbackModuleUnitPriceChf > 0
   ) {
-    modulesTotalChf = round2(moduleCount * fallbackModuleUnitPriceChf);
+    modulesTotalChf = roundChf05(moduleCount * fallbackModuleUnitPriceChf);
     partsTotalChf = 0;
-    grossInvestmentChf = round2(modulesTotalChf + partsTotalChf);
+    grossInvestmentChf = roundChf05(modulesTotalChf + partsTotalChf);
   }
 
   const selectedBatteryCatalogItem = getCatalogItemById(
@@ -818,23 +848,23 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
     reportOptions.battery !== false &&
     selectedBatteryCatalogItem &&
     !batteryAlreadyInParts
-      ? round2(selectedBatteryCatalogItem.priceNet)
+      ? roundChf05(selectedBatteryCatalogItem.priceNet)
       : 0;
 
   const extraWallboxCostChf =
     reportOptions.charging !== false &&
     selectedWallboxCatalogItem &&
     !wallboxAlreadyInParts
-      ? round2(selectedWallboxCatalogItem.priceNet)
+      ? roundChf05(selectedWallboxCatalogItem.priceNet)
       : 0;
 
-  partsTotalChf = round2(partsTotalChf + extraBatteryCostChf + extraWallboxCostChf);
-  grossInvestmentChf = round2(modulesTotalChf + partsTotalChf);
+  partsTotalChf = sumChf05([partsTotalChf, extraBatteryCostChf, extraWallboxCostChf]);
+  grossInvestmentChf = roundChf05(modulesTotalChf + partsTotalChf);
 
   const moduleUnitPriceChf =
     moduleCount > 0 && modulesTotalChf > 0
-      ? round2(modulesTotalChf / moduleCount)
-      : fallbackModuleUnitPriceChf;
+      ? roundChf05(modulesTotalChf / moduleCount)
+      : roundChf05(fallbackModuleUnitPriceChf);
 
   const { hasBattery, hasEv, hasHeatPump } = inferEnergyFlagsFromIncludedParts({
     items: includedParts,
@@ -863,9 +893,9 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   const autarkyPct =
     yearlyConsumptionKwh > 0 ? round1((selfUseKwh / yearlyConsumptionKwh) * 100) : 0;
 
-  const discountChf = round2(Math.max(0, reportOptions.discountChf));
+  const discountChf = roundChf05(Math.max(0, reportOptions.discountChf));
   const discountPct = round2(clamp(reportOptions.discountPct, 0, 100));
-  const manualAdditionalSubsidyChf = round2(
+  const manualAdditionalSubsidyChf = roundChf05(
     Math.max(0, reportOptions.manualAdditionalSubsidyChf),
   );
   const skontoPct = round2(clamp(reportOptions.skontoPct, 0, 100));
@@ -874,25 +904,37 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
   // Canonical financial order:
   // gross -> percentage discount -> absolute discount -> PV subsidy -> manual subsidy
   // skonto remains an explicit separate value derived from the post-subsidy total.
-  const discountFromPctChf = round2((grossInvestmentChf * discountPct) / 100);
-  const totalDiscountChf = round2(discountChf + discountFromPctChf);
-  const netInvestmentBeforeSubsidyChf = round2(
+  const discountFromPctChf = roundChf05((grossInvestmentChf * discountPct) / 100);
+  const totalDiscountChf = roundChf05(discountChf + discountFromPctChf);
+  const netInvestmentBeforeSubsidyChf = roundChf05(
     grossInvestmentChf - totalDiscountChf,
   );
-  const totalSubsidyChf = round2(
+  const vatRatePct = 8.1;
+  const vatChf = reportOptions.mwstIncluded
+    ? roundChf05(netInvestmentBeforeSubsidyChf * (vatRatePct / 100))
+    : 0;
+  const grossInvestmentAfterVatChf = roundChf05(
+    netInvestmentBeforeSubsidyChf + vatChf,
+  );
+  const totalSubsidyChf = roundChf05(
     automaticPvSubsidyChf + manualAdditionalSubsidyChf,
   );
-  const totalInvestmentChf = round2(
-    Math.max(0, netInvestmentBeforeSubsidyChf - totalSubsidyChf),
+  const totalInvestmentChf = roundChf05(
+    Math.max(0, grossInvestmentAfterVatChf - totalSubsidyChf),
   );
-  const skontoValueChf = round2(totalInvestmentChf * (skontoPct / 100));
+  const skontoValueChf = roundChf05(totalInvestmentChf * (skontoPct / 100));
+  const payments = buildPaymentSummary(
+    doc,
+    reportOptions.paymentTerms,
+    totalInvestmentChf,
+  );
 
   const tariffConsumptionChfPerKwh = 0.277;
   const tariffFeedInChfPerKwh = 0.1;
 
-  const annualSavingsChf = round2(selfUseKwh * tariffConsumptionChfPerKwh);
-  const annualFeedInRevenueChf = round2(feedInKwh * tariffFeedInChfPerKwh);
-  const annualBenefitChf = round2(annualSavingsChf + annualFeedInRevenueChf);
+  const annualSavingsChf = roundChf05(selfUseKwh * tariffConsumptionChfPerKwh);
+  const annualFeedInRevenueChf = roundChf05(feedInKwh * tariffFeedInChfPerKwh);
+  const annualBenefitChf = roundChf05(annualSavingsChf + annualFeedInRevenueChf);
 
   const breakEvenYears =
     annualBenefitChf > 0
@@ -946,6 +988,9 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
     subsidyChf: totalSubsidyChf,
 
     netInvestmentBeforeSubsidyChf,
+    vatRatePct,
+    vatChf,
+    grossInvestmentAfterVatChf,
     skontoPct,
     skontoValueChf,
     totalInvestmentChf,
@@ -965,6 +1010,7 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
     hasHeatPump,
 
     paymentTerms: reportOptions.paymentTerms,
+    payments,
     mwstIncluded: reportOptions.mwstIncluded,
     includedPartsCount: includedParts.length,
     optionalTotalChf,
@@ -978,7 +1024,7 @@ export function buildReportSummary(doc: any, catalogItemsRaw: any[]) {
     lastCalculatedAt: new Date().toISOString(),
     calculationMode: "mvp_estimated",
 
-    debugVersion: "report-summary-finance-fix-v5",
+    debugVersion: "report-summary-chf05-v6",
     rawYearlyYieldKwhPerKwp,
     isFlatRoof,
     debugYield: {

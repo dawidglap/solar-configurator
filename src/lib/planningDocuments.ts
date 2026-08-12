@@ -12,6 +12,7 @@ import { renderAnalyse } from "@/lib/pdf/sections/analyse";
 import { renderProjektuebersicht } from "@/lib/pdf/sections/projektuebersicht";
 import { renderTechnischeEckdaten } from "@/lib/pdf/sections/technischeEckdaten";
 import { htmlToPlainText } from "@/lib/htmlToPlainText";
+import { allocateChf05, roundChf05, sumChf05 } from "@/lib/chf";
 
 export type PlanningDocumentType = "angebot" | "auftrag";
 export type PlanningReportSections = {
@@ -90,10 +91,6 @@ function parseDate(value: unknown) {
   if (!str) return null;
   const date = new Date(str);
   return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function roundToFiveCents(value: number) {
-  return Math.round(safeNumber(value, 0) * 20) / 20;
 }
 
 function formatIban(value: unknown) {
@@ -285,7 +282,7 @@ function buildOptionalCommercialItem(item: any): OptionalCommercialItem {
     description,
     qty: safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0),
     unit: safeString(item?.unitLabel ?? item?.unit ?? item?.einheit) || "Stk.",
-    priceChf: Number(getItemLineTotal(item).toFixed(2)),
+    priceChf: roundChf05(getItemLineTotal(item)),
   };
 }
 
@@ -401,15 +398,23 @@ function buildPaymentRows(args: {
     ? extractPaymentsSource(data)
     : [];
 
-  return rows
-    .map((row: any, index: number): PaymentRow | null => {
-      const pct = safeNumber(
+  const validRows: Array<{ row: any; index: number; pct: number }> = rows
+    .map((row: any, index: number) => ({
+      row,
+      index,
+      pct: safeNumber(
         row?.pct ?? row?.percent ?? row?.percentage ?? row?.sharePct,
         Number.NaN,
-      );
-      if (!Number.isFinite(pct) || pct <= 0) return null;
+      ),
+    }))
+    .filter(({ pct }: { pct: number }) => Number.isFinite(pct) && pct > 0);
+  const allocatedAmounts = allocateChf05(
+    args.totalInklMwst,
+    validRows.map(({ pct }: { pct: number }) => pct),
+  );
 
-      const amountChf = roundToFiveCents((args.totalInklMwst * pct) / 100);
+  return validRows.map(({ row, index, pct }, paymentIndex): PaymentRow => {
+      const amountChf = allocatedAmounts[paymentIndex];
       const label =
         safeString(row?.label) ||
         safeString(row?.name) ||
@@ -430,8 +435,7 @@ function buildPaymentRows(args: {
         dueAt: formatDateCH(dueDate),
         dueDate,
       };
-    })
-    .filter((row: PaymentRow | null): row is PaymentRow => !!row);
+    });
 }
 
 export function resolveReportSections(planning: any): PlanningReportSections {
@@ -454,10 +458,8 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
   const optionalItems: OptionalCommercialItem[] = optionalSourceItems.map(
     buildOptionalCommercialItem,
   );
-  const optionalTotalChf = Number(
-    optionalSourceItems
-      .reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0)
-      .toFixed(2),
+  const optionalTotalChf = sumChf05(
+    optionalSourceItems.map((item: any) => getItemLineTotal(item)),
   );
 
   const catalogDocs = await db
@@ -475,61 +477,55 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
       reportSummary?.mwstIncluded,
     ) ?? true;
 
-  const partsTotalNet = Number(
-    includedItems
-      .reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0)
-      .toFixed(2),
+  const partsTotalNet = sumChf05(
+    includedItems.map((item: any) => getItemLineTotal(item)),
   );
 
-  const discountChf = safeNumber(
+  const discountChf = roundChf05(safeNumber(
     reportSummary?.discountChf ?? reportOptions?.discountChf,
     0,
-  );
+  ));
   const discountPct = safeNumber(
     reportSummary?.discountPct ?? reportOptions?.discountPct,
     0,
   );
-  const discountFromPctChf = Number(
-    (
-      reportSummary?.discountFromPctChf ??
-      (partsTotalNet * discountPct) / 100
-    ).toFixed(2),
+  const discountFromPctChf = roundChf05(
+    reportSummary?.discountFromPctChf ??
+      (partsTotalNet * discountPct) / 100,
   );
-  const totalDiscountChf = Number(
-    (
-      reportSummary?.totalDiscountChf ??
-      (discountChf + discountFromPctChf)
-    ).toFixed(2),
+  const totalDiscountChf = roundChf05(
+    reportSummary?.totalDiscountChf ??
+      (discountChf + discountFromPctChf),
   );
-  const netAfterDiscountChf = Number(
-    Math.max(0, partsTotalNet - totalDiscountChf).toFixed(2),
+  const netAfterDiscountChf = roundChf05(
+    Math.max(0, partsTotalNet - totalDiscountChf),
   );
   const vatRatePct = 8.1;
   const vatAmountChf = mwstIncluded
-    ? Number((netAfterDiscountChf * (vatRatePct / 100)).toFixed(2))
+    ? roundChf05(netAfterDiscountChf * (vatRatePct / 100))
     : 0;
   const grossPriceChf = mwstIncluded
-    ? Number((netAfterDiscountChf + vatAmountChf).toFixed(2))
+    ? roundChf05(netAfterDiscountChf + vatAmountChf)
     : netAfterDiscountChf;
 
   const dcPowerKw = safeNumber(summary?.dcPowerKw, 0);
-  const automaticPvSubsidyChf = safeNumber(
+  const automaticPvSubsidyChf = roundChf05(safeNumber(
     reportSummary?.automaticPvSubsidyChf,
     dcPowerKw <= 0 ? 0 : dcPowerKw <= 30 ? dcPowerKw * 360 : dcPowerKw * 300,
-  );
-  const manualAdditionalSubsidyChf = safeNumber(
+  ));
+  const manualAdditionalSubsidyChf = roundChf05(safeNumber(
     reportSummary?.manualAdditionalSubsidyChf ?? reportOptions?.additionalSubsidyChf,
     0,
+  ));
+  const subsidyChf = roundChf05(
+    automaticPvSubsidyChf + manualAdditionalSubsidyChf,
   );
-  const subsidyChf = Number(
-    (automaticPvSubsidyChf + manualAdditionalSubsidyChf).toFixed(2),
+  const totalInvestmentChf = roundChf05(
+    Math.max(0, grossPriceChf - subsidyChf),
   );
-  const totalInvestmentChf = Number(
-    Math.max(0, grossPriceChf - subsidyChf).toFixed(2),
-  );
-  const taxSavingsChf = safeNumber((reportSummary as any)?.taxSavingsChf, 0);
-  const effectiveCostChf = Number(
-    Math.max(0, totalInvestmentChf - taxSavingsChf).toFixed(2),
+  const taxSavingsChf = roundChf05(safeNumber((reportSummary as any)?.taxSavingsChf, 0));
+  const effectiveCostChf = roundChf05(
+    Math.max(0, totalInvestmentChf - taxSavingsChf),
   );
 
   return {
@@ -692,14 +688,14 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
 
   const batteryItem = batteryItems[0];
   const wallboxItem = wallboxItems[0];
-  const batteryPriceChf = Number(
-    batteryItems.reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0).toFixed(2),
+  const batteryPriceChf = sumChf05(
+    batteryItems.map((item: any) => getItemLineTotal(item)),
   );
-  const wallboxPriceChf = Number(
-    wallboxItems.reduce((sum: number, item: any) => sum + getItemLineTotal(item), 0).toFixed(2),
+  const wallboxPriceChf = sumChf05(
+    wallboxItems.map((item: any) => getItemLineTotal(item)),
   );
-  const baseSystemNetChf = Number(
-    Math.max(0, partsTotalNet - batteryPriceChf - wallboxPriceChf).toFixed(2),
+  const baseSystemNetChf = roundChf05(
+    Math.max(0, partsTotalNet - batteryPriceChf - wallboxPriceChf),
   );
 
   const identifiers = getDocumentIdentifiers({
@@ -784,15 +780,15 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
         quantity: safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0),
         unit: safeString(item?.unit),
         unitLabel: safeString(item?.unitLabel),
-        unitPriceNet: safeNumber(
+        unitPriceNet: roundChf05(safeNumber(
           item?.unitPriceNet ??
             item?.unitPrice ??
             item?.einzelpreis ??
             item?.priceNet ??
             item?.priceChf,
           0,
-        ),
-        lineTotalNet: getItemLineTotal(item),
+        )),
+        lineTotalNet: roundChf05(getItemLineTotal(item)),
         catalogItemId: safeString(item?.catalogItemId),
         pdfSection: safeString(item?.pdfSection),
         description: htmlToPlainText(item?.catalogDescription),
@@ -1004,7 +1000,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     pdfBytes: Buffer.from(pdfBytes),
     fileName: `${identifiers.fileStem}.pdf`,
     pricing: {
-      totalInklMwst: grossPriceChf,
+      totalInklMwst: totalInvestmentChf,
       totalInvestmentChf,
       effectiveCostChf,
     },
@@ -1012,4 +1008,4 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   };
 }
 
-export { resolveDocumentType, roundToFiveCents, formatIban };
+export { resolveDocumentType, roundChf05 as roundToFiveCents, formatIban };

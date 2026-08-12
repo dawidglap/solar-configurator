@@ -122,7 +122,7 @@ export async function GET(
           customerId: safeString(planning?.customerId) || null,
           customerName: customerNameFromPlanning(planning),
           projectTitle: safeString(planning?.title) || safeString(planning?.planningNumber),
-          totalInklMwst: commercial.grossPriceChf,
+          totalInklMwst: commercial.totalInvestmentChf,
           plannedRatesCount: plannedRates.ok ? plannedRates.items.length : 0,
           invoicesCount: normalizedInvoices.length,
           invoices: normalizedInvoices,

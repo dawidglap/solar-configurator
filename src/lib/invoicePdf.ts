@@ -3,7 +3,8 @@ import { PDFDocument, PDFPage, PDFFont, degrees, rgb } from "pdf-lib";
 import { addPaymentSlipPage } from "@/app/api/plannings/[planningId]/offer/pdf/payment-slip-page";
 import { safeString, toObjectIdOrNull, type SessionPayload } from "@/lib/api-session";
 import { sanitizePdfText } from "@/lib/pdfText";
-import { formatIban, roundToFiveCents } from "@/lib/planningDocuments";
+import { formatIban } from "@/lib/planningDocuments";
+import { roundChf05 } from "@/lib/chf";
 import {
   ensurePlanningFileIndexes,
   getPlanningFilesCollection,
@@ -59,7 +60,7 @@ function money(value: number) {
   return new Intl.NumberFormat("de-CH", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(Number(value || 0));
+  }).format(roundChf05(Number(value || 0)));
 }
 
 function wrapText(text: string, maxWidth: number, font: PDFFont, size: number) {
@@ -451,7 +452,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   });
 
   const totalY = rowY - 36;
-  const vatLabel = `MwSt. bereits enthalten (${money(roundToFiveCents(safeNumber(args.invoice?.amount, 0) / 1.081 * 0.081))} CHF)`;
+  const vatLabel = `MwSt. bereits enthalten (${money(roundChf05(safeNumber(args.invoice?.amount, 0) / 1.081 * 0.081))} CHF)`;
   page.drawText(vatLabel, { x: marginX + 12, y: totalY, size: 8.5, font, color: cMuted });
   page.drawText("Total", { x: 424, y: totalY, size: 9.5, font: bold, color: cText });
   page.drawText(amountLabel, {
@@ -463,7 +464,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   });
 
   if (safeString(args.invoice?.invoiceType) === "mahnung") {
-    const fee = Math.max(0, safeNumber(args.invoice?.amount, 0) - safeNumber(args.invoice?.baseAmount, 0));
+    const fee = roundChf05(Math.max(0, safeNumber(args.invoice?.amount, 0) - safeNumber(args.invoice?.baseAmount, 0)));
     if (fee > 0.009) {
       page.drawText(`Mahngebühr inklusive: CHF ${money(fee)}`, {
         x: marginX + 12,
@@ -546,11 +547,11 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
           {
             label: description,
             pct: safeNumber(args.invoice?.pct, 0),
-            amountChf: safeNumber(args.invoice?.amount, 0),
+            amountChf: roundChf05(safeNumber(args.invoice?.amount, 0)),
             dueAt: formatDateCH(dueDate),
           },
         ],
-        totalAmountChf: safeNumber(args.invoice?.amount, 0),
+        totalAmountChf: roundChf05(safeNumber(args.invoice?.amount, 0)),
         currency: safeString(args.invoice?.currency) || "CHF",
         bankDetails: {
           accountHolder: bank.accountHolder,

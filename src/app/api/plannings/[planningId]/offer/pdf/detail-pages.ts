@@ -1,5 +1,6 @@
 import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
 import { sanitizePdfText } from "@/lib/pdfText";
+import { roundChf05, sumChf05 } from "@/lib/chf";
 import { htmlToPlainText } from "@/lib/htmlToPlainText";
 
 type CompanyLike = {
@@ -130,7 +131,7 @@ function money(n?: number) {
   return new Intl.NumberFormat("de-CH", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(safeNumber(n, 0));
+  }).format(roundChf05(safeNumber(n, 0)));
 }
 
 function drawText(
@@ -489,9 +490,8 @@ export async function addDetailPages(pdf: PDFDocument, args: AddDetailPagesArgs)
     y = page.cursorY;
   };
 
-  const optionalTotal = optionalItems.reduce(
-    (sum, item) => sum + safeNumber(item.lineTotalNet, 0),
-    0,
+  const optionalTotal = sumChf05(
+    optionalItems.map((item) => safeNumber(item.lineTotalNet, 0)),
   );
   let remainingItems = [...optionalItems];
   let summaryPending = true;

@@ -1,5 +1,6 @@
 import { PDFDocument, PDFPage, PDFFont, degrees, rgb } from "pdf-lib";
 import { sanitizePdfText } from "@/lib/pdfText";
+import { roundChf05 } from "@/lib/chf";
 
 type PaymentSlipRow = {
   label: string;
@@ -60,7 +61,7 @@ function money(value: number) {
   return new Intl.NumberFormat("de-CH", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(Number(value || 0));
+  }).format(roundChf05(Number(value || 0)));
 }
 
 function drawText(
