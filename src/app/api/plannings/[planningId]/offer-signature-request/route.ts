@@ -86,6 +86,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ plannin
           offerSnapshotFileId: snapshot.file._id,
           offerSignatureProcessingId: null,
           offerSignatureProcessingAt: null,
+          offerVollmachtTokenExpiresAt: null,
+          vollmachtSubmittedAt: null,
           updatedAt: now,
         },
         $push: {

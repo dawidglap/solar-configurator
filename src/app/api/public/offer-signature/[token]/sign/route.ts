@@ -17,6 +17,7 @@ import {
   validateSignatureImage,
 } from "@/lib/orderSignatures";
 import {
+  OFFER_VOLLMACHT_VALIDITY_MS,
   buildInternalOrderSession,
   buildOfferAuditEntry,
   buildSignedSessionCookie,
@@ -143,6 +144,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         : "auto";
     const commercial = await computePlanningCommercialSummary(db, planning);
     const signedAt = new Date();
+    const offerVollmachtTokenExpiresAt = new Date(signedAt.getTime() + OFFER_VOLLMACHT_VALIDITY_MS);
     const tokenHash = sha256(token);
     const signerIp = extractRequestIp(req);
     const signerUserAgent = safeString(req.headers.get("user-agent")).slice(0, 1000);
@@ -302,6 +304,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
           angebotSnapshotFileId: signedOfferSnapshot.doc._id,
           withdrawalRightApplies,
           withdrawalUntil,
+          offerVollmachtTokenExpiresAt,
           subsidyPayoutAccountHolder: bankAccountHolder || null,
           subsidyPayoutIban: bankIban || null,
           propertyStreet,
@@ -414,7 +417,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       ).catch(() => undefined);
     }
     const message = safeString(error?.message) || "Offerte konnte nicht unterschrieben werden.";
-    const status = /PNG|2 MB|Name|E-Mail|Bedingungen|Abschlussort|IBAN|Zeichen/.test(message) ? 400 : /bereits|nicht gefunden|nicht gespeichert/.test(message) ? 409 : 500;
+    const status = /PNG|2 MB|Name|E-Mail|Bedingungen|Abschlussort|IBAN|maximal|Zeichen/.test(message) ? 400 : /bereits|nicht gefunden|nicht gespeichert/.test(message) ? 409 : 500;
     if (status === 500) console.error("PUBLIC OFFER SIGN ERROR:", error);
     return response(origin, { ok: false, message }, status);
   }

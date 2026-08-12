@@ -37,6 +37,7 @@ export const OFFER_SIGNATURE_STATUSES = [
   "expired",
 ] as const;
 export const OFFER_SIGNATURE_PLACES = ["remote", "onsite_customer", "onsite_company"] as const;
+export const OFFER_VOLLMACHT_VALIDITY_MS = 30 * 86_400_000;
 export type OfferSignatureStatus = (typeof OFFER_SIGNATURE_STATUSES)[number];
 export type OfferSignaturePlace = (typeof OFFER_SIGNATURE_PLACES)[number];
 
@@ -90,6 +91,8 @@ export function buildDefaultOfferSignatureFields() {
     offerSignatureAudit: [],
     offerSignatureProcessingId: null,
     offerSignatureProcessingAt: null,
+    offerVollmachtTokenExpiresAt: null,
+    vollmachtSubmittedAt: null,
   };
 }
 
@@ -183,6 +186,20 @@ export function parseOfferAcceptanceDetails(body: any) {
   };
 }
 
+export function parseOfferVollmachtDetails(body: any) {
+  const propertyStreet = optionalLimitedString(body?.propertyStreet, "Objektstrasse", 120);
+  const parcelNumber = optionalLimitedString(body?.parcelNumber, "Grundstücknummer", 60);
+  const bankAccountHolder = optionalLimitedString(body?.bankAccountHolder, "Kontoinhaber", 200);
+  const bankIban = normalizeIban(body?.bankIban) || null;
+  if (!propertyStreet) throw new Error("Objektstrasse ist erforderlich.");
+  if (!bankAccountHolder) throw new Error("Kontoinhaber ist erforderlich.");
+  if (!bankIban) throw new Error("IBAN ist erforderlich.");
+  if (bankIban.length !== 21 || !bankIban.startsWith("CH") || !isValidIban(bankIban)) {
+    throw new Error("Ungültige Schweizer IBAN.");
+  }
+  return { propertyStreet, parcelNumber, bankAccountHolder, bankIban };
+}
+
 export function newOfferSignatureToken() {
   const token = crypto.randomBytes(32).toString("base64url");
   return { token, hash: sha256(token) };
@@ -244,6 +261,89 @@ export async function findOfferByToken(db: Db, token: string): Promise<any | nul
     offerSignatureTokenHash: sha256(token),
     offerSignatureStatus: { $in: ["sent", "viewed", "signed"] },
   });
+}
+
+export function getOfferVollmachtExpiresAt(planning: any) {
+  const explicit = planning?.offerVollmachtTokenExpiresAt
+    ? new Date(planning.offerVollmachtTokenExpiresAt)
+    : null;
+  if (explicit && !Number.isNaN(explicit.getTime())) return explicit;
+  const signedAt = planning?.offerSignedAt ? new Date(planning.offerSignedAt) : null;
+  if (!signedAt || Number.isNaN(signedAt.getTime())) return null;
+  return new Date(signedAt.getTime() + OFFER_VOLLMACHT_VALIDITY_MS);
+}
+
+export async function findOfferForVollmacht(
+  db: Db,
+  token: string,
+  now = new Date(),
+): Promise<any | null> {
+  if (!isValidOfferToken(token)) return null;
+  const planning = await db.collection("plannings").findOne({
+    offerSignatureTokenHash: sha256(token),
+    offerSignatureStatus: "signed",
+  });
+  if (!planning) return null;
+  const expiresAt = getOfferVollmachtExpiresAt(planning);
+  return expiresAt && expiresAt.getTime() > now.getTime() ? planning : null;
+}
+
+export function buildOfferVollmachtResponse(args: {
+  planning: any;
+  company: any;
+  customer: any;
+  token: string;
+  req: Request;
+}) {
+  const planning = args.planning;
+  const profile = planning?.data?.profile ?? {};
+  const propertyStreet =
+    safeString(planning?.propertyStreet) ||
+    safeString(profile?.buildingStreet) ||
+    safeString(args.customer?.buildingStreet);
+  const propertyHouseNumber =
+    safeString(planning?.propertyHouseNumber) ||
+    safeString(profile?.buildingStreetNo) ||
+    safeString(args.customer?.buildingStreetNo);
+  const propertyZip =
+    safeString(planning?.propertyZip) ||
+    safeString(profile?.buildingZip) ||
+    safeString(args.customer?.buildingZip);
+  const propertyCity =
+    safeString(planning?.propertyCity) ||
+    safeString(profile?.buildingCity) ||
+    safeString(args.customer?.buildingCity);
+  const streetLine = [propertyStreet, propertyHouseNumber].filter(Boolean).join(" ");
+  const placeLine = [propertyZip, propertyCity].filter(Boolean).join(" ");
+  const objectAddress = [streetLine, placeLine].filter(Boolean).join(", ") || resolveObjectAddress(planning);
+  const expiresAt = getOfferVollmachtExpiresAt(planning);
+  const submittedAt = iso(planning?.vollmachtSubmittedAt);
+  const base = getPublicApiBaseUrl(args.req);
+  return {
+    submitted: !!submittedAt,
+    submittedAt,
+    expiresAt: expiresAt?.toISOString() ?? null,
+    offerNumber: safeString(planning?.planningNumber),
+    orderId: safeString(planning?.orderId) || null,
+    companyName: safeString(args.company?.name),
+    companyLogoUrl: safeString(args.company?.branding?.logoUrl) || null,
+    customerName: resolveCustomerName(planning, args.customer),
+    objectAddress,
+    propertyStreet,
+    parcelNumber:
+      safeString(planning?.parcelNumber) ||
+      safeString(profile?.parcelNumber) ||
+      safeString(args.customer?.parcelNumber),
+    bankAccountHolder:
+      safeString(planning?.subsidyPayoutAccountHolder) ||
+      safeString(args.customer?.subsidyPayoutAccountHolder),
+    bankIban:
+      safeString(planning?.subsidyPayoutIban) ||
+      safeString(args.customer?.subsidyPayoutIban),
+    confirmationPdfUrl: planning?.offerConfirmationPdfFileId
+      ? `${base}/api/public/offer-signature/${encodeURIComponent(args.token)}/pdf?type=confirmation`
+      : null,
+  };
 }
 
 export async function ensureActiveOfferToken(db: Db, planning: any) {

@@ -85,6 +85,16 @@ test("serializes public customer and GeoAdmin offer fields", async () => {
 
 test("normalizes and validates the optional payout IBAN", async () => {
   const { parseOfferAcceptanceDetails } = await loadOffer();
+  assert.deepEqual(parseOfferAcceptanceDetails({}), {
+    propertyStreet: null,
+    propertyHouseNumber: null,
+    propertyZip: null,
+    propertyCity: null,
+    buildingNumber: null,
+    parcelNumber: null,
+    bankAccountHolder: null,
+    bankIban: null,
+  });
   assert.deepEqual(
     parseOfferAcceptanceDetails({
       propertyStreet: "  Schachenstrasse ",
@@ -115,6 +125,102 @@ test("normalizes and validates the optional payout IBAN", async () => {
     () => parseOfferAcceptanceDetails({ propertyHouseNumber: "x".repeat(21) }),
     /maximal 20/,
   );
+});
+
+test("validates required Vollmacht fields and only accepts Swiss IBANs", async () => {
+  const { parseOfferVollmachtDetails } = await loadOffer();
+  assert.deepEqual(
+    parseOfferVollmachtDetails({
+      propertyStreet: " Schachenstrasse ",
+      parcelNumber: " 1042 ",
+      bankAccountHolder: " Max Muster ",
+      bankIban: "ch93 0076 2011 6238 5295 7",
+    }),
+    {
+      propertyStreet: "Schachenstrasse",
+      parcelNumber: "1042",
+      bankAccountHolder: "Max Muster",
+      bankIban: "CH9300762011623852957",
+    },
+  );
+  assert.throws(
+    () => parseOfferVollmachtDetails({
+      propertyStreet: "Schachenstrasse",
+      bankAccountHolder: "Max Muster",
+      bankIban: "DE89370400440532013000",
+    }),
+    /Schweizer IBAN/,
+  );
+  assert.throws(
+    () => parseOfferVollmachtDetails({
+      bankAccountHolder: "Max Muster",
+      bankIban: "CH9300762011623852957",
+    }),
+    /Objektstrasse/,
+  );
+});
+
+test("keeps a signed offer token valid for Vollmacht for exactly 30 days", async () => {
+  const {
+    OFFER_VOLLMACHT_VALIDITY_MS,
+    findOfferForVollmacht,
+    getOfferVollmachtExpiresAt,
+    newOfferSignatureToken,
+  } = await loadOffer();
+  const { sha256 } = await loadOrder();
+  const { token } = newOfferSignatureToken();
+  const signedAt = new Date("2026-08-10T12:00:00.000Z");
+  const planning = {
+    offerSignatureTokenHash: sha256(token),
+    offerSignatureStatus: "signed",
+    offerSignedAt: signedAt,
+  };
+  const db = {
+    collection: () => ({ findOne: async () => planning }),
+  } as any;
+  assert.equal(
+    getOfferVollmachtExpiresAt(planning)?.toISOString(),
+    new Date(signedAt.getTime() + OFFER_VOLLMACHT_VALIDITY_MS).toISOString(),
+  );
+  assert.equal(
+    await findOfferForVollmacht(db, token, new Date(signedAt.getTime() + OFFER_VOLLMACHT_VALIDITY_MS - 1)),
+    planning,
+  );
+  assert.equal(
+    await findOfferForVollmacht(db, token, new Date(signedAt.getTime() + OFFER_VOLLMACHT_VALIDITY_MS)),
+    null,
+  );
+});
+
+test("serializes the public Vollmacht prefill without exposing token data", async () => {
+  const { buildOfferVollmachtResponse } = await loadOffer();
+  const req = new Request("https://app.helionic.ch/api/public/offer-signature/token/vollmacht");
+  const response = buildOfferVollmachtResponse({
+    planning: {
+      planningNumber: "ANG-2026-3499",
+      orderId: "AUF-2026-0007",
+      offerSignedAt: new Date("2026-08-10T12:00:00.000Z"),
+      offerConfirmationPdfFileId: "file-id",
+      propertyStreet: "Schachenstrasse",
+      propertyHouseNumber: "4",
+      propertyZip: "9430",
+      propertyCity: "St. Margrethen SG",
+      parcelNumber: "1042",
+      subsidyPayoutAccountHolder: "Max Muster",
+      subsidyPayoutIban: "CH9300762011623852957",
+      summary: { customerName: "Max Muster" },
+    },
+    company: { name: "Demo AG", branding: { logoUrl: "https://example.ch/logo.png" } },
+    customer: null,
+    token: "public-token",
+    req,
+  });
+  assert.equal(response.submitted, false);
+  assert.equal(response.objectAddress, "Schachenstrasse 4, 9430 St. Margrethen SG");
+  assert.equal(response.propertyStreet, "Schachenstrasse");
+  assert.equal(response.customerName, "Max Muster");
+  assert.match(String(response.confirmationPdfUrl), /type=confirmation$/);
+  assert.equal("offerSignatureTokenHash" in response, false);
 });
 
 test("creates signed offer and confirmation PDFs with protocol pages", async () => {
