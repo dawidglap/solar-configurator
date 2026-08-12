@@ -77,36 +77,44 @@ const OPTIONAL_HEADER_HEIGHT = 26;
 const OPTIONAL_SUMMARY_HEIGHT = 36;
 const CONTENT_BOTTOM = MARGIN_BOTTOM + 70;
 
-const TABLE_COL = {
-  posX: MARGIN_X + 6,
-  descX: MARGIN_X + 40,
+export const POSITION_COLUMN_WIDTHS = {
+  pos: 40,
   qtyW: 55,
   priceW: 95,
   totalW: 100,
+  numericGap: 12,
   gapAfterDesc: 8,
+  cellInset: 6,
 } as const;
 
-function getTableColumnLayout() {
-  const totalRight = PAGE_W - MARGIN_X;
-  const totalLeft = totalRight - TABLE_COL.totalW;
-  const priceRight = totalLeft - 12;
-  const priceLeft = priceRight - TABLE_COL.priceW;
-  const qtyRight = priceLeft - 12;
-  const qtyLeft = qtyRight - TABLE_COL.qtyW;
-  const descRight = qtyLeft - TABLE_COL.gapAfterDesc;
+export const POSITION_TABLE_BOUNDS = {
+  left: MARGIN_X,
+  right: PAGE_W - MARGIN_X,
+  width: PAGE_W - MARGIN_X * 2,
+} as const;
 
-  return {
-    posX: TABLE_COL.posX,
-    descX: TABLE_COL.descX,
-    descWidth: Math.max(140, descRight - TABLE_COL.descX),
+export const POSITION_COLUMN_LAYOUT = (() => {
+  const totalRight = POSITION_TABLE_BOUNDS.right;
+  const totalLeft = totalRight - POSITION_COLUMN_WIDTHS.totalW;
+  const priceRight = totalLeft - POSITION_COLUMN_WIDTHS.numericGap;
+  const priceLeft = priceRight - POSITION_COLUMN_WIDTHS.priceW;
+  const qtyRight = priceLeft - POSITION_COLUMN_WIDTHS.numericGap;
+  const qtyLeft = qtyRight - POSITION_COLUMN_WIDTHS.qtyW;
+  const descRight = qtyLeft - POSITION_COLUMN_WIDTHS.gapAfterDesc;
+  const descX = POSITION_TABLE_BOUNDS.left + POSITION_COLUMN_WIDTHS.pos;
+
+  return Object.freeze({
+    posX: POSITION_TABLE_BOUNDS.left + POSITION_COLUMN_WIDTHS.cellInset,
+    descX,
+    descWidth: Math.max(140, descRight - descX),
     qtyLeft,
     qtyRight,
     priceLeft,
     priceRight,
     totalLeft,
     totalRight,
-  };
-}
+  });
+})();
 
 function safeString(v: unknown) {
   return sanitizePdfText(v);
@@ -341,8 +349,8 @@ function buildFooterLines(company?: CompanyLike | null) {
 }
 
 function estimateItemHeight(item: DetailItem, font: PDFFont, bold: PDFFont) {
-  const bodyWidth = PAGE_W - MARGIN_X * 2;
-  const { descWidth } = getTableColumnLayout();
+  const bodyWidth = POSITION_TABLE_BOUNDS.width;
+  const { descWidth } = POSITION_COLUMN_LAYOUT;
 
   const titleLines = wrapTextStrict(buildItemTitle(item), descWidth, bold, 9.6);
   let h = Math.max(1, titleLines.length) * 11;
@@ -540,9 +548,9 @@ export async function addDetailPages(pdf: PDFDocument, args: AddDetailPagesArgs)
     if (includeSummary) segmentHeight += OPTIONAL_SUMMARY_HEIGHT;
 
     page.page.drawRectangle({
-      x: MARGIN_X,
+      x: POSITION_TABLE_BOUNDS.left,
       y: topY - segmentHeight,
-      width: PAGE_W - MARGIN_X * 2,
+      width: POSITION_TABLE_BOUNDS.width,
       height: segmentHeight + 6,
       color: COLOR_OPTIONAL_BG,
       borderColor: COLOR_OPTIONAL_BORDER,
@@ -582,12 +590,20 @@ function drawOptionalSectionHeader(
   page: PDFPage,
   args: { y: number; bold: PDFFont },
 ) {
-  drawText(page, "Optionale Positionen", MARGIN_X + 6, args.y - 6, 9.2, args.bold, COLOR_TEXT);
+  drawText(
+    page,
+    "Optionale Positionen",
+    POSITION_COLUMN_LAYOUT.posX,
+    args.y - 6,
+    9.2,
+    args.bold,
+    COLOR_TEXT,
+  );
   drawLine(
     page,
-    MARGIN_X,
+    POSITION_TABLE_BOUNDS.left,
     args.y - 15,
-    PAGE_W - MARGIN_X,
+    POSITION_TABLE_BOUNDS.right,
     args.y - 15,
     0.8,
     COLOR_OPTIONAL_BORDER,
@@ -599,7 +615,7 @@ function drawOptionalSummary(
   page: PDFPage,
   args: { y: number; total: number; font: PDFFont; bold: PDFFont },
 ) {
-  const tableCol = getTableColumnLayout();
+  const tableCol = POSITION_COLUMN_LAYOUT;
   let y = args.y + 1;
   drawText(page, "Total optionale Positionen", tableCol.descX, y, 9.2, args.bold, COLOR_TEXT);
   const totalText = `${money(args.total)} CHF`;
@@ -677,11 +693,11 @@ function createPage(
 
   // Table head
   const headY = headerLineY - 22;
-  const tableCol = getTableColumnLayout();
+  const tableCol = POSITION_COLUMN_LAYOUT;
   page.drawRectangle({
-    x: MARGIN_X,
+    x: POSITION_TABLE_BOUNDS.left,
     y: headY - 14,
-    width: PAGE_W - MARGIN_X * 2,
+    width: POSITION_TABLE_BOUNDS.width,
     height: 22,
     color: COLOR_SOFT,
   });
@@ -692,7 +708,15 @@ function createPage(
   drawText(page, "Preis", tableCol.priceLeft, headY - 6, 9, args.bold, COLOR_TEXT);
   drawText(page, "Total", tableCol.totalLeft, headY - 6, 9, args.bold, COLOR_TEXT);
 
-  drawLine(page, MARGIN_X, headY - 16, PAGE_W - MARGIN_X, headY - 16, 0.8, COLOR_LINE);
+  drawLine(
+    page,
+    POSITION_TABLE_BOUNDS.left,
+    headY - 16,
+    POSITION_TABLE_BOUNDS.right,
+    headY - 16,
+    0.8,
+    COLOR_LINE,
+  );
 
   // Footer
   if (args.footerLines.length) {
@@ -726,14 +750,14 @@ function drawSectionHeader(
   const { y, label, bold } = args;
 
   page.drawRectangle({
-    x: MARGIN_X,
+    x: POSITION_TABLE_BOUNDS.left,
     y: y - 12,
-    width: PAGE_W - MARGIN_X * 2,
+    width: POSITION_TABLE_BOUNDS.width,
     height: 18,
     color: rgb(0.97, 0.97, 0.97),
   });
 
-  drawText(page, label, MARGIN_X + 6, y - 6, 9.2, bold, COLOR_TEXT);
+  drawText(page, label, POSITION_COLUMN_LAYOUT.posX, y - 6, 9.2, bold, COLOR_TEXT);
   return y - 26;
 }
 
@@ -749,7 +773,7 @@ function drawDetailItem(
 ) {
   const { item, font, bold } = args;
   let y = args.y;
-  const tableCol = getTableColumnLayout();
+  const tableCol = POSITION_COLUMN_LAYOUT;
 
   const title = buildItemTitle(item);
   const subline = buildItemSubline(item);
@@ -869,7 +893,15 @@ function drawDetailItem(
   }
 
   y -= 4;
-  drawLine(page, MARGIN_X, y, PAGE_W - MARGIN_X, y, 0.6, COLOR_LINE);
+  drawLine(
+    page,
+    POSITION_TABLE_BOUNDS.left,
+    y,
+    POSITION_TABLE_BOUNDS.right,
+    y,
+    0.6,
+    COLOR_LINE,
+  );
   y -= 12;
 
   return y;
