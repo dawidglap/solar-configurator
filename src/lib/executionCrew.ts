@@ -3,6 +3,12 @@ import { ObjectId } from "mongodb";
 import { mongoIdToString, safeString, toObjectIdOrNull } from "@/lib/api-session";
 import { buildIdVariants, getCompanyMembersByIds } from "@/lib/tasks";
 import { deriveAssignedUserIds, getTeamsCollection, TEAM_ROLES, type TeamRole } from "@/lib/teams";
+import {
+  buildAbsenceOverlapFilter,
+  ensureAbsenceIndexes,
+  getAbsenceBooking,
+  getAbsencesCollection,
+} from "@/lib/absences";
 
 export type ExtraAssignment = {
   userId: string;
@@ -15,9 +21,20 @@ export type ExtraAssignment = {
 };
 
 export type ExecutionCrewConflict = {
+  type: "task";
   userId: string;
   conflictingTaskId: string;
   projectName: string;
+  days: string[];
+  startTime: string | null;
+  endTime: string | null;
+} | {
+  type: "absence";
+  userId: string;
+  absenceId: string;
+  reason: string;
+  startDate: string;
+  endDate: string;
   days: string[];
   startTime: string | null;
   endTime: string | null;
@@ -347,7 +364,16 @@ export async function findExecutionCrewConflicts(args: {
       { scheduledEnd: { $exists: false }, scheduledStart: { $gte: new Date(`${allDays[0]}T00:00:00.000Z`) } },
     ],
   };
-  const candidates = await args.db.collection("executionTasks").find(candidateFilter).toArray();
+  await ensureAbsenceIndexes(args.db);
+  const absenceFilter = {
+    companyId: { $in: buildIdVariants(args.companyId) },
+    userId: { $in: userIds.flatMap(buildIdVariants) },
+    ...buildAbsenceOverlapFilter(allDays[0], allDays.at(-1)!),
+  };
+  const [candidates, absences] = await Promise.all([
+    args.db.collection("executionTasks").find(candidateFilter).toArray(),
+    getAbsencesCollection(args.db).find(absenceFilter).toArray(),
+  ]);
 
   const planningIds = Array.from(new Set(candidates.map((task) => normalizeId(task?.planningId)).filter(Boolean)));
   const plannings = planningIds.length
@@ -369,6 +395,7 @@ export async function findExecutionCrewConflicts(args: {
       if (!days.length) continue;
       const planning = planningById.get(normalizeId(candidate?.planningId));
       conflicts.push({
+        type: "task",
         userId,
         conflictingTaskId: normalizeId(candidate?._id),
         projectName:
@@ -383,6 +410,25 @@ export async function findExecutionCrewConflicts(args: {
         endTime: candidateBooking?.endTime ?? null,
       });
     }
+  }
+  for (const absence of absences) {
+    const userId = normalizeId(absence?.userId);
+    const requestedBooking = bookings.get(userId) ?? null;
+    if (!requestedBooking) continue;
+    const absenceBooking = getAbsenceBooking(absence);
+    const days = getExecutionBookingOverlap(requestedBooking, absenceBooking);
+    if (!days.length) continue;
+    conflicts.push({
+      type: "absence",
+      userId,
+      absenceId: normalizeId(absence?._id),
+      reason: safeString(absence?.reason).toLowerCase(),
+      startDate: safeString(absence?.startDate),
+      endDate: safeString(absence?.endDate),
+      days,
+      startTime: absenceBooking?.startTime ?? null,
+      endTime: absenceBooking?.endTime ?? null,
+    });
   }
   return conflicts;
 }

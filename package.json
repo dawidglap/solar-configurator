@@ -19,6 +19,7 @@
     "test:swiss-qr-bill": "tsx --test tests/swissQrBill.test.ts",
     "test:cors": "tsx --test tests/cors.test.ts",
     "test:teams": "tsx --test tests/teams.test.ts",
+    "test:absences": "tsx --test tests/absences.test.ts",
     "test:execution-teams": "tsx scripts/test-execution-teams.ts",
     "test:execution-crew": "tsx --test tests/executionCrew.test.ts",
     "test:order-signatures": "tsx --test tests/orderSignatures.test.ts",

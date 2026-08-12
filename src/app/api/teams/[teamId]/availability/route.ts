@@ -6,6 +6,12 @@ import { buildIdVariants, getCompanyMembersByIds, jsonResponse, noStoreHeaders }
 import { ensureExecutionTaskIndexes, getExecutionTasksCollection, hydrateExecutionTasks, normalizeExecutionTime } from "@/lib/executionTasks";
 import { ensureTeamIndexes, getTeamsCollection, parseAvailabilityDate } from "@/lib/teams";
 import { getExecutionBookingOverlap, getExecutionUserBooking } from "@/lib/executionCrew";
+import {
+  buildAbsenceOverlapFilter,
+  ensureAbsenceIndexes,
+  getAbsenceBooking,
+  getAbsencesCollection,
+} from "@/lib/absences";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +61,7 @@ export async function GET(req: Request, { params }: Params) {
     const db = await getDb();
     const subscriptionError = await enforceActiveSubscription(db, origin, session);
     if (subscriptionError) return subscriptionError;
-    await Promise.all([ensureTeamIndexes(db), ensureExecutionTaskIndexes(db)]);
+    await Promise.all([ensureTeamIndexes(db), ensureExecutionTaskIndexes(db), ensureAbsenceIndexes(db)]);
 
     const team = await getTeamsCollection(db).findOne({
       _id: new ObjectId(teamId),
@@ -85,7 +91,17 @@ export async function GET(req: Request, { params }: Params) {
     };
     if (excludeTaskId) filter._id = { $ne: new ObjectId(excludeTaskId) };
 
-    const candidates = await getExecutionTasksCollection(db).find(filter).toArray();
+    const requestedStartDate = start.toISOString().slice(0, 10);
+    const requestedEndDate = end.toISOString().slice(0, 10);
+    const absenceFilter = {
+      companyId: { $in: buildIdVariants(companyId) },
+      userId: { $in: assignmentVariants },
+      ...buildAbsenceOverlapFilter(requestedStartDate, requestedEndDate),
+    };
+    const [candidates, absences] = await Promise.all([
+      getExecutionTasksCollection(db).find(filter).toArray(),
+      getAbsencesCollection(db).find(absenceFilter).toArray(),
+    ]);
     const [hydrated, users] = await Promise.all([
       hydrateExecutionTasks(db, companyId, candidates),
       getCompanyMembersByIds(db, companyId, memberIds),
@@ -99,7 +115,17 @@ export async function GET(req: Request, { params }: Params) {
       ]),
     );
 
-    const conflicts = candidates.flatMap((task: any, index) => {
+    const requestedBookings = new Map(memberIds.map((userId) => [
+      userId,
+      getExecutionUserBooking({
+        scheduledStart: start,
+        scheduledEnd: end,
+        startTime: startTime ?? null,
+        endTime: endTime ?? null,
+        assignedUserIds: [userId],
+      }, userId),
+    ]));
+    const taskConflicts = candidates.flatMap((task: any, index) => {
       const item = hydrated[index] as any;
       const assignedIds = new Set(
         Array.isArray(task?.assignedUserIds)
@@ -109,17 +135,12 @@ export async function GET(req: Request, { params }: Params) {
       return memberIds
         .filter((userId) => assignedIds.has(userId))
         .flatMap((userId) => {
-          const requestedBooking = getExecutionUserBooking({
-            scheduledStart: start,
-            scheduledEnd: end,
-            startTime: startTime ?? null,
-            endTime: endTime ?? null,
-            assignedUserIds: [userId],
-          }, userId);
+          const requestedBooking = requestedBookings.get(userId) ?? null;
           const taskBooking = getExecutionUserBooking(task, userId);
           const days = getExecutionBookingOverlap(requestedBooking, taskBooking);
           if (!days.length) return [];
           return [{
+            type: "task" as const,
             userId,
             fullName: usersById.get(userId) || "",
             taskId: mongoIdToString(task?._id),
@@ -143,7 +164,29 @@ export async function GET(req: Request, { params }: Params) {
         });
     });
 
-    return jsonResponse(origin, { ok: true, conflicts }, 200);
+    const absenceConflicts = absences.flatMap((absence: any) => {
+      const userId = mongoIdToString(absence?.userId);
+      if (!memberIds.includes(userId)) return [];
+      const absenceBooking = getAbsenceBooking(absence);
+      const days = getExecutionBookingOverlap(
+        requestedBookings.get(userId) ?? null,
+        absenceBooking,
+      );
+      if (!days.length) return [];
+      return [{
+        type: "absence" as const,
+        userId,
+        fullName: usersById.get(userId) || "",
+        reason: safeString(absence?.reason).toLowerCase(),
+        startDate: safeString(absence?.startDate),
+        endDate: safeString(absence?.endDate),
+        startTime: absenceBooking?.startTime ?? null,
+        endTime: absenceBooking?.endTime ?? null,
+        days,
+      }];
+    });
+
+    return jsonResponse(origin, { ok: true, conflicts: [...taskConflicts, ...absenceConflicts] }, 200);
   } catch (error: any) {
     console.error("GET TEAM AVAILABILITY ERROR:", error);
     return jsonResponse(origin, { ok: false, error: error?.message || "Unknown error" }, 500);
