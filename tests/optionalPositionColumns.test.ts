@@ -4,6 +4,7 @@ import {
   POSITION_COLUMN_LAYOUT,
   POSITION_COLUMN_WIDTHS,
   POSITION_TABLE_BOUNDS,
+  rightAlignedTextX,
 } from "../src/app/api/plannings/[planningId]/offer/pdf/detail-pages";
 
 test("standard and optional position rows share one immutable column geometry", () => {
@@ -19,4 +20,19 @@ test("standard and optional position rows share one immutable column geometry", 
   assert.equal(POSITION_COLUMN_LAYOUT.totalRight, POSITION_TABLE_BOUNDS.right);
 
   assert.equal(Object.isFrozen(POSITION_COLUMN_LAYOUT), true);
+});
+
+test("numeric headers and values resolve to the same right-hand axes", () => {
+  assert.equal(
+    rightAlignedTextX(POSITION_COLUMN_LAYOUT.qtyRight, 24) + 24,
+    POSITION_COLUMN_LAYOUT.qtyRight,
+  );
+  assert.equal(
+    rightAlignedTextX(POSITION_COLUMN_LAYOUT.priceRight, 42) + 42,
+    POSITION_COLUMN_LAYOUT.priceRight,
+  );
+  assert.equal(
+    rightAlignedTextX(POSITION_COLUMN_LAYOUT.totalRight, 58) + 58,
+    POSITION_COLUMN_LAYOUT.totalRight,
+  );
 });

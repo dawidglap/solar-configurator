@@ -116,6 +116,10 @@ export const POSITION_COLUMN_LAYOUT = (() => {
   });
 })();
 
+export function rightAlignedTextX(rightEdge: number, textWidth: number) {
+  return rightEdge - textWidth;
+}
+
 function safeString(v: unknown) {
   return sanitizePdfText(v);
 }
@@ -622,7 +626,10 @@ function drawOptionalSummary(
   drawText(
     page,
     totalText,
-    tableCol.totalRight - args.bold.widthOfTextAtSize(totalText, 9.2),
+    rightAlignedTextX(
+      tableCol.totalRight,
+      args.bold.widthOfTextAtSize(totalText, 9.2),
+    ),
     y,
     9.2,
     args.bold,
@@ -704,9 +711,21 @@ function createPage(
 
   drawText(page, "Pos.", tableCol.posX, headY - 6, 9, args.bold, COLOR_TEXT);
   drawText(page, "Beschreibung", tableCol.descX, headY - 6, 9, args.bold, COLOR_TEXT);
-  drawText(page, "Menge", tableCol.qtyLeft, headY - 6, 9, args.bold, COLOR_TEXT);
-  drawText(page, "Preis", tableCol.priceLeft, headY - 6, 9, args.bold, COLOR_TEXT);
-  drawText(page, "Total", tableCol.totalLeft, headY - 6, 9, args.bold, COLOR_TEXT);
+  for (const [label, rightEdge] of [
+    ["Menge", tableCol.qtyRight],
+    ["Preis", tableCol.priceRight],
+    ["Total", tableCol.totalRight],
+  ] as const) {
+    drawText(
+      page,
+      label,
+      rightAlignedTextX(rightEdge, args.bold.widthOfTextAtSize(label, 9)),
+      headY - 6,
+      9,
+      args.bold,
+      COLOR_TEXT,
+    );
+  }
 
   drawLine(
     page,
@@ -822,13 +841,37 @@ function drawDetailItem(
 
   const qtyW = font.widthOfTextAtSize(qtyText, 9);
   const rowTopY = args.y;
-  drawText(page, qtyText, tableCol.qtyRight - qtyW, rowTopY, 9, font, COLOR_TEXT);
+  drawText(
+    page,
+    qtyText,
+    rightAlignedTextX(tableCol.qtyRight, qtyW),
+    rowTopY,
+    9,
+    font,
+    COLOR_TEXT,
+  );
 
   const unitPriceW = font.widthOfTextAtSize(unitPriceText, 9);
-  drawText(page, unitPriceText, tableCol.priceRight - unitPriceW, rowTopY, 9, font, COLOR_TEXT);
+  drawText(
+    page,
+    unitPriceText,
+    rightAlignedTextX(tableCol.priceRight, unitPriceW),
+    rowTopY,
+    9,
+    font,
+    COLOR_TEXT,
+  );
 
   const lineTotalW = bold.widthOfTextAtSize(lineTotalText, 9.2);
-  drawText(page, lineTotalText, tableCol.totalRight - lineTotalW, rowTopY, 9.2, bold, COLOR_TEXT);
+  drawText(
+    page,
+    lineTotalText,
+    rightAlignedTextX(tableCol.totalRight, lineTotalW),
+    rowTopY,
+    9.2,
+    bold,
+    COLOR_TEXT,
+  );
 
   if (subline) {
     const sublineLines = wrapTextStrict(subline, tableCol.descWidth, font, 8.2);
