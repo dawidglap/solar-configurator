@@ -31,6 +31,7 @@ export const PLANNING_FILE_CATEGORIES = [
   "document",
   "photo",
   "auftrag",
+  "vollmacht",
   "angebot_snapshot",
   "auftrag_signiert",
   "signature",
@@ -67,6 +68,7 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 export const SYSTEM_MANAGED_PLANNING_FILE_CATEGORIES = [
   "auftrag",
+  "vollmacht",
   "angebot_snapshot",
   "auftrag_signiert",
   "signature",
@@ -566,7 +568,7 @@ export async function upsertManagedPlanningFile(input: {
   db: Db;
   companyId: string;
   planningId: string;
-  category: Extract<PlanningFileCategory, "auftrag" | "angebot_snapshot">;
+  category: Extract<PlanningFileCategory, "auftrag" | "vollmacht" | "angebot_snapshot">;
   title: string;
   originalFileName: string;
   mimeType: string;

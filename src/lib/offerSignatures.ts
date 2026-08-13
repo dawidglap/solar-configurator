@@ -85,6 +85,7 @@ export function buildDefaultOfferSignatureFields() {
     offerSignedPdfFileId: null,
     offerSignedPdfSha256: null,
     offerConfirmationPdfFileId: null,
+    offerVollmachtPdfFileId: null,
     withdrawalRightApplies: false,
     withdrawalUntil: null,
     offerSnapshotFileId: null,
@@ -188,16 +189,26 @@ export function parseOfferAcceptanceDetails(body: any) {
 
 export function parseOfferVollmachtDetails(body: any) {
   const propertyStreet = optionalLimitedString(body?.propertyStreet, "Objektstrasse", 120);
-  const parcelNumber = optionalLimitedString(body?.parcelNumber, "Grundstücknummer", 60);
+  const propertyZip = optionalLimitedString(body?.propertyZip, "Postleitzahl", 12);
+  const propertyCity = optionalLimitedString(body?.propertyCity, "Ort", 100);
+  const parcelNumber = optionalLimitedString(body?.parcelNumber, "Parzelle", 60);
+  const landRegisterNumber = optionalLimitedString(body?.landRegisterNumber, "Grundstücknummer", 60);
   const bankAccountHolder = optionalLimitedString(body?.bankAccountHolder, "Kontoinhaber", 200);
   const bankIban = normalizeIban(body?.bankIban) || null;
   if (!propertyStreet) throw new Error("Objektstrasse ist erforderlich.");
+  if (!propertyZip) throw new Error("Postleitzahl ist erforderlich.");
+  if (!propertyCity) throw new Error("Ort ist erforderlich.");
   if (!bankAccountHolder) throw new Error("Kontoinhaber ist erforderlich.");
   if (!bankIban) throw new Error("IBAN ist erforderlich.");
-  if (bankIban.length !== 21 || !bankIban.startsWith("CH") || !isValidIban(bankIban)) {
-    throw new Error("Ungültige Schweizer IBAN.");
-  }
-  return { propertyStreet, parcelNumber, bankAccountHolder, bankIban };
+  return {
+    propertyStreet,
+    propertyZip,
+    propertyCity,
+    parcelNumber,
+    landRegisterNumber,
+    bankAccountHolder,
+    bankIban,
+  };
 }
 
 export function newOfferSignatureToken() {
@@ -297,25 +308,7 @@ export function buildOfferVollmachtResponse(args: {
 }) {
   const planning = args.planning;
   const profile = planning?.data?.profile ?? {};
-  const propertyStreet =
-    safeString(planning?.propertyStreet) ||
-    safeString(profile?.buildingStreet) ||
-    safeString(args.customer?.buildingStreet);
-  const propertyHouseNumber =
-    safeString(planning?.propertyHouseNumber) ||
-    safeString(profile?.buildingStreetNo) ||
-    safeString(args.customer?.buildingStreetNo);
-  const propertyZip =
-    safeString(planning?.propertyZip) ||
-    safeString(profile?.buildingZip) ||
-    safeString(args.customer?.buildingZip);
-  const propertyCity =
-    safeString(planning?.propertyCity) ||
-    safeString(profile?.buildingCity) ||
-    safeString(args.customer?.buildingCity);
-  const streetLine = [propertyStreet, propertyHouseNumber].filter(Boolean).join(" ");
-  const placeLine = [propertyZip, propertyCity].filter(Boolean).join(" ");
-  const objectAddress = [streetLine, placeLine].filter(Boolean).join(", ") || resolveObjectAddress(planning);
+  const address = resolveOfferPropertyAddress(planning, args.customer);
   const expiresAt = getOfferVollmachtExpiresAt(planning);
   const submittedAt = iso(planning?.vollmachtSubmittedAt);
   const base = getPublicApiBaseUrl(args.req);
@@ -328,12 +321,19 @@ export function buildOfferVollmachtResponse(args: {
     companyName: safeString(args.company?.name),
     companyLogoUrl: safeString(args.company?.branding?.logoUrl) || null,
     customerName: resolveCustomerName(planning, args.customer),
-    objectAddress,
-    propertyStreet,
+    customerEmail: resolveCustomerEmail(planning, args.customer) || null,
+    objectAddress: address.objectAddress,
+    propertyStreet: address.propertyStreetLine,
+    propertyZip: address.propertyZip,
+    propertyCity: address.propertyCity,
     parcelNumber:
       safeString(planning?.parcelNumber) ||
       safeString(profile?.parcelNumber) ||
       safeString(args.customer?.parcelNumber),
+    landRegisterNumber:
+      safeString(planning?.landRegisterNumber) ||
+      safeString(profile?.landRegisterNumber) ||
+      safeString(args.customer?.landRegisterNumber),
     bankAccountHolder:
       safeString(planning?.subsidyPayoutAccountHolder) ||
       safeString(args.customer?.subsidyPayoutAccountHolder),
@@ -343,6 +343,78 @@ export function buildOfferVollmachtResponse(args: {
     confirmationPdfUrl: planning?.offerConfirmationPdfFileId
       ? `${base}/api/public/offer-signature/${encodeURIComponent(args.token)}/pdf?type=confirmation`
       : null,
+    vollmachtPdfUrl: planning?.offerVollmachtPdfFileId
+      ? `${base}/api/public/offer-signature/${encodeURIComponent(args.token)}/vollmacht?download=1`
+      : null,
+  };
+}
+
+function removeDuplicatePlace(street: string, place: string) {
+  if (!street || !place) return street;
+  let normalizedStreet = street.replace(/\s+/g, " ").trim();
+  const normalizedPlace = place.replace(/\s+/g, " ").trim();
+  const escaped = normalizedPlace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const trailingPlace = new RegExp(`(?:,\\s*|\\s+)${escaped}$`, "i");
+  while (trailingPlace.test(normalizedStreet)) {
+    normalizedStreet = normalizedStreet.replace(trailingPlace, "").replace(/,\s*$/, "").trim();
+  }
+  const zip = normalizedPlace.match(/^\S+/)?.[0] ?? "";
+  if (zip) {
+    const escapedZip = zip.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const trailingZipPlace = new RegExp(`,\\s*${escapedZip}\\b[^,]*$`, "i");
+    while (trailingZipPlace.test(normalizedStreet)) {
+      normalizedStreet = normalizedStreet.replace(trailingZipPlace, "").replace(/,\s*$/, "").trim();
+    }
+  }
+  return normalizedStreet;
+}
+
+export function splitOfferStreetAndHouseNumber(streetValue: unknown, houseNumberValue?: unknown) {
+  let street = safeString(streetValue);
+  let houseNumber = safeString(houseNumberValue);
+  if (houseNumber) {
+    const escaped = houseNumber.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    street = street.replace(new RegExp(`\\s+${escaped}$`, "i"), "").trim();
+  } else {
+    const match = street.match(/^(.*?)[,\s]+(\d+[A-Za-z]?(?:[-/]\d+[A-Za-z]?)?)$/);
+    if (match) {
+      street = safeString(match[1]);
+      houseNumber = safeString(match[2]);
+    }
+  }
+  return { street, houseNumber };
+}
+
+export function resolveOfferPropertyAddress(planning: any, customer: any) {
+  const profile = planning?.data?.profile ?? {};
+  const propertyZip =
+    safeString(planning?.propertyZip) ||
+    safeString(profile?.buildingZip) ||
+    safeString(customer?.buildingZip);
+  const propertyCity =
+    safeString(planning?.propertyCity) ||
+    safeString(profile?.buildingCity) ||
+    safeString(customer?.buildingCity);
+  const placeLine = [propertyZip, propertyCity].filter(Boolean).join(" ");
+  const rawStreet = removeDuplicatePlace(
+    safeString(planning?.propertyStreet) ||
+      safeString(profile?.buildingStreet) ||
+      safeString(customer?.buildingStreet),
+    placeLine,
+  );
+  const explicitHouseNumber =
+    safeString(planning?.propertyHouseNumber) ||
+    safeString(profile?.buildingStreetNo) ||
+    safeString(customer?.buildingStreetNo);
+  const split = splitOfferStreetAndHouseNumber(rawStreet, explicitHouseNumber);
+  const propertyStreetLine = [split.street, split.houseNumber].filter(Boolean).join(" ");
+  return {
+    addressStreet: split.street || null,
+    addressHouseNumber: split.houseNumber || null,
+    propertyStreetLine,
+    propertyZip,
+    propertyCity,
+    objectAddress: [propertyStreetLine, placeLine].filter(Boolean).join(", "),
   };
 }
 
@@ -455,6 +527,7 @@ export async function getOfferPublicFile(db: Db, planning: any, kind: string) {
 
 export function buildPublicOfferCustomerFields(planning: any, customer: any) {
   const profile = planning?.data?.profile ?? {};
+  const address = resolveOfferPropertyAddress(planning, customer);
   const rawCustomerType = safeString(profile?.customerType ?? profile?.type ?? customer?.type).toLowerCase();
   const customerType = rawCustomerType === "company" || rawCustomerType === "firma"
     ? "company"
@@ -479,21 +552,25 @@ export function buildPublicOfferCustomerFields(planning: any, customer: any) {
       safeString(profile?.businessName ?? profile?.companyName) ||
       safeString(customer?.companyName) ||
       null,
-    addressStreet:
-      safeString(profile?.buildingStreet) || safeString(customer?.buildingStreet) || null,
-    addressHouseNumber:
-      safeString(profile?.buildingStreetNo) || safeString(customer?.buildingStreetNo) || null,
-    addressZip:
-      safeString(profile?.buildingZip) || safeString(customer?.buildingZip) || null,
-    addressCity:
-      safeString(profile?.buildingCity) || safeString(customer?.buildingCity) || null,
+    addressStreet: address.addressStreet,
+    addressHouseNumber: address.addressHouseNumber,
+    addressZip: address.propertyZip || null,
+    addressCity: address.propertyCity || null,
     egid: safeString(profile?.egid) || safeString(customer?.egid) || null,
     buildingNumber:
       safeString(profile?.buildingNumber ?? profile?.egid) ||
       safeString(customer?.buildingNumber ?? customer?.egid) ||
       null,
     parcelNumber:
-      safeString(profile?.parcelNumber) || safeString(customer?.parcelNumber) || null,
+      safeString(planning?.parcelNumber) ||
+      safeString(profile?.parcelNumber) ||
+      safeString(customer?.parcelNumber) ||
+      null,
+    landRegisterNumber:
+      safeString(planning?.landRegisterNumber) ||
+      safeString(profile?.landRegisterNumber) ||
+      safeString(customer?.landRegisterNumber) ||
+      null,
   };
 }
 
@@ -529,7 +606,7 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
     customerEmail: resolveCustomerEmail(args.planning, customer),
     ...buildPublicOfferCustomerFields(args.planning, customer),
     projectTitle: safeString(args.planning?.title) || safeString(args.planning?.planningNumber),
-    objectAddress: resolveObjectAddress(args.planning),
+    objectAddress: resolveOfferPropertyAddress(args.planning, customer).objectAddress,
     totalInklMwst: Number(commercial?.totalInvestmentChf ?? 0),
     subsidyChf: Number(commercial?.subsidyChf ?? 0),
     effectiveCostChf: Number(commercial?.effectiveCostChf ?? 0),

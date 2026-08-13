@@ -652,6 +652,128 @@ export async function appendOfferConfirmationSignatureProtocol(args: {
   });
 }
 
+function formatIbanForPdf(value: unknown) {
+  return safeString(value)
+    .replace(/\s+/g, "")
+    .toUpperCase()
+    .replace(/(.{4})/g, "$1 ")
+    .trim();
+}
+
+export async function createOfferVollmachtPdf(args: {
+  company: any;
+  orderId: string;
+  offerNumber: string;
+  customerName: string;
+  propertyStreet: string;
+  propertyZip: string;
+  propertyCity: string;
+  parcelNumber?: string | null;
+  landRegisterNumber?: string | null;
+  bankAccountHolder: string;
+  bankIban: string;
+  submittedAt: Date;
+}) {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const page = pdf.addPage([595.28, 841.89]);
+  const dark = rgb(0.1, 0.16, 0.2);
+  const muted = rgb(0.38, 0.44, 0.48);
+  const teal = rgb(0.1, 0.55, 0.48);
+  const pale = rgb(0.94, 0.98, 0.97);
+  const border = rgb(0.84, 0.87, 0.88);
+  const margin = 46;
+  const companyName = safeString(args.company?.name) || "Helionic";
+  const footerAddress = safeString(args.company?.pdfSettings?.footerAddressLine);
+  const companyContact = [
+    safeString(args.company?.pdfSettings?.phone),
+    safeString(args.company?.pdfSettings?.email),
+    safeString(args.company?.pdfSettings?.website),
+  ].filter(Boolean).join(" · ");
+
+  page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1) });
+  page.drawText(signaturePdfText(companyName), { x: margin, y: 786, size: 17, font: bold, color: dark });
+  if (footerAddress) {
+    page.drawText(signaturePdfText(footerAddress), { x: margin, y: 768, size: 8, font, color: muted });
+  }
+  if (companyContact) {
+    page.drawText(signaturePdfText(companyContact), { x: margin, y: 755, size: 8, font, color: muted });
+  }
+  page.drawLine({ start: { x: margin, y: 738 }, end: { x: 549, y: 738 }, thickness: 1.6, color: teal });
+  page.drawText("Vollmacht & Auszahlungskonto", { x: margin, y: 696, size: 21, font: bold, color: dark });
+  page.drawText("Digital übermittelte Angaben zum Auftrag", { x: margin, y: 676, size: 9, font, color: muted });
+
+  const submittedAt = new Intl.DateTimeFormat("de-CH", {
+    timeZone: "Europe/Zurich",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(args.submittedAt);
+  const headerRows: Array<[string, string]> = [
+    ["Auftragsnummer", safeString(args.orderId) || "-"],
+    ["Offertennummer", safeString(args.offerNumber) || "-"],
+    ["Kunde", safeString(args.customerName) || "-"],
+    ["Übermittelt am", `${submittedAt} Uhr`],
+  ];
+  let y = 632;
+  for (const [label, value] of headerRows) {
+    page.drawText(signaturePdfText(label), { x: margin, y, size: 8, font, color: muted });
+    page.drawText(signaturePdfText(value), { x: 190, y, size: 9.5, font: bold, color: dark });
+    page.drawLine({ start: { x: margin, y: y - 10 }, end: { x: 549, y: y - 10 }, thickness: 0.6, color: border });
+    y -= 32;
+  }
+
+  const drawSection = (title: string, rows: Array<[string, string]>) => {
+    page.drawRectangle({ x: margin, y: y - 4, width: 503, height: 25, color: pale });
+    page.drawText(title, { x: margin + 12, y: y + 4, size: 10, font: bold, color: dark });
+    y -= 32;
+    for (const [label, value] of rows) {
+      page.drawText(signaturePdfText(label), { x: margin + 12, y, size: 8, font, color: muted });
+      page.drawText(signaturePdfText(value || "-"), { x: 190, y, size: 9.5, font: bold, color: dark });
+      y -= 24;
+    }
+    y -= 12;
+  };
+
+  drawSection("Objekt & Grundstück", [
+    ["Strasse & Nr.", safeString(args.propertyStreet)],
+    ["PLZ", safeString(args.propertyZip)],
+    ["Ort", safeString(args.propertyCity)],
+    ["Parzelle", safeString(args.parcelNumber) || "-"],
+    ["Grundstück-Nr.", safeString(args.landRegisterNumber) || "-"],
+  ]);
+  drawSection("Auszahlungskonto", [
+    ["Kontoinhaber", safeString(args.bankAccountHolder)],
+    ["IBAN", formatIbanForPdf(args.bankIban)],
+  ]);
+
+  page.drawRectangle({ x: margin, y: 73, width: 503, height: 70, color: pale, borderColor: teal, borderWidth: 0.8 });
+  drawWrappedText({
+    page,
+    text: "Diese Angaben wurden über das öffentliche Vollmachtsformular digital erfasst und dem Auftrag zugeordnet. Das Dokument dient als Protokoll der übermittelten Objekt- und Kontodaten.",
+    x: margin + 14,
+    y: 119,
+    width: 475,
+    font,
+    size: 8.5,
+    lineHeight: 12,
+    color: dark,
+  });
+  page.drawText(signaturePdfText(`${companyName} · Vollmacht ${safeString(args.orderId)}`), {
+    x: margin,
+    y: 40,
+    size: 7,
+    font,
+    color: muted,
+  });
+
+  pdf.setTitle(`Vollmacht ${signaturePdfText(args.orderId)}`);
+  pdf.setSubject("Vollmacht & Auszahlungskonto");
+  pdf.setCreationDate(args.submittedAt);
+  pdf.setModificationDate(args.submittedAt);
+  return Buffer.from(await pdf.save());
+}
+
 export async function createOfferConfirmationPdf(args: {
   sourcePdf: Buffer;
   orderId: string;
@@ -668,6 +790,7 @@ export async function createOfferConfirmationPdf(args: {
   propertyCity?: string | null;
   buildingNumber?: string | null;
   parcelNumber?: string | null;
+  landRegisterNumber?: string | null;
   bankAccountHolder?: string | null;
   bankIban?: string | null;
   withdrawalRightApplies: boolean;
@@ -751,16 +874,15 @@ export async function createOfferConfirmationPdf(args: {
         ? [["Gebäudenummer (EGID)", safeString(args.buildingNumber)] as [string, string]]
         : []),
       ...(safeString(args.parcelNumber)
-        ? [["Parzelle / Grundstück-Nr.", safeString(args.parcelNumber)] as [string, string]]
+        ? [["Parzelle", safeString(args.parcelNumber)] as [string, string]]
+        : []),
+      ...(safeString(args.landRegisterNumber)
+        ? [["Grundstück-Nr.", safeString(args.landRegisterNumber)] as [string, string]]
         : []),
     ],
   );
 
-  const formattedIban = safeString(args.bankIban)
-    .replace(/\s+/g, "")
-    .toUpperCase()
-    .replace(/(.{4})/g, "$1 ")
-    .trim();
+  const formattedIban = formatIbanForPdf(args.bankIban);
   drawInfoSection(
     "Auszahlungskonto für Förderungen",
     [

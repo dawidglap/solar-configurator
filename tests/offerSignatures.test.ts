@@ -62,6 +62,7 @@ test("serializes public customer and GeoAdmin offer fields", async () => {
             buildingCity: "Lüchingen",
             egid: "1234567",
             parcelNumber: "1042",
+            landRegisterNumber: "4567",
           },
         },
       },
@@ -79,6 +80,7 @@ test("serializes public customer and GeoAdmin offer fields", async () => {
       egid: "1234567",
       buildingNumber: "1234567",
       parcelNumber: "1042",
+      landRegisterNumber: "4567",
     },
   );
 });
@@ -127,29 +129,37 @@ test("normalizes and validates the optional payout IBAN", async () => {
   );
 });
 
-test("validates required Vollmacht fields and only accepts Swiss IBANs", async () => {
+test("validates required Vollmacht fields and normalizes the IBAN without hard validation", async () => {
   const { parseOfferVollmachtDetails } = await loadOffer();
   assert.deepEqual(
     parseOfferVollmachtDetails({
-      propertyStreet: " Schachenstrasse ",
-      parcelNumber: " 1042 ",
+      propertyStreet: " Schachenstrasse 4 ",
+      propertyZip: " 9430 ",
+      propertyCity: " St. Margrethen ",
+      parcelNumber: " 12 ",
+      landRegisterNumber: " 4567 ",
       bankAccountHolder: " Max Muster ",
       bankIban: "ch93 0076 2011 6238 5295 7",
     }),
     {
-      propertyStreet: "Schachenstrasse",
-      parcelNumber: "1042",
+      propertyStreet: "Schachenstrasse 4",
+      propertyZip: "9430",
+      propertyCity: "St. Margrethen",
+      parcelNumber: "12",
+      landRegisterNumber: "4567",
       bankAccountHolder: "Max Muster",
       bankIban: "CH9300762011623852957",
     },
   );
-  assert.throws(
-    () => parseOfferVollmachtDetails({
+  assert.equal(
+    parseOfferVollmachtDetails({
       propertyStreet: "Schachenstrasse",
+      propertyZip: "9430",
+      propertyCity: "St. Margrethen",
       bankAccountHolder: "Max Muster",
       bankIban: "DE89370400440532013000",
-    }),
-    /Schweizer IBAN/,
+    }).bankIban,
+    "DE89370400440532013000",
   );
   assert.throws(
     () => parseOfferVollmachtDetails({
@@ -201,25 +211,32 @@ test("serializes the public Vollmacht prefill without exposing token data", asyn
       orderId: "AUF-2026-0007",
       offerSignedAt: new Date("2026-08-10T12:00:00.000Z"),
       offerConfirmationPdfFileId: "file-id",
-      propertyStreet: "Schachenstrasse",
+      offerVollmachtPdfFileId: "64f000000000000000000099",
+      propertyStreet: "Schachenstrasse 4, 9430 St. Margrethen SG, 9430 St. Margrethen SG",
       propertyHouseNumber: "4",
       propertyZip: "9430",
-      propertyCity: "St. Margrethen SG",
+      propertyCity: "St. Margrethen",
       parcelNumber: "1042",
+      landRegisterNumber: "4567",
       subsidyPayoutAccountHolder: "Max Muster",
       subsidyPayoutIban: "CH9300762011623852957",
       summary: { customerName: "Max Muster" },
     },
     company: { name: "Demo AG", branding: { logoUrl: "https://example.ch/logo.png" } },
-    customer: null,
+    customer: { email: "max@example.ch" },
     token: "public-token",
     req,
   });
   assert.equal(response.submitted, false);
-  assert.equal(response.objectAddress, "Schachenstrasse 4, 9430 St. Margrethen SG");
-  assert.equal(response.propertyStreet, "Schachenstrasse");
+  assert.equal(response.objectAddress, "Schachenstrasse 4, 9430 St. Margrethen");
+  assert.equal(response.propertyStreet, "Schachenstrasse 4");
+  assert.equal(response.propertyZip, "9430");
+  assert.equal(response.propertyCity, "St. Margrethen");
+  assert.equal(response.landRegisterNumber, "4567");
+  assert.equal(response.customerEmail, "max@example.ch");
   assert.equal(response.customerName, "Max Muster");
   assert.match(String(response.confirmationPdfUrl), /type=confirmation$/);
+  assert.match(String(response.vollmachtPdfUrl), /vollmacht\?download=1$/);
   assert.equal("offerSignatureTokenHash" in response, false);
 });
 
@@ -227,6 +244,7 @@ test("creates signed offer and confirmation PDFs with protocol pages", async () 
   const {
     appendOfferConfirmationSignatureProtocol,
     createOfferConfirmationPdf,
+    createOfferVollmachtPdf,
     createSignedOrderPdf,
     sha256,
   } = await loadOrder();
@@ -273,6 +291,7 @@ test("creates signed offer and confirmation PDFs with protocol pages", async () 
     propertyCity: "Lüchingen",
     buildingNumber: "1234567",
     parcelNumber: "1042",
+    landRegisterNumber: "4567",
     bankAccountHolder: "Nicola Rizzoli",
     bankIban: "CH9300762011623852957",
     withdrawalRightApplies: true,
@@ -281,6 +300,30 @@ test("creates signed offer and confirmation PDFs with protocol pages", async () 
   const loadedConfirmation = await PDFDocument.load(confirmation);
   assert.equal(loadedConfirmation.getPageCount(), 2);
   assert.equal(loadedConfirmation.getTitle(), "Auftragsbestätigung AUF-2026-0007");
+
+  const vollmacht = await createOfferVollmachtPdf({
+    company: {
+      name: "Demo Solar AG",
+      pdfSettings: {
+        footerAddressLine: "Musterweg 1, 8000 Zürich",
+        email: "info@example.ch",
+      },
+    },
+    orderId: "AUF-2026-0007",
+    offerNumber: "OFF-2026-0042",
+    customerName: "Max Muster",
+    propertyStreet: "Schachenstrasse 4",
+    propertyZip: "9430",
+    propertyCity: "St. Margrethen",
+    parcelNumber: "12",
+    landRegisterNumber: "4567",
+    bankAccountHolder: "Max Muster",
+    bankIban: "CH9300762011623852957",
+    submittedAt: signedAt,
+  });
+  const loadedVollmacht = await PDFDocument.load(vollmacht);
+  assert.equal(loadedVollmacht.getPageCount(), 1);
+  assert.equal(loadedVollmacht.getTitle(), "Vollmacht AUF-2026-0007");
 
   const signedConfirmation = await appendOfferConfirmationSignatureProtocol({
     confirmationPdf: confirmation,

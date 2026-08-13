@@ -132,6 +132,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       null;
     const parcelNumber =
       acceptance.parcelNumber || safeString(profile?.parcelNumber) || safeString(customer?.parcelNumber) || null;
+    const landRegisterNumber =
+      safeString(planning?.landRegisterNumber) ||
+      safeString(profile?.landRegisterNumber) ||
+      safeString(customer?.landRegisterNumber) ||
+      null;
     const buildingNumberSource = acceptance.buildingNumber
       ? "manual"
       : safeString(profile?.buildingNumberSource ?? customer?.buildingNumberSource) === "manual"
@@ -245,6 +250,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       propertyCity,
       buildingNumber,
       parcelNumber,
+      landRegisterNumber,
       bankAccountHolder,
       bankIban,
       withdrawalRightApplies,

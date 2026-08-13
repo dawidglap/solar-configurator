@@ -14,7 +14,9 @@ import {
 } from "@/lib/offerSignatures";
 import {
   appendOfferConfirmationSignatureProtocol,
+  buildContentDispositionInline,
   createOfferConfirmationPdf,
+  createOfferVollmachtPdf,
   extractRequestIp,
   getPublicApiBaseUrl,
   loadPlanningCustomer,
@@ -27,7 +29,11 @@ import {
   computePlanningCommercialSummary,
   resolveReportSections,
 } from "@/lib/planningDocuments";
-import { upsertManagedPlanningFile } from "@/lib/planningFiles";
+import {
+  fetchPlanningFileBuffer,
+  getPlanningFilesCollection,
+  upsertManagedPlanningFile,
+} from "@/lib/planningFiles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,6 +78,34 @@ export async function GET(req: Request, { params }: Params) {
     const context = await loadVollmachtContext(req, token);
     if ("rateLimited" in context) return response(origin, { ok: false, message: "Zu viele Anfragen." }, 429);
     if ("notFound" in context) return response(origin, { ok: false, message: "Link ungültig." }, 404);
+    if (new URL(req.url).searchParams.get("download") === "1") {
+      const fileId = toObjectIdOrNull(context.planning?.offerVollmachtPdfFileId);
+      if (!fileId) return response(origin, { ok: false, message: "PDF nicht gefunden." }, 404);
+      const file = await getPlanningFilesCollection(context.db).findOne({
+        _id: fileId,
+        companyId: context.companyId,
+        planningId: mongoIdToString(context.planning?._id),
+        category: "vollmacht",
+        isDeleted: { $ne: true },
+      });
+      if (!file) return response(origin, { ok: false, message: "PDF nicht gefunden." }, 404);
+      const pdf = await fetchPlanningFileBuffer(file);
+      if (pdf.subarray(0, 5).toString("ascii") !== "%PDF-") {
+        throw new Error("Vollmacht-Datei ist kein PDF.");
+      }
+      return new Response(new Uint8Array(pdf), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": buildContentDispositionInline(
+            safeString(file.originalFileName) || `vollmacht-${safeString(context.planning?.orderId)}.pdf`,
+          ),
+          "Content-Length": String(pdf.length),
+          "Cache-Control": "private, no-store, max-age=0",
+          ...getCorsHeaders(origin),
+        },
+      });
+    }
     return response(origin, {
       ok: true,
       vollmacht: buildOfferVollmachtResponse({
@@ -100,7 +134,7 @@ export async function POST(req: Request, { params }: Params) {
     const details = parseOfferVollmachtDetails(body);
     const { db, company, customer, companyId } = context;
     const planningId = context.planning._id;
-    const customerId = toObjectIdOrNull(context.planning?.customerId);
+    const customerId = context.customer?._id ?? toObjectIdOrNull(context.planning?.customerId);
     const orderId = safeString(context.planning?.orderId);
     if (!company || !companyId || !orderId) {
       throw new Error("Auftragsdaten sind unvollständig.");
@@ -109,8 +143,12 @@ export async function POST(req: Request, { params }: Params) {
     const now = new Date();
     const sharedFields = {
       propertyStreet: details.propertyStreet,
+      propertyZip: details.propertyZip,
+      propertyCity: details.propertyCity,
       parcelNumber: details.parcelNumber,
+      landRegisterNumber: details.landRegisterNumber,
       parcelNumberSource: "manual",
+      buildingNumberSource: "manual",
       subsidyPayoutAccountHolder: details.bankAccountHolder,
       subsidyPayoutIban: details.bankIban,
       updatedAt: now,
@@ -122,8 +160,13 @@ export async function POST(req: Request, { params }: Params) {
           $set: {
             ...sharedFields,
             "data.profile.buildingStreet": details.propertyStreet,
+            "data.profile.buildingStreetNo": null,
+            "data.profile.buildingZip": details.propertyZip,
+            "data.profile.buildingCity": details.propertyCity,
             "data.profile.parcelNumber": details.parcelNumber,
+            "data.profile.landRegisterNumber": details.landRegisterNumber,
             "data.profile.parcelNumberSource": "manual",
+            "data.profile.buildingNumberSource": "manual",
           },
         },
       ),
@@ -140,8 +183,13 @@ export async function POST(req: Request, { params }: Params) {
             {
               $set: {
                 buildingStreet: details.propertyStreet,
+                buildingStreetNo: null,
+                buildingZip: details.propertyZip,
+                buildingCity: details.propertyCity,
                 parcelNumber: details.parcelNumber,
+                landRegisterNumber: details.landRegisterNumber,
                 parcelNumberSource: "manual",
+                buildingNumberSource: "manual",
                 subsidyPayoutAccountHolder: details.bankAccountHolder,
                 subsidyPayoutIban: details.bankIban,
                 updatedAt: now,
@@ -185,11 +233,12 @@ export async function POST(req: Request, { params }: Params) {
       totalInklMwst,
       payments: normalizeSignaturePayments(planning, totalInklMwst),
       propertyStreet: details.propertyStreet,
-      propertyHouseNumber: safeString(planning?.propertyHouseNumber ?? planning?.data?.profile?.buildingStreetNo),
-      propertyZip: safeString(planning?.propertyZip ?? planning?.data?.profile?.buildingZip),
-      propertyCity: safeString(planning?.propertyCity ?? planning?.data?.profile?.buildingCity),
+      propertyHouseNumber: null,
+      propertyZip: details.propertyZip,
+      propertyCity: details.propertyCity,
       buildingNumber: safeString(planning?.buildingNumber ?? planning?.egid ?? planning?.data?.profile?.buildingNumber),
       parcelNumber: details.parcelNumber,
+      landRegisterNumber: details.landRegisterNumber,
       bankAccountHolder: details.bankAccountHolder,
       bankIban: details.bankIban,
       withdrawalRightApplies: planning?.withdrawalRightApplies === true,
@@ -211,18 +260,46 @@ export async function POST(req: Request, { params }: Params) {
       signerUserAgent: safeString(planning?.offerSignerUserAgent),
       signedOfferSha256: safeString(planning?.offerSignedPdfSha256),
     });
-    const confirmation = await upsertManagedPlanningFile({
-      db,
-      companyId,
-      planningId: mongoIdToString(planningId),
-      category: "auftrag",
-      title: `Auftragsbestätigung ${orderId}`,
-      originalFileName: `auftragsbestaetigung-${orderId}.pdf`,
-      mimeType: "application/pdf",
-      buffer: confirmationPdf,
-      customerId: safeString(planning?.customerId) || undefined,
-      session,
+    const vollmachtPdf = await createOfferVollmachtPdf({
+      company,
+      orderId,
+      offerNumber: safeString(planning?.planningNumber),
+      customerName,
+      propertyStreet: details.propertyStreet,
+      propertyZip: details.propertyZip,
+      propertyCity: details.propertyCity,
+      parcelNumber: details.parcelNumber,
+      landRegisterNumber: details.landRegisterNumber,
+      bankAccountHolder: details.bankAccountHolder,
+      bankIban: details.bankIban,
+      submittedAt: now,
     });
+    const [confirmation, vollmacht] = await Promise.all([
+      upsertManagedPlanningFile({
+        db,
+        companyId,
+        planningId: mongoIdToString(planningId),
+        category: "auftrag",
+        title: `Auftragsbestätigung ${orderId}`,
+        originalFileName: `auftragsbestaetigung-${orderId}.pdf`,
+        mimeType: "application/pdf",
+        buffer: confirmationPdf,
+        customerId: safeString(planning?.customerId) || undefined,
+        session,
+      }),
+      upsertManagedPlanningFile({
+        db,
+        companyId,
+        planningId: mongoIdToString(planningId),
+        category: "vollmacht",
+        title: `Vollmacht ${orderId}`,
+        originalFileName: `vollmacht-${orderId}.pdf`,
+        mimeType: "application/pdf",
+        buffer: vollmachtPdf,
+        customerId: safeString(planning?.customerId) || undefined,
+        session,
+      }),
+    ]);
 
     const expiresAt = getOfferVollmachtExpiresAt(planning);
     await Promise.all([
@@ -231,6 +308,7 @@ export async function POST(req: Request, { params }: Params) {
         {
           $set: {
             vollmachtSubmittedAt: now,
+            offerVollmachtPdfFileId: vollmacht.doc._id,
             offerConfirmationPdfFileId: confirmation.doc._id,
             orderSnapshotFileId: confirmation.doc._id,
             updatedAt: now,
@@ -258,9 +336,11 @@ export async function POST(req: Request, { params }: Params) {
         : Promise.resolve(null),
     ]);
 
+    const publicBase = `${getPublicApiBaseUrl(req)}/api/public/offer-signature/${encodeURIComponent(token)}`;
     return response(origin, {
       ok: true,
-      confirmationPdfUrl: `${getPublicApiBaseUrl(req)}/api/public/offer-signature/${encodeURIComponent(token)}/pdf?type=confirmation`,
+      vollmachtPdfUrl: `${publicBase}/vollmacht?download=1`,
+      confirmationPdfUrl: `${publicBase}/pdf?type=confirmation`,
     });
   } catch (error: any) {
     const message = safeString(error?.message) || "Vollmacht konnte nicht gespeichert werden.";
