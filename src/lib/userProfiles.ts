@@ -146,7 +146,10 @@ export async function resolvePlanningSellerContact(args: {
 
   return {
     sellerName,
-    sellerEmail: safeString(seller?.workEmail).toLowerCase() || companyContactEmail(args.company),
+    sellerEmail:
+      safeString(seller?.workEmail).toLowerCase() ||
+      safeString(seller?.email).toLowerCase() ||
+      companyContactEmail(args.company),
     sellerPhone: safeString(seller?.phone) || companyContactPhone(args.company),
     sellerUserId: mongoIdToString(seller?._id) || null,
   };

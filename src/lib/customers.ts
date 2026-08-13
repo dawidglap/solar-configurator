@@ -34,6 +34,7 @@ export const CUSTOMER_PUBLIC_PROJECTION = {
   buildingNumberSource: 1,
   parcelNumber: 1,
   parcelNumberSource: 1,
+  landRegisterNumber: 1,
   geoAdminFeatureId: 1,
   geoAdminEasting: 1,
   geoAdminNorthing: 1,
@@ -71,6 +72,7 @@ const PATCHABLE_CUSTOMER_STRING_FIELDS = [
   "egid",
   "buildingNumber",
   "parcelNumber",
+  "landRegisterNumber",
   "source",
   "address",
   "notes",
@@ -156,6 +158,7 @@ export function normalizeCustomerDoc(doc: any) {
     buildingNumberSource: doc.buildingNumberSource === "manual" ? "manual" : "auto",
     parcelNumber: doc.parcelNumber ?? null,
     parcelNumberSource: doc.parcelNumberSource === "manual" ? "manual" : "auto",
+    landRegisterNumber: doc.landRegisterNumber ?? null,
     subsidyPayoutAccountHolder: doc.subsidyPayoutAccountHolder ?? "",
     subsidyPayoutIban: doc.subsidyPayoutIban ?? "",
     source: doc.source ?? "",
@@ -203,6 +206,7 @@ export function buildCustomerCreateDoc(body: any, companyId: string) {
         ? "manual"
         : "auto",
     parcelNumber: normalizeStoredCustomerString(body?.parcelNumber),
+    landRegisterNumber: normalizeStoredCustomerString(body?.landRegisterNumber),
     parcelNumberSource: body?.parcelNumberSource === "manual" ||
       (safeCustomerString(body?.parcelNumber) && body?.parcelNumberSource !== "auto")
       ? "manual"

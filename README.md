@@ -1,5 +1,20 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Server-side signature emails
+
+Offer acceptance and Vollmacht submission emails are sent by the backend through the existing
+`send-signature-email` Edge Function. Configure either:
+
+```bash
+SIGNATURE_EMAIL_FUNCTION_URL=https://PROJECT.supabase.co/functions/v1/send-signature-email
+SIGNATURE_EMAIL_FUNCTION_TOKEN=SERVER_SIDE_FUNCTION_TOKEN
+```
+
+or `SUPABASE_URL` plus `SUPABASE_SERVICE_ROLE_KEY`. The backend sends customer and seller
+recipients, seller Reply-To, the public download URL and the generated PDF as a base64 attachment.
+Delivery is idempotent per company/order/type and failed deliveries are retried by the existing
+`/api/cron/signatures-expire` cron job.
+
 ## Getting Started
 
 First, run the development server:

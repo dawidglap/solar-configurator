@@ -381,27 +381,72 @@ export function splitOfferStreetAndHouseNumber(streetValue: unknown, houseNumber
   return { street, houseNumber };
 }
 
+function splitLooseObjectAddress(value: unknown) {
+  const address = safeString(value).replace(/\s+/g, " ");
+  const match = address.match(/^(.*?)(?:,\s*)(\d{4,6})\s+(.+)$/);
+  if (!match) return { street: address, houseNumber: "", zip: "", city: "" };
+  const street = splitOfferStreetAndHouseNumber(match[1]);
+  return {
+    street: street.street,
+    houseNumber: street.houseNumber,
+    zip: safeString(match[2]),
+    city: safeString(match[3]),
+  };
+}
+
 export function resolveOfferPropertyAddress(planning: any, customer: any) {
   const profile = planning?.data?.profile ?? {};
-  const propertyZip =
-    safeString(planning?.propertyZip) ||
-    safeString(profile?.buildingZip) ||
-    safeString(customer?.buildingZip);
-  const propertyCity =
-    safeString(planning?.propertyCity) ||
-    safeString(profile?.buildingCity) ||
-    safeString(customer?.buildingCity);
+  const looseObjectAddress = splitLooseObjectAddress(
+    planning?.objectAddress ?? planning?.data?.objectAddress,
+  );
+  const candidates = [
+    {
+      street: safeString(planning?.propertyStreet),
+      houseNumber: safeString(planning?.propertyHouseNumber),
+      zip: safeString(planning?.propertyZip),
+      city: safeString(planning?.propertyCity),
+    },
+    looseObjectAddress,
+    {
+      street: safeString(planning?.buildingAddress?.street ?? planning?.building?.street),
+      houseNumber: safeString(planning?.buildingAddress?.streetNo ?? planning?.building?.streetNo),
+      zip: safeString(planning?.buildingAddress?.zip ?? planning?.building?.zip),
+      city: safeString(planning?.buildingAddress?.city ?? planning?.building?.city),
+    },
+    {
+      street: safeString(profile?.buildingStreet),
+      houseNumber: safeString(profile?.buildingStreetNo),
+      zip: safeString(profile?.buildingZip),
+      city: safeString(profile?.buildingCity),
+    },
+    {
+      street: safeString(customer?.buildingStreet),
+      houseNumber: safeString(customer?.buildingStreetNo),
+      zip: safeString(customer?.buildingZip),
+      city: safeString(customer?.buildingCity),
+    },
+    {
+      street: safeString(profile?.billingStreet ?? profile?.street),
+      houseNumber: safeString(profile?.billingStreetNo ?? profile?.streetNo),
+      zip: safeString(profile?.billingZip ?? profile?.zip),
+      city: safeString(profile?.billingCity ?? profile?.city),
+    },
+    {
+      street: safeString(customer?.street),
+      houseNumber: safeString(customer?.streetNo),
+      zip: safeString(customer?.zip),
+      city: safeString(customer?.city),
+    },
+  ];
+  const propertyZip = candidates.find((candidate) => candidate.zip)?.zip ?? "";
+  const propertyCity = candidates.find((candidate) => candidate.city)?.city ?? "";
   const placeLine = [propertyZip, propertyCity].filter(Boolean).join(" ");
+  const streetCandidate = candidates.find((candidate) => candidate.street);
   const rawStreet = removeDuplicatePlace(
-    safeString(planning?.propertyStreet) ||
-      safeString(profile?.buildingStreet) ||
-      safeString(customer?.buildingStreet),
+    streetCandidate?.street ?? "",
     placeLine,
   );
-  const explicitHouseNumber =
-    safeString(planning?.propertyHouseNumber) ||
-    safeString(profile?.buildingStreetNo) ||
-    safeString(customer?.buildingStreetNo);
+  const explicitHouseNumber = streetCandidate?.houseNumber || "";
   const split = splitOfferStreetAndHouseNumber(rawStreet, explicitHouseNumber);
   const propertyStreetLine = [split.street, split.houseNumber].filter(Boolean).join(" ");
   return {

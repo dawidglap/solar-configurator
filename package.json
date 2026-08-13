@@ -24,6 +24,7 @@
     "test:execution-crew": "tsx --test tests/executionCrew.test.ts",
     "test:order-signatures": "tsx --test tests/orderSignatures.test.ts",
     "test:offer-signatures": "tsx --test tests/offerSignatures.test.ts",
+    "test:signature-emails": "tsx --test tests/signatureEmails.test.ts",
     "test:geo-admin": "tsx --test tests/geoAdmin.test.ts",
     "test:user-profiles": "tsx --test tests/userProfilesPasswordReset.test.ts",
     "test:user-profile-backfill": "tsx --test tests/userProfileBackfill.test.ts",

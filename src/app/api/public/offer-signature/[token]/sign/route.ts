@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
-import { safeString, toObjectIdOrNull } from "@/lib/api-session";
+import { mongoIdToString, safeString, toObjectIdOrNull } from "@/lib/api-session";
 import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
 import {
   appendOfferConfirmationSignatureProtocol,
@@ -11,6 +11,7 @@ import {
   getPublicApiBaseUrl,
   loadPlanningCustomer,
   normalizeSignaturePayments,
+  resolveCustomerEmail,
   resolveCustomerName,
   sha256,
   storeGeneratedSignatureFile,
@@ -36,6 +37,8 @@ import {
 } from "@/lib/planningFiles";
 import { POST as generateOrder } from "@/app/api/plannings/[planningId]/generate-order/route";
 import { buildIdVariants } from "@/lib/tasks";
+import { resolvePlanningSellerContact } from "@/lib/userProfiles";
+import { queueSignatureDocumentEmail } from "@/lib/signatureEmails";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +63,54 @@ function signedResult(req: Request, planning: any, token: string) {
   };
 }
 
+async function deliverOfferAcceptedEmail(args: {
+  db: Awaited<ReturnType<typeof getDb>>;
+  planning: any;
+  token: string;
+  req: Request;
+  attachmentBuffer?: Buffer;
+}) {
+  try {
+    const companyId = safeString(args.planning?.companyId);
+    const companyObjectId = toObjectIdOrNull(companyId);
+    const [company, customer] = await Promise.all([
+      companyObjectId ? args.db.collection("companies").findOne({ _id: companyObjectId }) : null,
+      loadPlanningCustomer(args.db, args.planning),
+    ]);
+    const seller = await resolvePlanningSellerContact({
+      db: args.db,
+      planning: args.planning,
+      company,
+    });
+    const orderId = safeString(args.planning?.orderId);
+    const publicBase = `${getPublicApiBaseUrl(args.req)}/api/public/offer-signature/${encodeURIComponent(args.token)}`;
+    return queueSignatureDocumentEmail({
+      db: args.db,
+      kind: "offer_accepted",
+      companyId,
+      planningId: mongoIdToString(args.planning?._id),
+      orderId,
+      offerNumber: safeString(args.planning?.planningNumber),
+      companyName: safeString(company?.name),
+      customerName: resolveCustomerName(args.planning, customer),
+      customerEmail:
+        resolveCustomerEmail(args.planning, customer) || safeString(args.planning?.offerSignerEmail),
+      sellerName: seller.sellerName,
+      sellerEmail: seller.sellerEmail,
+      downloadUrl: `${publicBase}/pdf?type=confirmation`,
+      attachment: {
+        fileId: args.planning?.offerConfirmationPdfFileId,
+        fileName: `auftragsbestaetigung-${orderId}.pdf`,
+        mimeType: "application/pdf",
+        buffer: args.attachmentBuffer,
+      },
+    });
+  } catch (error) {
+    console.error("QUEUE OFFER ACCEPTED EMAIL ERROR:", error);
+    return { status: "failed" } as const;
+  }
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const origin = req.headers.get("origin");
   const token = safeString((await params).token);
@@ -71,7 +122,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     if (!(await enforceOfferPublicRateLimit(db, req))) return response(origin, { ok: false, message: "Zu viele Anfragen." }, 429);
     let planning = await findOfferByToken(db, token);
     if (!planning) return response(origin, { ok: false, message: "Link ungültig." }, 404);
-    if (planning.offerSignatureStatus === "signed") return response(origin, signedResult(req, planning, token));
+    if (planning.offerSignatureStatus === "signed") {
+      await deliverOfferAcceptedEmail({ db, planning, token, req });
+      return response(origin, signedResult(req, planning, token));
+    }
     planning = await ensureActiveOfferToken(db, planning);
     if (!planning || !["sent", "viewed"].includes(planning.offerSignatureStatus)) return response(origin, { ok: false, message: "Offerte kann mit diesem Link nicht unterschrieben werden." }, 409);
 
@@ -413,6 +467,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       ).catch((error) => console.error("STORE CUSTOMER PAYOUT ACCOUNT ERROR:", error));
     }
     const completed = await db.collection("plannings").findOne({ _id: planning._id });
+    if (completed) {
+      await deliverOfferAcceptedEmail({
+        db,
+        planning: completed,
+        token,
+        req,
+        attachmentBuffer: confirmationPdf,
+      });
+    }
     return response(origin, signedResult(req, completed, token));
   } catch (error: any) {
     if (claimedPlanningId && processingId) {

@@ -7,6 +7,7 @@ import {
   sha256,
 } from "@/lib/orderSignatures";
 import { buildOfferAuditEntry, ensureOfferSignatureIndexes } from "@/lib/offerSignatures";
+import { processPendingSignatureEmails } from "@/lib/signatureEmails";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -99,11 +100,16 @@ async function run(req: Request) {
         },
       },
     );
+    const emailDeliveries = await processPendingSignatureEmails(db, 10).catch((error) => {
+      console.error("SIGNATURE EMAIL RETRY CRON ERROR:", error);
+      return { processed: 0, sent: 0, failed: 0 };
+    });
     return response(origin, {
       ok: true,
       expired: result.modifiedCount + offerResult.modifiedCount,
       orderExpired: result.modifiedCount,
       offerExpired: offerResult.modifiedCount,
+      emailDeliveries,
     });
   } catch (error: any) {
     console.error("SIGNATURE EXPIRY CRON ERROR:", error);

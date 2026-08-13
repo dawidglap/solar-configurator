@@ -669,6 +669,39 @@ function formatIbanForPdf(value: unknown) {
     .trim();
 }
 
+async function drawSignatureCompanyLogo(args: {
+  pdf: PDFDocument;
+  page: PDFPage;
+  logoUrl: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}) {
+  if (!args.logoUrl) return false;
+  try {
+    const response = await fetch(args.logoUrl, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Logo download failed (${response.status})`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    const contentType = safeString(response.headers.get("content-type")).toLowerCase();
+    const isPng = contentType.includes("png") || bytes.subarray(1, 4).toString("ascii") === "PNG";
+    const image = isPng ? await args.pdf.embedPng(bytes) : await args.pdf.embedJpg(bytes);
+    const scale = Math.min(args.width / image.width, args.height / image.height);
+    const width = image.width * scale;
+    const height = image.height * scale;
+    args.page.drawImage(image, {
+      x: args.x,
+      y: args.y + (args.height - height) / 2,
+      width,
+      height,
+    });
+    return true;
+  } catch (error) {
+    console.warn("VOLLMACHT LOGO ERROR:", error);
+    return false;
+  }
+}
+
 export async function createOfferVollmachtPdf(args: {
   company: any;
   orderId: string;
@@ -694,21 +727,42 @@ export async function createOfferVollmachtPdf(args: {
   const border = rgb(0.84, 0.87, 0.88);
   const margin = 46;
   const companyName = safeString(args.company?.name) || "Helionic";
-  const footerAddress = safeString(args.company?.pdfSettings?.footerAddressLine);
+  const footerAddress = safeString(args.company?.pdfSettings?.footerAddressLine) || [
+    safeString(args.company?.address?.street),
+    [safeString(args.company?.address?.zip), safeString(args.company?.address?.city)].filter(Boolean).join(" "),
+  ].filter(Boolean).join(", ");
   const companyContact = [
-    safeString(args.company?.pdfSettings?.phone),
-    safeString(args.company?.pdfSettings?.email),
-    safeString(args.company?.pdfSettings?.website),
+    safeString(args.company?.pdfSettings?.phone ?? args.company?.contact?.phone),
+    safeString(args.company?.pdfSettings?.email ?? args.company?.contact?.email ?? args.company?.email),
+    safeString(args.company?.pdfSettings?.website ?? args.company?.website),
   ].filter(Boolean).join(" · ");
 
   page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1) });
-  page.drawText(signaturePdfText(companyName), { x: margin, y: 786, size: 17, font: bold, color: dark });
-  if (footerAddress) {
-    page.drawText(signaturePdfText(footerAddress), { x: margin, y: 768, size: 8, font, color: muted });
-  }
-  if (companyContact) {
-    page.drawText(signaturePdfText(companyContact), { x: margin, y: 755, size: 8, font, color: muted });
-  }
+  const logoShown = await drawSignatureCompanyLogo({
+    pdf,
+    page,
+    logoUrl: safeString(args.company?.branding?.logoUrl),
+    x: margin,
+    y: 752,
+    width: 145,
+    height: 48,
+  });
+  const headerX = logoShown ? 330 : margin;
+  const drawHeaderLine = (text: string, y: number, size: number, headerFont: PDFFont) => {
+    const normalized = signaturePdfText(text);
+    const availableWidth = 549 - headerX;
+    const naturalWidth = headerFont.widthOfTextAtSize(normalized, size);
+    const fittedSize = naturalWidth > availableWidth
+      ? Math.max(6.2, size * availableWidth / naturalWidth)
+      : size;
+    const x = logoShown
+      ? Math.max(headerX, 549 - headerFont.widthOfTextAtSize(normalized, fittedSize))
+      : headerX;
+    page.drawText(normalized, { x, y, size: fittedSize, font: headerFont, color: headerFont === bold ? dark : muted });
+  };
+  drawHeaderLine(companyName, 786, logoShown ? 12 : 17, bold);
+  if (footerAddress) drawHeaderLine(footerAddress, 768, 8, font);
+  if (companyContact) drawHeaderLine(companyContact, 755, 8, font);
   page.drawLine({ start: { x: margin, y: 738 }, end: { x: 549, y: 738 }, thickness: 1.6, color: teal });
   page.drawText("Vollmacht & Auszahlungskonto", { x: margin, y: 696, size: 21, font: bold, color: dark });
   page.drawText("Digital übermittelte Angaben zum Auftrag", { x: margin, y: 676, size: 9, font, color: muted });

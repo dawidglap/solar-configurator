@@ -87,6 +87,57 @@ test("serializes public customer and GeoAdmin offer fields", async () => {
   );
 });
 
+test("resolves public object addresses from planning, building and billing fallbacks", async () => {
+  const { resolveOfferPropertyAddress } = await loadOffer();
+  const customer = {
+    buildingStreet: "Gebäudeweg",
+    buildingStreetNo: "8",
+    buildingZip: "9000",
+    buildingCity: "St. Gallen",
+    street: "Rechnungsweg",
+    streetNo: "9",
+    zip: "8000",
+    city: "Zürich",
+  };
+  assert.deepEqual(
+    resolveOfferPropertyAddress(
+      {
+        propertyStreet: "Planstrasse 4",
+        propertyZip: "9430",
+        propertyCity: "St. Margrethen",
+      },
+      customer,
+    ),
+    {
+      addressStreet: "Planstrasse",
+      addressHouseNumber: "4",
+      propertyStreetLine: "Planstrasse 4",
+      propertyZip: "9430",
+      propertyCity: "St. Margrethen",
+      objectAddress: "Planstrasse 4, 9430 St. Margrethen",
+    },
+  );
+  assert.equal(
+    resolveOfferPropertyAddress({}, customer).objectAddress,
+    "Gebäudeweg 8, 9000 St. Gallen",
+  );
+  assert.equal(
+    resolveOfferPropertyAddress({}, {
+      street: "Rechnungsweg",
+      streetNo: "9",
+      zip: "8000",
+      city: "Zürich",
+    }).objectAddress,
+    "Rechnungsweg 9, 8000 Zürich",
+  );
+  assert.equal(
+    resolveOfferPropertyAddress({
+      objectAddress: "Schachenstrasse 4, 9430 St. Margrethen",
+    }, null).objectAddress,
+    "Schachenstrasse 4, 9430 St. Margrethen",
+  );
+});
+
 test("normalizes and validates the optional payout IBAN", async () => {
   const { parseOfferAcceptanceDetails } = await loadOffer();
   assert.deepEqual(parseOfferAcceptanceDetails({}), {
@@ -237,6 +288,8 @@ test("serializes the public Vollmacht prefill without exposing token data", asyn
   assert.equal(response.landRegisterNumber, "4567");
   assert.equal(response.customerEmail, "max@example.ch");
   assert.equal(response.customerName, "Max Muster");
+  assert.equal(response.bankAccountHolder, "Max Muster");
+  assert.equal(response.bankIban, "CH9300762011623852957");
   assert.match(String(response.confirmationPdfUrl), /type=confirmation$/);
   assert.match(String(response.vollmachtPdfUrl), /vollmacht\?download=1$/);
   assert.equal("offerSignatureTokenHash" in response, false);

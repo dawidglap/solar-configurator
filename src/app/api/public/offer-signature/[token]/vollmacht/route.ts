@@ -3,6 +3,7 @@ import { getCorsHeaders } from "@/lib/cors";
 import { mongoIdToString, safeString, toObjectIdOrNull } from "@/lib/api-session";
 import { buildIdVariants } from "@/lib/tasks";
 import {
+  OFFER_VOLLMACHT_VALIDITY_MS,
   buildInternalOrderSession,
   buildOfferAuditEntry,
   buildOfferVollmachtResponse,
@@ -21,6 +22,7 @@ import {
   getPublicApiBaseUrl,
   loadPlanningCustomer,
   normalizeSignaturePayments,
+  resolveCustomerEmail,
   resolveCustomerName,
   validateSignatureImage,
 } from "@/lib/orderSignatures";
@@ -34,6 +36,8 @@ import {
   getPlanningFilesCollection,
   upsertManagedPlanningFile,
 } from "@/lib/planningFiles";
+import { resolvePlanningSellerContact } from "@/lib/userProfiles";
+import { queueSignatureDocumentEmail } from "@/lib/signatureEmails";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -301,7 +305,11 @@ export async function POST(req: Request, { params }: Params) {
       }),
     ]);
 
-    const expiresAt = getOfferVollmachtExpiresAt(planning);
+    const currentExpiresAt = getOfferVollmachtExpiresAt(planning);
+    const minimumLinkExpiresAt = new Date(now.getTime() + OFFER_VOLLMACHT_VALIDITY_MS);
+    const expiresAt = currentExpiresAt && currentExpiresAt > minimumLinkExpiresAt
+      ? currentExpiresAt
+      : minimumLinkExpiresAt;
     await Promise.all([
       db.collection<any>("plannings").updateOne(
         { _id: planningId },
@@ -311,6 +319,7 @@ export async function POST(req: Request, { params }: Params) {
             offerVollmachtPdfFileId: vollmacht.doc._id,
             offerConfirmationPdfFileId: confirmation.doc._id,
             orderSnapshotFileId: confirmation.doc._id,
+            offerVollmachtTokenExpiresAt: expiresAt,
             updatedAt: now,
           },
           $push: {
@@ -337,10 +346,37 @@ export async function POST(req: Request, { params }: Params) {
     ]);
 
     const publicBase = `${getPublicApiBaseUrl(req)}/api/public/offer-signature/${encodeURIComponent(token)}`;
+    try {
+      const seller = await resolvePlanningSellerContact({ db, planning, company });
+      await queueSignatureDocumentEmail({
+        db,
+        kind: "vollmacht_submitted",
+        companyId,
+        planningId: mongoIdToString(planningId),
+        orderId,
+        offerNumber: safeString(planning?.planningNumber),
+        companyName: safeString(company?.name),
+        customerName,
+        customerEmail:
+          resolveCustomerEmail(planning, customer) || safeString(planning?.offerSignerEmail),
+        sellerName: seller.sellerName,
+        sellerEmail: seller.sellerEmail,
+        downloadUrl: `${publicBase}/vollmacht?download=1`,
+        attachment: {
+          fileId: vollmacht.doc._id,
+          fileName: `vollmacht-${orderId}.pdf`,
+          mimeType: "application/pdf",
+          buffer: vollmachtPdf,
+        },
+      });
+    } catch (error) {
+      console.error("QUEUE VOLLMACHT EMAIL ERROR:", error);
+    }
     return response(origin, {
       ok: true,
       vollmachtPdfUrl: `${publicBase}/vollmacht?download=1`,
       confirmationPdfUrl: `${publicBase}/pdf?type=confirmation`,
+      submittedAt: now.toISOString(),
     });
   } catch (error: any) {
     const message = safeString(error?.message) || "Vollmacht konnte nicht gespeichert werden.";
