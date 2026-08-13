@@ -105,7 +105,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ plannin
     return response(origin, { ok: true, token, link: buildOfferSignatureLink(token), expiresAt: expiresAt.toISOString() });
   } catch (error: any) {
     const message = safeString(error?.message) || "Signaturanfrage konnte nicht erstellt werden.";
-    const status = /E-Mail|expiresInDays|Abschlussort/.test(message) ? 400 : /PDF|Snapshot/.test(message) ? 409 : 500;
+    const status = /E-Mail|expiresInDays/.test(message) ? 400 : /PDF|Snapshot/.test(message) ? 409 : 500;
     if (status === 500) console.error("CREATE OFFER SIGNATURE REQUEST ERROR:", error);
     return response(origin, { ok: false, message }, status);
   }

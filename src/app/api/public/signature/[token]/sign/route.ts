@@ -64,7 +64,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     }
     const signerName = safeString(body?.signerName).slice(0, 200);
     const signerEmail = safeString(body?.signerEmail).toLowerCase().slice(0, 320);
-    const place = safeString(body?.place).slice(0, 200);
+    const place = safeString(body?.place) || "remote";
     if (!signerName) return response(origin, { ok: false, message: "Name ist erforderlich." }, 400);
     if (!EMAIL_PATTERN.test(signerEmail)) return response(origin, { ok: false, message: "Ungültige E-Mail-Adresse." }, 400);
     const signaturePng = validateSignatureImage(body?.signatureImage);
@@ -131,6 +131,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
           signedAt,
           signerName,
           signerEmail,
+          signerPlace: place,
           signerIp,
           signerUserAgent,
           signatureImageFileId: signatureFile._id,

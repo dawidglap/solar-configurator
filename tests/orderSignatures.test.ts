@@ -61,6 +61,16 @@ test("normalization never exposes token, IP or user agent", async () => {
   assert.equal("signerUserAgent" in normalized, false);
 });
 
+test("suppresses empty and remote places but keeps real place names for PDFs", async () => {
+  const { displayableSignaturePlace } = await loadSignatures();
+  assert.equal(displayableSignaturePlace(undefined), null);
+  assert.equal(displayableSignaturePlace(null), null);
+  assert.equal(displayableSignaturePlace(""), null);
+  assert.equal(displayableSignaturePlace("remote"), null);
+  assert.equal(displayableSignaturePlace("Remote"), null);
+  assert.equal(displayableSignaturePlace("Zürich"), "Zürich");
+});
+
 test("creates a signed PDF with an additional protocol page", async () => {
   const { createSignedOrderPdf, sha256 } = await loadSignatures();
   const sourceDocument = await PDFDocument.create();

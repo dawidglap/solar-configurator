@@ -106,6 +106,7 @@ export function normalizeSignatureFields(planning: any) {
     signedAt: isoDate(planning?.signedAt),
     signerName: safeString(planning?.signerName) || null,
     signerEmail: safeString(planning?.signerEmail) || null,
+    signerPlace: safeString(planning?.signerPlace) || null,
     signatureImageFileId:
       mongoIdToString(planning?.signatureImageFileId) || safeString(planning?.signatureImageFileId) || null,
     signedPdfFileId:
@@ -116,6 +117,11 @@ export function normalizeSignatureFields(planning: any) {
     signatureDeclinedReason: safeString(planning?.signatureDeclinedReason) || null,
     signatureAudit: normalizeSignatureAudit(planning?.signatureAudit),
   };
+}
+
+export function displayableSignaturePlace(value: unknown) {
+  const place = safeString(value);
+  return place && place.toLowerCase() !== "remote" ? place : null;
 }
 
 export function buildDefaultOrderSignatureFields() {
@@ -132,6 +138,7 @@ export function buildDefaultOrderSignatureFields() {
     signedAt: null,
     signerName: null,
     signerEmail: null,
+    signerPlace: null,
     signerIp: null,
     signerUserAgent: null,
     signatureImageFileId: null,
@@ -545,16 +552,18 @@ export async function createSignedOrderPdf(args: {
   });
 
   const timestamp = formatZurichTimestamp(args.signedAt);
+  const displayedPlace = displayableSignaturePlace(args.place);
+  const displayedSignaturePlace = displayableSignaturePlace(args.signaturePlace);
   const detailRows = [
     ["Name", args.signerName],
     ["E-Mail", args.signerEmail],
-    ...(safeString(args.place) ? [["Ort", safeString(args.place)]] : []),
+    ...(displayedPlace ? [["Ort", displayedPlace]] : []),
     ["Zeitstempel ISO (Europe/Zurich)", timestamp.iso],
     ["Zeitstempel lesbar", timestamp.readable],
     ["IP-Adresse", args.signerIp],
     ...(args.openedAt ? [["Erstmals geöffnet (UTC)", args.openedAt.toISOString()]] : []),
     ...(safeString(args.tokenId) ? [["Token-ID (SHA-256)", safeString(args.tokenId)]] : []),
-    ...(safeString(args.signaturePlace) ? [["Abschlussart", safeString(args.signaturePlace)]] : []),
+    ...(displayedSignaturePlace ? [["Abschlussart", displayedSignaturePlace]] : []),
   ];
   y = 342;
   const detailRowSpacing = args.documentKind === "Angebot" ? 18 : 23;

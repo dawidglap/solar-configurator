@@ -107,6 +107,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ orderId
           signedAt: null,
           signerName: null,
           signerEmail: null,
+          signerPlace: null,
           signerIp: null,
           signerUserAgent: null,
           signatureImageFileId: null,

@@ -36,10 +36,8 @@ export const OFFER_SIGNATURE_STATUSES = [
   "declined",
   "expired",
 ] as const;
-export const OFFER_SIGNATURE_PLACES = ["remote", "onsite_customer", "onsite_company"] as const;
 export const OFFER_VOLLMACHT_VALIDITY_MS = 30 * 86_400_000;
 export type OfferSignatureStatus = (typeof OFFER_SIGNATURE_STATUSES)[number];
-export type OfferSignaturePlace = (typeof OFFER_SIGNATURE_PLACES)[number];
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -58,9 +56,8 @@ export function normalizeOfferSignatureStatus(value: unknown): OfferSignatureSta
   return OFFER_SIGNATURE_STATUSES.includes(status) ? status : "none";
 }
 
-export function normalizeOfferSignaturePlace(value: unknown): OfferSignaturePlace | null {
-  const place = safeString(value).toLowerCase() as OfferSignaturePlace;
-  return OFFER_SIGNATURE_PLACES.includes(place) ? place : null;
+export function normalizeOfferSignaturePlace(value: unknown) {
+  return safeString(value) || "remote";
 }
 
 export function buildDefaultOfferSignatureFields() {
@@ -78,7 +75,7 @@ export function buildDefaultOfferSignatureFields() {
     offerSignerEmail: null,
     offerSignerIp: null,
     offerSignerUserAgent: null,
-    offerSignaturePlace: null,
+    offerSignaturePlace: "remote",
     offerSignaturePlaceName: null,
     offerSignatureImage: null,
     offerSignatureDeclinedReason: null,
@@ -149,7 +146,6 @@ export function parseOfferSignatureRequest(body: any) {
     throw new Error("expiresInDays muss eine ganze Zahl zwischen 1 und 90 sein.");
   }
   const place = normalizeOfferSignaturePlace(body?.place);
-  if (!place) throw new Error("Ungültiger Abschlussort.");
   return {
     email,
     message: safeString(body?.message).slice(0, 4000),

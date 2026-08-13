@@ -20,16 +20,18 @@ test("creates a 32-byte base64url token and stores only its hashable form", asyn
   assert.equal(created.hash.includes(created.token), false);
 });
 
-test("validates request defaults, place and expiry", async () => {
+test("accepts an optional unrestricted signature place and defaults it to remote", async () => {
   const { parseOfferSignatureRequest } = await loadOffer();
-  assert.deepEqual(parseOfferSignatureRequest({ place: "remote" }), {
+  assert.deepEqual(parseOfferSignatureRequest({}), {
     email: "",
     message: "",
     expiresInDays: 30,
     sendEmail: false,
     place: "remote",
   });
-  assert.throws(() => parseOfferSignatureRequest({}), /Abschlussort/);
+  assert.equal(parseOfferSignatureRequest({ place: null }).place, "remote");
+  assert.equal(parseOfferSignatureRequest({ place: "" }).place, "remote");
+  assert.equal(parseOfferSignatureRequest({ place: "Zürich" }).place, "Zürich");
   assert.throws(() => parseOfferSignatureRequest({ place: "remote", expiresInDays: 0 }), /zwischen 1 und 90/);
 });
 

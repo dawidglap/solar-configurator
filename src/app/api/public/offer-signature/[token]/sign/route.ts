@@ -79,15 +79,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     if (body?.acceptedTerms !== true) return response(origin, { ok: false, message: "Die Bedingungen müssen akzeptiert werden." }, 400);
     const signerName = safeString(body?.signerName).slice(0, 200);
     const signerEmail = safeString(body?.signerEmail).toLowerCase().slice(0, 320);
-    const placeName = safeString(body?.placeName).slice(0, 200);
+    const placeName = safeString(body?.placeName);
     const place = normalizeOfferSignaturePlace(body?.place);
     const acceptance = parseOfferAcceptanceDetails(body);
     const bankAccountHolder = acceptance.bankAccountHolder;
     const bankIban = acceptance.bankIban;
     if (!signerName) return response(origin, { ok: false, message: "Name ist erforderlich." }, 400);
     if (!EMAIL_PATTERN.test(signerEmail)) return response(origin, { ok: false, message: "Ungültige E-Mail-Adresse." }, 400);
-    if (!place) return response(origin, { ok: false, message: "Ungültiger Abschlussort." }, 400);
-    if (planning.offerSignaturePlace && planning.offerSignaturePlace !== place) return response(origin, { ok: false, message: "Der Abschlussort stimmt nicht mit der Signaturanfrage überein." }, 409);
     const signaturePng = validateSignatureImage(body?.signatureImage);
 
     processingId = crypto.randomUUID();
@@ -156,6 +154,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const offerNumber = safeString(planning?.planningNumber);
     const customerName = resolveCustomerName(planning, customer);
     const projectTitle = safeString(planning?.title) || offerNumber;
+    const protocolPlace = placeName || (
+      place === "onsite_customer"
+        ? "Beim Kunden"
+        : place === "onsite_company"
+          ? "Geschäftsräume der Anbieterin"
+          : place
+    );
     const signedOffer = await createSignedOrderPdf({
       sourcePdf: snapshot.buffer,
       signaturePng,
@@ -165,7 +170,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       totalInklMwst: Number(commercial?.totalInvestmentChf ?? 0),
       signerName,
       signerEmail,
-      place: placeName,
+      place: protocolPlace,
       signedAt,
       signerIp,
       signerUserAgent,
@@ -173,7 +178,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       documentKind: "Angebot",
       openedAt: planning?.offerSignatureViewedAt ? new Date(planning.offerSignatureViewedAt) : null,
       tokenId: tokenHash,
-      signaturePlace: place,
+      signaturePlace: ["onsite_customer", "onsite_company"].includes(place)
+        ? place
+        : undefined,
       legalText: "Elektronische Annahme des Angebots und einfache elektronische Signatur (EES) gemäss Art. 1/3 ff. und Art. 14 OR.",
     });
     const signedPdfSha256 = sha256(signedOffer);
@@ -256,13 +263,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       withdrawalRightApplies,
       withdrawalUntil,
     });
-    const protocolPlace = placeName || (
-      place === "onsite_customer"
-        ? "Beim Kunden"
-        : place === "onsite_company"
-          ? "Geschäftsräume der Anbieterin"
-          : "Remote"
-    );
     const confirmationPdf = await appendOfferConfirmationSignatureProtocol({
       confirmationPdf: confirmationBasePdf,
       signaturePng,
@@ -423,7 +423,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       ).catch(() => undefined);
     }
     const message = safeString(error?.message) || "Offerte konnte nicht unterschrieben werden.";
-    const status = /PNG|2 MB|Name|E-Mail|Bedingungen|Abschlussort|IBAN|maximal|Zeichen/.test(message) ? 400 : /bereits|nicht gefunden|nicht gespeichert/.test(message) ? 409 : 500;
+    const status = /PNG|2 MB|Name|E-Mail|Bedingungen|IBAN|maximal|Zeichen/.test(message) ? 400 : /bereits|nicht gefunden|nicht gespeichert/.test(message) ? 409 : 500;
     if (status === 500) console.error("PUBLIC OFFER SIGN ERROR:", error);
     return response(origin, { ok: false, message }, status);
   }
