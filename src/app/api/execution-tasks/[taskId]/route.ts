@@ -30,14 +30,18 @@ import {
   TeamRequestError,
 } from "@/lib/teams";
 import {
+  applyCrewDeviationReplacements,
   buildExtraAssignmentDayWindowHistoryTexts,
   deriveExecutionCrewUserIds,
   ExecutionCrewRequestError,
   findExecutionCrewConflicts,
+  normalizeAndValidateCrewDeviations,
   normalizeAndValidateAdditionalCrew,
   normalizeStoredAdditionalTeamIds,
+  normalizeStoredCrewDeviations,
   normalizeStoredExtraAssignments,
 } from "@/lib/executionCrew";
+import { syncCrewDeviationAbsences } from "@/lib/absences";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -193,7 +197,33 @@ export async function PATCH(req: Request, { params }: Params) {
       updateSet.endTime = endTime;
     }
 
+    const scheduleChanged = hasExecutionScheduleChanged(existing, {
+      scheduledStart,
+      scheduledEnd,
+      startTime,
+      endTime,
+    });
     const actor = await resolveExecutionActorMeta(db, session);
+    const existingCrewDeviations = normalizeStoredCrewDeviations((existing as any)?.crewDeviations);
+    const finalScheduledStartForDeviations =
+      scheduledStart !== undefined ? scheduledStart : (existing as any)?.scheduledStart ?? null;
+    const finalScheduledEndForDeviations =
+      scheduledEnd !== undefined
+        ? scheduledEnd
+        : (existing as any)?.scheduledEnd ?? finalScheduledStartForDeviations;
+    let finalCrewDeviations = existingCrewDeviations;
+    if (body?.crewDeviations !== undefined || (scheduleChanged && existingCrewDeviations.length > 0)) {
+      const normalizedDeviations = await normalizeAndValidateCrewDeviations({
+        db,
+        companyId,
+        input: body?.crewDeviations !== undefined ? body.crewDeviations : existingCrewDeviations,
+        scheduledStart: finalScheduledStartForDeviations,
+        scheduledEnd: finalScheduledEndForDeviations,
+        actorName: actor.name,
+      });
+      finalCrewDeviations = normalizedDeviations.crewDeviations;
+      updateSet.crewDeviations = finalCrewDeviations;
+    }
     const existingTeamId =
       (existing as any)?.teamId instanceof ObjectId
         ? (existing as any).teamId.toString()
@@ -201,7 +231,9 @@ export async function PATCH(req: Request, { params }: Params) {
     const teamHistoryEntries: Record<string, any>[] = [];
     const hasTeamInput = body?.teamId !== undefined || body?.teamOverrides !== undefined;
     const hasAdditionalCrewInput =
-      body?.additionalTeamIds !== undefined || body?.extraAssignments !== undefined;
+      body?.additionalTeamIds !== undefined ||
+      body?.extraAssignments !== undefined ||
+      body?.crewDeviations !== undefined;
     const hasStructuredCrewInput = hasTeamInput || hasAdditionalCrewInput;
     const isLegacyDirectAssignment =
       body?.assignedUserIds !== undefined && !hasStructuredCrewInput;
@@ -341,12 +373,6 @@ export async function PATCH(req: Request, { params }: Params) {
       }
     }
 
-    const scheduleChanged = hasExecutionScheduleChanged(existing, {
-      scheduledStart,
-      scheduledEnd,
-      startTime,
-      endTime,
-    });
     const existingAdditionalTeamIds = normalizeStoredAdditionalTeamIds((existing as any)?.additionalTeamIds);
     const existingExtraAssignments = normalizeStoredExtraAssignments((existing as any)?.extraAssignments);
     const shouldResolveStructuredCrew =
@@ -392,8 +418,14 @@ export async function PATCH(req: Request, { params }: Params) {
         mainTeamId: finalMainTeamId,
         additionalTeamIds:
           body?.additionalTeamIds !== undefined ? body.additionalTeamIds : existingAdditionalTeamIds,
-        extraAssignments:
+        extraAssignments: applyCrewDeviationReplacements(
           body?.extraAssignments !== undefined ? body.extraAssignments : existingExtraAssignments,
+          finalCrewDeviations,
+          (existing as any)?.track === "elektro" ? "elektriker" : "monteur",
+          existingExtraAssignments
+            .filter((assignment) => Array.isArray(assignment.replacementForDeviationIds))
+            .map((assignment) => assignment.userId),
+        ),
         scheduledStart: finalScheduledStart,
         scheduledEnd: finalScheduledEnd,
       });
@@ -509,6 +541,77 @@ export async function PATCH(req: Request, { params }: Params) {
       }
     }
 
+    if (body?.crewDeviations !== undefined) {
+      const historyBase = {
+        changedAt: new Date(),
+        changedByUserId: ObjectId.isValid(actor.id || "") ? new ObjectId(actor.id!) : actor.id,
+        changedByName: actor.name,
+      };
+      const previousByKey = new Map(existingCrewDeviations.map((deviation) => [
+        `${deviation.userId}:${deviation.id}`,
+        deviation,
+      ]));
+      const nextByKey = new Map(finalCrewDeviations.map((deviation) => [
+        `${deviation.userId}:${deviation.id}`,
+        deviation,
+      ]));
+      for (const [key, deviation] of nextByKey) {
+        const previous = previousByKey.get(key);
+        if (!previous || JSON.stringify(previous) !== JSON.stringify(deviation)) {
+          const text = `${deviation.type}: ${deviation.days.join(", ")}`;
+          teamHistoryEntries.push({
+            ...historyBase,
+            type: "deviation_added",
+            action: previous ? "updated" : "added",
+            deviationId: deviation.id,
+            userId: new ObjectId(deviation.userId),
+            deviationType: deviation.type,
+            days: deviation.days,
+            replacementUserId: deviation.replacementUserId
+              ? new ObjectId(deviation.replacementUserId)
+              : null,
+            actorName: deviation.actorName,
+            text,
+            reason: text,
+          });
+          if (deviation.replacementUserId !== previous?.replacementUserId && deviation.replacementUserId) {
+            teamHistoryEntries.push({
+              ...historyBase,
+              type: "replacement_assigned",
+              action: "assigned",
+              deviationId: deviation.id,
+              userId: new ObjectId(deviation.userId),
+              deviationType: deviation.type,
+              days: deviation.days,
+              replacementUserId: new ObjectId(deviation.replacementUserId),
+              actorName: deviation.actorName,
+              text: `Ersatz für ${deviation.userId}: ${deviation.replacementUserId}`,
+              reason: "replacement_assigned",
+            });
+          }
+        }
+      }
+      for (const [key, deviation] of previousByKey) {
+        if (!nextByKey.has(key)) {
+          teamHistoryEntries.push({
+            ...historyBase,
+            type: "deviation_removed",
+            action: "removed",
+            deviationId: deviation.id,
+            userId: new ObjectId(deviation.userId),
+            deviationType: deviation.type,
+            days: deviation.days,
+            replacementUserId: deviation.replacementUserId
+              ? new ObjectId(deviation.replacementUserId)
+              : null,
+            actorName: actor.name,
+            text: `${deviation.type} entfernt`,
+            reason: "deviation_removed",
+          });
+        }
+      }
+    }
+
     const scheduleHistoryEntry = scheduleChanged
       ? buildExecutionScheduleHistoryEntry(existing, actor, body?.rescheduleReason)
       : null;
@@ -548,6 +651,14 @@ export async function PATCH(req: Request, { params }: Params) {
     if (!updated) {
       return jsonResponse(origin, { ok: false, error: "Execution task not found after update" }, 404);
     }
+
+    await syncCrewDeviationAbsences({
+      db,
+      companyId,
+      taskId,
+      crewDeviations: normalizeStoredCrewDeviations((updated as any)?.crewDeviations),
+      actorUserId: actor.id,
+    });
 
     const [item] = await hydrateExecutionTasks(db, companyId, [updated]);
     const validate = new URL(req.url).searchParams.get("validate") === "1";

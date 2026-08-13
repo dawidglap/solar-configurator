@@ -19,7 +19,9 @@ import { extractAddressFromPlanning } from "@/lib/montages";
 import { normalizeStoredTeamOverrides } from "@/lib/teams";
 import {
   normalizeStoredAdditionalTeamIds,
+  normalizeStoredCrewDeviations,
   normalizeStoredExtraAssignments,
+  type CrewDeviation,
   type ExtraAssignment,
 } from "@/lib/executionCrew";
 
@@ -59,6 +61,7 @@ type NormalizedExecutionTask = {
   teamOverrides: ReturnType<typeof normalizeStoredTeamOverrides>;
   additionalTeamIds: string[];
   extraAssignments: ExtraAssignment[];
+  crewDeviations: CrewDeviation[];
   assignedUserIds: string[];
   assignees: NormalizedExecutionAssignee[];
   address: {
@@ -77,7 +80,7 @@ type NormalizedExecutionTask = {
 };
 
 type NormalizedExecutionScheduleHistoryEntry = {
-  type?: "schedule_changed" | "team_changed" | "member_replaced" | "additional_team_changed" | "extra_assignment_changed";
+  type?: "schedule_changed" | "team_changed" | "member_replaced" | "additional_team_changed" | "extra_assignment_changed" | "deviation_added" | "deviation_removed" | "replacement_assigned";
   scheduledStart: string | null;
   scheduledEnd: string | null;
   startTime: string | null;
@@ -94,6 +97,11 @@ type NormalizedExecutionScheduleHistoryEntry = {
   userId?: string | null;
   action?: string;
   text?: string;
+  deviationId?: string;
+  deviationType?: string;
+  days?: string[];
+  replacementUserId?: string | null;
+  actorName?: string;
 };
 
 type NormalizedExecutionActivity = {
@@ -181,6 +189,7 @@ export async function ensureExecutionTaskIndexes(db: Db) {
     executionTasks.createIndex({ companyId: 1, assignedUserIds: 1 }),
     executionTasks.createIndex({ companyId: 1, additionalTeamIds: 1 }),
     executionTasks.createIndex({ companyId: 1, "extraAssignments.userId": 1 }),
+    executionTasks.createIndex({ companyId: 1, "crewDeviations.userId": 1 }),
     executionTasks.createIndex({ companyId: 1, scheduledStart: 1, scheduledEnd: 1 }),
   ])
     .then(() => undefined)
@@ -332,6 +341,21 @@ export function normalizeExecutionScheduleHistoryEntry(
       ...common,
       type,
       userId: mongoIdToString(entry?.userId) || safeString(entry?.userId) || null,
+      action: safeString(entry?.action),
+      text: safeString(entry?.text),
+    };
+  }
+  if (type === "deviation_added" || type === "deviation_removed" || type === "replacement_assigned") {
+    return {
+      ...common,
+      type,
+      deviationId: safeString(entry?.deviationId),
+      userId: mongoIdToString(entry?.userId) || safeString(entry?.userId) || null,
+      deviationType: safeString(entry?.deviationType),
+      days: Array.isArray(entry?.days) ? entry.days.map((day: unknown) => safeString(day)).filter(Boolean) : [],
+      replacementUserId:
+        mongoIdToString(entry?.replacementUserId) || safeString(entry?.replacementUserId) || null,
+      actorName: safeString(entry?.actorName),
       action: safeString(entry?.action),
       text: safeString(entry?.text),
     };
@@ -547,6 +571,7 @@ export function normalizeExecutionTask(doc: any, opts?: {
     teamOverrides: normalizeStoredTeamOverrides(doc?.teamOverrides),
     additionalTeamIds: normalizeStoredAdditionalTeamIds(doc?.additionalTeamIds),
     extraAssignments: normalizeStoredExtraAssignments(doc?.extraAssignments),
+    crewDeviations: normalizeStoredCrewDeviations(doc?.crewDeviations),
     assignedUserIds,
     assignees,
     address: normalizeExecutionAddress(doc?.address),
@@ -694,6 +719,7 @@ function buildExecutionTaskSeed(params: {
     teamOverrides: [],
     additionalTeamIds: [],
     extraAssignments: [],
+    crewDeviations: [],
     assignedUserIds: [] as ObjectId[],
     address: buildExecutionAddress(params.planning, params.customer),
     notes: "",
@@ -859,6 +885,7 @@ export async function migrateMontagesToExecutionTasks(
           teamOverrides: [],
           additionalTeamIds: [],
           extraAssignments: [],
+          crewDeviations: [],
           assignedUserIds: Array.isArray(montage?.assignedInstallerIds)
             ? montage.assignedInstallerIds
                 .map((value: any) => toObjectIdOrNull(value))

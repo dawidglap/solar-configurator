@@ -2,17 +2,177 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ObjectId } from "mongodb";
 import {
+  applyCrewDeviationReplacements,
   buildExtraAssignmentDayWindowHistoryTexts,
   deriveExtraAssignmentDayWindows,
   ExecutionCrewRequestError,
   getExecutionBookingOverlap,
   getExecutionUserBooking,
   normalizeAndValidateAdditionalCrew,
+  normalizeAndValidateCrewDeviations,
+  normalizeStoredCrewDeviations,
   normalizeStoredExtraAssignments,
 } from "../src/lib/executionCrew";
 import { normalizeExecutionTask } from "../src/lib/executionTasks";
 
 const userId = new ObjectId().toString();
+
+function activeUsersDb(ids: string[], companyId: string) {
+  return {
+    collection: (name: string) => name === "users"
+      ? {
+          find: () => ({
+            toArray: async () => ids.map((id) => ({
+              _id: new ObjectId(id),
+              status: "active",
+              memberships: [{ companyId: new ObjectId(companyId), status: "active" }],
+            })),
+          }),
+        }
+      : { find: () => ({ toArray: async () => [] }) },
+  } as any;
+}
+
+test("validates crew deviations with stable error codes", async () => {
+  const companyId = new ObjectId().toString();
+  const base = {
+    db: activeUsersDb([userId], companyId),
+    companyId,
+    scheduledStart: "2026-08-27",
+    scheduledEnd: "2026-08-28",
+    actorName: "Max Müller",
+  };
+  const cases: Array<[any, string]> = [
+    [{ id: "dev_1", userId, type: "homeoffice", days: ["2026-08-27"] }, "UNKNOWN_DEVIATION_TYPE"],
+    [{ id: "dev_1", userId, type: "krank", days: ["2026-08-29"] }, "DEVIATION_DAY_OUTSIDE_SCHEDULE"],
+    [{ id: "dev_1", userId, type: "krank", days: ["2026-08-27", "2026-08-27"] }, "DUPLICATE_DEVIATION_DAY"],
+    [{ id: "dev_1", userId, type: "krank", days: ["2026-08-27"], startTime: "15:00", endTime: "10:00" }, "INVALID_DEVIATION_TIME_RANGE"],
+    [{ id: "dev_1", userId, type: "krank", days: ["2026-08-27"], replacementUserId: userId }, "DEVIATION_REPLACEMENT_SAME_USER"],
+  ];
+  for (const [deviation, code] of cases) {
+    await assert.rejects(
+      normalizeAndValidateCrewDeviations({ ...base, input: [deviation] }),
+      (error: any) => error instanceof ExecutionCrewRequestError && error.code === code,
+    );
+  }
+});
+
+test("crew deviations round-trip and derive global from the stable type catalog", async () => {
+  const companyId = new ObjectId().toString();
+  const at = "2026-08-13T11:34:00.000Z";
+  const result = await normalizeAndValidateCrewDeviations({
+    db: activeUsersDb([userId], companyId),
+    companyId,
+    input: [{
+      id: "dev_ab12cd",
+      userId,
+      type: "krank",
+      days: ["2026-08-27", "2026-08-28"],
+      startTime: "10:00",
+      endTime: "15:00",
+      global: false,
+      note: "Arztzeug folgt",
+      actorName: "Max Müller",
+      at,
+    }],
+    scheduledStart: "2026-08-27",
+    scheduledEnd: "2026-08-28",
+    actorName: "Max Müller",
+  });
+  assert.deepEqual(normalizeStoredCrewDeviations(result.crewDeviations), result.crewDeviations);
+  assert.equal(result.crewDeviations[0].global, true);
+
+  const task = normalizeExecutionTask({
+    _id: new ObjectId(),
+    companyId: new ObjectId(companyId),
+    track: "montage",
+    crewDeviations: result.crewDeviations,
+  });
+  assert.deepEqual(task.crewDeviations, result.crewDeviations);
+});
+
+test("deviation windows remove only the unavailable part from task conflicts", () => {
+  const unavailableTask = getExecutionUserBooking({
+    scheduledStart: "2026-08-27",
+    scheduledEnd: "2026-08-27",
+    startTime: "07:00",
+    endTime: "17:00",
+    assignedUserIds: [userId],
+    crewDeviations: [{
+      id: "dev_1",
+      userId,
+      type: "teilweise_abwesend",
+      days: ["2026-08-27"],
+      startTime: "10:00",
+      endTime: "15:00",
+    }],
+  }, userId);
+  const duringAbsence = getExecutionUserBooking({
+    scheduledStart: "2026-08-27",
+    scheduledEnd: "2026-08-27",
+    startTime: "11:00",
+    endTime: "14:00",
+    assignedUserIds: [userId],
+  }, userId);
+  const beforeAbsence = getExecutionUserBooking({
+    scheduledStart: "2026-08-27",
+    scheduledEnd: "2026-08-27",
+    startTime: "08:00",
+    endTime: "09:00",
+    assignedUserIds: [userId],
+  }, userId);
+  assert.deepEqual(getExecutionBookingOverlap(duringAbsence, unavailableTask), []);
+  assert.deepEqual(getExecutionBookingOverlap(beforeAbsence, unavailableTask), ["2026-08-27"]);
+});
+
+test("replacement deviations generate deterministic extra assignments", () => {
+  const replacementUserId = new ObjectId().toString();
+  const deviations = normalizeStoredCrewDeviations([{
+    id: "dev_1",
+    userId,
+    type: "krank",
+    days: ["2026-08-27", "2026-08-28"],
+    startTime: "10:00",
+    endTime: "15:00",
+    replacementUserId,
+  }]);
+  const generated = applyCrewDeviationReplacements([], deviations, "monteur");
+  assert.deepEqual(generated, [{
+    userId: replacementUserId,
+    role: "monteur",
+    sourceTeamId: null,
+    days: ["2026-08-27", "2026-08-28"],
+    startTime: "10:00",
+    endTime: "15:00",
+    dayWindows: [
+      { day: "2026-08-27", startTime: "10:00", endTime: "15:00" },
+      { day: "2026-08-28", startTime: "10:00", endTime: "15:00" },
+    ],
+    note: "",
+    replacementForDeviationIds: ["dev_1"],
+  }]);
+  assert.deepEqual(applyCrewDeviationReplacements(generated, [], "monteur"), []);
+  const existingManual = [{
+    userId: replacementUserId,
+    role: "leiter",
+    sourceTeamId: null,
+    days: ["2026-08-26"],
+    startTime: null,
+    endTime: null,
+    dayWindows: null,
+    note: "Bestehender Eintrag",
+  }];
+  assert.deepEqual(applyCrewDeviationReplacements(existingManual, deviations, "monteur"), [{
+    ...existingManual[0],
+    days: ["2026-08-27", "2026-08-28"],
+    startTime: "10:00",
+    endTime: "15:00",
+    dayWindows: [
+      { day: "2026-08-27", startTime: "10:00", endTime: "15:00" },
+      { day: "2026-08-28", startTime: "10:00", endTime: "15:00" },
+    ],
+  }]);
+});
 
 test("rejects invalid and out-of-range extra-assignment days", async () => {
   await assert.rejects(

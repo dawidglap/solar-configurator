@@ -19,6 +19,7 @@ export type ExtraAssignment = {
   endTime: string | null;
   dayWindows: ExtraAssignmentDayWindow[] | null;
   note: string;
+  replacementForDeviationIds?: string[];
 };
 
 export type ExtraAssignmentDayWindow = {
@@ -27,11 +28,48 @@ export type ExtraAssignmentDayWindow = {
   endTime: string | null;
 };
 
+export const CREW_DEVIATION_TYPES = [
+  "krank",
+  "unfall",
+  "ferien",
+  "arzttermin",
+  "weiterbildung",
+  "verspaetet",
+  "frueher_weg",
+  "teilweise_abwesend",
+  "sonstiges",
+] as const;
+
+export type CrewDeviationType = (typeof CREW_DEVIATION_TYPES)[number];
+
+export const GLOBAL_CREW_DEVIATION_TYPES = new Set<CrewDeviationType>([
+  "krank",
+  "unfall",
+  "ferien",
+  "weiterbildung",
+  "arzttermin",
+]);
+
+export type CrewDeviation = {
+  id: string;
+  userId: string;
+  type: CrewDeviationType;
+  days: string[];
+  startTime: string | null;
+  endTime: string | null;
+  global: boolean;
+  note: string;
+  replacementUserId: string | null;
+  actorName: string;
+  at: string;
+};
+
 export type ExecutionBooking = {
   days: string[];
   startTime: string | null;
   endTime: string | null;
   dayWindows?: ExtraAssignmentDayWindow[] | null;
+  unavailableWindows?: ExtraAssignmentDayWindow[];
 };
 
 export type ExecutionCrewConflict = {
@@ -129,7 +167,286 @@ export function normalizeStoredExtraAssignments(input: unknown): ExtraAssignment
         }))
       : null,
     note: safeString(assignment?.note),
+    ...(Array.isArray(assignment?.replacementForDeviationIds)
+      ? {
+          replacementForDeviationIds: Array.from(new Set(
+            assignment.replacementForDeviationIds.map((value: unknown) => safeString(value)).filter(Boolean),
+          )),
+        }
+      : {}),
   }));
+}
+
+export function applyCrewDeviationReplacements(
+  input: unknown,
+  deviations: CrewDeviation[],
+  defaultRole: TeamRole,
+  previousAutoReplacementUserIds: string[] = [],
+) {
+  const previousAutoUsers = new Set(previousAutoReplacementUserIds);
+  const manualAssignments = (Array.isArray(input) ? input : []).filter(
+    (assignment: any) =>
+      !Array.isArray(assignment?.replacementForDeviationIds) &&
+      !previousAutoUsers.has(normalizeId(assignment?.userId)),
+  );
+  const byReplacement = new Map<string, CrewDeviation[]>();
+  for (const deviation of deviations) {
+    if (!deviation.replacementUserId) continue;
+    const values = byReplacement.get(deviation.replacementUserId) ?? [];
+    values.push(deviation);
+    byReplacement.set(deviation.replacementUserId, values);
+  }
+
+  function replacementSchedule(replacementDeviations: CrewDeviation[]) {
+    const byDay = new Map<string, Array<{ startTime: string | null; endTime: string | null }>>();
+    for (const deviation of replacementDeviations) {
+      for (const day of deviation.days) {
+        const windows = byDay.get(day) ?? [];
+        windows.push({ startTime: deviation.startTime, endTime: deviation.endTime });
+        byDay.set(day, windows);
+      }
+    }
+    const dayWindows = Array.from(byDay, ([day, windows]) => {
+      if (windows.some((window) => !window.startTime || !window.endTime)) {
+        return { day, startTime: null, endTime: null };
+      }
+      return {
+        day,
+        startTime: windows.map((window) => window.startTime!).sort()[0],
+        endTime: windows.map((window) => window.endTime!).sort().at(-1)!,
+      };
+    }).sort((left, right) => left.day.localeCompare(right.day));
+    const firstWindow = dayWindows[0];
+    const sameWindow = dayWindows.every(
+      (window) => window.startTime === firstWindow?.startTime && window.endTime === firstWindow?.endTime,
+    );
+    return {
+      days: dayWindows.map((window) => window.day),
+      startTime: sameWindow ? firstWindow?.startTime ?? null : null,
+      endTime: sameWindow ? firstWindow?.endTime ?? null : null,
+      dayWindows,
+    };
+  }
+
+  const scheduledManualAssignments = manualAssignments.map((assignment: any) => {
+    const userId = normalizeId(assignment?.userId);
+    const replacementDeviations = byReplacement.get(userId);
+    if (!replacementDeviations) return assignment;
+    byReplacement.delete(userId);
+    return { ...assignment, ...replacementSchedule(replacementDeviations) };
+  });
+  const generated = Array.from(byReplacement, ([userId, replacementDeviations]) => {
+    return {
+      userId,
+      role: defaultRole,
+      sourceTeamId: null,
+      ...replacementSchedule(replacementDeviations),
+      note: "",
+      replacementForDeviationIds: replacementDeviations.map((deviation) => deviation.id).sort(),
+    };
+  });
+  return [...scheduledManualAssignments, ...generated];
+}
+
+export function normalizeStoredCrewDeviations(input: unknown): CrewDeviation[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((deviation: any) => ({
+    id: safeString(deviation?.id),
+    userId: normalizeId(deviation?.userId),
+    type: safeString(deviation?.type).toLowerCase() as CrewDeviationType,
+    days: Array.isArray(deviation?.days)
+      ? deviation.days.map((day: unknown) => safeString(day)).filter(Boolean)
+      : [],
+    startTime: safeString(deviation?.startTime) || null,
+    endTime: safeString(deviation?.endTime) || null,
+    global: GLOBAL_CREW_DEVIATION_TYPES.has(
+      safeString(deviation?.type).toLowerCase() as CrewDeviationType,
+    ),
+    note: safeString(deviation?.note),
+    replacementUserId: normalizeId(deviation?.replacementUserId) || null,
+    actorName: safeString(deviation?.actorName),
+    at: deviation?.at instanceof Date && !Number.isNaN(deviation.at.getTime())
+      ? deviation.at.toISOString()
+      : safeString(deviation?.at),
+  }));
+}
+
+function normalizeDeviationTimePair(deviation: any) {
+  const startTime = deviation?.startTime == null || deviation?.startTime === ""
+    ? null
+    : safeString(deviation.startTime);
+  const endTime = deviation?.endTime == null || deviation?.endTime === ""
+    ? null
+    : safeString(deviation.endTime);
+  if ((startTime == null) !== (endTime == null)) {
+    throw new ExecutionCrewRequestError(
+      "Bei einer Abweichung müssen startTime und endTime gemeinsam gesetzt werden.",
+      "INCOMPLETE_DEVIATION_TIME",
+    );
+  }
+  if (startTime && (!TIME_RE.test(startTime) || !TIME_RE.test(endTime!))) {
+    throw new ExecutionCrewRequestError(
+      "Abweichungszeiten müssen das Format HH:mm haben.",
+      "INVALID_DEVIATION_TIME",
+    );
+  }
+  if (startTime && endTime && startTime >= endTime) {
+    throw new ExecutionCrewRequestError(
+      "Bei einer Abweichung muss endTime nach startTime liegen.",
+      "INVALID_DEVIATION_TIME_RANGE",
+    );
+  }
+  return { startTime, endTime };
+}
+
+export async function normalizeAndValidateCrewDeviations(args: {
+  db: Db;
+  companyId: string;
+  input: unknown;
+  scheduledStart: unknown;
+  scheduledEnd: unknown;
+  actorName: string;
+  now?: Date;
+}) {
+  if (!Array.isArray(args.input)) {
+    throw new ExecutionCrewRequestError(
+      "crewDeviations muss ein Array sein.",
+      "INVALID_CREW_DEVIATIONS",
+    );
+  }
+  if (args.input.length === 0) {
+    return { crewDeviations: [] as CrewDeviation[], users: [] as any[] };
+  }
+  const taskStart = dateOnly(args.scheduledStart);
+  const taskEnd = dateOnly(args.scheduledEnd) || taskStart;
+  if (!taskStart || !taskEnd || taskStart > taskEnd) {
+    throw new ExecutionCrewRequestError(
+      "crewDeviations benötigen einen gültigen Termin-Zeitraum.",
+      "INVALID_SCHEDULE_RANGE",
+    );
+  }
+
+  const nowIso = (args.now ?? new Date()).toISOString();
+  const seenKeys = new Set<string>();
+  const allUserIds = new Set<string>();
+  const normalized = args.input.map((deviation: any) => {
+    const id = safeString(deviation?.id);
+    if (!id || id.length > 100) {
+      throw new ExecutionCrewRequestError(
+        "Eine Abweichung benötigt eine gültige stabile ID.",
+        "INVALID_DEVIATION_ID",
+      );
+    }
+    const userId = toObjectIdOrNull(deviation?.userId);
+    if (!userId) {
+      throw new ExecutionCrewRequestError(
+        "Die Mitarbeiter-ID einer Abweichung ist ungültig.",
+        "INVALID_DEVIATION_USER",
+      );
+    }
+    const type = safeString(deviation?.type).toLowerCase() as CrewDeviationType;
+    if (!CREW_DEVIATION_TYPES.includes(type)) {
+      throw new ExecutionCrewRequestError(
+        "Unbekannter Abweichungstyp.",
+        "UNKNOWN_DEVIATION_TYPE",
+      );
+    }
+    const key = `${userId.toString()}:${id}`;
+    if (seenKeys.has(key)) {
+      throw new ExecutionCrewRequestError(
+        "Eine Abweichungs-ID darf pro Mitarbeiter nur einmal vorkommen.",
+        "DUPLICATE_DEVIATION",
+      );
+    }
+    seenKeys.add(key);
+
+    if (!Array.isArray(deviation?.days) || deviation.days.length === 0) {
+      throw new ExecutionCrewRequestError(
+        "Eine Abweichung benötigt mindestens einen Einsatztag.",
+        "INVALID_DEVIATION_DAYS",
+      );
+    }
+    const seenDays = new Set<string>();
+    const days = deviation.days.map((value: unknown) => {
+      const day = validDateOnly(value);
+      if (!day) {
+        throw new ExecutionCrewRequestError(
+          "Abweichungstage müssen gültige ISO-Daten (yyyy-mm-dd) sein.",
+          "INVALID_DEVIATION_DAY",
+        );
+      }
+      if (day < taskStart || day > taskEnd) {
+        throw new ExecutionCrewRequestError(
+          "Ein Abweichungstag liegt ausserhalb des Termin-Zeitraums.",
+          "DEVIATION_DAY_OUTSIDE_SCHEDULE",
+        );
+      }
+      if (seenDays.has(day)) {
+        throw new ExecutionCrewRequestError(
+          "Ein Abweichungstag darf nicht doppelt vorkommen.",
+          "DUPLICATE_DEVIATION_DAY",
+        );
+      }
+      seenDays.add(day);
+      return day;
+    });
+    const { startTime, endTime } = normalizeDeviationTimePair(deviation);
+    const replacementUserId = deviation?.replacementUserId == null || deviation?.replacementUserId === ""
+      ? null
+      : toObjectIdOrNull(deviation.replacementUserId);
+    if (deviation?.replacementUserId != null && deviation?.replacementUserId !== "" && !replacementUserId) {
+      throw new ExecutionCrewRequestError(
+        "Die Ersatzmitarbeiter-ID ist ungültig.",
+        "INVALID_REPLACEMENT_USER",
+      );
+    }
+    if (replacementUserId?.equals(userId)) {
+      throw new ExecutionCrewRequestError(
+        "Mitarbeiter und Ersatzmitarbeiter dürfen nicht identisch sein.",
+        "DEVIATION_REPLACEMENT_SAME_USER",
+      );
+    }
+    const note = safeString(deviation?.note);
+    if (note.length > 1000) {
+      throw new ExecutionCrewRequestError(
+        "Die Notiz einer Abweichung darf höchstens 1000 Zeichen lang sein.",
+        "DEVIATION_NOTE_TOO_LONG",
+      );
+    }
+    const suppliedAt = safeString(deviation?.at);
+    const parsedAt = suppliedAt ? new Date(suppliedAt) : null;
+    if (suppliedAt && (!parsedAt || Number.isNaN(parsedAt.getTime()))) {
+      throw new ExecutionCrewRequestError(
+        "at muss ein gültiger ISO-Zeitstempel sein.",
+        "INVALID_DEVIATION_TIMESTAMP",
+      );
+    }
+    allUserIds.add(userId.toString());
+    if (replacementUserId) allUserIds.add(replacementUserId.toString());
+    return {
+      id,
+      userId: userId.toString(),
+      type,
+      days,
+      startTime,
+      endTime,
+      global: GLOBAL_CREW_DEVIATION_TYPES.has(type),
+      note,
+      replacementUserId: replacementUserId?.toString() || null,
+      actorName: safeString(deviation?.actorName) || args.actorName,
+      at: parsedAt ? parsedAt.toISOString() : nowIso,
+    } satisfies CrewDeviation;
+  });
+
+  const userIds = Array.from(allUserIds);
+  const users = userIds.length ? await getCompanyMembersByIds(args.db, args.companyId, userIds) : [];
+  if (users.length !== userIds.length) {
+    throw new ExecutionCrewRequestError(
+      "Mindestens ein Mitarbeiter oder Ersatzmitarbeiter ist kein aktives Firmenmitglied.",
+      "INVALID_DEVIATION_USER",
+    );
+  }
+  return { crewDeviations: normalized, users };
 }
 
 export function deriveExtraAssignmentDayWindows(
@@ -179,6 +496,14 @@ export async function migrateExecutionExtraAssignmentDayWindows(db: Db) {
     modified += result.modifiedCount;
   }
   return { matched: docs.length, modified };
+}
+
+export async function migrateExecutionCrewDeviations(db: Db) {
+  const result = await db.collection("executionTasks").updateMany(
+    { crewDeviations: { $exists: false } },
+    { $set: { crewDeviations: [] } },
+  );
+  return { matched: result.matchedCount, modified: result.modifiedCount };
 }
 
 export function buildExtraAssignmentDayWindowHistoryTexts(
@@ -396,7 +721,24 @@ export async function normalizeAndValidateAdditionalCrew(args: {
     if (note.length > 1000) {
       throw new ExecutionCrewRequestError("Die Notiz einer Zusatzkraft darf höchstens 1000 Zeichen lang sein.", "EXTRA_ASSIGNMENT_NOTE_TOO_LONG");
     }
-    return { userId, role, sourceTeamId, days, startTime, endTime, dayWindows, note };
+    const replacementForDeviationIds = Array.isArray(assignment?.replacementForDeviationIds)
+      ? Array.from(new Set(
+          assignment.replacementForDeviationIds
+            .map((value: unknown) => safeString(value))
+            .filter(Boolean),
+        ))
+      : undefined;
+    return {
+      userId,
+      role,
+      sourceTeamId,
+      days,
+      startTime,
+      endTime,
+      dayWindows,
+      note,
+      ...(replacementForDeviationIds ? { replacementForDeviationIds } : {}),
+    };
   });
 
   const teamIds = Array.from(new Set([
@@ -447,6 +789,9 @@ export async function normalizeAndValidateAdditionalCrew(args: {
       endTime: assignment.endTime,
       dayWindows: assignment.dayWindows,
       note: assignment.note,
+      ...(assignment.replacementForDeviationIds
+        ? { replacementForDeviationIds: assignment.replacementForDeviationIds }
+        : {}),
     })),
     teams,
     users,
@@ -475,11 +820,19 @@ export function getExecutionUserBooking(task: any, userId: string): ExecutionBoo
   if (!start || !end || start > end) return null;
   const taskStartTime = safeString(task?.startTime) || null;
   const taskEndTime = safeString(task?.endTime) || null;
+  const unavailableWindows = normalizeStoredCrewDeviations(task?.crewDeviations)
+    .filter((deviation) => deviation.userId === userId)
+    .flatMap((deviation) => deviation.days.map((day) => ({
+      day,
+      startTime: deviation.startTime,
+      endTime: deviation.endTime,
+    })));
   return {
     days: assignment?.days ?? assignment?.dayWindows?.map((window) => window.day) ?? enumerateDays(start, end),
     startTime: assignment?.startTime ?? taskStartTime,
     endTime: assignment?.endTime ?? taskEndTime,
     dayWindows: assignment?.dayWindows ?? null,
+    unavailableWindows,
   };
 }
 
@@ -503,6 +856,27 @@ function getBookingWindow(booking: ExecutionBooking, day: string) {
     : { startTime: booking.startTime, endTime: booking.endTime };
 }
 
+function getEffectiveBookingIntervals(booking: ExecutionBooking, day: string) {
+  const window = getBookingWindow(booking, day);
+  const start = timeMinutes(window.startTime) ?? 0;
+  const end = timeMinutes(window.endTime) ?? 24 * 60;
+  let intervals: Array<[number, number]> = [[start, end]];
+  for (const unavailable of booking.unavailableWindows?.filter((item) => item.day === day) ?? []) {
+    const unavailableStart = timeMinutes(unavailable.startTime) ?? 0;
+    const unavailableEnd = timeMinutes(unavailable.endTime) ?? 24 * 60;
+    intervals = intervals.flatMap(([intervalStart, intervalEnd]) => {
+      if (unavailableEnd <= intervalStart || unavailableStart >= intervalEnd) {
+        return [[intervalStart, intervalEnd] as [number, number]];
+      }
+      const remaining: Array<[number, number]> = [];
+      if (unavailableStart > intervalStart) remaining.push([intervalStart, unavailableStart]);
+      if (unavailableEnd < intervalEnd) remaining.push([unavailableEnd, intervalEnd]);
+      return remaining;
+    });
+  }
+  return intervals;
+}
+
 export function getExecutionBookingOverlapDetails(
   left: ExecutionBooking | null,
   right: ExecutionBooking | null,
@@ -512,15 +886,14 @@ export function getExecutionBookingOverlapDetails(
   const overlappingDays = left.days.filter((day) => rightDays.has(day));
   if (!overlappingDays.length) return [];
   return overlappingDays.flatMap((day) => {
-    const leftWindow = getBookingWindow(left, day);
     const rightWindow = getBookingWindow(right, day);
-    const leftStart = timeMinutes(leftWindow.startTime);
-    const leftEnd = timeMinutes(leftWindow.endTime);
-    const rightStart = timeMinutes(rightWindow.startTime);
-    const rightEnd = timeMinutes(rightWindow.endTime);
-    const overlaps =
-      leftStart == null || leftEnd == null || rightStart == null || rightEnd == null ||
-      (leftStart < rightEnd && rightStart < leftEnd);
+    const leftIntervals = getEffectiveBookingIntervals(left, day);
+    const rightIntervals = getEffectiveBookingIntervals(right, day);
+    const overlaps = leftIntervals.some(([leftStart, leftEnd]) =>
+      rightIntervals.some(([rightStart, rightEnd]) =>
+        leftStart < rightEnd && rightStart < leftEnd,
+      ),
+    );
     return overlaps ? [{
       day,
       startTime: rightWindow.startTime,

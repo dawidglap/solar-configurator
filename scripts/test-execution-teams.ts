@@ -325,6 +325,58 @@ async function main() {
       (conflict: any) => conflict.projectName === "Teilzeit-Konflikt",
     ), true);
 
+    const deviationPayload = [{
+      id: "dev_integration_1",
+      userId: memberB.toString(),
+      type: "krank",
+      days: ["2026-08-10"],
+      startTime: null,
+      endTime: null,
+      global: true,
+      note: "Integrationstest",
+      replacementUserId: null,
+      actorName: "Team Tester",
+      at: "2026-08-13T11:34:00.000Z",
+    }];
+    const deviationPatch = await responseJson(await patchExecutionTask(
+      new Request(`http://localhost/api/execution-tasks/${taskId}?validate=1`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", cookie },
+        body: JSON.stringify({ crewDeviations: deviationPayload }),
+      }),
+      { params: Promise.resolve({ taskId: taskId.toString() }) },
+    ));
+    assert.deepEqual(deviationPatch.item.crewDeviations, deviationPayload);
+    assert.equal(deviationPatch.conflicts.some(
+      (conflict: any) => conflict.type === "task" && conflict.userId === memberB.toString(),
+    ), false);
+    assert.equal(deviationPatch.conflicts.some(
+      (conflict: any) => conflict.type === "absence" && conflict.userId === memberB.toString(),
+    ), false);
+    const linkedAbsence = await db.collection("absences").findOne({
+      sourceTaskId: taskId,
+      sourceDeviationId: "dev_integration_1",
+    });
+    assert.ok(linkedAbsence);
+    assert.equal(linkedAbsence.reason, "krankheit");
+    const deviationRoundTrip = await responseJson(await getExecutionTask(
+      new Request(`http://localhost/api/execution-tasks/${taskId}`, { headers: { cookie } }),
+      { params: Promise.resolve({ taskId: taskId.toString() }) },
+    ));
+    assert.deepEqual(deviationRoundTrip.item.crewDeviations, deviationPayload);
+    await responseJson(await patchExecutionTask(
+      new Request(`http://localhost/api/execution-tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", cookie },
+        body: JSON.stringify({ crewDeviations: [] }),
+      }),
+      { params: Promise.resolve({ taskId: taskId.toString() }) },
+    ));
+    assert.equal(await db.collection("absences").countDocuments({
+      sourceTaskId: taskId,
+      sourceDeviationId: "dev_integration_1",
+    }), 0);
+
     const invalidDay = await patchExecutionTask(
       new Request(`http://localhost/api/execution-tasks/${taskId}`, {
         method: "PATCH",
@@ -363,6 +415,12 @@ async function main() {
     ), true);
     assert.equal(taskWithCrewHistory?.scheduleHistory?.some(
       (entry: any) => entry.type === "extra_assignment_changed" && entry.action === "day_window_updated" && entry.text.includes("11.08.2026 auf 07:00–11:00"),
+    ), true);
+    assert.equal(taskWithCrewHistory?.scheduleHistory?.some(
+      (entry: any) => entry.type === "deviation_added" && entry.deviationId === "dev_integration_1",
+    ), true);
+    assert.equal(taskWithCrewHistory?.scheduleHistory?.some(
+      (entry: any) => entry.type === "deviation_removed" && entry.deviationId === "dev_integration_1",
     ), true);
     assert.equal(
       taskWithHistory?.scheduleHistory?.some(
@@ -427,6 +485,7 @@ async function main() {
     await Promise.all([
       db.collection("teams").deleteMany({ companyId }),
       db.collection("executionTasks").deleteMany({ _id: { $in: [taskId, conflictingTaskId, partialConflictTaskId] } }),
+      db.collection("absences").deleteMany({ sourceTaskId: taskId }),
       db.collection("users").deleteMany({ _id: { $in: [actorId, memberA, memberB, replacement, additionalMemberA, additionalMemberB, extraWorker] } }),
       db.collection("companies").deleteOne({ _id: companyId }),
     ]).catch(() => {});

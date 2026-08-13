@@ -1,5 +1,7 @@
-import type { Db } from "mongodb";
+import { ObjectId, type Db } from "mongodb";
 import { mongoIdToString, safeString, toObjectIdOrNull } from "@/lib/api-session";
+import { buildIdVariants } from "@/lib/tasks";
+import type { CrewDeviation } from "@/lib/executionCrew";
 
 export const ABSENCE_REASONS = [
   "krankheit",
@@ -46,6 +48,7 @@ export async function ensureAbsenceIndexes(db: Db) {
   const pending = Promise.all([
     absences.createIndex({ companyId: 1, userId: 1, startDate: 1 }),
     absences.createIndex({ companyId: 1, startDate: 1 }),
+    absences.createIndex({ companyId: 1, sourceTaskId: 1, sourceDeviationId: 1, userId: 1 }),
   ])
     .then(() => undefined)
     .catch((error) => {
@@ -184,7 +187,88 @@ export function serializeAbsence(doc: any) {
     reason: normalizeAbsenceReason(doc?.reason) || safeString(doc?.reason).toLowerCase(),
     note: safeString(doc?.note),
     sourceTaskId: mongoIdToString(doc?.sourceTaskId) || null,
+    ...(safeString(doc?.sourceDeviationId)
+      ? { sourceDeviationId: safeString(doc.sourceDeviationId) }
+      : {}),
   };
+}
+
+function crewDeviationAbsenceReason(type: CrewDeviation["type"]): AbsenceReason {
+  if (type === "krank" || type === "unfall") return "krankheit";
+  if (type === "ferien") return "ferien";
+  return "anderes";
+}
+
+export async function syncCrewDeviationAbsences(args: {
+  db: Db;
+  companyId: string;
+  taskId: string;
+  crewDeviations: CrewDeviation[];
+  actorUserId?: string | null;
+}) {
+  await ensureAbsenceIndexes(args.db);
+  const companyId = toObjectIdOrNull(args.companyId);
+  const taskId = toObjectIdOrNull(args.taskId);
+  if (!companyId || !taskId) {
+    throw new AbsenceRequestError(
+      "Abweichungs-Abwesenheiten konnten nicht zugeordnet werden.",
+      "INVALID_DEVIATION_ABSENCE_SCOPE",
+    );
+  }
+  const actorUserId = toObjectIdOrNull(args.actorUserId);
+  const collection = getAbsencesCollection(args.db);
+  const desired = args.crewDeviations.filter((deviation) => deviation.global);
+  const desiredKeys = new Set(desired.map((deviation) => `${deviation.userId}:${deviation.id}`));
+  const scope = {
+    companyId: { $in: buildIdVariants(args.companyId) },
+    sourceTaskId: { $in: buildIdVariants(args.taskId) },
+    sourceDeviationId: { $exists: true },
+  };
+
+  const existing = await collection.find(
+    scope,
+    { projection: { _id: 1, sourceDeviationId: 1, userId: 1 } },
+  ).toArray();
+  const staleIds = existing
+    .filter((absence) => !desiredKeys.has(
+      `${mongoIdToString(absence?.userId)}:${safeString(absence?.sourceDeviationId)}`,
+    ))
+    .map((absence) => absence._id);
+  if (staleIds.length) await collection.deleteMany({ _id: { $in: staleIds } });
+
+  const now = new Date();
+  for (const deviation of desired) {
+    const days = [...deviation.days].sort();
+    await collection.updateOne(
+      {
+        companyId: { $in: buildIdVariants(args.companyId) },
+        sourceTaskId: { $in: buildIdVariants(args.taskId) },
+        sourceDeviationId: deviation.id,
+        userId: { $in: buildIdVariants(deviation.userId) },
+      },
+      {
+        $set: {
+          companyId,
+          userId: new ObjectId(deviation.userId),
+          startDate: days[0],
+          endDate: days.at(-1),
+          startTime: deviation.startTime,
+          endTime: deviation.endTime,
+          reason: crewDeviationAbsenceReason(deviation.type),
+          note: deviation.note,
+          sourceTaskId: taskId,
+          sourceDeviationId: deviation.id,
+          updatedAt: now,
+        },
+        $setOnInsert: {
+          createdAt: now,
+          createdByUserId: actorUserId,
+        },
+      },
+      { upsert: true },
+    );
+  }
+  return { upserted: desired.length, removed: staleIds.length };
 }
 
 export function buildAbsenceOverlapFilter(from: string, to: string) {

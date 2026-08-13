@@ -8,7 +8,9 @@ import {
   normalizeAbsenceInput,
   parseAbsenceDate,
   serializeAbsence,
+  syncCrewDeviationAbsences,
 } from "../src/lib/absences";
+import { normalizeStoredCrewDeviations } from "../src/lib/executionCrew";
 import { getExecutionBookingOverlap, getExecutionUserBooking } from "../src/lib/executionCrew";
 
 const userId = new ObjectId();
@@ -121,4 +123,75 @@ test("builds a company-wide inclusive date-overlap filter", () => {
   });
   assert.equal(parseAbsenceDate("2026-08-10"), "2026-08-10");
   assert.equal(parseAbsenceDate("10.08.2026"), null);
+});
+
+test("global crew deviations idempotently create, update and remove linked absences", async () => {
+  const companyId = new ObjectId();
+  const taskId = new ObjectId();
+  const docs: any[] = [];
+  const collection = {
+    createIndex: async () => "ok",
+    find: () => ({ toArray: async () => [...docs] }),
+    deleteMany: async (filter: any) => {
+      const ids = new Set((filter?._id?.$in ?? []).map((id: ObjectId) => id.toString()));
+      let removed = 0;
+      for (let index = docs.length - 1; index >= 0; index -= 1) {
+        if (ids.has(docs[index]._id.toString())) {
+          docs.splice(index, 1);
+          removed += 1;
+        }
+      }
+      return { deletedCount: removed };
+    },
+    updateOne: async (filter: any, update: any) => {
+      let doc = docs.find((item) => item.sourceDeviationId === filter.sourceDeviationId);
+      if (!doc) {
+        doc = { _id: new ObjectId(), ...update.$setOnInsert };
+        docs.push(doc);
+      }
+      Object.assign(doc, update.$set);
+      return { matchedCount: 1, modifiedCount: 1 };
+    },
+  };
+  const db = { collection: (name: string) => {
+    assert.equal(name, "absences");
+    return collection;
+  } } as any;
+  const deviation = normalizeStoredCrewDeviations([{
+    id: "dev_global",
+    userId,
+    type: "unfall",
+    days: ["2026-08-28", "2026-08-27"],
+    startTime: null,
+    endTime: null,
+    note: "Test",
+  }]);
+
+  await syncCrewDeviationAbsences({
+    db,
+    companyId: companyId.toString(),
+    taskId: taskId.toString(),
+    crewDeviations: deviation,
+    actorUserId: userId.toString(),
+  });
+  await syncCrewDeviationAbsences({
+    db,
+    companyId: companyId.toString(),
+    taskId: taskId.toString(),
+    crewDeviations: deviation,
+    actorUserId: userId.toString(),
+  });
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].reason, "krankheit");
+  assert.equal(docs[0].startDate, "2026-08-27");
+  assert.equal(docs[0].endDate, "2026-08-28");
+  assert.equal(docs[0].sourceDeviationId, "dev_global");
+
+  await syncCrewDeviationAbsences({
+    db,
+    companyId: companyId.toString(),
+    taskId: taskId.toString(),
+    crewDeviations: [],
+  });
+  assert.equal(docs.length, 0);
 });
