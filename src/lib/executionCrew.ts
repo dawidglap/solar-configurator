@@ -17,7 +17,21 @@ export type ExtraAssignment = {
   days: string[] | null;
   startTime: string | null;
   endTime: string | null;
+  dayWindows: ExtraAssignmentDayWindow[] | null;
   note: string;
+};
+
+export type ExtraAssignmentDayWindow = {
+  day: string;
+  startTime: string | null;
+  endTime: string | null;
+};
+
+export type ExecutionBooking = {
+  days: string[];
+  startTime: string | null;
+  endTime: string | null;
+  dayWindows?: ExtraAssignmentDayWindow[] | null;
 };
 
 export type ExecutionCrewConflict = {
@@ -25,6 +39,7 @@ export type ExecutionCrewConflict = {
   userId: string;
   conflictingTaskId: string;
   projectName: string;
+  day: string;
   days: string[];
   startTime: string | null;
   endTime: string | null;
@@ -35,6 +50,7 @@ export type ExecutionCrewConflict = {
   reason: string;
   startDate: string;
   endDate: string;
+  day: string;
   days: string[];
   startTime: string | null;
   endTime: string | null;
@@ -105,8 +121,85 @@ export function normalizeStoredExtraAssignments(input: unknown): ExtraAssignment
       : null,
     startTime: safeString(assignment?.startTime) || null,
     endTime: safeString(assignment?.endTime) || null,
+    dayWindows: Array.isArray(assignment?.dayWindows)
+      ? assignment.dayWindows.map((window: any) => ({
+          day: safeString(window?.day),
+          startTime: safeString(window?.startTime) || null,
+          endTime: safeString(window?.endTime) || null,
+        }))
+      : null,
     note: safeString(assignment?.note),
   }));
+}
+
+export function deriveExtraAssignmentDayWindows(
+  assignment: any,
+  scheduledStart: unknown,
+  scheduledEnd: unknown,
+): ExtraAssignmentDayWindow[] {
+  const taskStart = dateOnly(scheduledStart);
+  const taskEnd = dateOnly(scheduledEnd) || taskStart;
+  if (!taskStart || !taskEnd || taskStart > taskEnd) return [];
+  const assignmentDays: string[] = Array.isArray(assignment?.days)
+    ? (assignment.days as unknown[]).map(validDateOnly).filter((day): day is string => !!day)
+    : enumerateDays(taskStart, taskEnd);
+  const rawStartTime = safeString(assignment?.startTime);
+  const rawEndTime = safeString(assignment?.endTime);
+  const hasValidWindow =
+    TIME_RE.test(rawStartTime) && TIME_RE.test(rawEndTime) && rawStartTime < rawEndTime;
+  return Array.from(new Set(assignmentDays)).map((day) => ({
+    day,
+    startTime: hasValidWindow ? rawStartTime : null,
+    endTime: hasValidWindow ? rawEndTime : null,
+  }));
+}
+
+export async function migrateExecutionExtraAssignmentDayWindows(db: Db) {
+  const tasks = db.collection("executionTasks");
+  const docs = await tasks.find({
+    extraAssignments: { $elemMatch: { dayWindows: { $exists: false } } },
+  }).toArray();
+  let modified = 0;
+  for (const task of docs) {
+    const extraAssignments = (Array.isArray(task?.extraAssignments) ? task.extraAssignments : [])
+      .map((assignment: any) => Object.prototype.hasOwnProperty.call(assignment, "dayWindows")
+        ? assignment
+        : {
+            ...assignment,
+            dayWindows: deriveExtraAssignmentDayWindows(
+              assignment,
+              task?.scheduledStart,
+              task?.scheduledEnd,
+            ),
+          });
+    const result = await tasks.updateOne(
+      { _id: task._id, extraAssignments: { $elemMatch: { dayWindows: { $exists: false } } } },
+      { $set: { extraAssignments, updatedAt: new Date() } },
+    );
+    modified += result.modifiedCount;
+  }
+  return { matched: docs.length, modified };
+}
+
+export function buildExtraAssignmentDayWindowHistoryTexts(
+  previous: ExtraAssignment | null,
+  next: ExtraAssignment,
+  userName: string,
+) {
+  const previousByDay = new Map((previous?.dayWindows ?? []).map((window) => [window.day, window]));
+  const nextByDay = new Map((next.dayWindows ?? []).map((window) => [window.day, window]));
+  const days = Array.from(new Set([...previousByDay.keys(), ...nextByDay.keys()])).sort();
+  return days.flatMap((day) => {
+    const before = previousByDay.get(day);
+    const after = nextByDay.get(day);
+    if (JSON.stringify(before) === JSON.stringify(after)) return [];
+    const displayDay = day.split("-").reverse().join(".");
+    if (!after) return [`Zusatzkraft ${userName}: ${displayDay} Tagesfenster entfernt`];
+    const timeText = after.startTime && after.endTime
+      ? `${after.startTime}–${after.endTime}`
+      : "ganztags";
+    return [`Zusatzkraft ${userName}: ${displayDay} auf ${timeText} geändert`];
+  });
 }
 
 function normalizeTeamIdArray(input: unknown, mainTeamId: string | null) {
@@ -149,6 +242,34 @@ function normalizeAssignmentTimePair(assignment: any) {
   }
   if (startTime && endTime && startTime >= endTime) {
     throw new ExecutionCrewRequestError("endTime muss nach startTime liegen.", "INVALID_EXTRA_ASSIGNMENT_TIME_RANGE");
+  }
+  return { startTime, endTime };
+}
+
+function normalizeDayWindowTimePair(window: any) {
+  const startTime = window?.startTime == null || window?.startTime === ""
+    ? null
+    : safeString(window.startTime);
+  const endTime = window?.endTime == null || window?.endTime === ""
+    ? null
+    : safeString(window.endTime);
+  if ((startTime == null) !== (endTime == null)) {
+    throw new ExecutionCrewRequestError(
+      "Bei einem Tagesfenster müssen startTime und endTime gemeinsam gesetzt oder beide null sein.",
+      "INCOMPLETE_EXTRA_ASSIGNMENT_DAY_WINDOW_TIME",
+    );
+  }
+  if (startTime && (!TIME_RE.test(startTime) || !TIME_RE.test(endTime!))) {
+    throw new ExecutionCrewRequestError(
+      "Tagesfenster müssen das Format HH:mm haben.",
+      "INVALID_EXTRA_ASSIGNMENT_DAY_WINDOW_TIME",
+    );
+  }
+  if (startTime && endTime && startTime >= endTime) {
+    throw new ExecutionCrewRequestError(
+      "Im Tagesfenster muss endTime nach startTime liegen.",
+      "INVALID_EXTRA_ASSIGNMENT_DAY_WINDOW_RANGE",
+    );
   }
   return { startTime, endTime };
 }
@@ -220,18 +341,62 @@ export async function normalizeAndValidateAdditionalCrew(args: {
         if (!taskStart || !taskEnd || day < taskStart || day > taskEnd) {
           throw new ExecutionCrewRequestError("Ein Zusatzkraft-Tag liegt ausserhalb des Termin-Zeitraums.", "EXTRA_ASSIGNMENT_DAY_OUTSIDE_SCHEDULE");
         }
-        if (!seenDays.has(day)) {
-          seenDays.add(day);
-          days.push(day);
+        if (seenDays.has(day)) {
+          throw new ExecutionCrewRequestError(
+            "Ein Zusatzkraft-Tag darf nicht doppelt vorkommen.",
+            "DUPLICATE_EXTRA_ASSIGNMENT_DAY",
+          );
         }
+        seenDays.add(day);
+        days.push(day);
       }
     }
     const { startTime, endTime } = normalizeAssignmentTimePair(assignment);
+    let dayWindows: ExtraAssignmentDayWindow[] | null = null;
+    if (assignment?.dayWindows !== null && assignment?.dayWindows !== undefined) {
+      if (!Array.isArray(assignment.dayWindows) || assignment.dayWindows.length === 0) {
+        throw new ExecutionCrewRequestError(
+          "dayWindows muss null oder eine nicht leere Liste sein.",
+          "INVALID_EXTRA_ASSIGNMENT_DAY_WINDOWS",
+        );
+      }
+      const seenWindowDays = new Set<string>();
+      dayWindows = assignment.dayWindows.map((window: any) => {
+        const day = validDateOnly(window?.day);
+        if (!day) {
+          throw new ExecutionCrewRequestError(
+            "Tagesfenster-Tage müssen gültige ISO-Daten (yyyy-mm-dd) sein.",
+            "INVALID_EXTRA_ASSIGNMENT_DAY_WINDOW_DAY",
+          );
+        }
+        if (!taskStart || !taskEnd || day < taskStart || day > taskEnd) {
+          throw new ExecutionCrewRequestError(
+            "Ein Tagesfenster liegt ausserhalb des Termin-Zeitraums.",
+            "EXTRA_ASSIGNMENT_DAY_WINDOW_OUTSIDE_SCHEDULE",
+          );
+        }
+        if (seenWindowDays.has(day)) {
+          throw new ExecutionCrewRequestError(
+            "Ein Tag darf in dayWindows pro Zusatzkraft nur einmal vorkommen.",
+            "DUPLICATE_EXTRA_ASSIGNMENT_DAY_WINDOW",
+          );
+        }
+        if (days && !days.includes(day)) {
+          throw new ExecutionCrewRequestError(
+            "Ein Tagesfenster muss in days enthalten sein.",
+            "EXTRA_ASSIGNMENT_DAY_WINDOW_NOT_IN_DAYS",
+          );
+        }
+        seenWindowDays.add(day);
+        return { day, ...normalizeDayWindowTimePair(window) };
+      });
+      if (!days) days = dayWindows!.map((window) => window.day);
+    }
     const note = safeString(assignment?.note);
     if (note.length > 1000) {
       throw new ExecutionCrewRequestError("Die Notiz einer Zusatzkraft darf höchstens 1000 Zeichen lang sein.", "EXTRA_ASSIGNMENT_NOTE_TOO_LONG");
     }
-    return { userId, role, sourceTeamId, days, startTime, endTime, note };
+    return { userId, role, sourceTeamId, days, startTime, endTime, dayWindows, note };
   });
 
   const teamIds = Array.from(new Set([
@@ -280,6 +445,7 @@ export async function normalizeAndValidateAdditionalCrew(args: {
       days: assignment.days,
       startTime: assignment.startTime,
       endTime: assignment.endTime,
+      dayWindows: assignment.dayWindows,
       note: assignment.note,
     })),
     teams,
@@ -301,16 +467,19 @@ export function deriveExecutionCrewUserIds(args: {
   ].filter(Boolean)));
 }
 
-export function getExecutionUserBooking(task: any, userId: string) {
+export function getExecutionUserBooking(task: any, userId: string): ExecutionBooking | null {
   const assignment = normalizeStoredExtraAssignments(task?.extraAssignments)
     .find((item) => item.userId === userId);
   const start = dateOnly(task?.scheduledStart);
   const end = dateOnly(task?.scheduledEnd) || start;
   if (!start || !end || start > end) return null;
+  const taskStartTime = safeString(task?.startTime) || null;
+  const taskEndTime = safeString(task?.endTime) || null;
   return {
-    days: assignment?.days ?? enumerateDays(start, end),
-    startTime: assignment ? assignment.startTime : safeString(task?.startTime) || null,
-    endTime: assignment ? assignment.endTime : safeString(task?.endTime) || null,
+    days: assignment?.days ?? assignment?.dayWindows?.map((window) => window.day) ?? enumerateDays(start, end),
+    startTime: assignment?.startTime ?? taskStartTime,
+    endTime: assignment?.endTime ?? taskEndTime,
+    dayWindows: assignment?.dayWindows ?? null,
   };
 }
 
@@ -321,19 +490,43 @@ function timeMinutes(value: string | null) {
 }
 
 export function getExecutionBookingOverlap(
-  left: ReturnType<typeof getExecutionUserBooking>,
-  right: ReturnType<typeof getExecutionUserBooking>,
+  left: ExecutionBooking | null,
+  right: ExecutionBooking | null,
+) {
+  return getExecutionBookingOverlapDetails(left, right).map((overlap) => overlap.day);
+}
+
+function getBookingWindow(booking: ExecutionBooking, day: string) {
+  const dayWindow = booking.dayWindows?.find((window) => window.day === day);
+  return dayWindow
+    ? { startTime: dayWindow.startTime, endTime: dayWindow.endTime }
+    : { startTime: booking.startTime, endTime: booking.endTime };
+}
+
+export function getExecutionBookingOverlapDetails(
+  left: ExecutionBooking | null,
+  right: ExecutionBooking | null,
 ) {
   if (!left || !right) return [];
   const rightDays = new Set(right.days);
   const overlappingDays = left.days.filter((day) => rightDays.has(day));
   if (!overlappingDays.length) return [];
-  const leftStart = timeMinutes(left.startTime);
-  const leftEnd = timeMinutes(left.endTime);
-  const rightStart = timeMinutes(right.startTime);
-  const rightEnd = timeMinutes(right.endTime);
-  if (leftStart == null || leftEnd == null || rightStart == null || rightEnd == null) return overlappingDays;
-  return leftStart < rightEnd && rightStart < leftEnd ? overlappingDays : [];
+  return overlappingDays.flatMap((day) => {
+    const leftWindow = getBookingWindow(left, day);
+    const rightWindow = getBookingWindow(right, day);
+    const leftStart = timeMinutes(leftWindow.startTime);
+    const leftEnd = timeMinutes(leftWindow.endTime);
+    const rightStart = timeMinutes(rightWindow.startTime);
+    const rightEnd = timeMinutes(rightWindow.endTime);
+    const overlaps =
+      leftStart == null || leftEnd == null || rightStart == null || rightEnd == null ||
+      (leftStart < rightEnd && rightStart < leftEnd);
+    return overlaps ? [{
+      day,
+      startTime: rightWindow.startTime,
+      endTime: rightWindow.endTime,
+    }] : [];
+  });
 }
 
 export async function findExecutionCrewConflicts(args: {
@@ -391,24 +584,28 @@ export async function findExecutionCrewConflicts(args: {
     for (const userId of userIds) {
       if (!candidateUsers.has(userId)) continue;
       const candidateBooking = getExecutionUserBooking(candidate, userId);
-      const days = getExecutionBookingOverlap(bookings.get(userId) ?? null, candidateBooking);
-      if (!days.length) continue;
+      const overlaps = getExecutionBookingOverlapDetails(bookings.get(userId) ?? null, candidateBooking);
+      if (!overlaps.length) continue;
       const planning = planningById.get(normalizeId(candidate?.planningId));
-      conflicts.push({
-        type: "task",
-        userId,
-        conflictingTaskId: normalizeId(candidate?._id),
-        projectName:
-          safeString(candidate?.planningTitle) ||
-          safeString(planning?.title) ||
-          safeString(planning?.summary?.customerName) ||
-          safeString(planning?.planningNumber) ||
-          safeString(candidate?.projectNumber) ||
-          "Unbekanntes Projekt",
-        days,
-        startTime: candidateBooking?.startTime ?? null,
-        endTime: candidateBooking?.endTime ?? null,
-      });
+      const projectName =
+        safeString(candidate?.planningTitle) ||
+        safeString(planning?.title) ||
+        safeString(planning?.summary?.customerName) ||
+        safeString(planning?.planningNumber) ||
+        safeString(candidate?.projectNumber) ||
+        "Unbekanntes Projekt";
+      for (const overlap of overlaps) {
+        conflicts.push({
+          type: "task",
+          userId,
+          conflictingTaskId: normalizeId(candidate?._id),
+          projectName,
+          day: overlap.day,
+          days: [overlap.day],
+          startTime: overlap.startTime,
+          endTime: overlap.endTime,
+        });
+      }
     }
   }
   for (const absence of absences) {
@@ -416,19 +613,21 @@ export async function findExecutionCrewConflicts(args: {
     const requestedBooking = bookings.get(userId) ?? null;
     if (!requestedBooking) continue;
     const absenceBooking = getAbsenceBooking(absence);
-    const days = getExecutionBookingOverlap(requestedBooking, absenceBooking);
-    if (!days.length) continue;
-    conflicts.push({
-      type: "absence",
-      userId,
-      absenceId: normalizeId(absence?._id),
-      reason: safeString(absence?.reason).toLowerCase(),
-      startDate: safeString(absence?.startDate),
-      endDate: safeString(absence?.endDate),
-      days,
-      startTime: absenceBooking?.startTime ?? null,
-      endTime: absenceBooking?.endTime ?? null,
-    });
+    const overlaps = getExecutionBookingOverlapDetails(requestedBooking, absenceBooking);
+    for (const overlap of overlaps) {
+      conflicts.push({
+        type: "absence",
+        userId,
+        absenceId: normalizeId(absence?._id),
+        reason: safeString(absence?.reason).toLowerCase(),
+        startDate: safeString(absence?.startDate),
+        endDate: safeString(absence?.endDate),
+        day: overlap.day,
+        days: [overlap.day],
+        startTime: overlap.startTime,
+        endTime: overlap.endTime,
+      });
+    }
   }
   return conflicts;
 }

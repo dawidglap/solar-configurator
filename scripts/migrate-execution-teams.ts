@@ -2,6 +2,7 @@ import "dotenv/config";
 import { getMongoClient } from "@/lib/db";
 import { ensureExecutionTaskIndexes, getExecutionTasksCollection } from "@/lib/executionTasks";
 import { ensureTeamIndexes } from "@/lib/teams";
+import { migrateExecutionExtraAssignmentDayWindows } from "@/lib/executionCrew";
 
 async function main() {
   const client = await getMongoClient();
@@ -15,6 +16,7 @@ async function main() {
       tasks.updateMany({ additionalTeamIds: { $exists: false } }, { $set: { additionalTeamIds: [] } }),
       tasks.updateMany({ extraAssignments: { $exists: false } }, { $set: { extraAssignments: [] } }),
     ]);
+    const dayWindowsResult = await migrateExecutionExtraAssignmentDayWindows(db);
 
     console.log(
       JSON.stringify(
@@ -24,6 +26,7 @@ async function main() {
           teamOverridesBackfilled: overridesResult.modifiedCount,
           additionalTeamIdsBackfilled: additionalTeamsResult.modifiedCount,
           extraAssignmentsBackfilled: extraAssignmentsResult.modifiedCount,
+          extraAssignmentDayWindowsBackfilled: dayWindowsResult.modified,
         },
         null,
         2,

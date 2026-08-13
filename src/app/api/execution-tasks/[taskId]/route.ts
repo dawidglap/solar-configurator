@@ -30,6 +30,7 @@ import {
   TeamRequestError,
 } from "@/lib/teams";
 import {
+  buildExtraAssignmentDayWindowHistoryTexts,
   deriveExecutionCrewUserIds,
   ExecutionCrewRequestError,
   findExecutionCrewConflicts,
@@ -471,14 +472,32 @@ export async function PATCH(req: Request, { params }: Params) {
       for (const [userId, assignment] of newExtraByUser) {
         const previous = oldExtraByUser.get(userId);
         if (!previous || JSON.stringify(previous) !== JSON.stringify(assignment)) {
+          const userName = userNameById.get(userId) || userId;
+          const dayWindowTexts = buildExtraAssignmentDayWindowHistoryTexts(
+            previous ?? null,
+            assignment,
+            userName,
+          );
+          for (const text of dayWindowTexts) {
+            teamHistoryEntries.push({
+              ...historyBase,
+              type: "extra_assignment_changed",
+              action: "day_window_updated",
+              userId: new ObjectId(userId),
+              text,
+              reason: text,
+            });
+          }
           const dayText = assignment.days?.length
             ? assignment.days.map((day) => day.split("-").reverse().join(".")).join(", ")
             : "gesamten Termin";
-          const timeText = assignment.startTime && assignment.endTime
-            ? ` ${assignment.startTime}–${assignment.endTime}`
-            : " ganztags";
+          const timeText = assignment.dayWindows?.length
+            ? " mit individuellen Tagesfenstern"
+            : assignment.startTime && assignment.endTime
+              ? ` ${assignment.startTime}–${assignment.endTime}`
+              : " ganztags";
           const action = previous ? "updated" : "added";
-          const text = `Zusatzkraft ${userNameById.get(userId) || userId} am ${dayText}${timeText} ${previous ? "geändert" : "hinzugefügt"}`;
+          const text = `Zusatzkraft ${userName} am ${dayText}${timeText} ${previous ? "geändert" : "hinzugefügt"}`;
           teamHistoryEntries.push({ ...historyBase, type: "extra_assignment_changed", action, userId: new ObjectId(userId), text, reason: text });
         }
       }

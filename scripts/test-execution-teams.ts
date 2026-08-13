@@ -261,8 +261,13 @@ async function main() {
               role: "monteur",
               sourceTeamId: null,
               days: ["2026-08-11"],
-              startTime: "07:00",
-              endTime: "11:00",
+              startTime: null,
+              endTime: null,
+              dayWindows: [{
+                day: "2026-08-11",
+                startTime: "07:00",
+                endTime: "11:00",
+              }],
               note: "Nur Vormittag",
             }],
             assignedUserIds: [],
@@ -284,14 +289,22 @@ async function main() {
       role: "monteur",
       sourceTeamId: null,
       days: ["2026-08-11"],
-      startTime: "07:00",
-      endTime: "11:00",
+      startTime: null,
+      endTime: null,
+      dayWindows: [{
+        day: "2026-08-11",
+        startTime: "07:00",
+        endTime: "11:00",
+      }],
       note: "Nur Vormittag",
     }]);
     const partialConflict = crewPatch.conflicts.find(
       (conflict: any) => conflict.conflictingTaskId === partialConflictTaskId.toString(),
     );
     assert.ok(partialConflict);
+    assert.equal(partialConflict.day, "2026-08-11");
+    assert.equal(partialConflict.startTime, "10:30");
+    assert.equal(partialConflict.endTime, "12:00");
     assert.deepEqual(partialConflict.days, ["2026-08-11"]);
 
     const roundTrip = await responseJson(await getExecutionTask(
@@ -347,6 +360,9 @@ async function main() {
     ), true);
     assert.equal(taskWithCrewHistory?.scheduleHistory?.some(
       (entry: any) => entry.type === "extra_assignment_changed" && entry.action === "added" && entry.text.includes("Lena Koch"),
+    ), true);
+    assert.equal(taskWithCrewHistory?.scheduleHistory?.some(
+      (entry: any) => entry.type === "extra_assignment_changed" && entry.action === "day_window_updated" && entry.text.includes("11.08.2026 auf 07:00–11:00"),
     ), true);
     assert.equal(
       taskWithHistory?.scheduleHistory?.some(

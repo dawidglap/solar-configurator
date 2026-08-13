@@ -39,6 +39,7 @@
     "migrate:montages-to-execution-tasks": "npx tsx scripts/migrate-montages-to-execution-tasks.ts",
     "migrate:swiss-qr-bill": "tsx scripts/migrate-swiss-qr-bill.ts",
     "migrate:execution-teams": "tsx scripts/migrate-execution-teams.ts",
+    "migrate:execution-day-windows": "tsx scripts/migrate-execution-day-windows.ts",
     "migrate:order-signatures": "tsx scripts/migrate-order-signatures.ts",
     "migrate:offer-signatures": "tsx scripts/migrate-offer-signatures.ts",
     "seed:demo-company-teams": "tsx scripts/cleanup-seed-demo-company-teams.ts",
