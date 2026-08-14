@@ -182,10 +182,9 @@ test("normalizes and validates the optional payout IBAN", async () => {
   );
 });
 
-test("validates required Vollmacht fields and normalizes the IBAN without hard validation", async () => {
-  const { parseOfferVollmachtDetails } = await loadOffer();
-  assert.deepEqual(
-    parseOfferVollmachtDetails({
+test("validates required Vollmacht and signature fields without hard IBAN validation", async () => {
+  const { DEFAULT_VOLLMACHT_SIGNATURE_METHOD, parseOfferVollmachtDetails } = await loadOffer();
+  const parsed = parseOfferVollmachtDetails({
       propertyStreet: " Schachenstrasse 4 ",
       propertyZip: " 9430 ",
       propertyCity: " St. Margrethen ",
@@ -193,7 +192,16 @@ test("validates required Vollmacht fields and normalizes the IBAN without hard v
       landRegisterNumber: " 4567 ",
       bankAccountHolder: " Max Muster ",
       bankIban: "ch93 0076 2011 6238 5295 7",
-    }),
+      ownerFirstName: " Dawid ",
+      ownerLastName: " Glapiak ",
+      signerName: "Ignored Customer Name",
+      signaturePlace: " St. Margrethen ",
+      signatureDate: "2026-08-14",
+      signatureImage: `data:image/png;base64,${TRANSPARENT_PNG}`,
+    });
+  const { signaturePng, ...serialized } = parsed;
+  assert.deepEqual(
+    serialized,
     {
       propertyStreet: "Schachenstrasse 4",
       propertyZip: "9430",
@@ -202,8 +210,18 @@ test("validates required Vollmacht fields and normalizes the IBAN without hard v
       landRegisterNumber: "4567",
       bankAccountHolder: "Max Muster",
       bankIban: "CH9300762011623852957",
+      ownerFirstName: "Dawid",
+      ownerLastName: "Glapiak",
+      signerFirstName: null,
+      signerLastName: null,
+      signerName: "Dawid Glapiak",
+      signaturePlace: "St. Margrethen",
+      signatureDate: "2026-08-14",
+      signatureImage: `data:image/png;base64,${TRANSPARENT_PNG}`,
+      signatureMethod: DEFAULT_VOLLMACHT_SIGNATURE_METHOD,
     },
   );
+  assert.equal(signaturePng.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
   assert.equal(
     parseOfferVollmachtDetails({
       propertyStreet: "Schachenstrasse",
@@ -211,6 +229,10 @@ test("validates required Vollmacht fields and normalizes the IBAN without hard v
       propertyCity: "St. Margrethen",
       bankAccountHolder: "Max Muster",
       bankIban: "DE89370400440532013000",
+      signerName: "Dawid Glapiak",
+      signaturePlace: "St. Margrethen",
+      signatureDate: "2026-08-14",
+      signatureImage: `data:image/png;base64,${TRANSPARENT_PNG}`,
     }).bankIban,
     "DE89370400440532013000",
   );
@@ -220,6 +242,30 @@ test("validates required Vollmacht fields and normalizes the IBAN without hard v
       bankIban: "CH9300762011623852957",
     }),
     /Objektstrasse/,
+  );
+  assert.throws(
+    () => parseOfferVollmachtDetails({
+      propertyStreet: "Schachenstrasse",
+      propertyZip: "9430",
+      propertyCity: "St. Margrethen",
+      bankAccountHolder: "Max Muster",
+      bankIban: "CH9300762011623852957",
+      signerName: "Dawid Glapiak",
+      signaturePlace: "St. Margrethen",
+      signatureDate: "2026-02-30",
+      signatureImage: `data:image/png;base64,${TRANSPARENT_PNG}`,
+    }),
+    /ungültig/,
+  );
+});
+
+test("defaults Vollmacht to required and honors an explicit false flag", async () => {
+  const { isOfferVollmachtRequired } = await loadOffer();
+  assert.equal(isOfferVollmachtRequired({}), true);
+  assert.equal(isOfferVollmachtRequired({ data: { parts: { formDocuments: {} } } }), true);
+  assert.equal(
+    isOfferVollmachtRequired({ data: { parts: { formDocuments: { vollmacht: false } } } }),
+    false,
   );
 });
 
@@ -274,6 +320,7 @@ test("serializes the public Vollmacht prefill without exposing token data", asyn
       subsidyPayoutAccountHolder: "Max Muster",
       subsidyPayoutIban: "CH9300762011623852957",
       summary: { customerName: "Max Muster" },
+      data: { parts: { formDocuments: { vollmacht: true } } },
     },
     company: { name: "Demo AG", branding: { logoUrl: "https://example.ch/logo.png" } },
     customer: { email: "max@example.ch" },
@@ -281,6 +328,7 @@ test("serializes the public Vollmacht prefill without exposing token data", asyn
     req,
   });
   assert.equal(response.submitted, false);
+  assert.equal(response.vollmachtRequired, true);
   assert.equal(response.objectAddress, "Schachenstrasse 4, 9430 St. Margrethen");
   assert.equal(response.propertyStreet, "Schachenstrasse 4");
   assert.equal(response.propertyZip, "9430");
@@ -366,14 +414,21 @@ test("creates signed offer and confirmation PDFs with protocol pages", async () 
     },
     orderId: "AUF-2026-0007",
     offerNumber: "OFF-2026-0042",
-    customerName: "Max Muster",
-    propertyStreet: "Schachenstrasse 4",
+    customerName: "MUSTER MÜLLER",
+    propertyStreet: "Ulica Słupska 4",
     propertyZip: "9430",
     propertyCity: "St. Margrethen",
     parcelNumber: "12",
     landRegisterNumber: "4567",
     bankAccountHolder: "Max Muster",
     bankIban: "CH9300762011623852957",
+    ownerFirstName: "Dawid",
+    ownerLastName: "Glapiak",
+    signerName: "Dawid Glapiak",
+    signaturePlace: "Słupsk",
+    signatureDate: "2026-08-14",
+    signaturePng: Buffer.from(TRANSPARENT_PNG, "base64"),
+    signatureMethod: "Einfache elektronische Signatur (EES) - online, getippt",
     submittedAt: signedAt,
   });
   const loadedVollmacht = await PDFDocument.load(vollmacht);

@@ -11,6 +11,7 @@ import {
   ensureOfferSignatureIndexes,
   findOfferForVollmacht,
   getOfferVollmachtExpiresAt,
+  isOfferVollmachtRequired,
   parseOfferVollmachtDetails,
 } from "@/lib/offerSignatures";
 import {
@@ -24,6 +25,7 @@ import {
   normalizeSignaturePayments,
   resolveCustomerEmail,
   resolveCustomerName,
+  storeGeneratedSignatureFile,
   validateSignatureImage,
 } from "@/lib/orderSignatures";
 import {
@@ -83,6 +85,9 @@ export async function GET(req: Request, { params }: Params) {
     if ("rateLimited" in context) return response(origin, { ok: false, message: "Zu viele Anfragen." }, 429);
     if ("notFound" in context) return response(origin, { ok: false, message: "Link ungültig." }, 404);
     if (new URL(req.url).searchParams.get("download") === "1") {
+      if (!isOfferVollmachtRequired(context.planning)) {
+        return response(origin, { ok: false, message: "Vollmacht ist für diese Offerte nicht aktiviert." }, 404);
+      }
       const fileId = toObjectIdOrNull(context.planning?.offerVollmachtPdfFileId);
       if (!fileId) return response(origin, { ok: false, message: "PDF nicht gefunden." }, 404);
       const file = await getPlanningFilesCollection(context.db).findOne({
@@ -133,6 +138,17 @@ export async function POST(req: Request, { params }: Params) {
     const context = await loadVollmachtContext(req, token);
     if ("rateLimited" in context) return response(origin, { ok: false, message: "Zu viele Anfragen." }, 429);
     if ("notFound" in context) return response(origin, { ok: false, message: "Link ungültig." }, 404);
+    if (!isOfferVollmachtRequired(context.planning)) {
+      return response(
+        origin,
+        {
+          ok: false,
+          code: "VOLLMACHT_NOT_REQUIRED",
+          message: "Vollmacht ist für diese Offerte nicht aktiviert.",
+        },
+        409,
+      );
+    }
 
     const body = await req.json().catch(() => ({}));
     const details = parseOfferVollmachtDetails(body);
@@ -145,6 +161,8 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     const now = new Date();
+    const signerIp = extractRequestIp(req);
+    const signerUserAgent = safeString(req.headers.get("user-agent")).slice(0, 1000);
     const sharedFields = {
       propertyStreet: details.propertyStreet,
       propertyZip: details.propertyZip,
@@ -155,6 +173,17 @@ export async function POST(req: Request, { params }: Params) {
       buildingNumberSource: "manual",
       subsidyPayoutAccountHolder: details.bankAccountHolder,
       subsidyPayoutIban: details.bankIban,
+      vollmachtOwnerFirstName: details.ownerFirstName,
+      vollmachtOwnerLastName: details.ownerLastName,
+      vollmachtSignerFirstName: details.signerFirstName,
+      vollmachtSignerLastName: details.signerLastName,
+      vollmachtSignerName: details.signerName,
+      vollmachtSignaturePlace: details.signaturePlace,
+      vollmachtSignatureDate: details.signatureDate,
+      vollmachtSignatureMethod: details.signatureMethod,
+      vollmachtSignedAt: now,
+      vollmachtSignerIp: signerIp,
+      vollmachtSignerUserAgent: signerUserAgent,
       updatedAt: now,
     };
     await Promise.all([
@@ -276,9 +305,16 @@ export async function POST(req: Request, { params }: Params) {
       landRegisterNumber: details.landRegisterNumber,
       bankAccountHolder: details.bankAccountHolder,
       bankIban: details.bankIban,
+      ownerFirstName: details.ownerFirstName,
+      ownerLastName: details.ownerLastName,
+      signerName: details.signerName,
+      signaturePlace: details.signaturePlace,
+      signatureDate: details.signatureDate,
+      signaturePng: details.signaturePng,
+      signatureMethod: details.signatureMethod,
       submittedAt: now,
     });
-    const [confirmation, vollmacht] = await Promise.all([
+    const [confirmation, vollmacht, vollmachtSignature] = await Promise.all([
       upsertManagedPlanningFile({
         db,
         companyId,
@@ -303,6 +339,17 @@ export async function POST(req: Request, { params }: Params) {
         customerId: safeString(planning?.customerId) || undefined,
         session,
       }),
+      storeGeneratedSignatureFile({
+        db,
+        planning,
+        category: "signature",
+        type: "vollmacht_signature",
+        title: `Vollmacht ${orderId} - Unterschrift`,
+        fileName: `vollmacht-${orderId}-unterschrift.png`,
+        mimeType: "image/png",
+        buffer: details.signaturePng,
+        actorName: "System",
+      }),
     ]);
 
     const currentExpiresAt = getOfferVollmachtExpiresAt(planning);
@@ -320,6 +367,21 @@ export async function POST(req: Request, { params }: Params) {
             offerConfirmationPdfFileId: confirmation.doc._id,
             orderSnapshotFileId: confirmation.doc._id,
             offerVollmachtTokenExpiresAt: expiresAt,
+            vollmachtSignatureImageFileId: vollmachtSignature._id,
+            vollmachtSignature: {
+              ownerFirstName: details.ownerFirstName,
+              ownerLastName: details.ownerLastName,
+              signerFirstName: details.signerFirstName,
+              signerLastName: details.signerLastName,
+              signerName: details.signerName,
+              signaturePlace: details.signaturePlace,
+              signatureDate: details.signatureDate,
+              signatureMethod: details.signatureMethod,
+              signatureImageFileId: vollmachtSignature._id,
+              signedAt: now,
+              ip: signerIp,
+              userAgent: signerUserAgent,
+            },
             updatedAt: now,
           },
           $push: {
@@ -328,14 +390,44 @@ export async function POST(req: Request, { params }: Params) {
               req,
               tokenHash: safeString(planning?.offerSignatureTokenHash),
               at: now,
-              meta: { orderId, expiresAt: expiresAt?.toISOString() ?? null },
+              meta: {
+                orderId,
+                expiresAt: expiresAt?.toISOString() ?? null,
+                signerName: details.signerName,
+                signaturePlace: details.signaturePlace,
+                signatureDate: details.signatureDate,
+                signatureMethod: details.signatureMethod,
+                signatureImageFileId: mongoIdToString(vollmachtSignature._id),
+                signedAt: now.toISOString(),
+              },
             }) as never,
           },
         },
       ),
       db.collection("auftraege").updateOne(
         { companyId: { $in: buildIdVariants(companyId) }, orderId },
-        { $set: { vollmachtSubmittedAt: now, updatedAt: now } },
+        {
+          $set: {
+            ...sharedFields,
+            vollmachtSubmittedAt: now,
+            vollmachtSignatureImageFileId: vollmachtSignature._id,
+            vollmachtSignature: {
+              ownerFirstName: details.ownerFirstName,
+              ownerLastName: details.ownerLastName,
+              signerFirstName: details.signerFirstName,
+              signerLastName: details.signerLastName,
+              signerName: details.signerName,
+              signaturePlace: details.signaturePlace,
+              signatureDate: details.signatureDate,
+              signatureMethod: details.signatureMethod,
+              signatureImageFileId: vollmachtSignature._id,
+              signedAt: now,
+              ip: signerIp,
+              userAgent: signerUserAgent,
+            },
+            updatedAt: now,
+          },
+        },
       ),
       customerId
         ? db.collection("customers").updateOne(
@@ -380,7 +472,9 @@ export async function POST(req: Request, { params }: Params) {
     });
   } catch (error: any) {
     const message = safeString(error?.message) || "Vollmacht konnte nicht gespeichert werden.";
-    if (/erforderlich|maximal|IBAN/.test(message)) return response(origin, { ok: false, message }, 400);
+    if (/erforderlich|maximal|IBAN|Unterschrift|Unterschrifts|PNG|Format|ungültig/i.test(message)) {
+      return response(origin, { ok: false, message }, 400);
+    }
     console.error("POST PUBLIC OFFER VOLLMACHT ERROR:", error);
     return response(origin, { ok: false, message }, 500);
   }

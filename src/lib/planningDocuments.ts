@@ -347,7 +347,11 @@ function extractPaymentsSource(data: any) {
 function getEnabledCompanyDocumentKinds(planning: any): CompanyDocumentKind[] {
   const formDocuments = planning?.data?.parts?.formDocuments ?? {};
   const orderedKinds: CompanyDocumentKind[] = ["vollmacht", "bestellformular", "agb"];
-  return orderedKinds.filter((kind) => formDocuments?.[kind] === true);
+  return orderedKinds.filter((kind) =>
+    kind === "vollmacht"
+      ? formDocuments?.vollmacht !== false
+      : formDocuments?.[kind] === true,
+  );
 }
 
 async function appendCompanyOwnedOfferAttachments(args: {

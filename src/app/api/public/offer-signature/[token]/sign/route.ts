@@ -21,12 +21,14 @@ import {
   OFFER_VOLLMACHT_VALIDITY_MS,
   buildInternalOrderSession,
   buildOfferAuditEntry,
+  buildOfferVollmachtLink,
   buildSignedSessionCookie,
   enforceOfferPublicRateLimit,
   ensureActiveOfferToken,
   ensureOfferSignatureIndexes,
   findOfferByToken,
   getOfferSnapshot,
+  isOfferVollmachtRequired,
   normalizeOfferSignaturePlace,
   parseOfferAcceptanceDetails,
 } from "@/lib/offerSignatures";
@@ -84,6 +86,7 @@ async function deliverOfferAcceptedEmail(args: {
     });
     const orderId = safeString(args.planning?.orderId);
     const publicBase = `${getPublicApiBaseUrl(args.req)}/api/public/offer-signature/${encodeURIComponent(args.token)}`;
+    const vollmachtRequired = isOfferVollmachtRequired(args.planning);
     return queueSignatureDocumentEmail({
       db: args.db,
       kind: "offer_accepted",
@@ -98,6 +101,8 @@ async function deliverOfferAcceptedEmail(args: {
       sellerName: seller.sellerName,
       sellerEmail: seller.sellerEmail,
       downloadUrl: `${publicBase}/pdf?type=confirmation`,
+      vollmachtRequired,
+      vollmachtUrl: vollmachtRequired ? buildOfferVollmachtLink(args.token) : null,
       attachment: {
         fileId: args.planning?.offerConfirmationPdfFileId,
         fileName: `auftragsbestaetigung-${orderId}.pdf`,
@@ -201,7 +206,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         : "auto";
     const commercial = await computePlanningCommercialSummary(db, planning);
     const signedAt = new Date();
-    const offerVollmachtTokenExpiresAt = new Date(signedAt.getTime() + OFFER_VOLLMACHT_VALIDITY_MS);
+    const vollmachtRequired = isOfferVollmachtRequired(planning);
+    const offerVollmachtTokenExpiresAt = vollmachtRequired
+      ? new Date(signedAt.getTime() + OFFER_VOLLMACHT_VALIDITY_MS)
+      : null;
     const tokenHash = sha256(token);
     const signerIp = extractRequestIp(req);
     const signerUserAgent = safeString(req.headers.get("user-agent")).slice(0, 1000);

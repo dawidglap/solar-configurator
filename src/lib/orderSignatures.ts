@@ -1,4 +1,7 @@
 import crypto from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import fontkit from "@pdf-lib/fontkit";
 import type { Db } from "mongodb";
 import { ObjectId } from "mongodb";
 import { PDFButton, PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
@@ -34,18 +37,54 @@ export type SignatureStatus = (typeof SIGNATURE_STATUSES)[number];
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_SIGNATURE_BYTES = 2 * 1024 * 1024;
+const DEJAVU_FONT_DIRECTORY = path.join(
+  process.cwd(),
+  "node_modules",
+  "dejavu-fonts-ttf",
+  "ttf",
+);
+const DEJAVU_SANS_PATH = path.join(DEJAVU_FONT_DIRECTORY, "DejaVuSans.ttf");
+const DEJAVU_SANS_BOLD_PATH = path.join(DEJAVU_FONT_DIRECTORY, "DejaVuSans-Bold.ttf");
 
 let ensureSignatureIndexesPromise: Promise<void> | null = null;
+let vollmachtFontBytesPromise: Promise<[Buffer, Buffer]> | null = null;
 
-function signaturePdfText(value: unknown) {
-  const text = safeString(value)
+function normalizedPdfText(value: unknown) {
+  return safeString(value)
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
     .replace(/[—–]/g, "-")
     .replace(/…/g, "...")
     .replace(/•/g, "-")
-    .replace(/\u00a0/g, " ");
-  return text.normalize("NFC").replace(/[^\n\r\t\x20-\x7e\xa0-\xff]/g, "");
+    .replace(/\u00a0/g, " ")
+    .normalize("NFC");
+}
+
+function signaturePdfText(value: unknown) {
+  return normalizedPdfText(value).replace(/[^\n\r\t\x20-\x7e\xa0-\xff]/g, "");
+}
+
+function unicodeSignaturePdfText(value: unknown) {
+  return normalizedPdfText(value).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
+}
+
+async function embedVollmachtFonts(pdf: PDFDocument) {
+  pdf.registerFontkit(fontkit);
+  vollmachtFontBytesPromise ??= Promise.all([
+    readFile(DEJAVU_SANS_PATH),
+    readFile(DEJAVU_SANS_BOLD_PATH),
+  ]);
+  const [regularBytes, boldBytes] = await vollmachtFontBytesPromise;
+  const [font, bold] = await Promise.all([
+    pdf.embedFont(regularBytes, { subset: true }),
+    pdf.embedFont(boldBytes, { subset: true }),
+  ]);
+  return { font, bold };
+}
+
+function formatSwissLocalDate(value: string) {
+  const match = safeString(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}.${match[2]}.${match[1]}` : safeString(value);
 }
 
 export function getAppBaseUrl() {
@@ -714,11 +753,19 @@ export async function createOfferVollmachtPdf(args: {
   landRegisterNumber?: string | null;
   bankAccountHolder: string;
   bankIban: string;
+  ownerFirstName?: string | null;
+  ownerLastName?: string | null;
+  signerName: string;
+  signaturePlace: string;
+  signatureDate: string;
+  signaturePng: Buffer;
+  signatureMethod: string;
   submittedAt: Date;
 }) {
   const pdf = await PDFDocument.create();
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const { font, bold } = await embedVollmachtFonts(pdf);
+  const signatureImage = await pdf.embedPng(args.signaturePng);
+  const pdfText = unicodeSignaturePdfText;
   const page = pdf.addPage([595.28, 841.89]);
   const dark = rgb(0.1, 0.16, 0.2);
   const muted = rgb(0.38, 0.44, 0.48);
@@ -727,6 +774,9 @@ export async function createOfferVollmachtPdf(args: {
   const border = rgb(0.84, 0.87, 0.88);
   const margin = 46;
   const companyName = safeString(args.company?.name) || "Helionic";
+  const signingPersonName =
+    [safeString(args.ownerFirstName), safeString(args.ownerLastName)].filter(Boolean).join(" ") ||
+    safeString(args.signerName);
   const footerAddress = safeString(args.company?.pdfSettings?.footerAddressLine) || [
     safeString(args.company?.address?.street),
     [safeString(args.company?.address?.zip), safeString(args.company?.address?.city)].filter(Boolean).join(" "),
@@ -749,7 +799,7 @@ export async function createOfferVollmachtPdf(args: {
   });
   const headerX = logoShown ? 330 : margin;
   const drawHeaderLine = (text: string, y: number, size: number, headerFont: PDFFont) => {
-    const normalized = signaturePdfText(text);
+    const normalized = pdfText(text);
     const availableWidth = 549 - headerX;
     const naturalWidth = headerFont.widthOfTextAtSize(normalized, size);
     const fittedSize = naturalWidth > availableWidth
@@ -775,13 +825,13 @@ export async function createOfferVollmachtPdf(args: {
   const headerRows: Array<[string, string]> = [
     ["Auftragsnummer", safeString(args.orderId) || "-"],
     ["Offertennummer", safeString(args.offerNumber) || "-"],
-    ["Kunde", safeString(args.customerName) || "-"],
+    ["Auftraggeber", safeString(args.customerName) || "-"],
     ["Übermittelt am", `${submittedAt} Uhr`],
   ];
   let y = 632;
   for (const [label, value] of headerRows) {
-    page.drawText(signaturePdfText(label), { x: margin, y, size: 8, font, color: muted });
-    page.drawText(signaturePdfText(value), { x: 190, y, size: 9.5, font: bold, color: dark });
+    page.drawText(pdfText(label), { x: margin, y, size: 8, font, color: muted });
+    page.drawText(pdfText(value), { x: 190, y, size: 9.5, font: bold, color: dark });
     page.drawLine({ start: { x: margin, y: y - 10 }, end: { x: 549, y: y - 10 }, thickness: 0.6, color: border });
     y -= 32;
   }
@@ -791,8 +841,8 @@ export async function createOfferVollmachtPdf(args: {
     page.drawText(title, { x: margin + 12, y: y + 4, size: 10, font: bold, color: dark });
     y -= 32;
     for (const [label, value] of rows) {
-      page.drawText(signaturePdfText(label), { x: margin + 12, y, size: 8, font, color: muted });
-      page.drawText(signaturePdfText(value || "-"), { x: 190, y, size: 9.5, font: bold, color: dark });
+      page.drawText(pdfText(label), { x: margin + 12, y, size: 8, font, color: muted });
+      page.drawText(pdfText(value || "-"), { x: 190, y, size: 9.5, font: bold, color: dark });
       y -= 24;
     }
     y -= 12;
@@ -810,27 +860,63 @@ export async function createOfferVollmachtPdf(args: {
     ["IBAN", formatIbanForPdf(args.bankIban)],
   ]);
 
-  page.drawRectangle({ x: margin, y: 73, width: 503, height: 70, color: pale, borderColor: teal, borderWidth: 0.8 });
+  page.drawRectangle({ x: margin, y: y - 4, width: 503, height: 25, color: pale });
+  page.drawText("Unterschrift", { x: margin + 12, y: y + 4, size: 10, font: bold, color: dark });
+  y -= 32;
+  page.drawText("Ort, Datum", { x: margin + 12, y, size: 8, font, color: muted });
+  page.drawText(
+    pdfText(`${safeString(args.signaturePlace)}, ${formatSwissLocalDate(args.signatureDate)}`),
+    { x: 190, y, size: 9.5, font: bold, color: dark },
+  );
+  y -= 24;
+  page.drawText("Unterzeichner", { x: margin + 12, y, size: 8, font, color: muted });
+  page.drawText(pdfText(signingPersonName), { x: 190, y, size: 9.5, font: bold, color: dark });
+  y -= 20;
+  page.drawText("Signatur", { x: margin + 12, y, size: 8, font, color: muted });
+  const signatureScale = Math.min(210 / signatureImage.width, 48 / signatureImage.height, 1.5);
+  const signatureWidth = signatureImage.width * signatureScale;
+  const signatureHeight = signatureImage.height * signatureScale;
+  page.drawImage(signatureImage, {
+    x: 190,
+    y: y - 44,
+    width: signatureWidth,
+    height: signatureHeight,
+  });
+  y -= 55;
+  page.drawText("Methode", { x: margin + 12, y, size: 8, font, color: muted });
+  drawWrappedText({
+    page,
+    text: pdfText(args.signatureMethod),
+    x: 190,
+    y,
+    width: 345,
+    font,
+    size: 7.5,
+    lineHeight: 9.5,
+    color: dark,
+  });
+
+  page.drawRectangle({ x: margin, y: 46, width: 503, height: 48, color: pale, borderColor: teal, borderWidth: 0.8 });
   drawWrappedText({
     page,
     text: "Diese Angaben wurden über das öffentliche Vollmachtsformular digital erfasst und dem Auftrag zugeordnet. Das Dokument dient als Protokoll der übermittelten Objekt- und Kontodaten.",
     x: margin + 14,
-    y: 119,
+    y: 77,
     width: 475,
     font,
-    size: 8.5,
-    lineHeight: 12,
+    size: 7.5,
+    lineHeight: 9.5,
     color: dark,
   });
-  page.drawText(signaturePdfText(`${companyName} · Vollmacht ${safeString(args.orderId)}`), {
+  page.drawText(pdfText(`${companyName} - Vollmacht ${safeString(args.orderId)}`), {
     x: margin,
-    y: 40,
+    y: 25,
     size: 7,
     font,
     color: muted,
   });
 
-  pdf.setTitle(`Vollmacht ${signaturePdfText(args.orderId)}`);
+  pdf.setTitle(`Vollmacht ${pdfText(args.orderId)}`);
   pdf.setSubject("Vollmacht & Auszahlungskonto");
   pdf.setCreationDate(args.submittedAt);
   pdf.setModificationDate(args.submittedAt);
@@ -1004,6 +1090,7 @@ export async function storeGeneratedSignatureFile(args: {
   mimeType: "image/png" | "application/pdf";
   buffer: Buffer;
   actorName: string;
+  type?: string;
 }) {
   const companyId = safeString(args.planning?.companyId);
   const planningId = mongoIdToString(args.planning?._id);
@@ -1022,7 +1109,7 @@ export async function storeGeneratedSignatureFile(args: {
     buffer: args.buffer,
     customerId: safeString(args.planning?.customerId) || undefined,
     session,
-    type: args.category,
+    type: safeString(args.type) || args.category,
     linkToPlanningId: planningId,
   });
   const result = await getPlanningFilesCollection(args.db).insertOne(doc);

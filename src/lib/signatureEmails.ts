@@ -24,6 +24,8 @@ export type QueueSignatureEmailArgs = {
   sellerName?: string | null;
   sellerEmail?: string | null;
   downloadUrl: string;
+  vollmachtRequired?: boolean;
+  vollmachtUrl?: string | null;
   attachment: SignatureEmailAttachment;
 };
 
@@ -88,6 +90,11 @@ export function buildSignatureEmailPayload(args: {
     replyTo: sellerEmail || null,
     downloadUrl: safeString(delivery?.downloadUrl),
     pdfUrl: safeString(delivery?.downloadUrl),
+    vollmachtRequired: delivery?.vollmachtRequired !== false,
+    vollmachtUrl:
+      delivery?.vollmachtRequired !== false
+        ? safeString(delivery?.vollmachtUrl) || null
+        : null,
     attachments: [
       {
         filename: safeString(delivery?.attachmentFileName) || "dokument.pdf",
@@ -217,6 +224,11 @@ export async function queueSignatureDocumentEmail(args: QueueSignatureEmailArgs)
         sellerName: safeString(args.sellerName) || null,
         sellerEmail: safeString(args.sellerEmail).toLowerCase() || null,
         downloadUrl: safeString(args.downloadUrl),
+        vollmachtRequired: args.vollmachtRequired !== false,
+        vollmachtUrl:
+          args.vollmachtRequired !== false
+            ? safeString(args.vollmachtUrl) || null
+            : null,
         attachmentFileId: mongoIdToString(args.attachment.fileId) || safeString(args.attachment.fileId),
         attachmentFileName: safeString(args.attachment.fileName),
         attachmentMimeType: args.attachment.mimeType,

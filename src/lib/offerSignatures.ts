@@ -23,6 +23,7 @@ import {
   resolveObjectAddress,
   sha256,
   storeGeneratedSignatureFile,
+  validateSignatureImage,
 } from "@/lib/orderSignatures";
 import { downloadCompanyDocumentBuffer } from "@/lib/companyDocuments";
 import { isValidIban, normalizeIban } from "@/lib/swissQrBill";
@@ -41,6 +42,9 @@ export type OfferSignatureStatus = (typeof OFFER_SIGNATURE_STATUSES)[number];
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ISO_LOCAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+export const DEFAULT_VOLLMACHT_SIGNATURE_METHOD =
+  "Einfache elektronische Signatur (EES) - online, getippt";
 let indexPromise: Promise<void> | null = null;
 
 function iso(value: unknown) {
@@ -91,6 +95,9 @@ export function buildDefaultOfferSignatureFields() {
     offerSignatureProcessingAt: null,
     offerVollmachtTokenExpiresAt: null,
     vollmachtSubmittedAt: null,
+    vollmachtSignedAt: null,
+    vollmachtSignatureImageFileId: null,
+    vollmachtSignature: null,
   };
 }
 
@@ -138,6 +145,15 @@ export function buildOfferSignatureLink(token: string) {
   return `${origin}/angebot-signieren/${encodeURIComponent(token)}`;
 }
 
+export function buildOfferVollmachtLink(token: string) {
+  const origin = (
+    safeString(process.env.APP_ORIGIN) ||
+    safeString(process.env.APP_BASE_URL) ||
+    "https://app.helionic.ch"
+  ).replace(/\/+$/, "");
+  return `${origin}/vollmacht/${encodeURIComponent(token)}`;
+}
+
 export function parseOfferSignatureRequest(body: any) {
   const email = safeString(body?.email).toLowerCase();
   if (email && !EMAIL_PATTERN.test(email)) throw new Error("Ungültige E-Mail-Adresse.");
@@ -161,6 +177,33 @@ function optionalLimitedString(value: unknown, label: string, maxLength: number)
     throw new Error(`${label} darf maximal ${maxLength} Zeichen lang sein.`);
   }
   return normalized || null;
+}
+
+function requiredLimitedString(value: unknown, label: string, maxLength: number) {
+  const normalized = optionalLimitedString(value, label, maxLength);
+  if (!normalized) throw new Error(`${label} ist erforderlich.`);
+  return normalized;
+}
+
+function parseIsoLocalDate(value: unknown, label: string) {
+  const normalized = requiredLimitedString(value, label, 10);
+  if (!ISO_LOCAL_DATE_PATTERN.test(normalized)) {
+    throw new Error(`${label} muss im Format YYYY-MM-DD angegeben werden.`);
+  }
+  const [year, month, day] = normalized.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new Error(`${label} ist ungültig.`);
+  }
+  return normalized;
+}
+
+export function isOfferVollmachtRequired(planning: any) {
+  return planning?.data?.parts?.formDocuments?.vollmacht !== false;
 }
 
 export function parseOfferAcceptanceDetails(body: any) {
@@ -196,6 +239,22 @@ export function parseOfferVollmachtDetails(body: any) {
   if (!propertyCity) throw new Error("Ort ist erforderlich.");
   if (!bankAccountHolder) throw new Error("Kontoinhaber ist erforderlich.");
   if (!bankIban) throw new Error("IBAN ist erforderlich.");
+  const ownerFirstName = optionalLimitedString(body?.ownerFirstName, "Vorname Eigentümer", 100);
+  const ownerLastName = optionalLimitedString(body?.ownerLastName, "Nachname Eigentümer", 100);
+  const signerFirstName = optionalLimitedString(body?.signerFirstName, "Vorname Unterzeichner", 100);
+  const signerLastName = optionalLimitedString(body?.signerLastName, "Nachname Unterzeichner", 100);
+  const explicitSignerName = optionalLimitedString(body?.signerName, "Name Unterzeichner", 200);
+  const ownerName = [ownerFirstName, ownerLastName].filter(Boolean).join(" ");
+  const splitSignerName = [signerFirstName, signerLastName].filter(Boolean).join(" ");
+  const signerName = ownerName || explicitSignerName || splitSignerName;
+  const signaturePlace = requiredLimitedString(body?.signaturePlace, "Unterschriftsort", 120);
+  const signatureDate = parseIsoLocalDate(body?.signatureDate, "Unterschriftsdatum");
+  const signatureMethod =
+    optionalLimitedString(body?.signatureMethod, "Signaturmethode", 240) ||
+    DEFAULT_VOLLMACHT_SIGNATURE_METHOD;
+  const signatureImage = safeString(body?.signatureImage);
+  const signaturePng = validateSignatureImage(signatureImage);
+  if (!signerName) throw new Error("Name Unterzeichner ist erforderlich.");
   return {
     propertyStreet,
     propertyZip,
@@ -204,6 +263,16 @@ export function parseOfferVollmachtDetails(body: any) {
     landRegisterNumber,
     bankAccountHolder,
     bankIban,
+    ownerFirstName,
+    ownerLastName,
+    signerFirstName,
+    signerLastName,
+    signerName,
+    signaturePlace,
+    signatureDate,
+    signatureImage,
+    signaturePng,
+    signatureMethod,
   };
 }
 
@@ -307,8 +376,10 @@ export function buildOfferVollmachtResponse(args: {
   const address = resolveOfferPropertyAddress(planning, args.customer);
   const expiresAt = getOfferVollmachtExpiresAt(planning);
   const submittedAt = iso(planning?.vollmachtSubmittedAt);
+  const vollmachtRequired = isOfferVollmachtRequired(planning);
   const base = getPublicApiBaseUrl(args.req);
   return {
+    vollmachtRequired,
     submitted: !!submittedAt,
     submittedAt,
     expiresAt: expiresAt?.toISOString() ?? null,
@@ -336,10 +407,42 @@ export function buildOfferVollmachtResponse(args: {
     bankIban:
       safeString(planning?.subsidyPayoutIban) ||
       safeString(args.customer?.subsidyPayoutIban),
+    ownerFirstName:
+      safeString(planning?.vollmachtOwnerFirstName) ||
+      safeString(planning?.vollmachtSignature?.ownerFirstName) ||
+      null,
+    ownerLastName:
+      safeString(planning?.vollmachtOwnerLastName) ||
+      safeString(planning?.vollmachtSignature?.ownerLastName) ||
+      null,
+    signerFirstName:
+      safeString(planning?.vollmachtSignerFirstName) ||
+      safeString(planning?.vollmachtSignature?.signerFirstName) ||
+      null,
+    signerLastName:
+      safeString(planning?.vollmachtSignerLastName) ||
+      safeString(planning?.vollmachtSignature?.signerLastName) ||
+      null,
+    signerName:
+      safeString(planning?.vollmachtSignerName) ||
+      safeString(planning?.vollmachtSignature?.signerName) ||
+      null,
+    signaturePlace:
+      safeString(planning?.vollmachtSignaturePlace) ||
+      safeString(planning?.vollmachtSignature?.signaturePlace) ||
+      null,
+    signatureDate:
+      safeString(planning?.vollmachtSignatureDate) ||
+      safeString(planning?.vollmachtSignature?.signatureDate) ||
+      null,
+    signatureMethod:
+      safeString(planning?.vollmachtSignatureMethod) ||
+      safeString(planning?.vollmachtSignature?.signatureMethod) ||
+      null,
     confirmationPdfUrl: planning?.offerConfirmationPdfFileId
       ? `${base}/api/public/offer-signature/${encodeURIComponent(args.token)}/pdf?type=confirmation`
       : null,
-    vollmachtPdfUrl: planning?.offerVollmachtPdfFileId
+    vollmachtPdfUrl: vollmachtRequired && planning?.offerVollmachtPdfFileId
       ? `${base}/api/public/offer-signature/${encodeURIComponent(args.token)}/vollmacht?download=1`
       : null,
   };
@@ -636,6 +739,7 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
     : new Date();
   const validUntil = new Date(requestedAt.getTime() + 30 * 86_400_000);
   return {
+    vollmachtRequired: isOfferVollmachtRequired(args.planning),
     offerNumber: safeString(args.planning?.planningNumber),
     planningId: mongoIdToString(args.planning?._id),
     companyName: safeString(company?.name),

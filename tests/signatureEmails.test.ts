@@ -34,7 +34,28 @@ test("builds the Edge Function payload with recipients, Reply-To, link and PDF a
   assert.deepEqual(payload.ccEmails, ["sara@example.ch"]);
   assert.equal(payload.replyTo, "sara@example.ch");
   assert.equal(payload.downloadUrl, "https://planner.example/vollmacht?download=1");
+  assert.equal(payload.vollmachtRequired, true);
   assert.equal(payload.attachments[0].content, "JVBERi0=");
+});
+
+test("suppresses the Vollmacht link when the offer does not require it", async () => {
+  const { buildSignatureEmailPayload } = await loadEmails();
+  const payload = buildSignatureEmailPayload({
+    delivery: {
+      _id: "company-1:AUF-2026-0008:offer_accepted",
+      kind: "offer_accepted",
+      orderId: "AUF-2026-0008",
+      customerEmail: "kunde@example.ch",
+      downloadUrl: "https://planner.example/confirmation.pdf",
+      vollmachtRequired: false,
+      vollmachtUrl: "https://app.example/vollmacht/secret-token",
+      attachmentFileName: "confirmation.pdf",
+      attachmentMimeType: "application/pdf",
+    },
+    attachmentBase64: "JVBERi0=",
+  });
+  assert.equal(payload.vollmachtRequired, false);
+  assert.equal(payload.vollmachtUrl, null);
 });
 
 test("sends each order and email kind only once", async () => {

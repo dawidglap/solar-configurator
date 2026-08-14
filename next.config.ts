@@ -2,9 +2,10 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["pdfkit"],
+  serverExternalPackages: ["pdfkit", "dejavu-fonts-ttf"],
   outputFileTracingIncludes: {
     "/api/invoices/*/pdf": ["./node_modules/pdfkit/js/data/*.afm"],
+    "/api/public/offer-signature/*/vollmacht": ["./node_modules/dejavu-fonts-ttf/ttf/*.ttf"],
   },
   eslint: {
     // ✅ Disabilita i controlli ESLint durante il build (anche su Vercel)
