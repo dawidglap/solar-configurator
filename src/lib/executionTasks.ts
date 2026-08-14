@@ -80,7 +80,7 @@ type NormalizedExecutionTask = {
 };
 
 type NormalizedExecutionScheduleHistoryEntry = {
-  type?: "schedule_changed" | "team_changed" | "member_replaced" | "additional_team_changed" | "extra_assignment_changed" | "deviation_added" | "deviation_removed" | "replacement_assigned";
+  type?: "schedule_changed" | "team_changed" | "member_replaced" | "additional_team_changed" | "extra_assignment_changed" | "day_updated" | "deviation_added" | "deviation_removed" | "replacement_assigned" | "member_removed";
   scheduledStart: string | null;
   scheduledEnd: string | null;
   startTime: string | null;
@@ -102,6 +102,9 @@ type NormalizedExecutionScheduleHistoryEntry = {
   days?: string[];
   replacementUserId?: string | null;
   actorName?: string;
+  day?: string;
+  before?: unknown;
+  after?: unknown;
 };
 
 type NormalizedExecutionActivity = {
@@ -345,7 +348,13 @@ export function normalizeExecutionScheduleHistoryEntry(
       text: safeString(entry?.text),
     };
   }
-  if (type === "deviation_added" || type === "deviation_removed" || type === "replacement_assigned") {
+  if (
+    type === "day_updated" ||
+    type === "deviation_added" ||
+    type === "deviation_removed" ||
+    type === "replacement_assigned" ||
+    type === "member_removed"
+  ) {
     return {
       ...common,
       type,
@@ -356,6 +365,9 @@ export function normalizeExecutionScheduleHistoryEntry(
       replacementUserId:
         mongoIdToString(entry?.replacementUserId) || safeString(entry?.replacementUserId) || null,
       actorName: safeString(entry?.actorName),
+      day: safeString(entry?.day),
+      before: entry?.before ?? null,
+      after: entry?.after ?? null,
       action: safeString(entry?.action),
       text: safeString(entry?.text),
     };

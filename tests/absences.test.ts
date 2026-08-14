@@ -161,7 +161,7 @@ test("global crew deviations idempotently create, update and remove linked absen
     id: "dev_global",
     userId,
     type: "unfall",
-    days: ["2026-08-28", "2026-08-27"],
+    days: ["2026-08-27"],
     startTime: null,
     endTime: null,
     note: "Test",
@@ -184,7 +184,7 @@ test("global crew deviations idempotently create, update and remove linked absen
   assert.equal(docs.length, 1);
   assert.equal(docs[0].reason, "krankheit");
   assert.equal(docs[0].startDate, "2026-08-27");
-  assert.equal(docs[0].endDate, "2026-08-28");
+  assert.equal(docs[0].endDate, "2026-08-27");
   assert.equal(docs[0].sourceDeviationId, "dev_global");
 
   await syncCrewDeviationAbsences({
@@ -194,4 +194,39 @@ test("global crew deviations idempotently create, update and remove linked absen
     crewDeviations: [],
   });
   assert.equal(docs.length, 0);
+});
+
+test("multi-day vacation is mirrored as independent daily absences", async () => {
+  const companyId = new ObjectId();
+  const taskId = new ObjectId();
+  const docs: any[] = [];
+  const collection = {
+    createIndex: async () => "ok",
+    find: () => ({ toArray: async () => [...docs] }),
+    deleteMany: async () => ({ deletedCount: 0 }),
+    updateOne: async (filter: any, update: any) => {
+      let doc = docs.find((item) => item.sourceDeviationId === filter.sourceDeviationId);
+      if (!doc) {
+        doc = { _id: new ObjectId(), ...update.$setOnInsert };
+        docs.push(doc);
+      }
+      Object.assign(doc, update.$set);
+      return { matchedCount: 1, modifiedCount: 1 };
+    },
+  };
+  const db = { collection: () => collection } as any;
+  const deviations = normalizeStoredCrewDeviations([
+    { id: "ferien_25", userId, type: "ferien", days: ["2026-08-25"] },
+    { id: "ferien_26", userId, type: "ferien", days: ["2026-08-26"] },
+  ]);
+  await syncCrewDeviationAbsences({
+    db,
+    companyId: companyId.toString(),
+    taskId: taskId.toString(),
+    crewDeviations: deviations,
+  });
+  assert.deepEqual(docs.map((doc) => [doc.startDate, doc.endDate, doc.reason]), [
+    ["2026-08-25", "2026-08-25", "ferien"],
+    ["2026-08-26", "2026-08-26", "ferien"],
+  ]);
 });

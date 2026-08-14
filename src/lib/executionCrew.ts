@@ -8,6 +8,7 @@ import {
   ensureAbsenceIndexes,
   getAbsenceBooking,
   getAbsencesCollection,
+  syncCrewDeviationAbsences,
 } from "@/lib/absences";
 
 export type ExtraAssignment = {
@@ -95,13 +96,14 @@ export type ExecutionCrewConflict = {
 };
 
 export class ExecutionCrewRequestError extends Error {
-  status = 400;
+  status: number;
   code: string;
 
-  constructor(message: string, code = "INVALID_EXECUTION_CREW") {
+  constructor(message: string, code = "INVALID_EXECUTION_CREW", status = 400) {
     super(message);
     this.name = "ExecutionCrewRequestError";
     this.code = code;
+    this.status = status;
   }
 }
 
@@ -109,12 +111,18 @@ const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 function dateOnly(value: unknown) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  const localDate = (date: Date) => new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Zurich",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return localDate(value);
   const raw = safeString(value);
   if (!raw) return null;
   const parsedRaw = new Date(raw);
   if (!DATE_ONLY_RE.test(raw) && Number.isNaN(parsedRaw.getTime())) return null;
-  const candidate = DATE_ONLY_RE.test(raw) ? raw : parsedRaw.toISOString().slice(0, 10);
+  const candidate = DATE_ONLY_RE.test(raw) ? raw : localDate(parsedRaw);
   if (!DATE_ONLY_RE.test(candidate)) return null;
   const parsed = new Date(`${candidate}T00:00:00.000Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate
@@ -182,6 +190,13 @@ export function applyCrewDeviationReplacements(
   deviations: CrewDeviation[],
   defaultRole: TeamRole,
   previousAutoReplacementUserIds: string[] = [],
+  schedule?: {
+    scheduledStart: unknown;
+    scheduledEnd: unknown;
+    taskStartTime?: unknown;
+    taskEndTime?: unknown;
+    sourceAssignments?: unknown;
+  },
 ) {
   const previousAutoUsers = new Set(previousAutoReplacementUserIds);
   const manualAssignments = (Array.isArray(input) ? input : []).filter(
@@ -202,7 +217,21 @@ export function applyCrewDeviationReplacements(
     for (const deviation of replacementDeviations) {
       for (const day of deviation.days) {
         const windows = byDay.get(day) ?? [];
-        windows.push({ startTime: deviation.startTime, endTime: deviation.endTime });
+        const plannedWindow = schedule
+          ? getPlannedExecutionWindow({
+              userId: deviation.userId,
+              day,
+              extraAssignments: schedule.sourceAssignments,
+              scheduledStart: schedule.scheduledStart,
+              scheduledEnd: schedule.scheduledEnd,
+              taskStartTime: schedule.taskStartTime,
+              taskEndTime: schedule.taskEndTime,
+            })
+          : null;
+        windows.push({
+          startTime: deviation.startTime ?? plannedWindow?.startTime ?? null,
+          endTime: deviation.endTime ?? plannedWindow?.endTime ?? null,
+        });
         byDay.set(day, windows);
       }
     }
@@ -233,7 +262,34 @@ export function applyCrewDeviationReplacements(
     const replacementDeviations = byReplacement.get(userId);
     if (!replacementDeviations) return assignment;
     byReplacement.delete(userId);
-    return { ...assignment, ...replacementSchedule(replacementDeviations) };
+    if (assignment?.days == null) return assignment;
+    const replacement = replacementSchedule(replacementDeviations);
+    const mergedByDay = new Map<string, ExtraAssignmentDayWindow>();
+    for (const day of Array.isArray(assignment?.days) ? assignment.days : []) {
+      const existingWindow = Array.isArray(assignment?.dayWindows)
+        ? assignment.dayWindows.find((window: any) => safeString(window?.day) === safeString(day))
+        : null;
+      mergedByDay.set(safeString(day), {
+        day: safeString(day),
+        startTime: safeString(existingWindow?.startTime ?? assignment?.startTime) || null,
+        endTime: safeString(existingWindow?.endTime ?? assignment?.endTime) || null,
+      });
+    }
+    for (const window of replacement.dayWindows) mergedByDay.set(window.day, window);
+    const dayWindows = Array.from(mergedByDay.values()).sort((left, right) =>
+      left.day.localeCompare(right.day),
+    );
+    const firstWindow = dayWindows[0];
+    const sameWindow = dayWindows.every(
+      (window) => window.startTime === firstWindow?.startTime && window.endTime === firstWindow?.endTime,
+    );
+    return {
+      ...assignment,
+      days: dayWindows.map((window) => window.day),
+      startTime: sameWindow ? firstWindow?.startTime ?? null : null,
+      endTime: sameWindow ? firstWindow?.endTime ?? null : null,
+      dayWindows,
+    };
   });
   const generated = Array.from(byReplacement, ([userId, replacementDeviations]) => {
     return {
@@ -250,25 +306,60 @@ export function applyCrewDeviationReplacements(
 
 export function normalizeStoredCrewDeviations(input: unknown): CrewDeviation[] {
   if (!Array.isArray(input)) return [];
-  return input.map((deviation: any) => ({
-    id: safeString(deviation?.id),
-    userId: normalizeId(deviation?.userId),
-    type: safeString(deviation?.type).toLowerCase() as CrewDeviationType,
-    days: Array.isArray(deviation?.days)
+  return input.flatMap((deviation: any) => {
+    const sourceDays = Array.isArray(deviation?.days)
       ? deviation.days.map((day: unknown) => safeString(day)).filter(Boolean)
-      : [],
-    startTime: safeString(deviation?.startTime) || null,
-    endTime: safeString(deviation?.endTime) || null,
-    global: GLOBAL_CREW_DEVIATION_TYPES.has(
-      safeString(deviation?.type).toLowerCase() as CrewDeviationType,
-    ),
-    note: safeString(deviation?.note),
-    replacementUserId: normalizeId(deviation?.replacementUserId) || null,
-    actorName: safeString(deviation?.actorName),
-    at: deviation?.at instanceof Date && !Number.isNaN(deviation.at.getTime())
-      ? deviation.at.toISOString()
-      : safeString(deviation?.at),
-  }));
+      : [];
+    const days = sourceDays.length ? sourceDays : [""];
+    return days.map((day: string, index: number) => ({
+      id: index === 0
+        ? safeString(deviation?.id)
+        : `${safeString(deviation?.id)}_${day.replaceAll("-", "")}`,
+      userId: normalizeId(deviation?.userId),
+      type: safeString(deviation?.type).toLowerCase() as CrewDeviationType,
+      days: day ? [day] : [],
+      startTime: safeString(deviation?.startTime) || null,
+      endTime: safeString(deviation?.endTime) || null,
+      global: GLOBAL_CREW_DEVIATION_TYPES.has(
+        safeString(deviation?.type).toLowerCase() as CrewDeviationType,
+      ),
+      note: safeString(deviation?.note),
+      replacementUserId: normalizeId(deviation?.replacementUserId) || null,
+      actorName: safeString(deviation?.actorName),
+      at: deviation?.at instanceof Date && !Number.isNaN(deviation.at.getTime())
+        ? deviation.at.toISOString()
+        : safeString(deviation?.at),
+    }));
+  });
+}
+
+export function getPlannedExecutionWindow(args: {
+  userId: string;
+  day: string;
+  extraAssignments: unknown;
+  scheduledStart: unknown;
+  scheduledEnd: unknown;
+  taskStartTime?: unknown;
+  taskEndTime?: unknown;
+}) {
+  const taskStart = dateOnly(args.scheduledStart);
+  const taskEnd = dateOnly(args.scheduledEnd) || taskStart;
+  if (!taskStart || !taskEnd || args.day < taskStart || args.day > taskEnd) return null;
+  const assignment = normalizeStoredExtraAssignments(args.extraAssignments)
+    .find((item) => item.userId === args.userId);
+  if (assignment) {
+    const assignmentDays = assignment.days ?? assignment.dayWindows?.map((window) => window.day);
+    if (assignmentDays && !assignmentDays.includes(args.day)) return null;
+    const dayWindow = assignment.dayWindows?.find((window) => window.day === args.day);
+    if (dayWindow) {
+      return { startTime: dayWindow.startTime, endTime: dayWindow.endTime };
+    }
+    return { startTime: assignment.startTime, endTime: assignment.endTime };
+  }
+  return {
+    startTime: safeString(args.taskStartTime) || null,
+    endTime: safeString(args.taskEndTime) || null,
+  };
 }
 
 function normalizeDeviationTimePair(deviation: any) {
@@ -305,6 +396,9 @@ export async function normalizeAndValidateCrewDeviations(args: {
   input: unknown;
   scheduledStart: unknown;
   scheduledEnd: unknown;
+  taskStartTime?: unknown;
+  taskEndTime?: unknown;
+  extraAssignments?: unknown;
   actorName: string;
   now?: Date;
 }) {
@@ -328,6 +422,7 @@ export async function normalizeAndValidateCrewDeviations(args: {
 
   const nowIso = (args.now ?? new Date()).toISOString();
   const seenKeys = new Set<string>();
+  const seenUserDays = new Set<string>();
   const allUserIds = new Set<string>();
   const normalized = args.input.map((deviation: any) => {
     const id = safeString(deviation?.id);
@@ -360,9 +455,9 @@ export async function normalizeAndValidateCrewDeviations(args: {
     }
     seenKeys.add(key);
 
-    if (!Array.isArray(deviation?.days) || deviation.days.length === 0) {
+    if (!Array.isArray(deviation?.days) || deviation.days.length !== 1) {
       throw new ExecutionCrewRequestError(
-        "Eine Abweichung benötigt mindestens einen Einsatztag.",
+        "Eine Abweichung muss genau einen Einsatztag enthalten.",
         "INVALID_DEVIATION_DAYS",
       );
     }
@@ -390,7 +485,69 @@ export async function normalizeAndValidateCrewDeviations(args: {
       seenDays.add(day);
       return day;
     });
+    const userDayKey = `${userId.toString()}:${days[0]}`;
+    if (seenUserDays.has(userDayKey)) {
+      throw new ExecutionCrewRequestError(
+        "Pro Mitarbeiter und Tag ist maximal eine Abweichung erlaubt.",
+        "DUPLICATE_DAY_DEVIATION",
+        409,
+      );
+    }
+    seenUserDays.add(userDayKey);
     const { startTime, endTime } = normalizeDeviationTimePair(deviation);
+    const plannedWindow = getPlannedExecutionWindow({
+      userId: userId.toString(),
+      day: days[0],
+      extraAssignments: args.extraAssignments,
+      scheduledStart: args.scheduledStart,
+      scheduledEnd: args.scheduledEnd,
+      taskStartTime: args.taskStartTime,
+      taskEndTime: args.taskEndTime,
+    });
+    if (!plannedWindow) {
+      throw new ExecutionCrewRequestError(
+        "Der Mitarbeiter ist an diesem Tag nicht im Einsatz.",
+        "DEVIATION_USER_NOT_ASSIGNED_ON_DAY",
+      );
+    }
+    const requiresTimeWindow = [
+      "verspaetet",
+      "frueher_weg",
+      "teilweise_abwesend",
+      "arzttermin",
+    ].includes(type);
+    if (requiresTimeWindow && (!startTime || !endTime)) {
+      throw new ExecutionCrewRequestError(
+        "Für diesen Abweichungstyp sind startTime und endTime erforderlich.",
+        "DEVIATION_TIME_REQUIRED",
+      );
+    }
+    if (startTime && endTime) {
+      if (!plannedWindow.startTime || !plannedWindow.endTime) {
+        throw new ExecutionCrewRequestError(
+          "Für eine zeitliche Abweichung muss die geplante Tageszeit bekannt sein.",
+          "PLANNED_DAY_WINDOW_REQUIRED",
+        );
+      }
+      if (startTime < plannedWindow.startTime || endTime > plannedWindow.endTime) {
+        throw new ExecutionCrewRequestError(
+          "Das Abweichungsfenster muss innerhalb der geplanten Tageszeit liegen.",
+          "DEVIATION_OUTSIDE_PLANNED_WINDOW",
+        );
+      }
+      if (type === "verspaetet" && startTime !== plannedWindow.startTime) {
+        throw new ExecutionCrewRequestError(
+          "Bei Verspätung muss startTime dem geplanten Arbeitsbeginn entsprechen.",
+          "INVALID_LATE_WINDOW",
+        );
+      }
+      if (type === "frueher_weg" && endTime !== plannedWindow.endTime) {
+        throw new ExecutionCrewRequestError(
+          "Bei früherem Weggang muss endTime dem geplanten Arbeitsende entsprechen.",
+          "INVALID_EARLY_LEAVE_WINDOW",
+        );
+      }
+    }
     const replacementUserId = deviation?.replacementUserId == null || deviation?.replacementUserId === ""
       ? null
       : toObjectIdOrNull(deviation.replacementUserId);
@@ -499,11 +656,42 @@ export async function migrateExecutionExtraAssignmentDayWindows(db: Db) {
 }
 
 export async function migrateExecutionCrewDeviations(db: Db) {
-  const result = await db.collection("executionTasks").updateMany(
+  const tasks = db.collection("executionTasks");
+  const defaultsResult = await tasks.updateMany(
     { crewDeviations: { $exists: false } },
     { $set: { crewDeviations: [] } },
   );
-  return { matched: result.matchedCount, modified: result.modifiedCount };
+  const legacyDocs = await tasks.find({ "crewDeviations.0": { $exists: true } }).toArray();
+  let split = 0;
+  for (const task of legacyDocs) {
+    const requiresSplit = task.crewDeviations.some(
+      (deviation: any) => !Array.isArray(deviation?.days) || deviation.days.length !== 1,
+    );
+    const normalized = normalizeStoredCrewDeviations(task.crewDeviations);
+    if (requiresSplit) {
+      const result = await tasks.updateOne(
+        { _id: task._id },
+        { $set: { crewDeviations: normalized } },
+      );
+      split += result.modifiedCount;
+    }
+    const companyId = normalizeId(task?.companyId);
+    const taskId = normalizeId(task?._id);
+    if (companyId && taskId) {
+      await syncCrewDeviationAbsences({
+        db,
+        companyId,
+        taskId,
+        crewDeviations: normalized,
+      });
+    }
+  }
+  return {
+    matched: defaultsResult.matchedCount + legacyDocs.length,
+    modified: defaultsResult.modifiedCount + split,
+    defaulted: defaultsResult.modifiedCount,
+    split,
+  };
 }
 
 export function buildExtraAssignmentDayWindowHistoryTexts(
@@ -982,6 +1170,7 @@ export async function findExecutionCrewConflicts(args: {
     }
   }
   for (const absence of absences) {
+    if (taskId && normalizeId(absence?.sourceTaskId) === taskId) continue;
     const userId = normalizeId(absence?.userId);
     const requestedBooking = bookings.get(userId) ?? null;
     if (!requestedBooking) continue;
@@ -1003,4 +1192,62 @@ export async function findExecutionCrewConflicts(args: {
     }
   }
   return conflicts;
+}
+
+export function getExecutionCrewMutationLockIds(companyId: string, tasks: any[]) {
+  const result = new Set<string>();
+  for (const task of tasks) {
+    const userIds = Array.from(new Set<string>(
+      Array.isArray(task?.assignedUserIds)
+        ? task.assignedUserIds.map(normalizeId).filter(Boolean)
+        : [],
+    ));
+    for (const userId of userIds) {
+      const booking = getExecutionUserBooking(task, userId);
+      for (const day of booking?.days ?? []) {
+        result.add(`${companyId}:${userId}:${day}`);
+      }
+    }
+  }
+  return Array.from(result).sort();
+}
+
+export async function withExecutionCrewMutationLocks<T>(args: {
+  db: Db;
+  lockIds: string[];
+  run: () => Promise<T>;
+}) {
+  if (!args.lockIds.length) return args.run();
+  const locks = args.db.collection<any>("executionCrewMutationLocks");
+  await locks.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  const ownerId = new ObjectId().toString();
+  const acquired: string[] = [];
+  try {
+    for (const lockId of args.lockIds) {
+      const now = new Date();
+      await locks.deleteOne({ _id: lockId, expiresAt: { $lte: now } });
+      try {
+        await locks.insertOne({
+          _id: lockId,
+          ownerId,
+          expiresAt: new Date(now.getTime() + 30_000),
+        });
+        acquired.push(lockId);
+      } catch (error: any) {
+        if (error?.code === 11000) {
+          throw new ExecutionCrewRequestError(
+            "Die Einsatzplanung wird gerade gleichzeitig geändert. Bitte erneut versuchen.",
+            "CREW_UPDATE_IN_PROGRESS",
+            409,
+          );
+        }
+        throw error;
+      }
+    }
+    return await args.run();
+  } finally {
+    if (acquired.length) {
+      await locks.deleteMany({ _id: { $in: acquired }, ownerId }).catch(() => undefined);
+    }
+  }
 }

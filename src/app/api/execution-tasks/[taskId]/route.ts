@@ -35,11 +35,13 @@ import {
   deriveExecutionCrewUserIds,
   ExecutionCrewRequestError,
   findExecutionCrewConflicts,
+  getExecutionCrewMutationLockIds,
   normalizeAndValidateCrewDeviations,
   normalizeAndValidateAdditionalCrew,
   normalizeStoredAdditionalTeamIds,
   normalizeStoredCrewDeviations,
   normalizeStoredExtraAssignments,
+  withExecutionCrewMutationLocks,
 } from "@/lib/executionCrew";
 import { syncCrewDeviationAbsences } from "@/lib/absences";
 
@@ -219,6 +221,12 @@ export async function PATCH(req: Request, { params }: Params) {
         input: body?.crewDeviations !== undefined ? body.crewDeviations : existingCrewDeviations,
         scheduledStart: finalScheduledStartForDeviations,
         scheduledEnd: finalScheduledEndForDeviations,
+        taskStartTime: startTime !== undefined ? startTime : (existing as any)?.startTime ?? null,
+        taskEndTime: endTime !== undefined ? endTime : (existing as any)?.endTime ?? null,
+        extraAssignments:
+          body?.extraAssignments !== undefined
+            ? body.extraAssignments
+            : (existing as any)?.extraAssignments ?? [],
         actorName: actor.name,
       });
       finalCrewDeviations = normalizedDeviations.crewDeviations;
@@ -425,6 +433,14 @@ export async function PATCH(req: Request, { params }: Params) {
           existingExtraAssignments
             .filter((assignment) => Array.isArray(assignment.replacementForDeviationIds))
             .map((assignment) => assignment.userId),
+          {
+            scheduledStart: finalScheduledStart,
+            scheduledEnd: finalScheduledEnd,
+            taskStartTime: startTime !== undefined ? startTime : (existing as any)?.startTime ?? null,
+            taskEndTime: endTime !== undefined ? endTime : (existing as any)?.endTime ?? null,
+            sourceAssignments:
+              body?.extraAssignments !== undefined ? body.extraAssignments : existingExtraAssignments,
+          },
         ),
         scheduledStart: finalScheduledStart,
         scheduledEnd: finalScheduledEnd,
@@ -520,6 +536,25 @@ export async function PATCH(req: Request, { params }: Params) {
               reason: text,
             });
           }
+          const previousByDay = new Map((previous?.dayWindows ?? []).map((window) => [window.day, window]));
+          const nextByDay = new Map((assignment.dayWindows ?? []).map((window) => [window.day, window]));
+          for (const day of Array.from(new Set([...previousByDay.keys(), ...nextByDay.keys()])).sort()) {
+            const before = previousByDay.get(day) ?? null;
+            const after = nextByDay.get(day) ?? null;
+            if (JSON.stringify(before) === JSON.stringify(after)) continue;
+            teamHistoryEntries.push({
+              ...historyBase,
+              type: "day_updated",
+              action: "day_window_updated",
+              userId: new ObjectId(userId),
+              day,
+              before,
+              after,
+              actorName: actor.name,
+              text: `Einsatztag ${day} geändert`,
+              reason: "day_updated",
+            });
+          }
           const dayText = assignment.days?.length
             ? assignment.days.map((day) => day.split("-").reverse().join(".")).join(", ")
             : "gesamten Termin";
@@ -561,7 +596,7 @@ export async function PATCH(req: Request, { params }: Params) {
           const text = `${deviation.type}: ${deviation.days.join(", ")}`;
           teamHistoryEntries.push({
             ...historyBase,
-            type: "deviation_added",
+            type: previous ? "day_updated" : "deviation_added",
             action: previous ? "updated" : "added",
             deviationId: deviation.id,
             userId: new ObjectId(deviation.userId),
@@ -571,6 +606,9 @@ export async function PATCH(req: Request, { params }: Params) {
               ? new ObjectId(deviation.replacementUserId)
               : null,
             actorName: deviation.actorName,
+            day: deviation.days[0],
+            before: previous ?? null,
+            after: deviation,
             text,
             reason: text,
           });
@@ -585,6 +623,9 @@ export async function PATCH(req: Request, { params }: Params) {
               days: deviation.days,
               replacementUserId: new ObjectId(deviation.replacementUserId),
               actorName: deviation.actorName,
+              day: deviation.days[0],
+              before: previous?.replacementUserId ?? null,
+              after: deviation.replacementUserId,
               text: `Ersatz für ${deviation.userId}: ${deviation.replacementUserId}`,
               reason: "replacement_assigned",
             });
@@ -605,6 +646,9 @@ export async function PATCH(req: Request, { params }: Params) {
               ? new ObjectId(deviation.replacementUserId)
               : null,
             actorName: actor.name,
+            day: deviation.days[0],
+            before: deviation,
+            after: null,
             text: `${deviation.type} entfernt`,
             reason: "deviation_removed",
           });
@@ -626,39 +670,111 @@ export async function PATCH(req: Request, { params }: Params) {
       };
     }
 
+    if (updateSet.assignedUserIds !== undefined) {
+      const previousAssigned = new Set<string>(
+        Array.isArray((existing as any)?.assignedUserIds)
+          ? (existing as any).assignedUserIds
+              .map((value: any) => value instanceof ObjectId ? value.toString() : safeString(value))
+              .filter(Boolean)
+          : [],
+      );
+      const nextAssigned = new Set<string>(
+        Array.isArray(updateSet.assignedUserIds)
+          ? updateSet.assignedUserIds
+              .map((value: any) => value instanceof ObjectId ? value.toString() : safeString(value))
+              .filter(Boolean)
+          : [],
+      );
+      for (const removedUserId of previousAssigned) {
+        if (nextAssigned.has(removedUserId)) continue;
+        teamHistoryEntries.push({
+          type: "member_removed",
+          changedAt: new Date(),
+          changedByUserId: ObjectId.isValid(actor.id || "") ? new ObjectId(actor.id!) : actor.id,
+          changedByName: actor.name,
+          actorName: actor.name,
+          userId: new ObjectId(removedUserId),
+          action: "removed",
+          before: { assigned: true },
+          after: { assigned: false },
+          text: `Mitarbeiter ${removedUserId} aus Auftrag entfernt`,
+          reason: "member_removed",
+        });
+      }
+    }
+
     const scheduleHistoryEntries = [
       ...(scheduleHistoryEntry ? [scheduleHistoryEntry] : []),
       ...teamHistoryEntries,
     ];
-    await getExecutionTasksCollection(db).updateOne(
-      { _id: new ObjectId(taskId), ...buildExecutionCompanyFilter(companyId) },
-      {
-        $set: updateSet,
-        ...((pushStageHistory || scheduleHistoryEntries.length)
-          ? {
-              $push: {
-                ...(pushStageHistory ? { stageHistory: pushStageHistory } : {}),
-                ...(scheduleHistoryEntries.length
-                  ? { scheduleHistory: { $each: scheduleHistoryEntries } }
-                  : {}),
-              },
-            }
-          : {}),
-      } as any,
+    const candidateTask = { ...(existing as any), ...updateSet, _id: new ObjectId(taskId) };
+    const candidateAssignedUserIds = new Set(
+      Array.isArray(candidateTask.assignedUserIds)
+        ? candidateTask.assignedUserIds
+            .map((value: any) => value instanceof ObjectId ? value.toString() : safeString(value))
+            .filter(Boolean)
+        : [],
     );
+    const unassignedDeviation = normalizeStoredCrewDeviations(candidateTask.crewDeviations)
+      .find((deviation) => !candidateAssignedUserIds.has(deviation.userId));
+    if (unassignedDeviation) {
+      throw new ExecutionCrewRequestError(
+        "Eine Abweichung darf nur für einen dem Auftrag zugewiesenen Mitarbeiter erfasst werden.",
+        "DEVIATION_USER_NOT_ASSIGNED",
+      );
+    }
+    const mustValidateCrewMutation = scheduleChanged || hasStructuredCrewInput || isLegacyDirectAssignment;
+    const lockIds = getExecutionCrewMutationLockIds(companyId, [existing, candidateTask]);
+    await withExecutionCrewMutationLocks({
+      db,
+      lockIds,
+      run: async () => {
+        if (mustValidateCrewMutation) {
+          const blockingConflicts = await findExecutionCrewConflicts({
+            db,
+            companyId,
+            task: candidateTask,
+          });
+          if (blockingConflicts.length) {
+            const conflictError = new ExecutionCrewRequestError(
+              "Mindestens ein Mitarbeiter ist im gewählten Zeitfenster nicht verfügbar.",
+              "CREW_CONFLICT",
+              409,
+            );
+            (conflictError as any).conflicts = blockingConflicts;
+            throw conflictError;
+          }
+        }
+        await getExecutionTasksCollection(db).updateOne(
+          { _id: new ObjectId(taskId), ...buildExecutionCompanyFilter(companyId) },
+          {
+            $set: updateSet,
+            ...((pushStageHistory || scheduleHistoryEntries.length)
+              ? {
+                  $push: {
+                    ...(pushStageHistory ? { stageHistory: pushStageHistory } : {}),
+                    ...(scheduleHistoryEntries.length
+                      ? { scheduleHistory: { $each: scheduleHistoryEntries } }
+                      : {}),
+                  },
+                }
+              : {}),
+          } as any,
+        );
+        await syncCrewDeviationAbsences({
+          db,
+          companyId,
+          taskId,
+          crewDeviations: normalizeStoredCrewDeviations(candidateTask.crewDeviations),
+          actorUserId: actor.id,
+        });
+      },
+    });
 
     const updated = await getScopedExecutionTask(db, companyId, taskId);
     if (!updated) {
       return jsonResponse(origin, { ok: false, error: "Execution task not found after update" }, 404);
     }
-
-    await syncCrewDeviationAbsences({
-      db,
-      companyId,
-      taskId,
-      crewDeviations: normalizeStoredCrewDeviations((updated as any)?.crewDeviations),
-      actorUserId: actor.id,
-    });
 
     const [item] = await hydrateExecutionTasks(db, companyId, [updated]);
     const validate = new URL(req.url).searchParams.get("validate") === "1";
@@ -666,7 +782,17 @@ export async function PATCH(req: Request, { params }: Params) {
     return jsonResponse(origin, { ok: true, item, ...(validate ? { conflicts } : {}) }, 200);
   } catch (e: any) {
     if (e instanceof ExecutionCrewRequestError) {
-      return jsonResponse(origin, { ok: false, error: e.message, message: e.message, code: e.code }, e.status);
+      return jsonResponse(
+        origin,
+        {
+          ok: false,
+          error: e.message,
+          message: e.message,
+          code: e.code,
+          ...((e as any).conflicts ? { conflicts: (e as any).conflicts } : {}),
+        },
+        e.status,
+      );
     }
     if (e instanceof TeamRequestError) {
       return jsonResponse(

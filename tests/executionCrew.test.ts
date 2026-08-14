@@ -7,13 +7,19 @@ import {
   deriveExtraAssignmentDayWindows,
   ExecutionCrewRequestError,
   getExecutionBookingOverlap,
+  getExecutionCrewMutationLockIds,
   getExecutionUserBooking,
+  getPlannedExecutionWindow,
   normalizeAndValidateAdditionalCrew,
   normalizeAndValidateCrewDeviations,
   normalizeStoredCrewDeviations,
   normalizeStoredExtraAssignments,
+  withExecutionCrewMutationLocks,
 } from "../src/lib/executionCrew";
-import { normalizeExecutionTask } from "../src/lib/executionTasks";
+import {
+  normalizeExecutionScheduleHistory,
+  normalizeExecutionTask,
+} from "../src/lib/executionTasks";
 
 const userId = new ObjectId().toString();
 
@@ -40,12 +46,14 @@ test("validates crew deviations with stable error codes", async () => {
     companyId,
     scheduledStart: "2026-08-27",
     scheduledEnd: "2026-08-28",
+    taskStartTime: "07:00",
+    taskEndTime: "15:00",
     actorName: "Max Müller",
   };
   const cases: Array<[any, string]> = [
     [{ id: "dev_1", userId, type: "homeoffice", days: ["2026-08-27"] }, "UNKNOWN_DEVIATION_TYPE"],
     [{ id: "dev_1", userId, type: "krank", days: ["2026-08-29"] }, "DEVIATION_DAY_OUTSIDE_SCHEDULE"],
-    [{ id: "dev_1", userId, type: "krank", days: ["2026-08-27", "2026-08-27"] }, "DUPLICATE_DEVIATION_DAY"],
+    [{ id: "dev_1", userId, type: "krank", days: ["2026-08-27", "2026-08-28"] }, "INVALID_DEVIATION_DAYS"],
     [{ id: "dev_1", userId, type: "krank", days: ["2026-08-27"], startTime: "15:00", endTime: "10:00" }, "INVALID_DEVIATION_TIME_RANGE"],
     [{ id: "dev_1", userId, type: "krank", days: ["2026-08-27"], replacementUserId: userId }, "DEVIATION_REPLACEMENT_SAME_USER"],
   ];
@@ -55,6 +63,19 @@ test("validates crew deviations with stable error codes", async () => {
       (error: any) => error instanceof ExecutionCrewRequestError && error.code === code,
     );
   }
+  await assert.rejects(
+    normalizeAndValidateCrewDeviations({
+      ...base,
+      input: [
+        { id: "dev_1", userId, type: "krank", days: ["2026-08-27"] },
+        { id: "dev_2", userId, type: "ferien", days: ["2026-08-27"] },
+      ],
+    }),
+    (error: any) =>
+      error instanceof ExecutionCrewRequestError &&
+      error.code === "DUPLICATE_DAY_DEVIATION" &&
+      error.status === 409,
+  );
 });
 
 test("crew deviations round-trip and derive global from the stable type catalog", async () => {
@@ -67,7 +88,7 @@ test("crew deviations round-trip and derive global from the stable type catalog"
       id: "dev_ab12cd",
       userId,
       type: "krank",
-      days: ["2026-08-27", "2026-08-28"],
+      days: ["2026-08-27"],
       startTime: "10:00",
       endTime: "15:00",
       global: false,
@@ -77,6 +98,8 @@ test("crew deviations round-trip and derive global from the stable type catalog"
     }],
     scheduledStart: "2026-08-27",
     scheduledEnd: "2026-08-28",
+    taskStartTime: "07:00",
+    taskEndTime: "15:00",
     actorName: "Max Müller",
   });
   assert.deepEqual(normalizeStoredCrewDeviations(result.crewDeviations), result.crewDeviations);
@@ -89,6 +112,207 @@ test("crew deviations round-trip and derive global from the stable type catalog"
     crewDeviations: result.crewDeviations,
   });
   assert.deepEqual(task.crewDeviations, result.crewDeviations);
+});
+
+test("supports independent planned windows and three different late arrivals", async () => {
+  const companyId = new ObjectId().toString();
+  const extraAssignments = [{
+    userId,
+    role: "monteur",
+    days: ["2026-08-25", "2026-08-26", "2026-08-27"],
+    dayWindows: [
+      { day: "2026-08-25", startTime: "07:00", endTime: "15:00" },
+      { day: "2026-08-26", startTime: "07:00", endTime: "15:00" },
+      { day: "2026-08-27", startTime: "07:00", endTime: "15:00" },
+    ],
+  }];
+  const input = [
+    { id: "dev_25", userId, type: "verspaetet", days: ["2026-08-25"], startTime: "07:00", endTime: "08:15" },
+    { id: "dev_26", userId, type: "verspaetet", days: ["2026-08-26"], startTime: "07:00", endTime: "09:00" },
+    { id: "dev_27", userId, type: "verspaetet", days: ["2026-08-27"], startTime: "07:00", endTime: "07:45" },
+  ];
+  const result = await normalizeAndValidateCrewDeviations({
+    db: activeUsersDb([userId], companyId),
+    companyId,
+    input,
+    scheduledStart: "2026-08-25",
+    scheduledEnd: "2026-08-27",
+    taskStartTime: "07:00",
+    taskEndTime: "15:00",
+    extraAssignments,
+    actorName: "Dawid Beckham",
+  });
+  assert.deepEqual(result.crewDeviations.map((item) => item.endTime), ["08:15", "09:00", "07:45"]);
+  assert.equal(result.crewDeviations.every((item) => item.global === false), true);
+});
+
+test("validates type-specific windows against each planned day", async () => {
+  const companyId = new ObjectId().toString();
+  const base = {
+    db: activeUsersDb([userId], companyId),
+    companyId,
+    scheduledStart: "2026-08-25T00:00:00+02:00",
+    scheduledEnd: "2026-08-25T23:00:00+02:00",
+    taskStartTime: "07:00",
+    taskEndTime: "15:00",
+    actorName: "Dawid Beckham",
+  };
+  const invalid: Array<[any, string]> = [
+    [{ id: "late", userId, type: "verspaetet", days: ["2026-08-25"], startTime: "08:00", endTime: "09:00" }, "INVALID_LATE_WINDOW"],
+    [{ id: "early", userId, type: "frueher_weg", days: ["2026-08-25"], startTime: "12:30", endTime: "14:00" }, "INVALID_EARLY_LEAVE_WINDOW"],
+    [{ id: "partial", userId, type: "teilweise_abwesend", days: ["2026-08-25"], startTime: "06:00", endTime: "08:00" }, "DEVIATION_OUTSIDE_PLANNED_WINDOW"],
+    [{ id: "doctor", userId, type: "arzttermin", days: ["2026-08-25"], startTime: null, endTime: null }, "DEVIATION_TIME_REQUIRED"],
+  ];
+  for (const [deviation, code] of invalid) {
+    await assert.rejects(
+      normalizeAndValidateCrewDeviations({ ...base, input: [deviation] }),
+      (error: any) => error instanceof ExecutionCrewRequestError && error.code === code,
+    );
+  }
+  const valid = await normalizeAndValidateCrewDeviations({
+    ...base,
+    input: [{
+      id: "early_valid",
+      userId,
+      type: "frueher_weg",
+      days: ["2026-08-25"],
+      startTime: "12:30",
+      endTime: "15:00",
+    }],
+  });
+  assert.equal(valid.crewDeviations[0].days[0], "2026-08-25");
+});
+
+test("missing assignment days are free and cannot receive a task deviation", async () => {
+  const companyId = new ObjectId().toString();
+  const extraAssignments = [{
+    userId,
+    role: "monteur",
+    days: ["2026-08-25"],
+    dayWindows: [{ day: "2026-08-25", startTime: "07:00", endTime: "15:00" }],
+  }];
+  assert.equal(getPlannedExecutionWindow({
+    userId,
+    day: "2026-08-26",
+    extraAssignments,
+    scheduledStart: "2026-08-25",
+    scheduledEnd: "2026-08-26",
+    taskStartTime: "07:00",
+    taskEndTime: "15:00",
+  }), null);
+  await assert.rejects(
+    normalizeAndValidateCrewDeviations({
+      db: activeUsersDb([userId], companyId),
+      companyId,
+      input: [{ id: "missing", userId, type: "krank", days: ["2026-08-26"] }],
+      scheduledStart: "2026-08-25",
+      scheduledEnd: "2026-08-26",
+      taskStartTime: "07:00",
+      taskEndTime: "15:00",
+      extraAssignments,
+      actorName: "Dawid Beckham",
+    }),
+    (error: any) => error instanceof ExecutionCrewRequestError && error.code === "DEVIATION_USER_NOT_ASSIGNED_ON_DAY",
+  );
+  const booking = getExecutionUserBooking({
+    scheduledStart: "2026-08-25",
+    scheduledEnd: "2026-08-26",
+    assignedUserIds: [userId],
+    extraAssignments,
+  }, userId);
+  assert.deepEqual(booking?.days, ["2026-08-25"]);
+});
+
+test("legacy multi-day deviations lazily split into independent days", () => {
+  const normalized = normalizeStoredCrewDeviations([{
+    id: "dev_legacy",
+    userId,
+    type: "ferien",
+    days: ["2026-08-25", "2026-08-26"],
+  }]);
+  assert.deepEqual(normalized.map((item) => item.days), [["2026-08-25"], ["2026-08-26"]]);
+  assert.deepEqual(normalized.map((item) => item.id), ["dev_legacy", "dev_legacy_20260826"]);
+});
+
+test("represents the complete per-day acceptance scenario without shared-day hacks", async () => {
+  const companyId = new ObjectId().toString();
+  const replacementUserId = new ObjectId().toString();
+  const assignedDays = [
+    "2026-08-25",
+    "2026-08-26",
+    "2026-08-27",
+    "2026-08-28",
+    "2026-08-29",
+    "2026-08-31",
+    "2026-09-01",
+  ];
+  const dayWindows = assignedDays.map((day) => ({
+    day,
+    startTime: day === "2026-08-29" ? "08:00" : "07:00",
+    endTime: day === "2026-08-29" ? "14:00" : "15:00",
+  }));
+  const sourceAssignments = [{
+    userId,
+    role: "leiter",
+    days: assignedDays,
+    dayWindows,
+  }];
+  const input = [
+    { id: "d25", userId, type: "verspaetet", days: ["2026-08-25"], startTime: "07:00", endTime: "08:15" },
+    { id: "d26", userId, type: "verspaetet", days: ["2026-08-26"], startTime: "07:00", endTime: "09:00" },
+    { id: "d27", userId, type: "verspaetet", days: ["2026-08-27"], startTime: "07:00", endTime: "07:45" },
+    { id: "d28", userId, type: "krank", days: ["2026-08-28"], startTime: null, endTime: null, replacementUserId },
+    { id: "d31", userId, type: "teilweise_abwesend", days: ["2026-08-31"], startTime: "10:00", endTime: "12:00" },
+    { id: "d01", userId, type: "frueher_weg", days: ["2026-09-01"], startTime: "12:30", endTime: "15:00" },
+  ];
+  const result = await normalizeAndValidateCrewDeviations({
+    db: activeUsersDb([userId, replacementUserId], companyId),
+    companyId,
+    input,
+    scheduledStart: "2026-08-25",
+    scheduledEnd: "2026-09-01",
+    taskStartTime: "07:00",
+    taskEndTime: "15:00",
+    extraAssignments: sourceAssignments,
+    actorName: "Dawid Beckham",
+  });
+  assert.equal(result.crewDeviations.length, 6);
+  assert.equal(result.crewDeviations.find((item) => item.id === "d28")?.global, true);
+  const booking = getExecutionUserBooking({
+    scheduledStart: "2026-08-25",
+    scheduledEnd: "2026-09-01",
+    assignedUserIds: [userId],
+    extraAssignments: sourceAssignments,
+    crewDeviations: result.crewDeviations,
+  }, userId);
+  assert.equal(booking?.days.includes("2026-08-30"), false);
+  const replacements = applyCrewDeviationReplacements([], result.crewDeviations, "monteur", [], {
+    scheduledStart: "2026-08-25",
+    scheduledEnd: "2026-09-01",
+    taskStartTime: "07:00",
+    taskEndTime: "15:00",
+    sourceAssignments,
+  });
+  assert.deepEqual(replacements[0].dayWindows, [
+    { day: "2026-08-28", startTime: "07:00", endTime: "15:00" },
+  ]);
+});
+
+test("deviation users and replacements are tenant-scoped", async () => {
+  const companyId = new ObjectId().toString();
+  await assert.rejects(
+    normalizeAndValidateCrewDeviations({
+      db: activeUsersDb([], companyId),
+      companyId,
+      input: [{ id: "tenant", userId, type: "krank", days: ["2026-08-25"] }],
+      scheduledStart: "2026-08-25",
+      scheduledEnd: "2026-08-25",
+      taskStartTime: "07:00",
+      taskEndTime: "15:00",
+      actorName: "Dawid Beckham",
+    }),
+    (error: any) => error instanceof ExecutionCrewRequestError && error.code === "INVALID_DEVIATION_USER",
+  );
 });
 
 test("deviation windows remove only the unavailable part from task conflicts", () => {
@@ -127,15 +351,26 @@ test("deviation windows remove only the unavailable part from task conflicts", (
 
 test("replacement deviations generate deterministic extra assignments", () => {
   const replacementUserId = new ObjectId().toString();
-  const deviations = normalizeStoredCrewDeviations([{
-    id: "dev_1",
-    userId,
-    type: "krank",
-    days: ["2026-08-27", "2026-08-28"],
-    startTime: "10:00",
-    endTime: "15:00",
-    replacementUserId,
-  }]);
+  const deviations = normalizeStoredCrewDeviations([
+    {
+      id: "dev_1",
+      userId,
+      type: "krank",
+      days: ["2026-08-27"],
+      startTime: "10:00",
+      endTime: "15:00",
+      replacementUserId,
+    },
+    {
+      id: "dev_2",
+      userId,
+      type: "krank",
+      days: ["2026-08-28"],
+      startTime: "10:00",
+      endTime: "15:00",
+      replacementUserId,
+    },
+  ]);
   const generated = applyCrewDeviationReplacements([], deviations, "monteur");
   assert.deepEqual(generated, [{
     userId: replacementUserId,
@@ -149,7 +384,7 @@ test("replacement deviations generate deterministic extra assignments", () => {
       { day: "2026-08-28", startTime: "10:00", endTime: "15:00" },
     ],
     note: "",
-    replacementForDeviationIds: ["dev_1"],
+    replacementForDeviationIds: ["dev_1", "dev_2"],
   }]);
   assert.deepEqual(applyCrewDeviationReplacements(generated, [], "monteur"), []);
   const existingManual = [{
@@ -164,14 +399,107 @@ test("replacement deviations generate deterministic extra assignments", () => {
   }];
   assert.deepEqual(applyCrewDeviationReplacements(existingManual, deviations, "monteur"), [{
     ...existingManual[0],
-    days: ["2026-08-27", "2026-08-28"],
-    startTime: "10:00",
-    endTime: "15:00",
+    days: ["2026-08-26", "2026-08-27", "2026-08-28"],
+    startTime: null,
+    endTime: null,
     dayWindows: [
+      { day: "2026-08-26", startTime: null, endTime: null },
       { day: "2026-08-27", startTime: "10:00", endTime: "15:00" },
       { day: "2026-08-28", startTime: "10:00", endTime: "15:00" },
     ],
   }]);
+});
+
+test("full-day replacement uses the affected employee planned day window", () => {
+  const replacementUserId = new ObjectId().toString();
+  const deviations = normalizeStoredCrewDeviations([{
+    id: "dev_sick",
+    userId,
+    type: "krank",
+    days: ["2026-08-28"],
+    startTime: null,
+    endTime: null,
+    replacementUserId,
+  }]);
+  const generated = applyCrewDeviationReplacements([], deviations, "monteur", [], {
+    scheduledStart: "2026-08-25",
+    scheduledEnd: "2026-09-01",
+    taskStartTime: "07:00",
+    taskEndTime: "15:00",
+    sourceAssignments: [{
+      userId,
+      role: "leiter",
+      days: ["2026-08-28"],
+      dayWindows: [{ day: "2026-08-28", startTime: "08:00", endTime: "14:00" }],
+    }],
+  });
+  assert.deepEqual(generated[0].dayWindows, [
+    { day: "2026-08-28", startTime: "08:00", endTime: "14:00" },
+  ]);
+});
+
+test("mutation locks reject a concurrent booking for the same employee day", async () => {
+  const active = new Set<string>();
+  const locks = {
+    createIndex: async () => "ok",
+    deleteOne: async () => ({ deletedCount: 0 }),
+    insertOne: async (doc: any) => {
+      if (active.has(doc._id)) throw Object.assign(new Error("duplicate"), { code: 11000 });
+      active.add(doc._id);
+      return { insertedId: doc._id };
+    },
+    deleteMany: async (filter: any) => {
+      for (const id of filter._id.$in) active.delete(id);
+      return { deletedCount: filter._id.$in.length };
+    },
+  };
+  const db = { collection: () => locks } as any;
+  const companyId = new ObjectId().toString();
+  const task = {
+    scheduledStart: "2026-08-25",
+    scheduledEnd: "2026-08-25",
+    assignedUserIds: [userId],
+  };
+  const lockIds = getExecutionCrewMutationLockIds(companyId, [task]);
+  let releaseFirst!: () => void;
+  let firstStarted!: () => void;
+  const started = new Promise<void>((resolve) => { firstStarted = resolve; });
+  const release = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  const first = withExecutionCrewMutationLocks({
+    db,
+    lockIds,
+    run: async () => {
+      firstStarted();
+      await release;
+      return "saved";
+    },
+  });
+  await started;
+  await assert.rejects(
+    withExecutionCrewMutationLocks({ db, lockIds, run: async () => "second" }),
+    (error: any) => error instanceof ExecutionCrewRequestError && error.code === "CREW_UPDATE_IN_PROGRESS",
+  );
+  releaseFirst();
+  assert.equal(await first, "saved");
+});
+
+test("daily audit entries preserve actor, day and before/after values", () => {
+  const [entry] = normalizeExecutionScheduleHistory([{
+    type: "day_updated",
+    changedAt: new Date("2026-08-14T07:02:00.000Z"),
+    changedByUserId: new ObjectId(userId),
+    changedByName: "Dawid Beckham",
+    actorName: "Dawid Beckham",
+    userId: new ObjectId(userId),
+    day: "2026-08-26",
+    before: { startTime: "07:00", endTime: "15:00" },
+    after: { startTime: "08:00", endTime: "14:00" },
+  }]);
+  assert.equal(entry.type, "day_updated");
+  assert.equal(entry.day, "2026-08-26");
+  assert.equal(entry.actorName, "Dawid Beckham");
+  assert.deepEqual(entry.before, { startTime: "07:00", endTime: "15:00" });
+  assert.deepEqual(entry.after, { startTime: "08:00", endTime: "14:00" });
 });
 
 test("rejects invalid and out-of-range extra-assignment days", async () => {

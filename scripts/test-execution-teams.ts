@@ -118,8 +118,8 @@ async function main() {
         teamId: null,
         teamOverrides: [],
         assignedUserIds: [memberB],
-        scheduledStart: new Date("2026-08-10T00:00:00.000Z"),
-        scheduledEnd: new Date("2026-08-10T00:00:00.000Z"),
+        scheduledStart: new Date("2026-08-13T00:00:00.000Z"),
+        scheduledEnd: new Date("2026-08-13T00:00:00.000Z"),
         startTime: "08:00",
         endTime: "12:00",
         planningTitle: "Andere Baustelle",
@@ -142,7 +142,7 @@ async function main() {
         assignedUserIds: [extraWorker],
         scheduledStart: new Date("2026-08-11T00:00:00.000Z"),
         scheduledEnd: new Date("2026-08-11T00:00:00.000Z"),
-        startTime: "10:30",
+        startTime: "11:00",
         endTime: "12:00",
         planningTitle: "Teilzeit-Konflikt",
         address: {},
@@ -260,13 +260,17 @@ async function main() {
               userId: extraWorker.toString(),
               role: "monteur",
               sourceTeamId: null,
-              days: ["2026-08-11"],
+              days: ["2026-08-11", "2026-08-12"],
               startTime: null,
               endTime: null,
               dayWindows: [{
                 day: "2026-08-11",
                 startTime: "07:00",
                 endTime: "11:00",
+              }, {
+                day: "2026-08-12",
+                startTime: "07:00",
+                endTime: "15:00",
               }],
               note: "Nur Vormittag",
             }],
@@ -288,24 +292,21 @@ async function main() {
       userId: extraWorker.toString(),
       role: "monteur",
       sourceTeamId: null,
-      days: ["2026-08-11"],
+      days: ["2026-08-11", "2026-08-12"],
       startTime: null,
       endTime: null,
       dayWindows: [{
         day: "2026-08-11",
         startTime: "07:00",
         endTime: "11:00",
+      }, {
+        day: "2026-08-12",
+        startTime: "07:00",
+        endTime: "15:00",
       }],
       note: "Nur Vormittag",
     }]);
-    const partialConflict = crewPatch.conflicts.find(
-      (conflict: any) => conflict.conflictingTaskId === partialConflictTaskId.toString(),
-    );
-    assert.ok(partialConflict);
-    assert.equal(partialConflict.day, "2026-08-11");
-    assert.equal(partialConflict.startTime, "10:30");
-    assert.equal(partialConflict.endTime, "12:00");
-    assert.deepEqual(partialConflict.days, ["2026-08-11"]);
+    assert.deepEqual(crewPatch.conflicts, []);
 
     const roundTrip = await responseJson(await getExecutionTask(
       new Request(`http://localhost/api/execution-tasks/${taskId}`, { headers: { cookie } }),
@@ -314,6 +315,10 @@ async function main() {
     assert.deepEqual(roundTrip.item.additionalTeamIds, crewPatch.item.additionalTeamIds);
     assert.deepEqual(roundTrip.item.extraAssignments, crewPatch.item.extraAssignments);
 
+    await db.collection("executionTasks").updateOne(
+      { _id: partialConflictTaskId },
+      { $set: { startTime: "10:30" } },
+    );
     const validateResult = await responseJson(await validateExecutionCrew(
       new Request(`http://localhost/api/execution-tasks/${taskId}/validate-crew`, {
         method: "POST",
@@ -324,17 +329,31 @@ async function main() {
     assert.equal(validateResult.conflicts.some(
       (conflict: any) => conflict.projectName === "Teilzeit-Konflikt",
     ), true);
+    const rejectedOverlap = await patchExecutionTask(
+      new Request(`http://localhost/api/execution-tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", cookie },
+        body: JSON.stringify({ extraAssignments: crewPatch.item.extraAssignments }),
+      }),
+      { params: Promise.resolve({ taskId: taskId.toString() }) },
+    );
+    assert.equal(rejectedOverlap.status, 409);
+    assert.equal((await rejectedOverlap.json()).code, "CREW_CONFLICT");
+    await db.collection("executionTasks").updateOne(
+      { _id: partialConflictTaskId },
+      { $set: { startTime: "11:00" } },
+    );
 
     const deviationPayload = [{
       id: "dev_integration_1",
-      userId: memberB.toString(),
+      userId: extraWorker.toString(),
       type: "krank",
-      days: ["2026-08-10"],
+      days: ["2026-08-12"],
       startTime: null,
       endTime: null,
       global: true,
       note: "Integrationstest",
-      replacementUserId: null,
+      replacementUserId: memberA.toString(),
       actorName: "Team Tester",
       at: "2026-08-13T11:34:00.000Z",
     }];
@@ -348,10 +367,10 @@ async function main() {
     ));
     assert.deepEqual(deviationPatch.item.crewDeviations, deviationPayload);
     assert.equal(deviationPatch.conflicts.some(
-      (conflict: any) => conflict.type === "task" && conflict.userId === memberB.toString(),
+      (conflict: any) => conflict.type === "task" && conflict.userId === extraWorker.toString(),
     ), false);
     assert.equal(deviationPatch.conflicts.some(
-      (conflict: any) => conflict.type === "absence" && conflict.userId === memberB.toString(),
+      (conflict: any) => conflict.type === "absence" && conflict.userId === extraWorker.toString(),
     ), false);
     const linkedAbsence = await db.collection("absences").findOne({
       sourceTaskId: taskId,
@@ -359,6 +378,17 @@ async function main() {
     });
     assert.ok(linkedAbsence);
     assert.equal(linkedAbsence.reason, "krankheit");
+    assert.equal(deviationPatch.item.extraAssignments.some(
+      (assignment: any) =>
+        assignment.userId === memberA.toString() &&
+        assignment.days.length === 1 &&
+        assignment.days[0] === "2026-08-12",
+    ), true);
+    const unchangedTeam = await db.collection("teams").findOne({ _id: new ObjectId(teamId) });
+    assert.deepEqual(
+      new Set(unchangedTeam?.members.map((member: any) => String(member.userId))),
+      new Set([memberA.toString(), memberB.toString()]),
+    );
     const deviationRoundTrip = await responseJson(await getExecutionTask(
       new Request(`http://localhost/api/execution-tasks/${taskId}`, { headers: { cookie } }),
       { params: Promise.resolve({ taskId: taskId.toString() }) },
@@ -422,6 +452,9 @@ async function main() {
     assert.equal(taskWithCrewHistory?.scheduleHistory?.some(
       (entry: any) => entry.type === "deviation_removed" && entry.deviationId === "dev_integration_1",
     ), true);
+    assert.equal(taskWithCrewHistory?.scheduleHistory?.some(
+      (entry: any) => entry.type === "replacement_assigned" && entry.deviationId === "dev_integration_1",
+    ), true);
     assert.equal(
       taskWithHistory?.scheduleHistory?.some(
         (entry: any) =>
@@ -430,6 +463,16 @@ async function main() {
           String(entry.inUserId) === replacement.toString(),
       ),
       true,
+    );
+
+    await db.collection("executionTasks").updateOne(
+      { _id: conflictingTaskId },
+      {
+        $set: {
+          scheduledStart: new Date("2026-08-10T00:00:00.000Z"),
+          scheduledEnd: new Date("2026-08-10T00:00:00.000Z"),
+        },
+      },
     );
 
     const availability = await responseJson(
@@ -479,6 +522,10 @@ async function main() {
     assert.deepEqual(legacyAssignment.item.additionalTeamIds, []);
     assert.deepEqual(legacyAssignment.item.extraAssignments, []);
     assert.deepEqual(legacyAssignment.item.assignedUserIds, [replacement.toString()]);
+    const taskAfterMemberRemoval = await db.collection("executionTasks").findOne({ _id: taskId });
+    assert.equal(taskAfterMemberRemoval?.scheduleHistory?.some(
+      (entry: any) => entry.type === "member_removed",
+    ), true);
     console.log("Execution teams route test passed.");
   } finally {
     const db = client.db();
