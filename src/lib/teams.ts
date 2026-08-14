@@ -6,6 +6,7 @@ import {
   toObjectIdOrNull,
 } from "@/lib/api-session";
 import { buildIdVariants, getCompanyMembersByIds } from "@/lib/tasks";
+import { deriveExecutionWorkingDays, getExecutionWorkingDays } from "@/lib/executionWorkingDays";
 
 export const TEAM_TRACKS = ["montage", "elektro"] as const;
 export const TEAM_ROLES = ["leiter", "monteur", "elektriker", "lehrling"] as const;
@@ -381,10 +382,6 @@ export function deriveAssignedUserIds(teamMemberIds: string[], overrides: unknow
   return Array.from(effective);
 }
 
-function dateOnlyKey(value: Date) {
-  return Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
-}
-
 function timeToMinutes(value: unknown) {
   const normalized = safeString(value);
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(normalized)) return null;
@@ -399,22 +396,16 @@ export function hasAvailabilityOverlap(
     scheduledEnd?: Date | string | null;
     startTime?: string | null;
     endTime?: string | null;
+    excludedWeekdays?: number[];
+    workingDays?: string[];
   },
 ) {
-  const taskStart = task.scheduledStart ? new Date(task.scheduledStart) : null;
-  if (!taskStart || Number.isNaN(taskStart.getTime())) return false;
-  const taskEnd = task.scheduledEnd ? new Date(task.scheduledEnd) : taskStart;
-  if (Number.isNaN(taskEnd.getTime())) return false;
-
-  const requestedStartDay = dateOnlyKey(requested.start);
-  const requestedEndDay = dateOnlyKey(requested.end);
-  const taskStartDay = dateOnlyKey(taskStart);
-  const taskEndDay = dateOnlyKey(taskEnd);
-  if (requestedStartDay > taskEndDay || taskStartDay > requestedEndDay) return false;
-
-  const bothSingleDay =
-    requestedStartDay === requestedEndDay && taskStartDay === taskEndDay;
-  if (!bothSingleDay) return true;
+  const requestedDays = deriveExecutionWorkingDays({
+    scheduledStart: requested.start,
+    scheduledEnd: requested.end,
+  });
+  const taskDays = new Set(getExecutionWorkingDays(task));
+  if (!requestedDays.some((day) => taskDays.has(day))) return false;
 
   const requestedStartTime = timeToMinutes(requested.startTime);
   const requestedEndTime = timeToMinutes(requested.endTime);

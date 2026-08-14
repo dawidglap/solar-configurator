@@ -24,6 +24,10 @@ import {
   type CrewDeviation,
   type ExtraAssignment,
 } from "@/lib/executionCrew";
+import {
+  DEFAULT_EXECUTION_EXCLUDED_WEEKDAYS,
+  resolveExecutionWorkingDayFields,
+} from "@/lib/executionWorkingDays";
 
 export const EXECUTION_TRACKS = ["montage", "elektro"] as const;
 export const EXECUTION_STAGES = [
@@ -55,6 +59,8 @@ type NormalizedExecutionTask = {
   stage: ExecutionStage;
   scheduledStart: string | null;
   scheduledEnd: string | null;
+  excludedWeekdays: number[];
+  workingDays: string[];
   startTime: string | null;
   endTime: string | null;
   teamId: string | null;
@@ -83,6 +89,8 @@ type NormalizedExecutionScheduleHistoryEntry = {
   type?: "schedule_changed" | "team_changed" | "member_replaced" | "additional_team_changed" | "extra_assignment_changed" | "day_updated" | "deviation_added" | "deviation_removed" | "replacement_assigned" | "member_removed";
   scheduledStart: string | null;
   scheduledEnd: string | null;
+  excludedWeekdays?: number[];
+  workingDays?: string[];
   startTime: string | null;
   endTime: string | null;
   changedAt: string;
@@ -194,6 +202,7 @@ export async function ensureExecutionTaskIndexes(db: Db) {
     executionTasks.createIndex({ companyId: 1, "extraAssignments.userId": 1 }),
     executionTasks.createIndex({ companyId: 1, "crewDeviations.userId": 1 }),
     executionTasks.createIndex({ companyId: 1, scheduledStart: 1, scheduledEnd: 1 }),
+    executionTasks.createIndex({ companyId: 1, workingDays: 1 }),
   ])
     .then(() => undefined)
     .catch((error) => {
@@ -305,6 +314,12 @@ export function normalizeExecutionScheduleHistoryEntry(
   const common = {
     scheduledStart: normalizeExecutionDateValueForOutput(entry?.scheduledStart),
     scheduledEnd: normalizeExecutionDateValueForOutput(entry?.scheduledEnd),
+    excludedWeekdays: Array.isArray(entry?.excludedWeekdays)
+      ? entry.excludedWeekdays.filter((weekday: unknown) => Number.isInteger(weekday))
+      : undefined,
+    workingDays: Array.isArray(entry?.workingDays)
+      ? entry.workingDays.map((day: unknown) => safeString(day)).filter(Boolean)
+      : undefined,
     startTime: safeString(entry?.startTime) || null,
     endTime: safeString(entry?.endTime) || null,
     changedAt,
@@ -430,11 +445,19 @@ export function buildExecutionScheduleHistoryEntry(
 ) {
   const changedByUserId = actor.id;
   const userObjectId = toObjectIdOrNull(changedByUserId);
+  const workingDayFields = resolveExecutionWorkingDayFields({
+    scheduledStart: existing?.scheduledStart,
+    scheduledEnd: existing?.scheduledEnd,
+    excludedWeekdays: existing?.excludedWeekdays,
+    validateProvided: false,
+  });
 
   return {
     type: "schedule_changed" as const,
     scheduledStart: normalizeExecutionDateValueForStorage(existing?.scheduledStart),
     scheduledEnd: normalizeExecutionDateValueForStorage(existing?.scheduledEnd),
+    excludedWeekdays: workingDayFields.excludedWeekdays,
+    workingDays: workingDayFields.workingDays,
     startTime: safeString(existing?.startTime) || null,
     endTime: safeString(existing?.endTime) || null,
     changedAt: new Date(),
@@ -560,6 +583,12 @@ export function normalizeExecutionTask(doc: any, opts?: {
     safeString(doc?.projectNumber) ||
     safeString(planning?.planningNumber) ||
     undefined;
+  const workingDayFields = resolveExecutionWorkingDayFields({
+    scheduledStart: doc?.scheduledStart,
+    scheduledEnd: doc?.scheduledEnd,
+    excludedWeekdays: doc?.excludedWeekdays,
+    validateProvided: false,
+  });
 
   return {
     id: mongoIdToString(doc?._id),
@@ -577,6 +606,8 @@ export function normalizeExecutionTask(doc: any, opts?: {
       doc?.scheduledEnd instanceof Date
         ? doc.scheduledEnd.toISOString()
         : safeString(doc?.scheduledEnd) || null,
+    excludedWeekdays: workingDayFields.excludedWeekdays,
+    workingDays: workingDayFields.workingDays,
     startTime: safeString(doc?.startTime) || null,
     endTime: safeString(doc?.endTime) || null,
     teamId: mongoIdToString(doc?.teamId) || safeString(doc?.teamId) || null,
@@ -725,6 +756,8 @@ function buildExecutionTaskSeed(params: {
     stage: "offen" as const,
     scheduledStart: null,
     scheduledEnd: null,
+    excludedWeekdays: [...DEFAULT_EXECUTION_EXCLUDED_WEEKDAYS],
+    workingDays: [],
     startTime: null,
     endTime: null,
     teamId: null,
@@ -801,6 +834,36 @@ export async function ensureExecutionTasksForWonPlanning(
     .toArray();
 
   return { created, items };
+}
+
+export async function migrateExecutionWorkingDays(db: Db) {
+  const executionTasks = getExecutionTasksCollection(db);
+  const docs = await executionTasks
+    .find({
+      $or: [
+        { excludedWeekdays: { $exists: false } },
+        { workingDays: { $exists: false } },
+      ],
+    })
+    .project({ scheduledStart: 1, scheduledEnd: 1, excludedWeekdays: 1 })
+    .toArray();
+
+  let modified = 0;
+  for (const doc of docs) {
+    const fields = resolveExecutionWorkingDayFields({
+      scheduledStart: doc.scheduledStart,
+      scheduledEnd: doc.scheduledEnd,
+      excludedWeekdays: doc.excludedWeekdays,
+      validateProvided: false,
+    });
+    const result = await executionTasks.updateOne(
+      { _id: doc._id },
+      { $set: { ...fields, updatedAt: new Date() } },
+    );
+    modified += result.modifiedCount;
+  }
+
+  return { matched: docs.length, modified };
 }
 
 export async function backfillExecutionTasksForWonPlannings(
@@ -891,6 +954,11 @@ export async function migrateMontagesToExecutionTasks(
           stage,
           scheduledStart: montage?.startDate ? new Date(montage.startDate) : null,
           scheduledEnd: montage?.endDate ? new Date(montage.endDate) : null,
+          ...resolveExecutionWorkingDayFields({
+            scheduledStart: montage?.startDate ?? null,
+            scheduledEnd: montage?.endDate ?? montage?.startDate ?? null,
+            excludedWeekdays: DEFAULT_EXECUTION_EXCLUDED_WEEKDAYS,
+          }),
           startTime: safeString(montage?.startTime) || null,
           endTime: safeString(montage?.endTime) || null,
           teamId: null,

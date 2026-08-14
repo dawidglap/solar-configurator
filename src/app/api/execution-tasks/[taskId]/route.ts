@@ -44,6 +44,10 @@ import {
   withExecutionCrewMutationLocks,
 } from "@/lib/executionCrew";
 import { syncCrewDeviationAbsences } from "@/lib/absences";
+import {
+  ExecutionWorkingDaysError,
+  resolveExecutionWorkingDayFields,
+} from "@/lib/executionWorkingDays";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -173,8 +177,34 @@ export async function PATCH(req: Request, { params }: Params) {
       return jsonResponse(origin, { ok: false, error: "Invalid endTime" }, 400);
     }
 
+    const finalScheduledStart =
+      scheduledStart !== undefined ? scheduledStart : (existing as any)?.scheduledStart ?? null;
+    const finalScheduledEnd =
+      scheduledEnd !== undefined
+        ? scheduledEnd
+        : (existing as any)?.scheduledEnd ?? finalScheduledStart;
+    const existingWorkingDayFields = resolveExecutionWorkingDayFields({
+      scheduledStart: (existing as any)?.scheduledStart,
+      scheduledEnd: (existing as any)?.scheduledEnd,
+      excludedWeekdays: (existing as any)?.excludedWeekdays,
+      validateProvided: false,
+    });
+    const workingDayFields = resolveExecutionWorkingDayFields({
+      scheduledStart: finalScheduledStart,
+      scheduledEnd: finalScheduledEnd,
+      excludedWeekdays:
+        body?.excludedWeekdays !== undefined
+          ? body.excludedWeekdays
+          : (existing as any)?.excludedWeekdays,
+      workingDays: body?.workingDays,
+    });
+    const workingDaysChanged =
+      JSON.stringify(existingWorkingDayFields) !== JSON.stringify(workingDayFields);
+
     const updateSet: Record<string, any> = {
       updatedAt: new Date(),
+      excludedWeekdays: workingDayFields.excludedWeekdays,
+      workingDays: workingDayFields.workingDays,
     };
 
     if (body?.notes !== undefined) {
@@ -199,12 +229,13 @@ export async function PATCH(req: Request, { params }: Params) {
       updateSet.endTime = endTime;
     }
 
-    const scheduleChanged = hasExecutionScheduleChanged(existing, {
-      scheduledStart,
-      scheduledEnd,
-      startTime,
-      endTime,
-    });
+    const scheduleChanged =
+      hasExecutionScheduleChanged(existing, {
+        scheduledStart,
+        scheduledEnd,
+        startTime,
+        endTime,
+      }) || workingDaysChanged;
     const actor = await resolveExecutionActorMeta(db, session);
     const existingCrewDeviations = normalizeStoredCrewDeviations((existing as any)?.crewDeviations);
     const finalScheduledStartForDeviations =
@@ -221,6 +252,7 @@ export async function PATCH(req: Request, { params }: Params) {
         input: body?.crewDeviations !== undefined ? body.crewDeviations : existingCrewDeviations,
         scheduledStart: finalScheduledStartForDeviations,
         scheduledEnd: finalScheduledEndForDeviations,
+        workingDays: workingDayFields.workingDays,
         taskStartTime: startTime !== undefined ? startTime : (existing as any)?.startTime ?? null,
         taskEndTime: endTime !== undefined ? endTime : (existing as any)?.endTime ?? null,
         extraAssignments:
@@ -444,6 +476,7 @@ export async function PATCH(req: Request, { params }: Params) {
         ),
         scheduledStart: finalScheduledStart,
         scheduledEnd: finalScheduledEnd,
+        workingDays: workingDayFields.workingDays,
       });
 
       let directBaseUserIds: string[] = [];
@@ -791,6 +824,13 @@ export async function PATCH(req: Request, { params }: Params) {
           code: e.code,
           ...((e as any).conflicts ? { conflicts: (e as any).conflicts } : {}),
         },
+        e.status,
+      );
+    }
+    if (e instanceof ExecutionWorkingDaysError) {
+      return jsonResponse(
+        origin,
+        { ok: false, error: e.message, message: e.message, code: e.code },
         e.status,
       );
     }

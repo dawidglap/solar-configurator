@@ -10,6 +10,10 @@ import {
   getAbsencesCollection,
   syncCrewDeviationAbsences,
 } from "@/lib/absences";
+import {
+  deriveExecutionWorkingDays,
+  getExecutionWorkingDays,
+} from "@/lib/executionWorkingDays";
 
 export type ExtraAssignment = {
   userId: string;
@@ -339,12 +343,20 @@ export function getPlannedExecutionWindow(args: {
   extraAssignments: unknown;
   scheduledStart: unknown;
   scheduledEnd: unknown;
+  workingDays?: unknown;
   taskStartTime?: unknown;
   taskEndTime?: unknown;
 }) {
   const taskStart = dateOnly(args.scheduledStart);
   const taskEnd = dateOnly(args.scheduledEnd) || taskStart;
   if (!taskStart || !taskEnd || args.day < taskStart || args.day > taskEnd) return null;
+  const workingDays = Array.isArray(args.workingDays)
+    ? new Set(args.workingDays.map(validDateOnly).filter((day): day is string => !!day))
+    : new Set(deriveExecutionWorkingDays({
+        scheduledStart: args.scheduledStart,
+        scheduledEnd: args.scheduledEnd,
+      }));
+  if (!workingDays.has(args.day)) return null;
   const assignment = normalizeStoredExtraAssignments(args.extraAssignments)
     .find((item) => item.userId === args.userId);
   if (assignment) {
@@ -396,6 +408,7 @@ export async function normalizeAndValidateCrewDeviations(args: {
   input: unknown;
   scheduledStart: unknown;
   scheduledEnd: unknown;
+  workingDays?: unknown;
   taskStartTime?: unknown;
   taskEndTime?: unknown;
   extraAssignments?: unknown;
@@ -419,6 +432,14 @@ export async function normalizeAndValidateCrewDeviations(args: {
       "INVALID_SCHEDULE_RANGE",
     );
   }
+  const workingDays = new Set(
+    Array.isArray(args.workingDays)
+      ? args.workingDays.map(validDateOnly).filter((day): day is string => !!day)
+      : deriveExecutionWorkingDays({
+          scheduledStart: args.scheduledStart,
+          scheduledEnd: args.scheduledEnd,
+        }),
+  );
 
   const nowIso = (args.now ?? new Date()).toISOString();
   const seenKeys = new Set<string>();
@@ -476,6 +497,12 @@ export async function normalizeAndValidateCrewDeviations(args: {
           "DEVIATION_DAY_OUTSIDE_SCHEDULE",
         );
       }
+      if (!workingDays.has(day)) {
+        throw new ExecutionCrewRequestError(
+          "Ein Abweichungstag ist kein Arbeitstag des Auftrags.",
+          "DEVIATION_DAY_NOT_WORKING_DAY",
+        );
+      }
       if (seenDays.has(day)) {
         throw new ExecutionCrewRequestError(
           "Ein Abweichungstag darf nicht doppelt vorkommen.",
@@ -501,6 +528,7 @@ export async function normalizeAndValidateCrewDeviations(args: {
       extraAssignments: args.extraAssignments,
       scheduledStart: args.scheduledStart,
       scheduledEnd: args.scheduledEnd,
+      workingDays: Array.from(workingDays),
       taskStartTime: args.taskStartTime,
       taskEndTime: args.taskEndTime,
     });
@@ -610,13 +638,22 @@ export function deriveExtraAssignmentDayWindows(
   assignment: any,
   scheduledStart: unknown,
   scheduledEnd: unknown,
+  excludedWeekdays?: unknown,
 ): ExtraAssignmentDayWindow[] {
   const taskStart = dateOnly(scheduledStart);
   const taskEnd = dateOnly(scheduledEnd) || taskStart;
   if (!taskStart || !taskEnd || taskStart > taskEnd) return [];
+  const workingDays = deriveExecutionWorkingDays({
+    scheduledStart,
+    scheduledEnd,
+    excludedWeekdays,
+  });
+  const workingDaySet = new Set(workingDays);
   const assignmentDays: string[] = Array.isArray(assignment?.days)
-    ? (assignment.days as unknown[]).map(validDateOnly).filter((day): day is string => !!day)
-    : enumerateDays(taskStart, taskEnd);
+    ? (assignment.days as unknown[])
+        .map(validDateOnly)
+        .filter((day): day is string => !!day && workingDaySet.has(day))
+    : workingDays;
   const rawStartTime = safeString(assignment?.startTime);
   const rawEndTime = safeString(assignment?.endTime);
   const hasValidWindow =
@@ -644,6 +681,7 @@ export async function migrateExecutionExtraAssignmentDayWindows(db: Db) {
               assignment,
               task?.scheduledStart,
               task?.scheduledEnd,
+              task?.excludedWeekdays,
             ),
           });
     const result = await tasks.updateOne(
@@ -795,6 +833,7 @@ export async function normalizeAndValidateAdditionalCrew(args: {
   extraAssignments: unknown;
   scheduledStart: unknown;
   scheduledEnd: unknown;
+  workingDays?: unknown;
 }) {
   const additionalTeamIds = normalizeTeamIdArray(args.additionalTeamIds, args.mainTeamId);
   if (!Array.isArray(args.extraAssignments)) {
@@ -806,6 +845,14 @@ export async function normalizeAndValidateAdditionalCrew(args: {
   if (taskStart && taskEnd && taskStart > taskEnd) {
     throw new ExecutionCrewRequestError("scheduledEnd darf nicht vor scheduledStart liegen.", "INVALID_SCHEDULE_RANGE");
   }
+  const workingDays = new Set(
+    Array.isArray(args.workingDays)
+      ? args.workingDays.map(validDateOnly).filter((day): day is string => !!day)
+      : deriveExecutionWorkingDays({
+          scheduledStart: args.scheduledStart,
+          scheduledEnd: args.scheduledEnd,
+        }),
+  );
 
   const seenUsers = new Set<string>();
   const extraAssignments = args.extraAssignments.map((assignment: any) => {
@@ -854,6 +901,12 @@ export async function normalizeAndValidateAdditionalCrew(args: {
         if (!taskStart || !taskEnd || day < taskStart || day > taskEnd) {
           throw new ExecutionCrewRequestError("Ein Zusatzkraft-Tag liegt ausserhalb des Termin-Zeitraums.", "EXTRA_ASSIGNMENT_DAY_OUTSIDE_SCHEDULE");
         }
+        if (!workingDays.has(day)) {
+          throw new ExecutionCrewRequestError(
+            "Ein Zusatzkraft-Tag ist kein Arbeitstag des Auftrags.",
+            "EXTRA_ASSIGNMENT_DAY_NOT_WORKING_DAY",
+          );
+        }
         if (seenDays.has(day)) {
           throw new ExecutionCrewRequestError(
             "Ein Zusatzkraft-Tag darf nicht doppelt vorkommen.",
@@ -886,6 +939,12 @@ export async function normalizeAndValidateAdditionalCrew(args: {
           throw new ExecutionCrewRequestError(
             "Ein Tagesfenster liegt ausserhalb des Termin-Zeitraums.",
             "EXTRA_ASSIGNMENT_DAY_WINDOW_OUTSIDE_SCHEDULE",
+          );
+        }
+        if (!workingDays.has(day)) {
+          throw new ExecutionCrewRequestError(
+            "Ein Tagesfenster ist kein Arbeitstag des Auftrags.",
+            "EXTRA_ASSIGNMENT_DAY_WINDOW_NOT_WORKING_DAY",
           );
         }
         if (seenWindowDays.has(day)) {
@@ -1008,6 +1067,9 @@ export function getExecutionUserBooking(task: any, userId: string): ExecutionBoo
   if (!start || !end || start > end) return null;
   const taskStartTime = safeString(task?.startTime) || null;
   const taskEndTime = safeString(task?.endTime) || null;
+  const taskWorkingDays = getExecutionWorkingDays(task);
+  const taskWorkingDaySet = new Set(taskWorkingDays);
+  const assignmentDays = assignment?.days ?? assignment?.dayWindows?.map((window) => window.day);
   const unavailableWindows = normalizeStoredCrewDeviations(task?.crewDeviations)
     .filter((deviation) => deviation.userId === userId)
     .flatMap((deviation) => deviation.days.map((day) => ({
@@ -1016,7 +1078,9 @@ export function getExecutionUserBooking(task: any, userId: string): ExecutionBoo
       endTime: deviation.endTime,
     })));
   return {
-    days: assignment?.days ?? assignment?.dayWindows?.map((window) => window.day) ?? enumerateDays(start, end),
+    days: assignmentDays
+      ? assignmentDays.filter((day) => taskWorkingDaySet.has(day))
+      : taskWorkingDays,
     startTime: assignment?.startTime ?? taskStartTime,
     endTime: assignment?.endTime ?? taskEndTime,
     dayWindows: assignment?.dayWindows ?? null,
