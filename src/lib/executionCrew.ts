@@ -2,12 +2,19 @@ import type { Db } from "mongodb";
 import { ObjectId } from "mongodb";
 import { mongoIdToString, safeString, toObjectIdOrNull } from "@/lib/api-session";
 import { buildIdVariants, getCompanyMembersByIds } from "@/lib/tasks";
-import { deriveAssignedUserIds, getTeamsCollection, TEAM_ROLES, type TeamRole } from "@/lib/teams";
+import {
+  deriveAssignedUserIds,
+  getTeamsCollection,
+  normalizeStoredTeamOverrides,
+  TEAM_ROLES,
+  type TeamRole,
+} from "@/lib/teams";
 import {
   buildAbsenceOverlapFilter,
   ensureAbsenceIndexes,
   getAbsenceBooking,
   getAbsencesCollection,
+  isAbsenceFromTask,
   syncCrewDeviationAbsences,
 } from "@/lib/absences";
 import {
@@ -78,8 +85,11 @@ export type ExecutionBooking = {
 };
 
 export type ExecutionCrewConflict = {
-  type: "task";
+  type: "double_booking";
   userId: string;
+  fullName: string;
+  taskId: string;
+  taskTitle: string;
   conflictingTaskId: string;
   projectName: string;
   day: string;
@@ -89,6 +99,9 @@ export type ExecutionCrewConflict = {
 } | {
   type: "absence";
   userId: string;
+  fullName: string;
+  taskId: string | null;
+  taskTitle: string;
   absenceId: string;
   reason: string;
   startDate: string;
@@ -1059,7 +1072,28 @@ export function deriveExecutionCrewUserIds(args: {
   ].filter(Boolean)));
 }
 
+export function getEffectiveExecutionCrewUserIds(task: any) {
+  const effective = new Set<string>(
+    Array.isArray(task?.assignedUserIds)
+      ? task.assignedUserIds.map(normalizeId).filter(Boolean)
+      : [],
+  );
+  const latestOverrideByOutUser = new Map<string, ReturnType<typeof normalizeStoredTeamOverrides>[number]>();
+  for (const override of normalizeStoredTeamOverrides(task?.teamOverrides)) {
+    if (override.outUserId) latestOverrideByOutUser.set(override.outUserId, override);
+  }
+  for (const [outUserId, override] of latestOverrideByOutUser) {
+    effective.delete(outUserId);
+    if (override.inUserId) effective.add(override.inUserId);
+  }
+  for (const assignment of normalizeStoredExtraAssignments(task?.extraAssignments)) {
+    if (assignment.userId) effective.add(assignment.userId);
+  }
+  return Array.from(effective);
+}
+
 export function getExecutionUserBooking(task: any, userId: string): ExecutionBooking | null {
+  if (!getEffectiveExecutionCrewUserIds(task).includes(userId)) return null;
   const assignment = normalizeStoredExtraAssignments(task?.extraAssignments)
     .find((item) => item.userId === userId);
   const start = dateOnly(task?.scheduledStart);
@@ -1069,7 +1103,11 @@ export function getExecutionUserBooking(task: any, userId: string): ExecutionBoo
   const taskEndTime = safeString(task?.endTime) || null;
   const taskWorkingDays = getExecutionWorkingDays(task);
   const taskWorkingDaySet = new Set(taskWorkingDays);
-  const assignmentDays = assignment?.days ?? assignment?.dayWindows?.map((window) => window.day);
+  const assignmentDays = assignment?.days?.length
+    ? assignment.days
+    : assignment?.dayWindows?.length
+      ? assignment.dayWindows.map((window) => window.day)
+      : null;
   const unavailableWindows = normalizeStoredCrewDeviations(task?.crewDeviations)
     .filter((deviation) => deviation.userId === userId)
     .flatMap((deviation) => deviation.days.map((day) => ({
@@ -1159,11 +1197,7 @@ export async function findExecutionCrewConflicts(args: {
   companyId: string;
   task: any;
 }) {
-  const userIds = Array.from<string>(new Set<string>(
-    Array.isArray(args.task?.assignedUserIds)
-      ? args.task.assignedUserIds.map(normalizeId).filter(Boolean)
-      : [],
-  ));
+  const userIds = getEffectiveExecutionCrewUserIds(args.task);
   if (!userIds.length) return [] as ExecutionCrewConflict[];
   const taskId = normalizeId(args.task?._id);
   const bookings = new Map(userIds.map((userId) => [userId, getExecutionUserBooking(args.task, userId)]));
@@ -1174,12 +1208,22 @@ export async function findExecutionCrewConflicts(args: {
   const candidateFilter: Record<string, any> = {
     companyId: { $in: buildIdVariants(args.companyId) },
     ...(taskObjectId ? { _id: { $ne: taskObjectId } } : {}),
-    assignedUserIds: { $in: userIds.flatMap(buildIdVariants) },
     scheduledStart: { $ne: null, $lte: new Date(`${allDays.at(-1)}T23:59:59.999Z`) },
-    $or: [
-      { scheduledEnd: { $gte: new Date(`${allDays[0]}T00:00:00.000Z`) } },
-      { scheduledEnd: null, scheduledStart: { $gte: new Date(`${allDays[0]}T00:00:00.000Z`) } },
-      { scheduledEnd: { $exists: false }, scheduledStart: { $gte: new Date(`${allDays[0]}T00:00:00.000Z`) } },
+    $and: [
+      {
+        $or: [
+          { assignedUserIds: { $in: userIds.flatMap(buildIdVariants) } },
+          { "teamOverrides.inUserId": { $in: userIds.flatMap(buildIdVariants) } },
+          { "extraAssignments.userId": { $in: userIds.flatMap(buildIdVariants) } },
+        ],
+      },
+      {
+        $or: [
+          { scheduledEnd: { $gte: new Date(`${allDays[0]}T00:00:00.000Z`) } },
+          { scheduledEnd: null, scheduledStart: { $gte: new Date(`${allDays[0]}T00:00:00.000Z`) } },
+          { scheduledEnd: { $exists: false }, scheduledStart: { $gte: new Date(`${allDays[0]}T00:00:00.000Z`) } },
+        ],
+      },
     ],
   };
   await ensureAbsenceIndexes(args.db);
@@ -1188,10 +1232,16 @@ export async function findExecutionCrewConflicts(args: {
     userId: { $in: userIds.flatMap(buildIdVariants) },
     ...buildAbsenceOverlapFilter(allDays[0], allDays.at(-1)!),
   };
-  const [candidates, absences] = await Promise.all([
+  const [candidates, absences, users] = await Promise.all([
     args.db.collection("executionTasks").find(candidateFilter).toArray(),
     getAbsencesCollection(args.db).find(absenceFilter).toArray(),
+    getCompanyMembersByIds(args.db, args.companyId, userIds),
   ]);
+  const userNameById = new Map(users.map((user: any) => [
+    normalizeId(user?._id),
+    [safeString(user?.firstName), safeString(user?.lastName)].filter(Boolean).join(" ") ||
+      safeString(user?.name) || safeString(user?.email),
+  ]));
 
   const planningIds = Array.from(new Set(candidates.map((task) => normalizeId(task?.planningId)).filter(Boolean)));
   const plannings = planningIds.length
@@ -1201,28 +1251,33 @@ export async function findExecutionCrewConflicts(args: {
       }, { projection: { title: 1, planningNumber: 1, summary: 1 } }).toArray()
     : [];
   const planningById = new Map(plannings.map((planning) => [normalizeId(planning?._id), planning]));
+  const taskTitleById = new Map(candidates.map((candidate) => {
+    const planning = planningById.get(normalizeId(candidate?.planningId));
+    return [normalizeId(candidate?._id),
+      safeString(candidate?.planningTitle) ||
+      safeString(planning?.title) ||
+      safeString(planning?.summary?.customerName) ||
+      safeString(planning?.planningNumber) ||
+      safeString(candidate?.projectNumber) ||
+      "Unbekanntes Projekt",
+    ];
+  }));
   const conflicts: ExecutionCrewConflict[] = [];
   for (const candidate of candidates) {
-    const candidateUsers = new Set<string>(
-      Array.isArray(candidate?.assignedUserIds) ? candidate.assignedUserIds.map(normalizeId).filter(Boolean) : [],
-    );
+    const candidateUsers = new Set(getEffectiveExecutionCrewUserIds(candidate));
     for (const userId of userIds) {
       if (!candidateUsers.has(userId)) continue;
       const candidateBooking = getExecutionUserBooking(candidate, userId);
       const overlaps = getExecutionBookingOverlapDetails(bookings.get(userId) ?? null, candidateBooking);
       if (!overlaps.length) continue;
-      const planning = planningById.get(normalizeId(candidate?.planningId));
-      const projectName =
-        safeString(candidate?.planningTitle) ||
-        safeString(planning?.title) ||
-        safeString(planning?.summary?.customerName) ||
-        safeString(planning?.planningNumber) ||
-        safeString(candidate?.projectNumber) ||
-        "Unbekanntes Projekt";
+      const projectName = taskTitleById.get(normalizeId(candidate?._id)) || "Unbekanntes Projekt";
       for (const overlap of overlaps) {
         conflicts.push({
-          type: "task",
+          type: "double_booking",
           userId,
+          fullName: userNameById.get(userId) || "",
+          taskId: normalizeId(candidate?._id),
+          taskTitle: projectName,
           conflictingTaskId: normalizeId(candidate?._id),
           projectName,
           day: overlap.day,
@@ -1234,7 +1289,7 @@ export async function findExecutionCrewConflicts(args: {
     }
   }
   for (const absence of absences) {
-    if (taskId && normalizeId(absence?.sourceTaskId) === taskId) continue;
+    if (isAbsenceFromTask(absence, taskId)) continue;
     const userId = normalizeId(absence?.userId);
     const requestedBooking = bookings.get(userId) ?? null;
     if (!requestedBooking) continue;
@@ -1244,6 +1299,9 @@ export async function findExecutionCrewConflicts(args: {
       conflicts.push({
         type: "absence",
         userId,
+        fullName: userNameById.get(userId) || "",
+        taskId: normalizeId(absence?.sourceTaskId) || null,
+        taskTitle: taskTitleById.get(normalizeId(absence?.sourceTaskId)) || "",
         absenceId: normalizeId(absence?._id),
         reason: safeString(absence?.reason).toLowerCase(),
         startDate: safeString(absence?.startDate),
@@ -1261,11 +1319,7 @@ export async function findExecutionCrewConflicts(args: {
 export function getExecutionCrewMutationLockIds(companyId: string, tasks: any[]) {
   const result = new Set<string>();
   for (const task of tasks) {
-    const userIds = Array.from(new Set<string>(
-      Array.isArray(task?.assignedUserIds)
-        ? task.assignedUserIds.map(normalizeId).filter(Boolean)
-        : [],
-    ));
+    const userIds = getEffectiveExecutionCrewUserIds(task);
     for (const userId of userIds) {
       const booking = getExecutionUserBooking(task, userId);
       for (const day of booking?.days ?? []) {
@@ -1274,6 +1328,32 @@ export function getExecutionCrewMutationLockIds(companyId: string, tasks: any[])
     }
   }
   return Array.from(result).sort();
+}
+
+export async function migrateExecutionAssignedUserIds(db: Db) {
+  const tasks = db.collection("executionTasks");
+  const docs = await tasks.find({}, {
+    projection: { assignedUserIds: 1, teamOverrides: 1, extraAssignments: 1 },
+  }).toArray();
+  let modified = 0;
+  for (const task of docs) {
+    const previous = Array.isArray(task?.assignedUserIds)
+      ? task.assignedUserIds.map(normalizeId).filter(Boolean).sort()
+      : [];
+    const next = getEffectiveExecutionCrewUserIds(task).sort();
+    if (JSON.stringify(previous) === JSON.stringify(next)) continue;
+    const result = await tasks.updateOne(
+      { _id: task._id },
+      {
+        $set: {
+          assignedUserIds: next.filter(ObjectId.isValid).map((userId) => new ObjectId(userId)),
+          updatedAt: new Date(),
+        },
+      },
+    );
+    modified += result.modifiedCount;
+  }
+  return { matched: docs.length, modified };
 }
 
 export async function withExecutionCrewMutationLocks<T>(args: {

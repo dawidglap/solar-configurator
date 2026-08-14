@@ -7,6 +7,8 @@ import {
   deriveExtraAssignmentDayWindows,
   ExecutionCrewRequestError,
   getExecutionBookingOverlap,
+  findExecutionCrewConflicts,
+  getEffectiveExecutionCrewUserIds,
   getExecutionCrewMutationLockIds,
   getExecutionUserBooking,
   getPlannedExecutionWindow,
@@ -22,6 +24,36 @@ import {
 } from "../src/lib/executionTasks";
 
 const userId = new ObjectId().toString();
+
+function conflictDb(args: {
+  companyId: ObjectId;
+  candidates?: any[];
+  absences?: any[];
+}) {
+  const users = [{
+    _id: new ObjectId(userId),
+    firstName: "Marco",
+    lastName: "Keller",
+    status: "active",
+    memberships: [{ companyId: args.companyId, status: "active" }],
+  }];
+  return {
+    collection: (name: string) => {
+      if (name === "executionTasks") {
+        return { find: () => ({ toArray: async () => args.candidates ?? [] }) };
+      }
+      if (name === "absences") {
+        return {
+          createIndex: async () => "ok",
+          find: () => ({ toArray: async () => args.absences ?? [] }),
+        };
+      }
+      if (name === "users") return { find: () => ({ toArray: async () => users }) };
+      if (name === "plannings") return { find: () => ({ toArray: async () => [] }) };
+      throw new Error(`Unexpected collection ${name}`);
+    },
+  } as any;
+}
 
 function activeUsersDb(ids: string[], companyId: string) {
   return {
@@ -347,6 +379,116 @@ test("deviation windows remove only the unavailable part from task conflicts", (
   }, userId);
   assert.deepEqual(getExecutionBookingOverlap(duringAbsence, unavailableTask), []);
   assert.deepEqual(getExecutionBookingOverlap(beforeAbsence, unavailableTask), ["2026-08-27"]);
+});
+
+test("full-day sickness creates no self-conflict and only an absence on another task", async () => {
+  const companyId = new ObjectId();
+  const taskAId = new ObjectId();
+  const taskBId = new ObjectId();
+  const deviation = {
+    id: "dev_sick",
+    userId,
+    type: "krank",
+    days: ["2026-08-18"],
+    startTime: null,
+    endTime: null,
+    global: true,
+  };
+  const taskA = {
+    _id: taskAId,
+    companyId,
+    scheduledStart: "2026-08-18",
+    scheduledEnd: "2026-08-18",
+    startTime: "07:00",
+    endTime: "15:00",
+    assignedUserIds: [new ObjectId(userId)],
+    crewDeviations: [deviation],
+  };
+  const absence = {
+    _id: new ObjectId(),
+    companyId,
+    userId: new ObjectId(userId),
+    startDate: "2026-08-18",
+    endDate: "2026-08-18",
+    startTime: null,
+    endTime: null,
+    reason: "krankheit",
+    sourceTaskId: taskAId,
+    sourceDeviationId: deviation.id,
+  };
+
+  const selfConflicts = await findExecutionCrewConflicts({
+    db: conflictDb({ companyId, absences: [absence] }),
+    companyId: companyId.toString(),
+    task: taskA,
+  });
+  assert.deepEqual(selfConflicts, []);
+
+  const taskB = {
+    _id: taskBId,
+    companyId,
+    scheduledStart: "2026-08-18",
+    scheduledEnd: "2026-08-18",
+    startTime: "07:00",
+    endTime: "15:00",
+    assignedUserIds: [new ObjectId(userId)],
+  };
+  const otherTaskConflicts = await findExecutionCrewConflicts({
+    db: conflictDb({ companyId, candidates: [taskA], absences: [absence] }),
+    companyId: companyId.toString(),
+    task: taskB,
+  });
+  assert.deepEqual(otherTaskConflicts.map((conflict) => conflict.type), ["absence"]);
+  assert.equal(otherTaskConflicts[0]?.day, "2026-08-18");
+});
+
+test("team override removals are excluded from effective crew and bookings", () => {
+  const task = {
+    scheduledStart: "2026-08-18",
+    scheduledEnd: "2026-08-18",
+    assignedUserIds: [userId],
+    teamOverrides: [{ outUserId: userId, inUserId: null, reason: "sonstiges" }],
+  };
+  assert.deepEqual(getEffectiveExecutionCrewUserIds(task), []);
+  assert.equal(getExecutionUserBooking(task, userId), null);
+});
+
+test("an extra worker conflicts only on the assigned day and overlapping window", () => {
+  const extraTask = getExecutionUserBooking({
+    scheduledStart: "2026-08-18",
+    scheduledEnd: "2026-08-20",
+    assignedUserIds: [userId],
+    extraAssignments: [{
+      userId,
+      role: "monteur",
+      days: ["2026-08-19"],
+      dayWindows: [{ day: "2026-08-19", startTime: "07:30", endTime: "11:30" }],
+    }],
+  }, userId);
+  const before = getExecutionUserBooking({
+    scheduledStart: "2026-08-19",
+    scheduledEnd: "2026-08-19",
+    assignedUserIds: [userId],
+    startTime: "06:00",
+    endTime: "07:30",
+  }, userId);
+  const overlap = getExecutionUserBooking({
+    scheduledStart: "2026-08-19",
+    scheduledEnd: "2026-08-19",
+    assignedUserIds: [userId],
+    startTime: "10:00",
+    endTime: "12:00",
+  }, userId);
+  const otherDay = getExecutionUserBooking({
+    scheduledStart: "2026-08-20",
+    scheduledEnd: "2026-08-20",
+    assignedUserIds: [userId],
+    startTime: "08:00",
+    endTime: "10:00",
+  }, userId);
+  assert.deepEqual(getExecutionBookingOverlap(extraTask, before), []);
+  assert.deepEqual(getExecutionBookingOverlap(extraTask, overlap), ["2026-08-19"]);
+  assert.deepEqual(getExecutionBookingOverlap(extraTask, otherDay), []);
 });
 
 test("replacement deviations generate deterministic extra assignments", () => {

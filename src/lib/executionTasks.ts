@@ -200,6 +200,8 @@ export async function ensureExecutionTaskIndexes(db: Db) {
     executionTasks.createIndex({ companyId: 1, assignedUserIds: 1 }),
     executionTasks.createIndex({ companyId: 1, additionalTeamIds: 1 }),
     executionTasks.createIndex({ companyId: 1, "extraAssignments.userId": 1 }),
+    executionTasks.createIndex({ companyId: 1, "teamOverrides.inUserId": 1 }),
+    executionTasks.createIndex({ companyId: 1, "teamOverrides.outUserId": 1 }),
     executionTasks.createIndex({ companyId: 1, "crewDeviations.userId": 1 }),
     executionTasks.createIndex({ companyId: 1, scheduledStart: 1, scheduledEnd: 1 }),
     executionTasks.createIndex({ companyId: 1, workingDays: 1 }),

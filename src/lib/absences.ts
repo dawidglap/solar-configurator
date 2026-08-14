@@ -176,6 +176,12 @@ export function getAbsenceBooking(absence: any): AbsenceBooking | null {
   };
 }
 
+export function isAbsenceFromTask(absence: any, taskId: unknown) {
+  const normalizedTaskId = mongoIdToString(taskId) || safeString(taskId);
+  if (!normalizedTaskId) return false;
+  return (mongoIdToString(absence?.sourceTaskId) || safeString(absence?.sourceTaskId)) === normalizedTaskId;
+}
+
 export function serializeAbsence(doc: any) {
   return {
     id: mongoIdToString(doc?._id),
@@ -269,6 +275,53 @@ export async function syncCrewDeviationAbsences(args: {
     );
   }
   return { upserted: desired.length, removed: staleIds.length };
+}
+
+export async function cleanupOrphanedCrewDeviationAbsences(
+  db: Db,
+  companyId?: string,
+) {
+  const collection = getAbsencesCollection(db);
+  const scope: Record<string, any> = {
+    sourceTaskId: { $exists: true, $ne: null },
+    sourceDeviationId: { $exists: true, $ne: "" },
+  };
+  if (companyId) scope.companyId = { $in: buildIdVariants(companyId) };
+  const absences = await collection.find(scope, {
+    projection: { _id: 1, companyId: 1, userId: 1, sourceTaskId: 1, sourceDeviationId: 1 },
+  }).toArray();
+  if (!absences.length) return { matched: 0, removed: 0 };
+
+  const taskIds = Array.from(new Set(
+    absences.map((absence) => mongoIdToString(absence?.sourceTaskId)).filter(Boolean),
+  ));
+  const tasks = taskIds.length
+    ? await db.collection("executionTasks").find(
+        { _id: { $in: taskIds.map((taskId) => new ObjectId(taskId)) } },
+        { projection: { companyId: 1, crewDeviations: 1 } },
+      ).toArray()
+    : [];
+  const taskById = new Map(tasks.map((task) => [mongoIdToString(task?._id), task]));
+  const staleIds = absences.filter((absence) => {
+    const task = taskById.get(mongoIdToString(absence?.sourceTaskId));
+    if (!task) return true;
+    const absenceCompanyId = mongoIdToString(absence?.companyId) || safeString(absence?.companyId);
+    const taskCompanyId = mongoIdToString(task?.companyId) || safeString(task?.companyId);
+    if (!absenceCompanyId || absenceCompanyId !== taskCompanyId) return true;
+    const sourceDeviationId = safeString(absence?.sourceDeviationId);
+    const userId = mongoIdToString(absence?.userId) || safeString(absence?.userId);
+    return !normalizeCrewDeviationKeys(task?.crewDeviations).has(`${userId}:${sourceDeviationId}`);
+  }).map((absence) => absence._id);
+  if (staleIds.length) await collection.deleteMany({ _id: { $in: staleIds } });
+  return { matched: absences.length, removed: staleIds.length };
+}
+
+function normalizeCrewDeviationKeys(input: unknown) {
+  if (!Array.isArray(input)) return new Set<string>();
+  return new Set(input.map((deviation: any) => {
+    const userId = mongoIdToString(deviation?.userId) || safeString(deviation?.userId);
+    return `${userId}:${safeString(deviation?.id)}`;
+  }));
 }
 
 export function buildAbsenceOverlapFilter(from: string, to: string) {

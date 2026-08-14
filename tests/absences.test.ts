@@ -4,7 +4,9 @@ import { ObjectId } from "mongodb";
 import {
   AbsenceRequestError,
   buildAbsenceOverlapFilter,
+  cleanupOrphanedCrewDeviationAbsences,
   getAbsenceBooking,
+  isAbsenceFromTask,
   normalizeAbsenceInput,
   parseAbsenceDate,
   serializeAbsence,
@@ -125,6 +127,13 @@ test("builds a company-wide inclusive date-overlap filter", () => {
   assert.equal(parseAbsenceDate("10.08.2026"), null);
 });
 
+test("recognizes mirrored absences from the excluded task", () => {
+  const taskId = new ObjectId();
+  assert.equal(isAbsenceFromTask({ sourceTaskId: taskId }, taskId.toString()), true);
+  assert.equal(isAbsenceFromTask({ sourceTaskId: new ObjectId() }, taskId), false);
+  assert.equal(isAbsenceFromTask({ sourceTaskId: null }, taskId), false);
+});
+
 test("global crew deviations idempotently create, update and remove linked absences", async () => {
   const companyId = new ObjectId();
   const taskId = new ObjectId();
@@ -229,4 +238,52 @@ test("multi-day vacation is mirrored as independent daily absences", async () =>
     ["2026-08-25", "2026-08-25", "ferien"],
     ["2026-08-26", "2026-08-26", "ferien"],
   ]);
+});
+
+test("orphaned mirrored absences are removed idempotently", async () => {
+  const companyId = new ObjectId();
+  const taskId = new ObjectId();
+  const validAbsence = {
+    _id: new ObjectId(),
+    companyId,
+    userId,
+    sourceTaskId: taskId,
+    sourceDeviationId: "dev_valid",
+  };
+  const orphanedAbsence = {
+    _id: new ObjectId(),
+    companyId,
+    userId,
+    sourceTaskId: taskId,
+    sourceDeviationId: "dev_deleted",
+  };
+  const absences = [validAbsence, orphanedAbsence];
+  const db = {
+    collection: (name: string) => {
+      if (name === "absences") return {
+        find: () => ({ toArray: async () => [...absences] }),
+        deleteMany: async (filter: any) => {
+          const ids = new Set(filter._id.$in.map((id: ObjectId) => id.toString()));
+          for (let index = absences.length - 1; index >= 0; index -= 1) {
+            if (ids.has(absences[index]._id.toString())) absences.splice(index, 1);
+          }
+          return { deletedCount: ids.size };
+        },
+      };
+      if (name === "executionTasks") return {
+        find: () => ({ toArray: async () => [{
+          _id: taskId,
+          companyId,
+          crewDeviations: [{ id: "dev_valid", userId }],
+        }] }),
+      };
+      throw new Error(`Unexpected collection ${name}`);
+    },
+  } as any;
+
+  const first = await cleanupOrphanedCrewDeviationAbsences(db);
+  assert.deepEqual(first, { matched: 2, removed: 1 });
+  assert.deepEqual(absences.map((absence) => absence.sourceDeviationId), ["dev_valid"]);
+  const second = await cleanupOrphanedCrewDeviationAbsences(db);
+  assert.deepEqual(second, { matched: 1, removed: 0 });
 });

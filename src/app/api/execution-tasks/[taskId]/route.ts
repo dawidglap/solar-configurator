@@ -35,6 +35,7 @@ import {
   deriveExecutionCrewUserIds,
   ExecutionCrewRequestError,
   findExecutionCrewConflicts,
+  getEffectiveExecutionCrewUserIds,
   getExecutionCrewMutationLockIds,
   normalizeAndValidateCrewDeviations,
   normalizeAndValidateAdditionalCrew,
@@ -132,6 +133,7 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   const body = await req.json().catch(() => ({} as any));
+  const force = body?.force === true;
   const companyId = String(session.activeCompanyId);
 
   try {
@@ -329,6 +331,8 @@ export async function PATCH(req: Request, { params }: Params) {
             body.assignedUserIds,
           );
           updateSet.assignedUserIds = assignedUserIds;
+        } else {
+          updateSet.assignedUserIds = [];
         }
       } else {
         const team = await getTeamsCollection(db).findOne({
@@ -703,6 +707,13 @@ export async function PATCH(req: Request, { params }: Params) {
       };
     }
 
+    updateSet.assignedUserIds = getEffectiveExecutionCrewUserIds({
+      ...(existing as any),
+      ...updateSet,
+    })
+      .filter((userId) => ObjectId.isValid(userId))
+      .map((userId) => new ObjectId(userId));
+
     if (updateSet.assignedUserIds !== undefined) {
       const previousAssigned = new Set<string>(
         Array.isArray((existing as any)?.assignedUserIds)
@@ -768,7 +779,7 @@ export async function PATCH(req: Request, { params }: Params) {
             companyId,
             task: candidateTask,
           });
-          if (blockingConflicts.length) {
+          if (blockingConflicts.length && !force) {
             const conflictError = new ExecutionCrewRequestError(
               "Mindestens ein Mitarbeiter ist im gewählten Zeitfenster nicht verfügbar.",
               "CREW_CONFLICT",
