@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"companyId":{"$numberInt":"1"},"auftragId":{"$numberInt":"1"},"createdAt":{"$numberInt":"-1"}},"name":"companyId_1_auftragId_1_createdAt_-1"}],"uuid":"eb778d7a2f334f82a1bf46000dc0dddb","collectionName":"auftrag_audit_logs","type":"collection"}

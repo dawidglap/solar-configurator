@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"companyId":{"$numberInt":"1"}},"name":"companyId_1","unique":true}],"uuid":"e58a9da352224772a722e66b5b130aea","collectionName":"auftrag_pipeline_templates","type":"collection"}
