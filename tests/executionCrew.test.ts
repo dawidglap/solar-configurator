@@ -12,6 +12,7 @@ import {
   getExecutionCrewMutationLockIds,
   getExecutionUserBooking,
   getPlannedExecutionWindow,
+  haveCrewDeviationsChanged,
   normalizeAndValidateAdditionalCrew,
   normalizeAndValidateCrewDeviations,
   normalizeStoredCrewDeviations,
@@ -282,6 +283,10 @@ test("rescheduling prunes deviations and scoped extras outside the new working r
   assert.deepEqual((result.extraAssignments as any[])[0].dayWindows, [
     { day: "2026-08-27", startTime: "08:00", endTime: "12:00" },
   ]);
+  assert.equal(haveCrewDeviationsChanged([
+    { id: "old", userId, days: ["2026-08-25"], type: "krank" },
+    { id: "kept", userId, days: ["2026-08-27"], type: "krank" },
+  ], result.crewDeviations), true);
 });
 
 test("legacy multi-day deviations lazily split into independent days", () => {
@@ -408,6 +413,99 @@ test("deviation windows remove only the unavailable part from task conflicts", (
   }, userId);
   assert.deepEqual(getExecutionBookingOverlap(duringAbsence, unavailableTask), []);
   assert.deepEqual(getExecutionBookingOverlap(beforeAbsence, unavailableTask), ["2026-08-27"]);
+});
+
+test("late, early-leave and partial deviations expose only the effective work intervals", () => {
+  const request = (startTime: string, endTime: string) => getExecutionUserBooking({
+    scheduledStart: "2026-08-27",
+    scheduledEnd: "2026-08-27",
+    startTime,
+    endTime,
+    assignedUserIds: [userId],
+  }, userId);
+  const booking = (type: string, startTime: string, endTime: string) =>
+    getExecutionUserBooking({
+      scheduledStart: "2026-08-27",
+      scheduledEnd: "2026-08-27",
+      startTime: "07:00",
+      endTime: "15:00",
+      assignedUserIds: [userId],
+      crewDeviations: [{
+        id: `dev_${type}`,
+        userId,
+        type,
+        days: ["2026-08-27"],
+        startTime,
+        endTime,
+      }],
+    }, userId);
+
+  const late = booking("verspaetet", "07:00", "09:00");
+  assert.deepEqual(getExecutionBookingOverlap(late, request("08:00", "08:30")), []);
+  assert.deepEqual(getExecutionBookingOverlap(late, request("09:00", "10:00")), ["2026-08-27"]);
+
+  const earlyLeave = booking("frueher_weg", "12:30", "15:00");
+  assert.deepEqual(getExecutionBookingOverlap(earlyLeave, request("11:00", "12:00")), ["2026-08-27"]);
+  assert.deepEqual(getExecutionBookingOverlap(earlyLeave, request("13:00", "14:00")), []);
+
+  const partial = booking("teilweise_abwesend", "10:00", "12:00");
+  assert.deepEqual(getExecutionBookingOverlap(partial, request("10:30", "11:30")), []);
+  assert.deepEqual(getExecutionBookingOverlap(partial, request("12:00", "13:00")), ["2026-08-27"]);
+});
+
+test("partial sickness is free on its source task but globally blocked through its absence", async () => {
+  const companyId = new ObjectId();
+  const sourceTaskId = new ObjectId();
+  const targetTaskId = new ObjectId();
+  const deviation = {
+    id: "dev_partial_sick",
+    userId,
+    type: "krank",
+    days: ["2026-08-27"],
+    startTime: "10:00",
+    endTime: "12:00",
+    global: true,
+  };
+  const sourceTask = {
+    _id: sourceTaskId,
+    companyId,
+    scheduledStart: "2026-08-27",
+    scheduledEnd: "2026-08-27",
+    startTime: "07:00",
+    endTime: "15:00",
+    assignedUserIds: [new ObjectId(userId)],
+    crewDeviations: [deviation],
+  };
+  const absence = {
+    _id: new ObjectId(),
+    companyId,
+    userId: new ObjectId(userId),
+    startDate: "2026-08-27",
+    endDate: "2026-08-27",
+    startTime: "10:00",
+    endTime: "12:00",
+    reason: "krankheit",
+    sourceTaskId,
+    sourceDeviationId: deviation.id,
+  };
+  const targetTask = {
+    _id: targetTaskId,
+    companyId,
+    scheduledStart: "2026-08-27",
+    scheduledEnd: "2026-08-27",
+    startTime: "10:30",
+    endTime: "11:30",
+    assignedUserIds: [new ObjectId(userId)],
+  };
+
+  const conflicts = await findExecutionCrewConflicts({
+    db: conflictDb({ companyId, candidates: [sourceTask], absences: [absence] }),
+    companyId: companyId.toString(),
+    task: targetTask,
+  });
+  assert.deepEqual(conflicts.map((conflict) => conflict.type), ["absence"]);
+  assert.equal(conflicts[0]?.startTime, "10:00");
+  assert.equal(conflicts[0]?.endTime, "12:00");
 });
 
 test("full-day sickness creates no self-conflict and only an absence on another task", async () => {

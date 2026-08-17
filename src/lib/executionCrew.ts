@@ -350,6 +350,11 @@ export function normalizeStoredCrewDeviations(input: unknown): CrewDeviation[] {
   });
 }
 
+export function haveCrewDeviationsChanged(previous: unknown, next: unknown) {
+  return JSON.stringify(normalizeStoredCrewDeviations(previous)) !==
+    JSON.stringify(normalizeStoredCrewDeviations(next));
+}
+
 export function pruneExecutionCrewForWorkingDays(args: {
   crewDeviations: unknown;
   extraAssignments: unknown;

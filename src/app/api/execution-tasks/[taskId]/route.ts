@@ -37,6 +37,7 @@ import {
   findExecutionCrewConflicts,
   getEffectiveExecutionCrewUserIds,
   getExecutionCrewMutationLockIds,
+  haveCrewDeviationsChanged,
   normalizeAndValidateCrewDeviations,
   normalizeAndValidateAdditionalCrew,
   normalizeStoredAdditionalTeamIds,
@@ -644,7 +645,11 @@ export async function PATCH(req: Request, { params }: Params) {
       }
     }
 
-    if (body?.crewDeviations !== undefined) {
+    const crewDeviationsChanged = haveCrewDeviationsChanged(
+      existingCrewDeviations,
+      finalCrewDeviations,
+    );
+    if (crewDeviationsChanged) {
       const historyBase = {
         changedAt: new Date(),
         changedByUserId: ObjectId.isValid(actor.id || "") ? new ObjectId(actor.id!) : actor.id,
