@@ -47,7 +47,11 @@ export async function GET(
   const { kind: rawKind } = await params;
   const kind = normalizeCompanyDocumentKind(rawKind);
   if (!kind) {
-    return jsonResponse(origin, { ok: false, message: "Dokumenttyp ist ungültig." }, 400);
+    return jsonResponse(origin, {
+      ok: false,
+      message: "Nur AGB-Dokumente werden unterstützt.",
+      code: "UNSUPPORTED_DOCUMENT_KIND",
+    }, 400);
   }
 
   try {

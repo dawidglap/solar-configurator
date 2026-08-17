@@ -5,6 +5,7 @@ import {
   deriveAssignedUserIds,
   hasAvailabilityOverlap,
   normalizeTeamMembers,
+  normalizeStoredTeamOverrides,
   normalizeTeamTracks,
   parseAvailabilityDate,
 } from "../src/lib/teams";
@@ -42,6 +43,29 @@ test("derives the effective crew from the latest override per team member", () =
     ),
     new Set([d]),
   );
+});
+
+test("team override serialization preserves frontend audit aliases", () => {
+  const outUserId = new ObjectId();
+  assert.deepEqual(normalizeStoredTeamOverrides([{
+    outUserId,
+    inUserId: null,
+    reason: "krankheit",
+    note: "Arztzeug folgt",
+    actorName: "Max Müller",
+    at: "2026-08-13T11:34:00.000Z",
+    kind: "absent",
+  }]), [{
+    outUserId: outUserId.toString(),
+    inUserId: null,
+    reason: "krankheit",
+    note: "Arztzeug folgt",
+    createdAt: "",
+    createdByUserId: null,
+    actorName: "Max Müller",
+    at: "2026-08-13T11:34:00.000Z",
+    kind: "absent",
+  }]);
 });
 
 test("availability uses inclusive day overlap", () => {

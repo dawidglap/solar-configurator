@@ -67,7 +67,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const place = safeString(body?.place) || "remote";
     if (!signerName) return response(origin, { ok: false, message: "Name ist erforderlich." }, 400);
     if (!EMAIL_PATTERN.test(signerEmail)) return response(origin, { ok: false, message: "Ungültige E-Mail-Adresse." }, 400);
-    const signaturePng = validateSignatureImage(body?.signatureImage);
+    const signaturePng = validateSignatureImage(body?.signatureImage ?? body?.signatureData);
     const source = await getSignatureSourcePdf(db, planning);
     const storedSourceHash = safeString(planning?.sourcePdfSha256);
     if (storedSourceHash && storedSourceHash !== source.hash) {

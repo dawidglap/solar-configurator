@@ -41,8 +41,13 @@ export async function GET(req: Request, { params }: Params) {
   const { teamId } = await params;
   if (!ObjectId.isValid(teamId)) return jsonResponse(origin, { ok: false, error: "Invalid teamId" }, 400);
   const url = new URL(req.url);
-  const start = parseAvailabilityDate(url.searchParams.get("start"));
-  const end = parseAvailabilityDate(url.searchParams.get("end"), true);
+  const start = parseAvailabilityDate(
+    url.searchParams.get("start") ?? url.searchParams.get("from"),
+  );
+  const end = parseAvailabilityDate(
+    url.searchParams.get("end") ?? url.searchParams.get("to"),
+    true,
+  );
   const startTimeParam = url.searchParams.get("startTime");
   const endTimeParam = url.searchParams.get("endTime");
   const startTime = startTimeParam == null ? null : normalizeExecutionTime(startTimeParam);

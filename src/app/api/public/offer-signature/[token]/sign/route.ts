@@ -135,7 +135,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     if (!planning || !["sent", "viewed"].includes(planning.offerSignatureStatus)) return response(origin, { ok: false, message: "Offerte kann mit diesem Link nicht unterschrieben werden." }, 409);
 
     const body = await req.json().catch(() => ({}));
-    if (body?.acceptedTerms !== true) return response(origin, { ok: false, message: "Die Bedingungen müssen akzeptiert werden." }, 400);
+    if (body?.acceptedTerms === false) return response(origin, { ok: false, message: "Die Bedingungen müssen akzeptiert werden." }, 400);
     const signerName = safeString(body?.signerName).slice(0, 200);
     const signerEmail = safeString(body?.signerEmail).toLowerCase().slice(0, 320);
     const placeName = safeString(body?.placeName);
@@ -145,7 +145,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const bankIban = acceptance.bankIban;
     if (!signerName) return response(origin, { ok: false, message: "Name ist erforderlich." }, 400);
     if (!EMAIL_PATTERN.test(signerEmail)) return response(origin, { ok: false, message: "Ungültige E-Mail-Adresse." }, 400);
-    const signaturePng = validateSignatureImage(body?.signatureImage);
+    const signatureImage = body?.signatureImage ?? body?.signatureData;
+    const signaturePng = validateSignatureImage(signatureImage);
 
     processingId = crypto.randomUUID();
     const staleBefore = new Date(Date.now() - 15 * 60_000);
@@ -364,7 +365,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
           offerSignerUserAgent: signerUserAgent,
           offerSignaturePlace: place,
           offerSignaturePlaceName: placeName || null,
-          offerSignatureImage: safeString(body?.signatureImage),
+          offerSignatureImage: safeString(signatureImage),
           offerSignedPdfFileId: signedOfferFile._id,
           offerConfirmationPdfFileId: confirmation.doc._id,
           offerSignedPdfSha256: signedPdfSha256,

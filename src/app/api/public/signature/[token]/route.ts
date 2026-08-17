@@ -54,7 +54,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       if (!planning) return response(origin, { ok: false, message: "Link ungültig." }, 404);
     }
     const order = await buildPublicSignatureOrder({ db, planning, token, req });
-    return response(origin, { ok: true, order }, 200);
+    return response(origin, { ok: true, order, ...order }, 200);
   } catch (error) {
     console.error("GET PUBLIC SIGNATURE ERROR:", error);
     return response(origin, { ok: false, message: "Signaturansicht konnte nicht geladen werden." }, 500);

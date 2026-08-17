@@ -1,5 +1,8 @@
 import "dotenv/config";
-import { cleanupOrphanedCrewDeviationAbsences } from "@/lib/absences";
+import {
+  cleanupOrphanedCrewDeviationAbsences,
+  migrateAbsenceDefaults,
+} from "@/lib/absences";
 import { getMongoClient } from "@/lib/db";
 import {
   migrateExecutionAssignedUserIds,
@@ -19,12 +22,14 @@ async function main() {
     const workingDays = await migrateExecutionWorkingDays(db);
     const assignedUserIds = await migrateExecutionAssignedUserIds(db);
     const orphanedAbsences = await cleanupOrphanedCrewDeviationAbsences(db);
+    const absenceDefaults = await migrateAbsenceDefaults(db);
     console.log(JSON.stringify({
       ok: true,
       crewDeviations,
       workingDays,
       assignedUserIds,
       orphanedAbsences,
+      absenceDefaults,
     }, null, 2));
   } finally {
     await client.close().catch(() => undefined);

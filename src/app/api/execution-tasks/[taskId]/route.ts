@@ -42,6 +42,7 @@ import {
   normalizeStoredAdditionalTeamIds,
   normalizeStoredCrewDeviations,
   normalizeStoredExtraAssignments,
+  pruneExecutionCrewForWorkingDays,
   withExecutionCrewMutationLocks,
 } from "@/lib/executionCrew";
 import { syncCrewDeviationAbsences } from "@/lib/absences";
@@ -188,7 +189,9 @@ export async function PATCH(req: Request, { params }: Params) {
     const existingWorkingDayFields = resolveExecutionWorkingDayFields({
       scheduledStart: (existing as any)?.scheduledStart,
       scheduledEnd: (existing as any)?.scheduledEnd,
-      excludedWeekdays: (existing as any)?.excludedWeekdays,
+      excludedWeekdays: Object.prototype.hasOwnProperty.call(existing as any, "excludedWeekdays")
+        ? (existing as any).excludedWeekdays
+        : [],
       validateProvided: false,
     });
     const workingDayFields = resolveExecutionWorkingDayFields({
@@ -197,7 +200,9 @@ export async function PATCH(req: Request, { params }: Params) {
       excludedWeekdays:
         body?.excludedWeekdays !== undefined
           ? body.excludedWeekdays
-          : (existing as any)?.excludedWeekdays,
+          : Object.prototype.hasOwnProperty.call(existing as any, "excludedWeekdays")
+            ? (existing as any).excludedWeekdays
+            : [],
       workingDays: body?.workingDays,
     });
     const workingDaysChanged =
@@ -211,6 +216,9 @@ export async function PATCH(req: Request, { params }: Params) {
 
     if (body?.notes !== undefined) {
       updateSet.notes = safeString(body?.notes);
+    }
+    if (body?.rescheduleReason !== undefined) {
+      updateSet.rescheduleReason = safeString(body?.rescheduleReason).slice(0, 1000);
     }
     if (body?.address !== undefined) {
       updateSet.address = normalizeExecutionAddress({
@@ -239,7 +247,24 @@ export async function PATCH(req: Request, { params }: Params) {
         endTime,
       }) || workingDaysChanged;
     const actor = await resolveExecutionActorMeta(db, session);
+    if (body?.changedByName !== undefined || body?.changedByUserId !== undefined) {
+      updateSet.changedByName = actor.name;
+      updateSet.changedByUserId = ObjectId.isValid(actor.id || "")
+        ? new ObjectId(actor.id!)
+        : actor.id;
+    }
     const existingCrewDeviations = normalizeStoredCrewDeviations((existing as any)?.crewDeviations);
+    const prunedCrew = scheduleChanged
+      ? pruneExecutionCrewForWorkingDays({
+          crewDeviations:
+            body?.crewDeviations !== undefined ? body.crewDeviations : existingCrewDeviations,
+          extraAssignments:
+            body?.extraAssignments !== undefined
+              ? body.extraAssignments
+              : (existing as any)?.extraAssignments ?? [],
+          workingDays: workingDayFields.workingDays,
+        })
+      : null;
     const finalScheduledStartForDeviations =
       scheduledStart !== undefined ? scheduledStart : (existing as any)?.scheduledStart ?? null;
     const finalScheduledEndForDeviations =
@@ -251,16 +276,18 @@ export async function PATCH(req: Request, { params }: Params) {
       const normalizedDeviations = await normalizeAndValidateCrewDeviations({
         db,
         companyId,
-        input: body?.crewDeviations !== undefined ? body.crewDeviations : existingCrewDeviations,
+        input: prunedCrew?.crewDeviations ?? (
+          body?.crewDeviations !== undefined ? body.crewDeviations : existingCrewDeviations
+        ),
         scheduledStart: finalScheduledStartForDeviations,
         scheduledEnd: finalScheduledEndForDeviations,
         workingDays: workingDayFields.workingDays,
         taskStartTime: startTime !== undefined ? startTime : (existing as any)?.startTime ?? null,
         taskEndTime: endTime !== undefined ? endTime : (existing as any)?.endTime ?? null,
         extraAssignments:
-          body?.extraAssignments !== undefined
+          prunedCrew?.extraAssignments ?? (body?.extraAssignments !== undefined
             ? body.extraAssignments
-            : (existing as any)?.extraAssignments ?? [],
+            : (existing as any)?.extraAssignments ?? []),
         actorName: actor.name,
       });
       finalCrewDeviations = normalizedDeviations.crewDeviations;
@@ -463,7 +490,9 @@ export async function PATCH(req: Request, { params }: Params) {
         additionalTeamIds:
           body?.additionalTeamIds !== undefined ? body.additionalTeamIds : existingAdditionalTeamIds,
         extraAssignments: applyCrewDeviationReplacements(
-          body?.extraAssignments !== undefined ? body.extraAssignments : existingExtraAssignments,
+          prunedCrew?.extraAssignments ?? (
+            body?.extraAssignments !== undefined ? body.extraAssignments : existingExtraAssignments
+          ),
           finalCrewDeviations,
           (existing as any)?.track === "elektro" ? "elektriker" : "monteur",
           existingExtraAssignments
@@ -475,7 +504,9 @@ export async function PATCH(req: Request, { params }: Params) {
             taskStartTime: startTime !== undefined ? startTime : (existing as any)?.startTime ?? null,
             taskEndTime: endTime !== undefined ? endTime : (existing as any)?.endTime ?? null,
             sourceAssignments:
-              body?.extraAssignments !== undefined ? body.extraAssignments : existingExtraAssignments,
+              prunedCrew?.extraAssignments ?? (
+                body?.extraAssignments !== undefined ? body.extraAssignments : existingExtraAssignments
+              ),
           },
         ),
         scheduledStart: finalScheduledStart,

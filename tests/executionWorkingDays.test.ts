@@ -47,7 +47,7 @@ test("supports custom excluded weekdays and validates provided workingDays", () 
   );
 });
 
-test("legacy tasks expose lazy weekend defaults through every normalized GET payload", () => {
+test("legacy tasks expose an empty excluded-weekday default through every normalized GET payload", () => {
   const task = normalizeExecutionTask({
     _id: new ObjectId(),
     companyId: new ObjectId(),
@@ -55,14 +55,15 @@ test("legacy tasks expose lazy weekend defaults through every normalized GET pay
     scheduledStart: new Date("2026-08-14T00:00:00.000Z"),
     scheduledEnd: new Date("2026-08-17T00:00:00.000Z"),
   });
-  assert.deepEqual(task.excludedWeekdays, [0, 6]);
-  assert.deepEqual(task.workingDays, ["2026-08-14", "2026-08-17"]);
+  assert.deepEqual(task.excludedWeekdays, []);
+  assert.deepEqual(task.workingDays, ["2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"]);
 });
 
 test("crew bookings and double-booking checks ignore excluded weekend days", () => {
   const weekendOnly = getExecutionUserBooking({
     scheduledStart: "2026-08-15",
     scheduledEnd: "2026-08-16",
+    excludedWeekdays: [0, 6],
     assignedUserIds: [userId],
   }, userId);
   const saturdayWork = getExecutionUserBooking({

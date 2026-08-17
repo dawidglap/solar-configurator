@@ -344,14 +344,9 @@ function extractPaymentsSource(data: any) {
   );
 }
 
-function getEnabledCompanyDocumentKinds(planning: any): CompanyDocumentKind[] {
-  const formDocuments = planning?.data?.parts?.formDocuments ?? {};
-  const orderedKinds: CompanyDocumentKind[] = ["vollmacht", "bestellformular", "agb"];
-  return orderedKinds.filter((kind) =>
-    kind === "vollmacht"
-      ? formDocuments?.vollmacht !== false
-      : formDocuments?.[kind] === true,
-  );
+export function getEnabledCompanyDocumentKinds(planning: any): CompanyDocumentKind[] {
+  void planning;
+  return ["agb"];
 }
 
 async function appendCompanyOwnedOfferAttachments(args: {
@@ -375,12 +370,7 @@ async function appendCompanyOwnedOfferAttachments(args: {
     }
 
     try {
-      const attachmentPdf = await PDFDocument.load(payload.buffer);
-      const pageIndexes = attachmentPdf.getPageIndices();
-      const copiedPages = await args.pdf.copyPages(attachmentPdf, pageIndexes);
-      for (const page of copiedPages) {
-        args.pdf.addPage(page);
-      }
+      await appendPdfAttachment(args.pdf, payload.buffer);
     } catch (error: any) {
       console.warn(`[offer-pdf] company document append failed`, {
         companyId: args.companyId,
@@ -390,6 +380,13 @@ async function appendCompanyOwnedOfferAttachments(args: {
       });
     }
   }
+}
+
+export async function appendPdfAttachment(pdf: PDFDocument, attachment: Uint8Array) {
+  const attachmentPdf = await PDFDocument.load(attachment);
+  const copiedPages = await pdf.copyPages(attachmentPdf, attachmentPdf.getPageIndices());
+  for (const page of copiedPages) pdf.addPage(page);
+  return copiedPages.length;
 }
 
 function buildPaymentRows(args: {
@@ -989,14 +986,12 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     });
   }
 
-  if (documentType === "angebot") {
-    await appendCompanyOwnedOfferAttachments({
-      db,
-      pdf,
-      planning,
-      companyId: String(planning?.companyId || session?.activeCompanyId || ""),
-    });
-  }
+  await appendCompanyOwnedOfferAttachments({
+    db,
+    pdf,
+    planning,
+    companyId: String(planning?.companyId || session?.activeCompanyId || ""),
+  });
 
   const pdfBytes = await pdf.save();
 

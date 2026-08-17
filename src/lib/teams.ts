@@ -17,6 +17,7 @@ export const TEAM_OVERRIDE_REASONS = [
   "andere_baustelle",
   "sonstiges",
 ] as const;
+export const TEAM_OVERRIDE_KINDS = ["removed", "replaced", "absent"] as const;
 
 export type TeamRole = (typeof TEAM_ROLES)[number];
 export type TeamStatus = (typeof TEAM_STATUSES)[number];
@@ -263,6 +264,18 @@ export function normalizeStoredTeamOverrides(input: unknown) {
       mongoIdToString(override?.createdByUserId) ||
       safeString(override?.createdByUserId) ||
       null,
+    actorName: safeString(override?.actorName),
+    at:
+      override?.at instanceof Date && !Number.isNaN(override.at.getTime())
+        ? override.at.toISOString()
+        : safeString(override?.at) || (
+            override?.createdAt instanceof Date && !Number.isNaN(override.createdAt.getTime())
+              ? override.createdAt.toISOString()
+              : safeString(override?.createdAt)
+          ),
+    kind: TEAM_OVERRIDE_KINDS.includes(safeString(override?.kind) as any)
+      ? safeString(override?.kind)
+      : undefined,
   }));
 }
 
@@ -326,7 +339,11 @@ export async function normalizeAndValidateTeamOverrides(params: {
     }
 
     const suppliedCreatedAt =
-      override?.createdAt instanceof Date
+      override?.at instanceof Date
+        ? override.at
+        : safeString(override?.at)
+          ? new Date(safeString(override?.at))
+          : override?.createdAt instanceof Date
         ? override.createdAt
         : safeString(override?.createdAt)
           ? new Date(safeString(override?.createdAt))
@@ -342,6 +359,14 @@ export async function normalizeAndValidateTeamOverrides(params: {
           : now,
       createdByUserId:
         toObjectIdOrNull(override?.createdByUserId) || actorObjectId || params.actorUserId || null,
+      actorName: safeString(override?.actorName).slice(0, 200),
+      at:
+        suppliedCreatedAt && !Number.isNaN(suppliedCreatedAt.getTime())
+          ? suppliedCreatedAt
+          : now,
+      ...(TEAM_OVERRIDE_KINDS.includes(safeString(override?.kind) as any)
+        ? { kind: safeString(override?.kind) }
+        : {}),
     };
     const preserved = existingByIdentity.get(overrideIdentity(candidate));
     return preserved || candidate;

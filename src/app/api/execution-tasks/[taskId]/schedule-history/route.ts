@@ -6,7 +6,7 @@ import { readSession } from "@/lib/api-session";
 import {
   ensureExecutionTaskIndexes,
   getExecutionTasksCollection,
-  normalizeExecutionScheduleHistory,
+  serializeExecutionTaskHistory,
 } from "@/lib/executionTasks";
 
 export const runtime = "nodejs";
@@ -59,9 +59,7 @@ export async function GET(req: Request, { params }: Params) {
       return jsonResponse(origin, { ok: false, message: "Execution task not found" }, 404);
     }
 
-    const items = normalizeExecutionScheduleHistory((task as any)?.scheduleHistory).sort((a, b) =>
-      b.changedAt.localeCompare(a.changedAt),
-    );
+    const items = serializeExecutionTaskHistory(task);
 
     return jsonResponse(origin, { ok: true, items }, 200);
   } catch (e: any) {

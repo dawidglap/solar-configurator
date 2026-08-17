@@ -350,6 +350,36 @@ export function normalizeStoredCrewDeviations(input: unknown): CrewDeviation[] {
   });
 }
 
+export function pruneExecutionCrewForWorkingDays(args: {
+  crewDeviations: unknown;
+  extraAssignments: unknown;
+  workingDays: string[];
+}) {
+  const allowed = new Set(args.workingDays);
+  const crewDeviations = Array.isArray(args.crewDeviations)
+    ? args.crewDeviations.filter((deviation: any) => {
+        if (!Array.isArray(deviation?.days) || deviation.days.length !== 1) return true;
+        return allowed.has(safeString(deviation.days[0]));
+      })
+    : args.crewDeviations;
+  const extraAssignments = Array.isArray(args.extraAssignments)
+    ? args.extraAssignments.flatMap((assignment: any) => {
+        const rawDays = Array.isArray(assignment?.days) ? assignment.days : [];
+        const rawWindows = Array.isArray(assignment?.dayWindows) ? assignment.dayWindows : [];
+        const isDayScoped = rawDays.length > 0 || rawWindows.length > 0;
+        const days = rawDays.filter((day: unknown) => allowed.has(safeString(day)));
+        const dayWindows = rawWindows.filter((window: any) => allowed.has(safeString(window?.day)));
+        if (isDayScoped && days.length === 0 && dayWindows.length === 0) return [];
+        return [{
+          ...assignment,
+          ...(Array.isArray(assignment?.days) ? { days } : {}),
+          ...(Array.isArray(assignment?.dayWindows) ? { dayWindows } : {}),
+        }];
+      })
+    : args.extraAssignments;
+  return { crewDeviations, extraAssignments };
+}
+
 export function getPlannedExecutionWindow(args: {
   userId: string;
   day: string;

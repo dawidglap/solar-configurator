@@ -6,6 +6,7 @@ import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   companyIdToObjectId,
   getCompanyDocumentsMap,
+  getPublicCompanyDocumentUrl,
   ensureCompanyDocumentIndexes,
 } from "@/lib/companyDocuments";
 
@@ -102,7 +103,15 @@ function normalizeQrBill(value: any) {
 }
 
 function jsonResponse(origin: string | null, body: any, status = 200) {
-  return new Response(JSON.stringify(body), {
+  const payload =
+    body &&
+    typeof body === "object" &&
+    body.ok === false &&
+    !safeString(body.message) &&
+    safeString(body.error)
+      ? { ...body, message: safeString(body.error) }
+      : body;
+  return new Response(JSON.stringify(payload), {
     status,
     headers: {
       "Content-Type": "application/json",
@@ -111,7 +120,10 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
   });
 }
 
-function buildDefaultCompanyProfile(company: any, documents?: any) {
+function buildDefaultCompanyProfile(company: any, documents?: any, agbUrl: string | null = null) {
+  const normalizedDocuments = documents?.agb
+    ? { agb: { ...documents.agb, url: agbUrl || documents.agb.url } }
+    : {};
   return {
     id: String(company?._id ?? ""),
     name: safeString(company?.name),
@@ -209,11 +221,8 @@ function buildDefaultCompanyProfile(company: any, documents?: any) {
       ),
     },
 
-    documents: documents ?? {
-      vollmacht: null,
-      bestellformular: null,
-      agb: null,
-    },
+    agbUrl,
+    documents: normalizedDocuments,
 
     createdAt: company?.createdAt ?? null,
     updatedAt: company?.updatedAt ?? null,
@@ -361,10 +370,20 @@ export async function GET(req: Request) {
     }
 
     const documents = await getCompanyDocumentsMap(db, String(session.activeCompanyId));
+    const agbUrl = documents.agb
+      ? getPublicCompanyDocumentUrl({
+          baseUrl: new URL(req.url).origin,
+          companyId: String(session.activeCompanyId),
+          document: documents.agb,
+          secret,
+        })
+      : null;
 
+    const companyProfile = buildDefaultCompanyProfile(company, documents, agbUrl);
     return jsonResponse(origin, {
       ok: true,
-      companyProfile: buildDefaultCompanyProfile(company, documents),
+      companyProfile,
+      ...companyProfile,
     });
   } catch (e: any) {
     console.error("GET COMPANY PROFILE ERROR:", e);
@@ -457,10 +476,20 @@ export async function PATCH(req: Request) {
     const company = await companies.findOne({ _id: companyObjectId });
     await ensureCompanyDocumentIndexes(db);
     const documents = await getCompanyDocumentsMap(db, String(session.activeCompanyId));
+    const agbUrl = documents.agb
+      ? getPublicCompanyDocumentUrl({
+          baseUrl: new URL(req.url).origin,
+          companyId: String(session.activeCompanyId),
+          document: documents.agb,
+          secret,
+        })
+      : null;
 
+    const companyProfile = buildDefaultCompanyProfile(company, documents, agbUrl);
     return jsonResponse(origin, {
       ok: true,
-      companyProfile: buildDefaultCompanyProfile(company, documents),
+      companyProfile,
+      ...companyProfile,
     });
   } catch (e: any) {
     console.error("PATCH COMPANY PROFILE ERROR:", e);

@@ -16,11 +16,13 @@ import {
   normalizeAndValidateCrewDeviations,
   normalizeStoredCrewDeviations,
   normalizeStoredExtraAssignments,
+  pruneExecutionCrewForWorkingDays,
   withExecutionCrewMutationLocks,
 } from "../src/lib/executionCrew";
 import {
   normalizeExecutionScheduleHistory,
   normalizeExecutionTask,
+  serializeExecutionTaskHistory,
 } from "../src/lib/executionTasks";
 
 const userId = new ObjectId().toString();
@@ -253,6 +255,33 @@ test("missing assignment days are free and cannot receive a task deviation", asy
     extraAssignments,
   }, userId);
   assert.deepEqual(booking?.days, ["2026-08-25"]);
+});
+
+test("rescheduling prunes deviations and scoped extras outside the new working range", () => {
+  const result = pruneExecutionCrewForWorkingDays({
+    workingDays: ["2026-08-27", "2026-08-28"],
+    crewDeviations: [
+      { id: "old", userId, days: ["2026-08-25"], type: "krank" },
+      { id: "kept", userId, days: ["2026-08-27"], type: "krank" },
+    ],
+    extraAssignments: [
+      {
+        userId,
+        days: ["2026-08-25", "2026-08-27"],
+        dayWindows: [
+          { day: "2026-08-25", startTime: "07:00", endTime: "15:00" },
+          { day: "2026-08-27", startTime: "08:00", endTime: "12:00" },
+        ],
+      },
+      { userId: new ObjectId().toString(), days: ["2026-08-25"] },
+    ],
+  });
+  assert.deepEqual((result.crewDeviations as any[]).map((item) => item.id), ["kept"]);
+  assert.equal((result.extraAssignments as any[]).length, 1);
+  assert.deepEqual((result.extraAssignments as any[])[0].days, ["2026-08-27"]);
+  assert.deepEqual((result.extraAssignments as any[])[0].dayWindows, [
+    { day: "2026-08-27", startTime: "08:00", endTime: "12:00" },
+  ]);
 });
 
 test("legacy multi-day deviations lazily split into independent days", () => {
@@ -642,6 +671,24 @@ test("daily audit entries preserve actor, day and before/after values", () => {
   assert.equal(entry.actorName, "Dawid Beckham");
   assert.deepEqual(entry.before, { startTime: "07:00", endTime: "15:00" });
   assert.deepEqual(entry.after, { startTime: "08:00", endTime: "14:00" });
+});
+
+test("schedule history exposes operation, timestamp and details aliases", () => {
+  const [entry] = serializeExecutionTaskHistory({
+    scheduleHistory: [{
+      type: "deviation_added",
+      changedAt: new Date("2026-08-14T07:02:00.000Z"),
+      changedByName: "Dawid Beckham",
+      userId: new ObjectId(userId),
+      day: "2026-08-26",
+      after: { type: "krank" },
+    }],
+  });
+  assert.equal(entry.user, "Dawid Beckham");
+  assert.equal(entry.timestamp, "2026-08-14T07:02:00.000Z");
+  assert.equal(entry.operation, "deviation_added");
+  assert.equal(entry.details.day, "2026-08-26");
+  assert.equal(entry.details.userId, userId);
 });
 
 test("rejects invalid and out-of-range extra-assignment days", async () => {

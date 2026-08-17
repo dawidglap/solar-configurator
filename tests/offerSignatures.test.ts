@@ -48,6 +48,21 @@ test("offer signature status serialization exposes no token hash", async () => {
   assert.equal("offerSignatureTokenHash" in response, false);
 });
 
+test("public offers expose the same token-protected AGB URL as termsUrl", async () => {
+  const { buildPublicOfferTermsUrls } = await loadOffer();
+  assert.deepEqual(
+    buildPublicOfferTermsUrls("https://planner.helionic.ch", "token/value", true),
+    {
+      agbUrl: "https://planner.helionic.ch/api/public/offer-signature/token%2Fvalue/terms",
+      termsUrl: "https://planner.helionic.ch/api/public/offer-signature/token%2Fvalue/terms",
+    },
+  );
+  assert.deepEqual(buildPublicOfferTermsUrls("https://planner.helionic.ch", "token", false), {
+    agbUrl: null,
+    termsUrl: null,
+  });
+});
+
 test("serializes public customer and GeoAdmin offer fields", async () => {
   const { buildPublicOfferCustomerFields } = await loadOffer();
   assert.deepEqual(
@@ -257,6 +272,26 @@ test("validates required Vollmacht and signature fields without hard IBAN valida
     }),
     /ungültig/,
   );
+});
+
+test("accepts the public Vollmacht street, zip, city and fullName aliases", async () => {
+  const { parseOfferVollmachtDetails } = await loadOffer();
+  const parsed = parseOfferVollmachtDetails({
+    street: " Dorfstrasse 1 ",
+    zip: " 3000 ",
+    city: " Bern ",
+    fullName: " Max Mustermann ",
+    bankAccountHolder: "Max Mustermann",
+    bankIban: "CH9300762011623852957",
+    signaturePlace: "Bern",
+    signatureDate: "2026-08-17",
+    signatureImage: `data:image/png;base64,${TRANSPARENT_PNG}`,
+  });
+
+  assert.equal(parsed.propertyStreet, "Dorfstrasse 1");
+  assert.equal(parsed.propertyZip, "3000");
+  assert.equal(parsed.propertyCity, "Bern");
+  assert.equal(parsed.signerName, "Max Mustermann");
 });
 
 test("defaults Vollmacht to required and honors an explicit false flag", async () => {

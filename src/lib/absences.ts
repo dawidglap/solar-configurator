@@ -10,6 +10,8 @@ export const ABSENCE_REASONS = [
   "militaer",
   "weiterbildung",
   "anderes",
+  "andere_baustelle",
+  "sonstiges",
 ] as const;
 
 export type AbsenceReason = (typeof ABSENCE_REASONS)[number];
@@ -314,6 +316,14 @@ export async function cleanupOrphanedCrewDeviationAbsences(
   }).map((absence) => absence._id);
   if (staleIds.length) await collection.deleteMany({ _id: { $in: staleIds } });
   return { matched: absences.length, removed: staleIds.length };
+}
+
+export async function migrateAbsenceDefaults(db: Db) {
+  const result = await getAbsencesCollection(db).updateMany(
+    { sourceTaskId: { $exists: false } },
+    { $set: { sourceTaskId: null, updatedAt: new Date() } },
+  );
+  return { matched: result.matchedCount, modified: result.modifiedCount };
 }
 
 function normalizeCrewDeviationKeys(input: unknown) {

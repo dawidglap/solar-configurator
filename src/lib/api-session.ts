@@ -79,7 +79,15 @@ export function mongoIdToString(v: any) {
 }
 
 export function jsonResponse(origin: string | null, body: any, status = 200) {
-  return new Response(JSON.stringify(body), {
+  const payload =
+    body &&
+    typeof body === "object" &&
+    body.ok === false &&
+    !safeString(body.message) &&
+    safeString(body.error)
+      ? { ...body, message: safeString(body.error) }
+      : body;
+  return new Response(JSON.stringify(payload), {
     status,
     headers: {
       "Content-Type": "application/json",

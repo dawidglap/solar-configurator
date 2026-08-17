@@ -7,6 +7,7 @@ import {
   deleteCompanyDocument,
   ensureCompanyDocumentIndexes,
   normalizeCompanyDocumentKind,
+  getPublicCompanyDocumentUrl,
   uploadCompanyDocument,
 } from "@/lib/companyDocuments";
 
@@ -53,7 +54,11 @@ export async function POST(
   const { kind: rawKind } = await params;
   const kind = normalizeCompanyDocumentKind(rawKind);
   if (!kind) {
-    return jsonResponse(origin, { ok: false, message: "Dokumenttyp ist ungültig." }, 400);
+    return jsonResponse(origin, {
+      ok: false,
+      message: "Nur AGB-Dokumente werden unterstützt.",
+      code: "UNSUPPORTED_DOCUMENT_KIND",
+    }, 400);
   }
 
   try {
@@ -68,19 +73,29 @@ export async function POST(
     if (subscriptionError) return subscriptionError;
     await ensureCompanyDocumentIndexes(db);
 
-    const document = await uploadCompanyDocument({
+    const storedDocument = await uploadCompanyDocument({
       db,
       companyId: String(session.activeCompanyId),
       kind,
       file,
       session: session as any,
     });
+    const publicUrl = storedDocument
+      ? getPublicCompanyDocumentUrl({
+          baseUrl: new URL(req.url).origin,
+          companyId: String(session.activeCompanyId),
+          document: storedDocument,
+          secret,
+        })
+      : null;
+    const document = storedDocument ? { ...storedDocument, url: publicUrl } : storedDocument;
 
     return jsonResponse(origin, { ok: true, document }, 200);
   } catch (error: any) {
     const message = safeString(error?.message) || "Dokument konnte nicht hochgeladen werden.";
     const status =
       message === "Nur PDF-Dateien sind erlaubt." ||
+      message === "Nur gültige PDF-Dateien sind erlaubt." ||
       message === "Datei überschreitet 10 MB."
         ? 400
         : 500;
@@ -112,7 +127,11 @@ export async function DELETE(
   const { kind: rawKind } = await params;
   const kind = normalizeCompanyDocumentKind(rawKind);
   if (!kind) {
-    return jsonResponse(origin, { ok: false, message: "Dokumenttyp ist ungültig." }, 400);
+    return jsonResponse(origin, {
+      ok: false,
+      message: "Nur AGB-Dokumente werden unterstützt.",
+      code: "UNSUPPORTED_DOCUMENT_KIND",
+    }, 400);
   }
 
   try {

@@ -21,6 +21,10 @@ import {
   persistAuftragStepsState,
 } from "@/lib/auftragPipeline";
 import { resolvePlanningSellerContact } from "@/lib/userProfiles";
+import {
+  getCompanyDocumentsMap,
+  getPublicCompanyDocumentUrl,
+} from "@/lib/companyDocuments";
 import { allocateChf05, formatChf05, roundChf05 } from "@/lib/chf";
 
 export const SIGNATURE_STATUSES = [
@@ -1185,10 +1189,11 @@ export async function buildPublicSignatureOrder(args: {
 }) {
   const companyId = safeString(args.planning?.companyId);
   const companyObjectId = toObjectIdOrNull(companyId);
-  const [company, customer, commercial] = await Promise.all([
+  const [company, customer, commercial, companyDocuments] = await Promise.all([
     companyObjectId ? args.db.collection("companies").findOne({ _id: companyObjectId }) : null,
     loadPlanningCustomer(args.db, args.planning),
     computePlanningCommercialSummary(args.db, args.planning),
+    getCompanyDocumentsMap(args.db, companyId).catch(() => ({ agb: null })),
   ]);
   const status = normalizeSignatureStatus(args.planning?.signatureStatus);
   const seller = await resolvePlanningSellerContact({
@@ -1198,6 +1203,14 @@ export async function buildPublicSignatureOrder(args: {
   });
   const apiBase = getPublicApiBaseUrl(args.req);
   const canReadPdf = status !== "expired";
+  const termsUrl = companyDocuments.agb && process.env.SESSION_SECRET
+    ? getPublicCompanyDocumentUrl({
+        baseUrl: apiBase,
+        companyId,
+        document: companyDocuments.agb,
+        secret: process.env.SESSION_SECRET,
+      })
+    : null;
   return {
     orderId: safeString(args.planning?.orderId),
     companyName: safeString(company?.name),
@@ -1228,6 +1241,7 @@ export async function buildPublicSignatureOrder(args: {
       status === "signed"
         ? `${apiBase}/api/public/signature/${encodeURIComponent(args.token)}/pdf`
         : null,
+    termsUrl,
   };
 }
 

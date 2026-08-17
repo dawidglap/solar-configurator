@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import crypto from "node:crypto";
 import { GridFSBucket, ObjectId, type Db } from "mongodb";
 import {
   mongoIdToString,
@@ -13,7 +14,7 @@ import {
   isAdminLikeRole,
 } from "@/lib/tasks";
 
-export const COMPANY_DOCUMENT_KINDS = ["vollmacht", "bestellformular", "agb"] as const;
+export const COMPANY_DOCUMENT_KINDS = ["agb"] as const;
 export type CompanyDocumentKind = (typeof COMPANY_DOCUMENT_KINDS)[number];
 
 const COMPANY_DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
@@ -88,6 +89,7 @@ export function normalizeCompanyDocument(doc: any, kind?: CompanyDocumentKind | 
   return {
     fileId: mongoIdToString(doc?._id),
     filename: safeString(doc?.filename),
+    fileName: safeString(doc?.filename),
     size:
       typeof doc?.length === "number" && Number.isFinite(doc.length)
         ? doc.length
@@ -119,10 +121,66 @@ export async function getCompanyDocumentsMap(db: Db, companyId: string) {
   }
 
   return {
-    vollmacht: normalizeCompanyDocument(byKind.get("vollmacht"), "vollmacht"),
-    bestellformular: normalizeCompanyDocument(byKind.get("bestellformular"), "bestellformular"),
     agb: normalizeCompanyDocument(byKind.get("agb"), "agb"),
   };
+}
+
+function signPublicDocumentPayload(payload: string, secret: string) {
+  return crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+}
+
+export function createPublicCompanyDocumentToken(args: {
+  companyId: string;
+  fileId: string;
+  kind: CompanyDocumentKind;
+  secret: string;
+}) {
+  const payload = Buffer.from(JSON.stringify({
+    v: 1,
+    companyId: args.companyId,
+    fileId: args.fileId,
+    kind: args.kind,
+  })).toString("base64url");
+  return `${payload}.${signPublicDocumentPayload(payload, args.secret)}`;
+}
+
+export function verifyPublicCompanyDocumentToken(token: unknown, secret: string) {
+  const [payload, signature] = safeString(token).split(".");
+  if (!payload || !signature) return null;
+  const expected = signPublicDocumentPayload(payload, secret);
+  const actualBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (
+    actualBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+  ) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    const kind = normalizeCompanyDocumentKind(parsed?.kind);
+    const companyId = safeString(parsed?.companyId);
+    const fileId = safeString(parsed?.fileId);
+    if (parsed?.v !== 1 || !kind || !companyId || !ObjectId.isValid(fileId)) return null;
+    return { companyId, fileId, kind };
+  } catch {
+    return null;
+  }
+}
+
+export function getPublicCompanyDocumentUrl(args: {
+  baseUrl: string;
+  companyId: string;
+  document: any;
+  secret: string;
+}) {
+  const fileId = safeString(args.document?.fileId);
+  if (!fileId) return null;
+  const token = createPublicCompanyDocumentToken({
+    companyId: args.companyId,
+    fileId,
+    kind: "agb",
+    secret: args.secret,
+  });
+  return `${args.baseUrl.replace(/\/$/, "")}/api/public/company-document/${encodeURIComponent(token)}`;
 }
 
 async function readNodeStreamToBuffer(stream: NodeJS.ReadableStream) {
@@ -166,6 +224,11 @@ export async function uploadCompanyDocument(args: {
     throw new Error("Datei überschreitet 10 MB.");
   }
 
+  const buffer = Buffer.from(await args.file.arrayBuffer());
+  if (buffer.length < 5 || buffer.subarray(0, 5).toString("ascii") !== "%PDF-") {
+    throw new Error("Nur gültige PDF-Dateien sind erlaubt.");
+  }
+
   const existing = await findCompanyDocumentFile(args.db, args.companyId, args.kind);
   const bucket = getCompanyDocumentsBucket(args.db);
   if (existing?._id) {
@@ -180,8 +243,6 @@ export async function uploadCompanyDocument(args: {
     size: args.file.size,
     session: args.session,
   });
-  const buffer = Buffer.from(await args.file.arrayBuffer());
-
   const uploadStream = bucket.openUploadStream(filename, {
     metadata,
   });
@@ -229,6 +290,32 @@ export async function createCompanyDocumentDownloadResponse(args: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `inline; filename="${filename}"`,
       "Cache-Control": "no-store",
+    },
+  });
+}
+
+export async function createPublicCompanyDocumentDownloadResponse(args: {
+  db: Db;
+  token: string;
+  secret: string;
+}) {
+  const verified = verifyPublicCompanyDocumentToken(args.token, args.secret);
+  if (!verified) return null;
+  const file = await args.db.collection(`${COMPANY_DOCUMENT_BUCKET}.files`).findOne({
+    _id: new ObjectId(verified.fileId),
+    "metadata.companyId": verified.companyId,
+    "metadata.kind": verified.kind,
+  });
+  if (!file?._id) return null;
+  const stream = getCompanyDocumentsBucket(args.db).openDownloadStream(file._id as ObjectId);
+  const filename = safeString(file?.filename) || "agb.pdf";
+  return new Response(Readable.toWeb(stream) as ReadableStream, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="${filename}"`,
+      "Cache-Control": "public, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

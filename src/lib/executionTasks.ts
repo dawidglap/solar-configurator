@@ -77,6 +77,9 @@ type NormalizedExecutionTask = {
     country: string;
   };
   notes: string;
+  rescheduleReason: string;
+  changedByName: string;
+  changedByUserId: string | null;
   stageHistory: Array<{ stage: ExecutionStage; at: string; by: string | null }>;
   customerName?: string;
   planningTitle?: string;
@@ -404,6 +407,61 @@ export function normalizeExecutionScheduleHistory(history: unknown) {
     );
 }
 
+export function serializeExecutionTaskHistory(task: any) {
+  const operationByType: Record<string, string> = {
+    schedule_changed: "rescheduled",
+    team_changed: "team_assigned",
+    member_replaced: "team_assigned",
+    additional_team_changed: "team_assigned",
+    extra_assignment_changed: "day_updated",
+    day_updated: "day_updated",
+    deviation_added: "deviation_added",
+    deviation_removed: "deviation_removed",
+    replacement_assigned: "replacement_assigned",
+    member_removed: "member_removed",
+  };
+  const scheduleItems = normalizeExecutionScheduleHistory(task?.scheduleHistory).map((entry, index) => ({
+    ...entry,
+    id: `${entry.changedAt}:${index}`,
+    user: entry.changedByName,
+    timestamp: entry.changedAt,
+    operation: operationByType[entry.type || "schedule_changed"] || "rescheduled",
+    details: {
+      from: {
+        scheduledStart: entry.scheduledStart,
+        scheduledEnd: entry.scheduledEnd,
+        startTime: entry.startTime,
+        endTime: entry.endTime,
+        excludedWeekdays: entry.excludedWeekdays ?? [],
+        workingDays: entry.workingDays ?? [],
+      },
+      day: entry.day || null,
+      days: entry.days ?? [],
+      userId: entry.userId ?? entry.outUserId ?? null,
+      replacementUserId: entry.replacementUserId ?? entry.inUserId ?? null,
+      before: entry.before ?? null,
+      after: entry.after ?? null,
+      reason: entry.reason,
+      text: entry.text || null,
+    },
+  }));
+  const stageItems = (Array.isArray(task?.stageHistory) ? task.stageHistory : []).map(
+    (entry: any, index: number) => {
+      const normalized = normalizeExecutionHistoryEntry(entry);
+      return {
+        id: `stage:${normalized.at}:${index}`,
+        user: normalized.by || "unknown",
+        timestamp: normalized.at,
+        operation: "stage_changed",
+        details: { stage: normalized.stage },
+      };
+    },
+  );
+  return [...scheduleItems, ...stageItems].sort((left, right) =>
+    right.timestamp.localeCompare(left.timestamp),
+  );
+}
+
 function comparableDateValue(value: any) {
   return normalizeExecutionDateValueForOutput(value);
 }
@@ -450,7 +508,9 @@ export function buildExecutionScheduleHistoryEntry(
   const workingDayFields = resolveExecutionWorkingDayFields({
     scheduledStart: existing?.scheduledStart,
     scheduledEnd: existing?.scheduledEnd,
-    excludedWeekdays: existing?.excludedWeekdays,
+    excludedWeekdays: Object.prototype.hasOwnProperty.call(existing ?? {}, "excludedWeekdays")
+      ? existing.excludedWeekdays
+      : [],
     validateProvided: false,
   });
 
@@ -588,7 +648,9 @@ export function normalizeExecutionTask(doc: any, opts?: {
   const workingDayFields = resolveExecutionWorkingDayFields({
     scheduledStart: doc?.scheduledStart,
     scheduledEnd: doc?.scheduledEnd,
-    excludedWeekdays: doc?.excludedWeekdays,
+    excludedWeekdays: Object.prototype.hasOwnProperty.call(doc ?? {}, "excludedWeekdays")
+      ? doc.excludedWeekdays
+      : [],
     validateProvided: false,
   });
 
@@ -621,6 +683,10 @@ export function normalizeExecutionTask(doc: any, opts?: {
     assignees,
     address: normalizeExecutionAddress(doc?.address),
     notes: safeString(doc?.notes),
+    rescheduleReason: safeString(doc?.rescheduleReason),
+    changedByName: safeString(doc?.changedByName),
+    changedByUserId:
+      mongoIdToString(doc?.changedByUserId) || safeString(doc?.changedByUserId) || null,
     stageHistory: Array.isArray(doc?.stageHistory)
       ? doc.stageHistory.map(normalizeExecutionHistoryEntry)
       : [],
@@ -770,6 +836,9 @@ function buildExecutionTaskSeed(params: {
     assignedUserIds: [] as ObjectId[],
     address: buildExecutionAddress(params.planning, params.customer),
     notes: "",
+    rescheduleReason: "",
+    changedByName: "",
+    changedByUserId: null,
     stageHistory: [
       {
         stage: "offen" as const,
@@ -855,7 +924,9 @@ export async function migrateExecutionWorkingDays(db: Db) {
     const fields = resolveExecutionWorkingDayFields({
       scheduledStart: doc.scheduledStart,
       scheduledEnd: doc.scheduledEnd,
-      excludedWeekdays: doc.excludedWeekdays,
+      excludedWeekdays: Object.prototype.hasOwnProperty.call(doc, "excludedWeekdays")
+        ? doc.excludedWeekdays
+        : [],
       validateProvided: false,
     });
     const result = await executionTasks.updateOne(

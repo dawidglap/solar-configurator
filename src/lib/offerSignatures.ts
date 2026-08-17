@@ -227,9 +227,13 @@ export function parseOfferAcceptanceDetails(body: any) {
 }
 
 export function parseOfferVollmachtDetails(body: any) {
-  const propertyStreet = optionalLimitedString(body?.propertyStreet, "Objektstrasse", 120);
-  const propertyZip = optionalLimitedString(body?.propertyZip, "Postleitzahl", 12);
-  const propertyCity = optionalLimitedString(body?.propertyCity, "Ort", 100);
+  const propertyStreet = optionalLimitedString(
+    body?.propertyStreet ?? body?.street,
+    "Objektstrasse",
+    120,
+  );
+  const propertyZip = optionalLimitedString(body?.propertyZip ?? body?.zip, "Postleitzahl", 12);
+  const propertyCity = optionalLimitedString(body?.propertyCity ?? body?.city, "Ort", 100);
   const parcelNumber = optionalLimitedString(body?.parcelNumber, "Parzelle", 60);
   const landRegisterNumber = optionalLimitedString(body?.landRegisterNumber, "Grundstücknummer", 60);
   const bankAccountHolder = optionalLimitedString(body?.bankAccountHolder, "Kontoinhaber", 200);
@@ -243,7 +247,11 @@ export function parseOfferVollmachtDetails(body: any) {
   const ownerLastName = optionalLimitedString(body?.ownerLastName, "Nachname Eigentümer", 100);
   const signerFirstName = optionalLimitedString(body?.signerFirstName, "Vorname Unterzeichner", 100);
   const signerLastName = optionalLimitedString(body?.signerLastName, "Nachname Unterzeichner", 100);
-  const explicitSignerName = optionalLimitedString(body?.signerName, "Name Unterzeichner", 200);
+  const explicitSignerName = optionalLimitedString(
+    body?.signerName ?? body?.fullName,
+    "Name Unterzeichner",
+    200,
+  );
   const ownerName = [ownerFirstName, ownerLastName].filter(Boolean).join(" ");
   const splitSignerName = [signerFirstName, signerLastName].filter(Boolean).join(" ");
   const signerName = ownerName || explicitSignerName || splitSignerName;
@@ -738,6 +746,7 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
     ? new Date(args.planning.offerSignatureRequestedAt)
     : new Date();
   const validUntil = new Date(requestedAt.getTime() + 30 * 86_400_000);
+  const { agbUrl, termsUrl } = buildPublicOfferTermsUrls(base, args.token, !!terms);
   return {
     vollmachtRequired: isOfferVollmachtRequired(args.planning),
     offerNumber: safeString(args.planning?.planningNumber),
@@ -765,9 +774,8 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
     payments: normalizeSignaturePayments(args.planning, Number(commercial?.totalInvestmentChf ?? 0)),
     validUntil: validUntil.toISOString(),
     pdfUrl: `${base}/api/public/offer-signature/${encodeURIComponent(args.token)}/pdf`,
-    termsUrl: terms
-      ? `${base}/api/public/offer-signature/${encodeURIComponent(args.token)}/terms`
-      : null,
+    agbUrl,
+    termsUrl,
     status,
     expiresAt: iso(args.planning?.offerSignatureTokenExpiresAt),
     signedAt: iso(args.planning?.offerSignedAt),
@@ -781,6 +789,13 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
         : null,
     orderId: safeString(args.planning?.orderId) || null,
   };
+}
+
+export function buildPublicOfferTermsUrls(base: string, token: string, available: boolean) {
+  const url = available
+    ? `${base.replace(/\/$/, "")}/api/public/offer-signature/${encodeURIComponent(token)}/terms`
+    : null;
+  return { agbUrl: url, termsUrl: url };
 }
 
 export function buildInternalOrderSession(planning: any, signerName: string): SessionPayload {

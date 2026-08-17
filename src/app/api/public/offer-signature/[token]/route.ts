@@ -22,7 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       );
       planning = viewed ?? (await findOfferByToken(db, token)); if (!planning) return response(origin, { ok: false, message: "Link ungültig." }, 404);
     }
-    return response(origin, { ok: true, offer: await buildPublicOffer({ db, planning, token, req }) });
+    const offer = await buildPublicOffer({ db, planning, token, req });
+    return response(origin, { ok: true, offer, ...offer });
   } catch (error) { console.error("GET PUBLIC OFFER SIGNATURE ERROR:", error); return response(origin, { ok: false, message: "Offerte konnte nicht geladen werden." }, 500); }
 }
-

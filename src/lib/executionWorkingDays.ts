@@ -150,7 +150,9 @@ export function getExecutionWorkingDays(task: any) {
   return resolveExecutionWorkingDayFields({
     scheduledStart: task?.scheduledStart,
     scheduledEnd: task?.scheduledEnd,
-    excludedWeekdays: task?.excludedWeekdays,
+    excludedWeekdays: Object.prototype.hasOwnProperty.call(task ?? {}, "excludedWeekdays")
+      ? task.excludedWeekdays
+      : [],
     validateProvided: false,
   }).workingDays;
 }
