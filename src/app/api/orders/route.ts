@@ -3,7 +3,7 @@ import { getCorsHeaders } from "@/lib/cors";
 import { readSession, safeString } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
-import { getPlannedInvoiceRates, normalizeInvoice } from "@/lib/invoices";
+import { countOverdueInvoices, getPlannedInvoiceRates, normalizeInvoice } from "@/lib/invoices";
 import { normalizeOrderFields } from "@/lib/orders";
 import { ensureAuftragIndexes, getAuftraegeCollection, normalizeAuftrag } from "@/lib/auftragPipeline";
 import { buildIdVariants } from "@/lib/tasks";
@@ -209,6 +209,11 @@ export async function GET(req: Request) {
             signatureDeclinedAt: 1,
             signatureDeclinedReason: 1,
             signatureAudit: 1,
+            offerSignatureStatus: 1,
+            offerSignedAt: 1,
+            offerSignaturePlace: 1,
+            withdrawalUntil: 1,
+            vollmachtSubmittedAt: 1,
             subsidyPayoutAccountHolder: 1,
             subsidyPayoutIban: 1,
             propertyStreet: 1,
@@ -320,6 +325,9 @@ export async function GET(req: Request) {
         const invoices = (invoicesByOrderId.get(safeString(doc?.orderId)) ?? []).map((invoice: any) =>
           normalizeInvoice(invoice),
         );
+        const invoicesOverdueCount = countOverdueInvoices(
+          invoicesByOrderId.get(safeString(doc?.orderId)) ?? [],
+        );
         const auftrag = auftragByOrderId.get(safeString(doc?.orderId)) ?? null;
         return {
           ...orderFields,
@@ -347,6 +355,8 @@ export async function GET(req: Request) {
           invoicesCount: invoices.length || invoiceSummary.invoicesCount,
           invoicesPaidCount: invoiceSummary.invoicesPaidCount,
           invoicesOpenAmount: invoiceSummary.invoicesOpenAmount,
+          invoicesOverdueCount,
+          dunningEligible: invoices.some((invoice) => invoice.dunningEligible),
           invoices,
           currentStepKey: auftrag?.currentStepKey || null,
           orderCompletedAt: auftrag?.completedAt || null,

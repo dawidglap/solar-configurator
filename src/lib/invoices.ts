@@ -473,6 +473,21 @@ export function computeInvoiceDaysOverdue(args: {
   return Math.max(0, diffDays);
 }
 
+export function countOverdueInvoices(invoices: unknown, now = new Date()) {
+  if (!Array.isArray(invoices)) return 0;
+  return invoices.filter((invoice: any) => {
+    const invoiceType = normalizeInvoiceType(invoice?.invoiceType) ?? "rechnung";
+    if (invoiceType !== "rechnung") return false;
+    if (safeString(invoice?.status).toLowerCase() === "bezahlt") return false;
+    return computeInvoiceDaysOverdue({
+      dueDate: invoice?.dueDate,
+      paymentStatus: invoice?.paymentStatus,
+      status: invoice?.status,
+      now,
+    }) > 0;
+  }).length;
+}
+
 export function resolveInvoicePaymentAndDunningState(args: {
   amount: number;
   status: unknown;

@@ -26,6 +26,7 @@
     "test:order-signatures": "tsx --test tests/orderSignatures.test.ts",
     "test:offer-signatures": "tsx --test tests/offerSignatures.test.ts",
     "test:company-documents": "tsx --test tests/companyDocuments.test.ts",
+    "test:status-badges": "tsx --test tests/statusBadges.test.ts",
     "test:signature-emails": "tsx --test tests/signatureEmails.test.ts",
     "test:geo-admin": "tsx --test tests/geoAdmin.test.ts",
     "test:user-profiles": "tsx --test tests/userProfilesPasswordReset.test.ts",

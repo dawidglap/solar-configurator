@@ -17,6 +17,7 @@ import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
 import { normalizeOrderFields } from "@/lib/orders";
 import { buildDefaultOrderSignatureFields } from "@/lib/orderSignatures";
 import { buildDefaultOfferSignatureFields } from "@/lib/offerSignatures";
+import { getCompanyDocumentsMap } from "@/lib/companyDocuments";
 
 export const runtime = "nodejs";
 
@@ -387,6 +388,12 @@ export async function GET(req: Request) {
            angebotSnapshotFileId: 1,
            offerSignatureStatus: 1,
            offerSignedAt: 1,
+           offerSignaturePlace: 1,
+           signatureStatus: 1,
+           signedAt: 1,
+           signaturePlace: 1,
+           withdrawalUntil: 1,
+           vollmachtSubmittedAt: 1,
            subsidyPayoutAccountHolder: 1,
            subsidyPayoutIban: 1,
            propertyStreet: 1,
@@ -406,11 +413,18 @@ export async function GET(req: Request) {
           "data.panels": 1,
           "data.layers": 1,
           "data.snapshotScale": 1,
+          "data.parts.formDocuments.vollmacht": 1,
         },
       })
       .sort({ updatedAt: -1 })
       .limit(limit)
       .toArray();
+
+    const companyDocuments = await getCompanyDocumentsMap(
+      db,
+      String(session.activeCompanyId),
+    );
+    const agbAvailable = Boolean(companyDocuments.agb);
 
     const items = docs.map((d: any) => {
       const summary = extractSummaryFromPlanning(d);
@@ -439,6 +453,7 @@ export async function GET(req: Request) {
         summary,
         customerName,
         ...normalizeOrderFields(d),
+        agbAvailable,
         createdAt: d.createdAt ?? null,
         updatedAt: d.updatedAt ?? null,
         firstName: safeString(d?.data?.profile?.contactFirstName),

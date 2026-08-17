@@ -28,6 +28,12 @@ import {
   DEFAULT_EXECUTION_EXCLUDED_WEEKDAYS,
   resolveExecutionWorkingDayFields,
 } from "@/lib/executionWorkingDays";
+import {
+  deriveLinkedSignatureStatus,
+  derivePlanningBadgeFields,
+  type BadgeSignatureStatus,
+  type VollmachtStatus,
+} from "@/lib/statusBadges";
 
 export const EXECUTION_TRACKS = ["montage", "elektro"] as const;
 export const EXECUTION_STAGES = [
@@ -54,6 +60,7 @@ type NormalizedExecutionTask = {
   companyId: string;
   projectId: string;
   planningId: string;
+  orderId: string | null;
   customerId: string | null;
   track: ExecutionTrack;
   stage: ExecutionStage;
@@ -80,6 +87,11 @@ type NormalizedExecutionTask = {
   rescheduleReason: string;
   changedByName: string;
   changedByUserId: string | null;
+  vollmachtRequired: boolean;
+  vollmachtStatus: VollmachtStatus;
+  vollmachtSubmittedAt: string | null;
+  withdrawalUntil: string | null;
+  signatureStatus: BadgeSignatureStatus;
   stageHistory: Array<{ stage: ExecutionStage; at: string; by: string | null }>;
   customerName?: string;
   planningTitle?: string;
@@ -653,12 +665,15 @@ export function normalizeExecutionTask(doc: any, opts?: {
       : [],
     validateProvided: false,
   });
+  const linkedPlanning = planning ?? doc;
+  const badgeFields = derivePlanningBadgeFields(linkedPlanning);
 
   return {
     id: mongoIdToString(doc?._id),
     companyId: mongoIdToString(doc?.companyId) || safeString(doc?.companyId),
     projectId: mongoIdToString(doc?.projectId) || safeString(doc?.projectId),
     planningId,
+    orderId: safeString(linkedPlanning?.orderId) || null,
     customerId,
     track: normalizeExecutionTrack(doc?.track) ?? "montage",
     stage: normalizeExecutionStage(doc?.stage) ?? "offen",
@@ -687,6 +702,8 @@ export function normalizeExecutionTask(doc: any, opts?: {
     changedByName: safeString(doc?.changedByName),
     changedByUserId:
       mongoIdToString(doc?.changedByUserId) || safeString(doc?.changedByUserId) || null,
+    ...badgeFields,
+    signatureStatus: deriveLinkedSignatureStatus(linkedPlanning),
     stageHistory: Array.isArray(doc?.stageHistory)
       ? doc.stageHistory.map(normalizeExecutionHistoryEntry)
       : [],
@@ -747,7 +764,23 @@ export async function hydrateExecutionTasks(
               companyId: { $in: buildIdVariants(companyId) },
               ...activeDocumentFilter(),
             },
-            { projection: { title: 1, planningNumber: 1, summary: 1 } },
+            {
+              projection: {
+                title: 1,
+                planningNumber: 1,
+                summary: 1,
+                orderId: 1,
+                offerSignatureStatus: 1,
+                offerSignedAt: 1,
+                offerSignaturePlace: 1,
+                signatureStatus: 1,
+                signedAt: 1,
+                signaturePlace: 1,
+                withdrawalUntil: 1,
+                vollmachtSubmittedAt: 1,
+                "data.parts.formDocuments.vollmacht": 1,
+              },
+            },
           )
           .toArray()
       : Promise.resolve([]),

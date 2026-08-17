@@ -28,6 +28,7 @@ import {
 import { downloadCompanyDocumentBuffer } from "@/lib/companyDocuments";
 import { isValidIban, normalizeIban } from "@/lib/swissQrBill";
 import { resolvePlanningSellerContact } from "@/lib/userProfiles";
+import { derivePlanningBadgeFields } from "@/lib/statusBadges";
 
 export const OFFER_SIGNATURE_STATUSES = [
   "none",
@@ -136,7 +137,7 @@ export function buildOfferSignatureResponse(planning: any) {
     orderId: safeString(planning?.orderId) || null,
     signaturePlace: normalizeOfferSignaturePlace(planning?.offerSignaturePlace),
     withdrawalRightApplies: planning?.withdrawalRightApplies === true,
-    withdrawalUntil: iso(planning?.withdrawalUntil),
+    ...derivePlanningBadgeFields(planning),
   };
 }
 

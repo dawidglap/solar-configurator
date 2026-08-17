@@ -222,6 +222,7 @@ function buildDefaultCompanyProfile(company: any, documents?: any, agbUrl: strin
     },
 
     agbUrl,
+    agbAvailable: Boolean(normalizedDocuments.agb),
     documents: normalizedDocuments,
 
     createdAt: company?.createdAt ?? null,

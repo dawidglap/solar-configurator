@@ -4,6 +4,7 @@ import { mongoIdToString, safeString, toObjectIdOrNull, type SessionPayload } fr
 import { getSessionUserMeta, isAdminLikeRole } from "@/lib/tasks";
 import { normalizeSignatureFields } from "@/lib/orderSignatures";
 import { normalizeOfferSignatureFields } from "@/lib/offerSignatures";
+import { derivePlanningBadgeFields } from "@/lib/statusBadges";
 
 export function canManageCompanyBank(session: SessionPayload | null | undefined) {
   return isAdminLikeRole(session);
@@ -115,6 +116,7 @@ export function normalizeOrderFields(planning: any) {
         : "auto",
     ...normalizeSignatureFields(planning),
     ...normalizeOfferSignatureFields(planning),
+    ...derivePlanningBadgeFields(planning),
   };
 }
 
