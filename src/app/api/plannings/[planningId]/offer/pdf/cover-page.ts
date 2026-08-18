@@ -392,7 +392,9 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     color: softGray,
   });
 
-  const documentTitle = safeText(data.documentTitle) || (data.documentType === "auftrag" ? "Auftrag" : "Angebot");
+  const documentTitle =
+    safeText(data.documentTitle) ||
+    (data.documentType === "auftrag" ? "Auftragsbestätigung" : "Angebot");
   const title =
     [documentTitle, safeText(data.customerName)]
       .filter(Boolean)

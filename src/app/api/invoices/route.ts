@@ -24,6 +24,7 @@ import {
 import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
 import { getSessionUserEmail, getSessionUserMeta, safeNumber } from "@/lib/tasks";
 import { roundChf05 } from "@/lib/chf";
+import { expandOrderSearchTerm, getOrderIdQuery } from "@/lib/orderIds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -290,11 +291,15 @@ export async function GET(req: Request) {
           }
         : null;
 
+    const orderSearchPatterns = expandOrderSearchTerm(q).map((term) => ({
+      $regex: escapeRegex(term),
+      $options: "i",
+    }));
     const searchMatch = q
       ? {
           $or: [
             { invoiceNumber: { $regex: escapeRegex(q), $options: "i" } },
-            { orderId: { $regex: escapeRegex(q), $options: "i" } },
+            ...orderSearchPatterns.map((pattern) => ({ orderId: pattern })),
             { customerName: { $regex: escapeRegex(q), $options: "i" } },
           ],
         }
@@ -528,15 +533,15 @@ export async function POST(req: Request) {
     const plannings = db.collection("plannings");
     const invoices = getInvoicesCollection(db);
 
-    const planningAny = await plannings.findOne({ orderId });
+    const planningAny = await plannings.findOne({
+      companyId,
+      orderId: getOrderIdQuery(orderId),
+    });
     if (!planningAny) {
       return jsonResponse(origin, { ok: false, message: "Auftrag nicht gefunden." }, 400);
     }
 
-    if (safeString((planningAny as any)?.companyId) !== companyId) {
-      return jsonResponse(origin, { ok: false, message: "Keine Berechtigung." }, 403);
-    }
-
+    const resolvedOrderId = safeString((planningAny as any)?.orderId);
     if (
       safeString((planningAny as any)?.orderStatus) !== "generated" ||
       !safeString((planningAny as any)?.orderId)
@@ -558,7 +563,7 @@ export async function POST(req: Request) {
     const existingOrderInvoices = await invoices
       .find({
         companyId,
-        orderId,
+        orderId: resolvedOrderId,
       })
       .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
       .toArray();
@@ -592,7 +597,7 @@ export async function POST(req: Request) {
 
       if (
         !parentInvoice ||
-        safeString(parentInvoice?.orderId) !== orderId
+        safeString(parentInvoice?.orderId) !== resolvedOrderId
       ) {
         return jsonResponse(origin, { ok: false, message: "parentInvoiceId ist ungültig." }, 400);
       }
@@ -615,7 +620,7 @@ export async function POST(req: Request) {
     const now = new Date();
     const invoiceNumber =
       invoiceType === "rechnung" && parentInvoice
-        ? `${orderId}-R${nextRateNumber}`
+        ? `${resolvedOrderId}-R${nextRateNumber}`
         : await nextInvoiceNumber(db, companyId, now);
     const meta = getSessionUserMeta(session);
     const createdByUserId = toObjectIdOrNull(meta.id) ?? meta.id ?? null;
@@ -642,7 +647,7 @@ export async function POST(req: Request) {
     const doc = {
       companyId,
       planningId: safeString((planningAny as any)?._id?.toString?.() ?? (planningAny as any)?._id),
-      orderId,
+      orderId: resolvedOrderId,
       invoiceNumber,
       invoiceType,
       parentInvoiceId: parentInvoice?._id ?? null,

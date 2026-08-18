@@ -487,5 +487,5 @@ test("creates signed offer and confirmation PDFs with protocol pages", async () 
   });
   const loadedSignedConfirmation = await PDFDocument.load(signedConfirmation);
   assert.equal(loadedSignedConfirmation.getPageCount(), 3);
-  assert.equal(loadedSignedConfirmation.getTitle(), "Auftrag AUF-2026-0007 - unterschrieben");
+  assert.equal(loadedSignedConfirmation.getTitle(), "Auftragsbestätigung AUF-2026-0007 - unterschrieben");
 });

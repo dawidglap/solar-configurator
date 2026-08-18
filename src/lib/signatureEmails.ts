@@ -71,10 +71,24 @@ export function buildSignatureEmailPayload(args: {
   const recipients = uniqueEmails([customerEmail, sellerEmail]);
   const ccEmails = sellerEmail && sellerEmail !== customerEmail ? [sellerEmail] : [];
   const toEmails = customerEmail ? [customerEmail] : sellerEmail ? [sellerEmail] : [];
+  const orderId = safeString(delivery?.orderId);
+  const isVollmacht = safeString(delivery?.kind) === "vollmacht_submitted";
+  const subject = isVollmacht
+    ? `Vollmacht zur Auftragsbestätigung ${orderId}`
+    : `Auftragsbestätigung ${orderId}`;
+  const bodyText = isVollmacht
+    ? `Die Vollmacht zur Auftragsbestätigung ${orderId} wurde übermittelt. Das PDF ist im Anhang und über den Download-Link verfügbar.`
+    : `Die Auftragsbestätigung ${orderId} ist im Anhang und über den Download-Link verfügbar.`;
   return {
     kind: safeString(delivery?.kind),
     idempotencyKey: safeString(delivery?._id),
-    orderId: safeString(delivery?.orderId),
+    orderId,
+    auftragsnummer: orderId,
+    documentName: "Auftragsbestätigung",
+    subject,
+    bodyTitle: subject,
+    body: bodyText,
+    bodyText,
     offerNumber: safeString(delivery?.offerNumber) || null,
     companyName: safeString(delivery?.companyName),
     customerName: safeString(delivery?.customerName),

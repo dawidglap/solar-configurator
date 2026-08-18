@@ -320,10 +320,10 @@ function getDocumentIdentifiers(args: {
 
   if (args.documentType === "auftrag") {
     return {
-      documentTitle: "Auftrag",
+      documentTitle: "Auftragsbestätigung",
       documentNumber: orderId,
-      documentNumberLabel: `Auftrag Nr. ${orderId}`,
-      fileStem: `Auftrag_${orderId}`,
+      documentNumberLabel: `Auftragsbestätigung Nr. ${orderId}`,
+      fileStem: `auftragsbestaetigung-${orderId}`,
     };
   }
 
@@ -815,7 +815,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   pdf.setSubject(
     documentType === "angebot"
       ? "Angebot für eine Photovoltaikanlage"
-      : "Auftrag für eine Photovoltaikanlage",
+      : "Auftragsbestätigung für eine Photovoltaikanlage",
   );
   const snapshotEntry = await snapshotCache.findOne({
     planningId: String(planning?._id),

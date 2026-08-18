@@ -17,6 +17,7 @@ import {
   resolveCustomerEmail,
   sha256,
 } from "@/lib/orderSignatures";
+import { getOrderIdQuery } from "@/lib/orderIds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ orderId
     await ensureOrderSignatureIndexes(db);
     const planning = await db.collection<any>("plannings").findOne({
       companyId: String(session.activeCompanyId),
-      orderId: normalizedOrderId,
+      orderId: getOrderIdQuery(normalizedOrderId),
     });
     if (!planning) return response(origin, { ok: false, message: "Auftrag nicht gefunden." }, 404);
     if (safeString(planning?.orderStatus) !== "generated") {
@@ -129,7 +130,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ orderId
         token,
         link: buildSignatureLink(token),
         order: {
-          orderId: normalizedOrderId,
+          orderId: safeString(planning?.orderId),
           planningId: planning._id.toString(),
           ...normalizeSignatureFields(updated),
         },

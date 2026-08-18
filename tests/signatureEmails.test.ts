@@ -34,6 +34,10 @@ test("builds the Edge Function payload with recipients, Reply-To, link and PDF a
   assert.deepEqual(payload.ccEmails, ["sara@example.ch"]);
   assert.equal(payload.replyTo, "sara@example.ch");
   assert.equal(payload.downloadUrl, "https://planner.example/vollmacht?download=1");
+  assert.equal(payload.subject, "Vollmacht zur Auftragsbestätigung AUF-2026-0007");
+  assert.equal(payload.auftragsnummer, "AUF-2026-0007");
+  assert.equal(payload.documentName, "Auftragsbestätigung");
+  assert.match(payload.bodyText, /Vollmacht zur Auftragsbestätigung AUF-2026-0007/);
   assert.equal(payload.vollmachtRequired, true);
   assert.equal(payload.attachments[0].content, "JVBERi0=");
 });
@@ -55,6 +59,8 @@ test("suppresses the Vollmacht link when the offer does not require it", async (
     attachmentBase64: "JVBERi0=",
   });
   assert.equal(payload.vollmachtRequired, false);
+  assert.equal(payload.subject, "Auftragsbestätigung AUF-2026-0008");
+  assert.match(payload.body, /Die Auftragsbestätigung AUF-2026-0008/);
   assert.equal(payload.vollmachtUrl, null);
 });
 

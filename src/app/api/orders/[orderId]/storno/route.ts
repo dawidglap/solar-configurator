@@ -5,6 +5,7 @@ import { enforceActiveSubscription } from "@/lib/subscription";
 import { ensureInvoiceIndexes, getInvoicesCollection, normalizeInvoice } from "@/lib/invoices";
 import { normalizeOrderFields } from "@/lib/orders";
 import { getSessionUserId, getSessionUserName, isAdminLikeRole } from "@/lib/tasks";
+import { getOrderIdQuery } from "@/lib/orderIds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -86,7 +87,7 @@ export async function POST(
 
     const planning = await plannings.findOne({
       companyId,
-      orderId: normalizedOrderId,
+      orderId: getOrderIdQuery(normalizedOrderId),
       orderStatus: "generated",
     });
 
@@ -94,6 +95,7 @@ export async function POST(
       return jsonResponse(origin, { ok: false, message: "Auftrag nicht gefunden." }, 404);
     }
 
+    const resolvedOrderId = safeString(planning?.orderId);
     if (planning?.cancelledAt) {
       return jsonResponse(
         origin,
@@ -130,7 +132,7 @@ export async function POST(
     await invoices.updateMany(
       {
         companyId,
-        orderId: normalizedOrderId,
+        orderId: resolvedOrderId,
         invoiceType: { $in: ["rechnung", "mahnung"] },
         status: { $in: ["entwurf", "heruntergeladen", "versendet"] },
         paymentStatus: { $ne: "bezahlt" },
@@ -151,7 +153,7 @@ export async function POST(
     const affectedInvoices = await invoices
       .find({
         companyId,
-        orderId: normalizedOrderId,
+        orderId: resolvedOrderId,
       })
       .sort({ rateIndex: 1, createdAt: 1, _id: 1 })
       .toArray();

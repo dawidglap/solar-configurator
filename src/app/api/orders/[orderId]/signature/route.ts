@@ -7,6 +7,7 @@ import {
   ensureOrderSignatureIndexes,
   expireSignatureIfNeeded,
 } from "@/lib/orderSignatures";
+import { getOrderIdQuery } from "@/lib/orderIds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ orderId:
     await ensureOrderSignatureIndexes(db);
     let planning: any = await db.collection("plannings").findOne({
       companyId: String(session.activeCompanyId),
-      orderId: normalizedOrderId,
+      orderId: getOrderIdQuery(normalizedOrderId),
     });
     if (!planning) return response(origin, { ok: false, message: "Auftrag nicht gefunden." }, 404);
     planning = await expireSignatureIfNeeded(db, planning);

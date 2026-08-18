@@ -230,8 +230,8 @@ async function persistManagedOrderFiles(args: {
       companyId: args.companyId,
       planningId: args.planningId,
       category: "auftrag",
-      title: `Auftrag ${args.orderId}`,
-      originalFileName: `auftrag-${args.orderId}.pdf`,
+      title: `Auftragsbestätigung ${args.orderId}`,
+      originalFileName: `auftragsbestaetigung-${args.orderId}.pdf`,
       mimeType: "application/pdf",
       buffer: args.orderPdfBuffer,
       customerId,
@@ -240,7 +240,7 @@ async function persistManagedOrderFiles(args: {
     orderFile = result.doc;
   } catch (error) {
     console.error("UPSERT AUFTRAG FILE ERROR:", error);
-    warnings.push("Auftrag-PDF konnte nicht in Dateien gespeichert werden.");
+    warnings.push("Auftragsbestätigungs-PDF konnte nicht in Dateien gespeichert werden.");
   }
 
   try {

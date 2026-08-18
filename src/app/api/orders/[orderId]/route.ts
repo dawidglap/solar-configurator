@@ -12,6 +12,7 @@ import {
 import { normalizeOrderFields } from "@/lib/orders";
 import { ensureAuftragIndexes, getHydratedAuftragState } from "@/lib/auftragPipeline";
 import { toObjectIdOrNull } from "@/lib/api-session";
+import { getOrderIdQuery } from "@/lib/orderIds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,7 +80,7 @@ export async function GET(
 
     const planning = await db.collection("plannings").findOne({
       companyId: String(session.activeCompanyId),
-      orderId: normalizedOrderId,
+      orderId: getOrderIdQuery(normalizedOrderId),
       orderStatus: "generated",
     });
 
@@ -87,11 +88,12 @@ export async function GET(
       return jsonResponse(origin, { ok: false, message: "Auftrag nicht gefunden." }, 404);
     }
 
+    const resolvedOrderId = safeString(planning?.orderId);
     await ensureInvoiceIndexes(db);
     const invoices = await getInvoicesCollection(db)
       .find({
         companyId: String(session.activeCompanyId),
-        orderId: normalizedOrderId,
+        orderId: resolvedOrderId,
       })
       .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
       .toArray();
@@ -105,7 +107,7 @@ export async function GET(
         ? await getHydratedAuftragState({
             db,
             companyId: companyObjectId,
-            orderId: normalizedOrderId,
+            orderId: resolvedOrderId,
           })
         : null;
 

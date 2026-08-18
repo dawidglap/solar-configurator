@@ -77,6 +77,7 @@ export async function PATCH(
     if (!hydrated) {
       return jsonResponse(origin, { ok: false, message: "Auftrag nicht gefunden." }, 404);
     }
+    const resolvedOrderId = safeString(hydrated.normalizedAuftrag.orderId) || orderId;
     const existingAuftrag = hydrated.auftrag;
     if (safeString((existingAuftrag as any)?.status) === "storniert") {
       return jsonResponse(origin, { ok: false, message: "Stornierte Aufträge können nicht verschoben werden." }, 409);
@@ -96,7 +97,7 @@ export async function PATCH(
       await persistAuftragStepsState({
         db,
         companyId: companyObjectId,
-        orderId,
+        orderId: resolvedOrderId,
         templateSteps: hydrated.templateSteps,
         stepsState: advanced.stepsState,
         session: txnSession,
@@ -109,7 +110,7 @@ export async function PATCH(
         },
         {
           $set: {
-            orderId,
+            orderId: resolvedOrderId,
             currentStepKey: advanced.currentStepKey,
             status: advanced.status,
             completedAt: advanced.status === "abgeschlossen" ? now : null,
@@ -164,7 +165,7 @@ export async function PATCH(
         session: txnSession,
       });
 
-      const updated = await getAuftragByOrderId(db, companyObjectId, orderId, txnSession);
+      const updated = await getAuftragByOrderId(db, companyObjectId, resolvedOrderId, txnSession);
       const checklist = buildChecklistFromAuftragState({
         templateSteps: hydrated.templateSteps,
         stepsState: advanced.stepsState,

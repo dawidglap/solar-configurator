@@ -3,6 +3,7 @@ import { getCorsHeaders } from "@/lib/cors";
 import { readSession, safeString } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { buildSignatureAuditEntry, canManageOrderSignatures, ensureOrderSignatureIndexes, normalizeSignatureFields } from "@/lib/orderSignatures";
+import { getOrderIdQuery } from "@/lib/orderIds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ orderId
     const subscriptionError = await enforceActiveSubscription(db, origin, session);
     if (subscriptionError) return subscriptionError;
     await ensureOrderSignatureIndexes(db);
-    const planning = await db.collection<any>("plannings").findOne({ companyId: String(session.activeCompanyId), orderId: normalizedOrderId });
+    const planning = await db.collection<any>("plannings").findOne({ companyId: String(session.activeCompanyId), orderId: getOrderIdQuery(normalizedOrderId) });
     if (!planning) return response(origin, { ok: false, message: "Auftrag nicht gefunden." }, 404);
     if (safeString(planning?.signatureStatus) === "signed") {
       return response(origin, { ok: false, message: "Ein unterschriebener Auftrag kann nicht widerrufen werden." }, 409);

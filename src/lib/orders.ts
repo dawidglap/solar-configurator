@@ -54,7 +54,7 @@ export async function nextOrderId(db: Db, companyId: string, now = new Date()) {
 
   const seq = Number((result as any)?.seq ?? (result as any)?.value?.seq ?? 0);
   const padded = String(seq).padStart(4, "0");
-  return `AUF-${year}-${padded}`;
+  return `AB-${year}-${padded}`;
 }
 
 export function normalizeOrderFields(planning: any) {

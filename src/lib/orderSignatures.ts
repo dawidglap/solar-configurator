@@ -543,7 +543,7 @@ export async function createSignedOrderPdf(args: {
   signerIp: string;
   signerUserAgent: string;
   sourcePdfSha256: string;
-  documentKind?: "Auftrag" | "Angebot";
+  documentKind?: "Auftragsbestätigung" | "Angebot";
   openedAt?: Date | null;
   tokenId?: string;
   signaturePlace?: string;
@@ -565,11 +565,11 @@ export async function createSignedOrderPdf(args: {
   page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1) });
   page.drawRectangle({ x: margin, y: 764, width: 6, height: 34, color: teal });
   page.drawText("Unterschriftsprotokoll", { x: margin + 18, y: 780, size: 20, font: bold, color: dark });
-  const documentKind = args.documentKind ?? "Auftrag";
+  const documentKind = args.documentKind ?? "Auftragsbestätigung";
   page.drawText(`${documentKind} ${signaturePdfText(args.orderId)}`, { x: margin + 18, y: 760, size: 9, font, color: muted });
 
   const rows = [
-    [documentKind === "Angebot" ? "Angebotsnummer" : "Auftragsnummer", args.orderId],
+    [documentKind === "Angebot" ? "Angebotsnummer" : "Auftragsbestätigung Nr.", args.orderId],
     ["Kunde", args.customerName],
     ["Projekt", args.projectTitle],
     ["Betrag inkl. MwSt.", `CHF ${formatChf05(Number(args.totalInklMwst || 0))}`],
@@ -698,7 +698,7 @@ export async function appendOfferConfirmationSignatureProtocol(args: {
     signerIp: args.signerIp,
     signerUserAgent: args.signerUserAgent,
     sourcePdfSha256: args.signedOfferSha256,
-    documentKind: "Auftrag",
+    documentKind: "Auftragsbestätigung",
     legalText: "Einfache elektronische Signatur (EES) gemäss Art. 14 OR.",
     sourceHashLabel: "SHA-256 der signierten Offerte",
   });
@@ -960,8 +960,8 @@ export async function createOfferConfirmationPdf(args: {
   const margin = 46;
   page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1) });
   page.drawRectangle({ x: margin, y: 764, width: 6, height: 34, color: teal });
-  page.drawText("Auftragsbestätigung", { x: margin + 18, y: 780, size: 20, font: bold, color: dark });
-  page.drawText(`Auftrag ${signaturePdfText(args.orderId)}`, { x: margin + 18, y: 760, size: 9, font, color: muted });
+  page.drawText("AUFTRAGSBESTÄTIGUNG", { x: margin + 18, y: 780, size: 20, font: bold, color: dark });
+  page.drawText(`Auftragsbestätigung Nr. ${signaturePdfText(args.orderId)}`, { x: margin + 18, y: 760, size: 9, font, color: muted });
   const rows = [
     ["Vertragsdatum", args.signedAt.toISOString()],
     ["Angenommene Offerte", args.offerNumber],
@@ -1288,10 +1288,10 @@ export async function notifySignatureParticipants(args: {
       userId,
       type: args.type,
       title: signed
-        ? `Auftrag ${orderId} wurde unterschrieben.`
-        : `Unterschrift für Auftrag ${orderId} wurde abgelehnt.`,
+        ? `Auftragsbestätigung ${orderId} wurde unterschrieben.`
+        : `Unterschrift für Auftragsbestätigung ${orderId} wurde abgelehnt.`,
       body: signed
-        ? `Auftrag ${orderId} wurde von ${safeString(args.signerName) || "Kunde"} unterschrieben.`
+        ? `Auftragsbestätigung ${orderId} wurde von ${safeString(args.signerName) || "Kunde"} unterschrieben.`
         : safeString(args.reason) || "Der Kunde hat die Unterschrift abgelehnt.",
       link: `/auftraege/${encodeURIComponent(orderId)}`,
       meta: { orderId, planningId: mongoIdToString(args.planning?._id) },
@@ -1358,6 +1358,6 @@ export function buildSignatureRequester(session: SessionPayload) {
 }
 
 export function buildContentDispositionInline(fileName: string) {
-  const normalized = safeString(fileName).replace(/["\r\n\\]/g, "_") || "auftrag.pdf";
+  const normalized = safeString(fileName).replace(/["\r\n\\]/g, "_") || "auftragsbestaetigung.pdf";
   return `inline; filename="${normalized}"; filename*=UTF-8''${encodeURIComponent(normalized)}`;
 }

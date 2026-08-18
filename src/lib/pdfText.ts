@@ -1,12 +1,4 @@
 const REPLACEMENTS: Array<[RegExp, string]> = [
-  [/Ä/g, "Ae"],
-  [/Ö/g, "Oe"],
-  [/Ü/g, "Ue"],
-  [/ä/g, "ae"],
-  [/ö/g, "oe"],
-  [/ü/g, "ue"],
-  [/ß/g, "ss"],
-  [/ẞ/g, "SS"],
   [/“|”/g, "\""],
   [/‘|’/g, "'"],
   [/—|–/g, "-"],
@@ -31,7 +23,6 @@ export function sanitizePdfText(value: unknown) {
   }
 
   return text
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .normalize("NFKC")
     .replace(/[^\n\r\t\x20-\x7e\xa0-\xff]/g, "");
 }

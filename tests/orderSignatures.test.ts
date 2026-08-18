@@ -94,6 +94,6 @@ test("creates a signed PDF with an additional protocol page", async () => {
   });
   const loaded = await PDFDocument.load(signedPdf);
   assert.equal(loaded.getPageCount(), 2);
-  assert.equal(loaded.getTitle(), "Auftrag AUF-2026-0007 - unterschrieben");
+  assert.equal(loaded.getTitle(), "Auftragsbestätigung AUF-2026-0007 - unterschrieben");
   assert.notEqual(sha256(signedPdf), sourceHash);
 });

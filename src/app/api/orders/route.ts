@@ -7,6 +7,7 @@ import { countOverdueInvoices, getPlannedInvoiceRates, normalizeInvoice } from "
 import { normalizeOrderFields } from "@/lib/orders";
 import { ensureAuftragIndexes, getAuftraegeCollection, normalizeAuftrag } from "@/lib/auftragPipeline";
 import { buildIdVariants } from "@/lib/tasks";
+import { expandOrderSearchTerm } from "@/lib/orderIds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -103,9 +104,12 @@ export async function GET(req: Request) {
 
     const q = safeString(searchParams.get("q"));
     if (q) {
+      const orderRegexes = expandOrderSearchTerm(q).map(
+        (term) => new RegExp(escapeRegex(term), "i"),
+      );
       const regex = new RegExp(escapeRegex(q), "i");
       match.$or = [
-        { orderId: regex },
+        ...orderRegexes.map((orderRegex) => ({ orderId: orderRegex })),
         { title: regex },
         { planningNumber: regex },
         { "summary.customerName": regex },

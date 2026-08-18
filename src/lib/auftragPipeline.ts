@@ -8,6 +8,7 @@ import {
 } from "@/lib/api-session";
 import { CHECKLIST_ITEMS } from "@/lib/checklistCatalog";
 import { getSessionUserMeta } from "@/lib/tasks";
+import { getOrderIdQuery } from "@/lib/orderIds";
 
 export type AuftragPipelineStep = {
   key: string;
@@ -1061,7 +1062,7 @@ export async function getAuftragByOrderId(
   return getAuftraegeCollection(db).findOne(
     {
       companyId,
-      orderId: safeString(orderId),
+      orderId: getOrderIdQuery(orderId),
     },
     session ? { session } : undefined,
   );
@@ -1090,11 +1091,12 @@ export async function getHydratedAuftragState(args: {
     args.session,
   );
   if (!auftrag) return null;
+  const resolvedOrderId = safeString((auftrag as any)?.orderId) || normalizedOrderId;
 
   const stepsState = await ensureAuftragStepStateForOrder({
     db: args.db,
     companyId: args.companyId,
-    orderId: normalizedOrderId,
+    orderId: resolvedOrderId,
     templateSteps,
     auftrag,
     session: args.session,

@@ -3,6 +3,7 @@ import { getCorsHeaders } from "@/lib/cors";
 import { readSession, safeString } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { canWriteInvoices, ensureInvoiceIndexes, getInvoicesCollection, normalizeInvoice } from "@/lib/invoices";
+import { getOrderIdQuery } from "@/lib/orderIds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,10 +58,18 @@ export async function GET(
     if (subscriptionError) return subscriptionError;
 
     await ensureInvoiceIndexes(db);
+    const planning = await db.collection("plannings").findOne({
+      companyId: String(session.activeCompanyId),
+      orderId: getOrderIdQuery(orderId),
+      orderStatus: "generated",
+    });
+    if (!planning) {
+      return jsonResponse(origin, { ok: false, message: "Auftrag nicht gefunden." }, 404);
+    }
     const items = await getInvoicesCollection(db)
       .find({
         companyId: String(session.activeCompanyId),
-        orderId: safeString(orderId),
+        orderId: safeString(planning?.orderId),
       })
       .sort({ position: 1, rateIndex: 1, createdAt: 1, _id: 1 })
       .toArray();

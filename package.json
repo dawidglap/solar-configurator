@@ -28,6 +28,7 @@
     "test:company-documents": "tsx --test tests/companyDocuments.test.ts",
     "test:status-badges": "tsx --test tests/statusBadges.test.ts",
     "test:signature-emails": "tsx --test tests/signatureEmails.test.ts",
+    "test:order-ids": "tsx --test tests/orderIds.test.ts",
     "test:geo-admin": "tsx --test tests/geoAdmin.test.ts",
     "test:user-profiles": "tsx --test tests/userProfilesPasswordReset.test.ts",
     "test:user-profile-backfill": "tsx --test tests/userProfileBackfill.test.ts",

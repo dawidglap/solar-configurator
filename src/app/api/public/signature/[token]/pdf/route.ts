@@ -59,7 +59,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     }
     const fileName =
       safeString(file?.originalFileName) ||
-      `${status === "signed" ? "auftrag-unterschrieben" : "auftrag"}-${safeString(planning?.orderId)}.pdf`;
+      `${status === "signed" ? "auftragsbestaetigung-unterschrieben" : "auftragsbestaetigung"}-${safeString(planning?.orderId)}.pdf`;
     return new Response(buffer, {
       status: 200,
       headers: {
