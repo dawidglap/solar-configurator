@@ -205,12 +205,17 @@ test("validates required Vollmacht and signature fields without hard IBAN valida
       propertyCity: " St. Margrethen ",
       parcelNumber: " 12 ",
       landRegisterNumber: " 4567 ",
+      buildingNumber: " 9876543 ",
       bankAccountHolder: " Max Muster ",
+      bankName: " Musterbank ",
       bankIban: "ch93 0076 2011 6238 5295 7",
+      ownerCompanyName: " Solar Home AG ",
       ownerFirstName: " Dawid ",
       ownerLastName: " Glapiak ",
+      ownerBirthDate: "1990-05-20",
+      ownerPhone: " +41 79 123 45 67 ",
+      ownerEmail: " OWNER@EXAMPLE.CH ",
       signerName: "Ignored Customer Name",
-      signaturePlace: " St. Margrethen ",
       signatureDate: "2026-08-14",
       signatureImage: `data:image/png;base64,${TRANSPARENT_PNG}`,
     });
@@ -223,14 +228,20 @@ test("validates required Vollmacht and signature fields without hard IBAN valida
       propertyCity: "St. Margrethen",
       parcelNumber: "12",
       landRegisterNumber: "4567",
+      buildingNumber: "9876543",
       bankAccountHolder: "Max Muster",
+      bankName: "Musterbank",
       bankIban: "CH9300762011623852957",
+      ownerCompanyName: "Solar Home AG",
       ownerFirstName: "Dawid",
       ownerLastName: "Glapiak",
+      ownerBirthDate: "1990-05-20",
+      ownerPhone: "+41 79 123 45 67",
+      ownerEmail: "owner@example.ch",
       signerFirstName: null,
       signerLastName: null,
       signerName: "Dawid Glapiak",
-      signaturePlace: "St. Margrethen",
+      signaturePlace: null,
       signatureDate: "2026-08-14",
       signatureImage: `data:image/png;base64,${TRANSPARENT_PNG}`,
       signatureMethod: DEFAULT_VOLLMACHT_SIGNATURE_METHOD,
@@ -242,10 +253,14 @@ test("validates required Vollmacht and signature fields without hard IBAN valida
       propertyStreet: "Schachenstrasse",
       propertyZip: "9430",
       propertyCity: "St. Margrethen",
+      buildingNumber: "9876543",
       bankAccountHolder: "Max Muster",
+      bankName: "Musterbank",
       bankIban: "DE89370400440532013000",
+      ownerBirthDate: "1990-05-20",
+      ownerPhone: "+41 79 123 45 67",
+      ownerEmail: "owner@example.ch",
       signerName: "Dawid Glapiak",
-      signaturePlace: "St. Margrethen",
       signatureDate: "2026-08-14",
       signatureImage: `data:image/png;base64,${TRANSPARENT_PNG}`,
     }).bankIban,
@@ -263,10 +278,14 @@ test("validates required Vollmacht and signature fields without hard IBAN valida
       propertyStreet: "Schachenstrasse",
       propertyZip: "9430",
       propertyCity: "St. Margrethen",
+      buildingNumber: "9876543",
       bankAccountHolder: "Max Muster",
+      bankName: "Musterbank",
       bankIban: "CH9300762011623852957",
+      ownerBirthDate: "1990-05-20",
+      ownerPhone: "+41 79 123 45 67",
+      ownerEmail: "owner@example.ch",
       signerName: "Dawid Glapiak",
-      signaturePlace: "St. Margrethen",
       signatureDate: "2026-02-30",
       signatureImage: `data:image/png;base64,${TRANSPARENT_PNG}`,
     }),
@@ -281,9 +300,13 @@ test("accepts the public Vollmacht street, zip, city and fullName aliases", asyn
     zip: " 3000 ",
     city: " Bern ",
     fullName: " Max Mustermann ",
+    buildingNumber: "1234567",
     bankAccountHolder: "Max Mustermann",
+    bankName: "Musterbank",
     bankIban: "CH9300762011623852957",
-    signaturePlace: "Bern",
+    ownerBirthDate: "1990-05-20",
+    ownerPhone: "+41 79 123 45 67",
+    ownerEmail: "max@example.ch",
     signatureDate: "2026-08-17",
     signatureImage: `data:image/png;base64,${TRANSPARENT_PNG}`,
   });
@@ -357,7 +380,17 @@ test("serializes the public Vollmacht prefill without exposing token data", asyn
       summary: { customerName: "Max Muster" },
       data: { parts: { formDocuments: { vollmacht: true } } },
     },
-    company: { name: "Demo AG", branding: { logoUrl: "https://example.ch/logo.png" } },
+    company: {
+      name: "Demo AG",
+      uid: "CHE-123.456.789",
+      branding: { logoUrl: "https://example.ch/logo.png" },
+      address: { street: "Firmenweg 2", zip: "9000", city: "St. Gallen" },
+      contact: {
+        phone: "+41 71 123 45 67",
+        email: "info@demo.ch",
+        website: "https://demo.ch",
+      },
+    },
     customer: { email: "max@example.ch" },
     token: "public-token",
     req,
@@ -368,14 +401,67 @@ test("serializes the public Vollmacht prefill without exposing token data", asyn
   assert.equal(response.propertyStreet, "Schachenstrasse 4");
   assert.equal(response.propertyZip, "9430");
   assert.equal(response.propertyCity, "St. Margrethen");
-  assert.equal(response.landRegisterNumber, "4567");
+  assert.equal(response.parcelNumber, null);
+  assert.equal(response.landRegisterNumber, null);
+  assert.equal(response.buildingNumber, null);
   assert.equal(response.customerEmail, "max@example.ch");
   assert.equal(response.customerName, "Max Muster");
   assert.equal(response.bankAccountHolder, "Max Muster");
   assert.equal(response.bankIban, "CH9300762011623852957");
+  assert.equal(response.companyStreet, "Firmenweg 2");
+  assert.equal(response.companyZip, "9000");
+  assert.equal(response.companyCity, "St. Gallen");
+  assert.equal(response.companyUid, "CHE-123.456.789");
+  assert.equal(response.companyPhone, "+41 71 123 45 67");
+  assert.equal(response.companyEmail, "info@demo.ch");
+  assert.equal(response.companyWebsite, "https://demo.ch");
   assert.match(String(response.confirmationPdfUrl), /type=confirmation$/);
   assert.match(String(response.vollmachtPdfUrl), /vollmacht\?download=1$/);
   assert.equal("offerSignatureTokenHash" in response, false);
+  assert.equal("signaturePlace" in response, false);
+});
+
+test("returns only customer-submitted cadastral Vollmacht fields", async () => {
+  const { buildOfferVollmachtResponse } = await loadOffer();
+  const response = buildOfferVollmachtResponse({
+    planning: {
+      offerSignedAt: new Date("2026-08-10T12:00:00.000Z"),
+      vollmachtSubmittedAt: new Date("2026-08-11T12:00:00.000Z"),
+      parcelNumber: "AUTO-IGNORED-WHEN-DEDICATED-EXISTS",
+      vollmachtParcelNumber: "12",
+      vollmachtLandRegisterNumber: "4567",
+      vollmachtBuildingNumber: "9876543",
+      vollmachtBankName: "Musterbank",
+      vollmachtOwnerCompanyName: "Solar Home AG",
+      vollmachtOwnerBirthDate: "1990-05-20",
+      vollmachtOwnerPhone: "+41 79 123 45 67",
+      vollmachtOwnerEmail: "owner@example.ch",
+    },
+    company: null,
+    customer: null,
+    token: "public-token",
+    req: new Request("https://planner.helionic.ch/api/public/offer-signature/token/vollmacht"),
+  });
+  assert.equal(response.parcelNumber, "12");
+  assert.equal(response.landRegisterNumber, "4567");
+  assert.equal(response.buildingNumber, "9876543");
+  assert.equal(response.bankName, "Musterbank");
+  assert.equal(response.ownerCompanyName, "Solar Home AG");
+  assert.equal(response.ownerBirthDate, "1990-05-20");
+  assert.equal(response.ownerPhone, "+41 79 123 45 67");
+  assert.equal(response.ownerEmail, "owner@example.ch");
+});
+
+test("resolves the public customer phone and exact Vollmacht append flag", async () => {
+  const { resolvePublicCustomerPhone } = await loadOffer();
+  const { shouldAppendVollmachtPage } = await import("../src/lib/planningDocuments");
+  assert.equal(
+    resolvePublicCustomerPhone({ data: { profile: { contactMobile: "+41 79 111 22 33" } } }, { phone: "fallback" }),
+    "+41 79 111 22 33",
+  );
+  assert.equal(shouldAppendVollmachtPage({ data: { parts: { formDocuments: { vollmacht: true } } } }, "angebot"), true);
+  assert.equal(shouldAppendVollmachtPage({ data: { parts: { formDocuments: {} } } }, "angebot"), false);
+  assert.equal(shouldAppendVollmachtPage({ data: { parts: { formDocuments: { vollmacht: true } } } }, "auftrag"), false);
 });
 
 test("creates signed offer and confirmation PDFs with protocol pages", async () => {
@@ -442,10 +528,9 @@ test("creates signed offer and confirmation PDFs with protocol pages", async () 
   const vollmacht = await createOfferVollmachtPdf({
     company: {
       name: "Demo Solar AG",
-      pdfSettings: {
-        footerAddressLine: "Musterweg 1, 8000 Zürich",
-        email: "info@example.ch",
-      },
+      uid: "CHE-123.456.789",
+      address: { street: "Musterweg 1", zip: "8000", city: "Zürich" },
+      contact: { email: "info@example.ch", phone: "+41 44 123 45 67", website: "example.ch" },
     },
     orderId: "AUF-2026-0007",
     offerNumber: "OFF-2026-0042",
@@ -455,12 +540,17 @@ test("creates signed offer and confirmation PDFs with protocol pages", async () 
     propertyCity: "St. Margrethen",
     parcelNumber: "12",
     landRegisterNumber: "4567",
+    buildingNumber: "9876543",
     bankAccountHolder: "Max Muster",
+    bankName: "Musterbank",
     bankIban: "CH9300762011623852957",
+    ownerCompanyName: "Solar Home AG",
     ownerFirstName: "Dawid",
     ownerLastName: "Glapiak",
+    ownerBirthDate: "1990-05-20",
+    ownerPhone: "+41 79 123 45 67",
+    ownerEmail: "owner@example.ch",
     signerName: "Dawid Glapiak",
-    signaturePlace: "Słupsk",
     signatureDate: "2026-08-14",
     signaturePng: Buffer.from(TRANSPARENT_PNG, "base64"),
     signatureMethod: "Einfache elektronische Signatur (EES) - online, getippt",

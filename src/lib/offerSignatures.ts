@@ -99,6 +99,14 @@ export function buildDefaultOfferSignatureFields() {
     vollmachtSignedAt: null,
     vollmachtSignatureImageFileId: null,
     vollmachtSignature: null,
+    vollmachtParcelNumber: null,
+    vollmachtLandRegisterNumber: null,
+    vollmachtBuildingNumber: null,
+    vollmachtBankName: null,
+    vollmachtOwnerCompanyName: null,
+    vollmachtOwnerBirthDate: null,
+    vollmachtOwnerPhone: null,
+    vollmachtOwnerEmail: null,
   };
 }
 
@@ -237,15 +245,24 @@ export function parseOfferVollmachtDetails(body: any) {
   const propertyCity = optionalLimitedString(body?.propertyCity ?? body?.city, "Ort", 100);
   const parcelNumber = optionalLimitedString(body?.parcelNumber, "Parzelle", 60);
   const landRegisterNumber = optionalLimitedString(body?.landRegisterNumber, "Grundstücknummer", 60);
+  const buildingNumber = optionalLimitedString(body?.buildingNumber, "Gebäude Nummer", 30);
   const bankAccountHolder = optionalLimitedString(body?.bankAccountHolder, "Kontoinhaber", 200);
+  const bankName = optionalLimitedString(body?.bankName, "Bank", 200);
   const bankIban = normalizeIban(body?.bankIban) || null;
   if (!propertyStreet) throw new Error("Objektstrasse ist erforderlich.");
   if (!propertyZip) throw new Error("Postleitzahl ist erforderlich.");
   if (!propertyCity) throw new Error("Ort ist erforderlich.");
+  if (!buildingNumber) throw new Error("Gebäude Nummer ist erforderlich.");
   if (!bankAccountHolder) throw new Error("Kontoinhaber ist erforderlich.");
+  if (!bankName) throw new Error("Bank ist erforderlich.");
   if (!bankIban) throw new Error("IBAN ist erforderlich.");
   const ownerFirstName = optionalLimitedString(body?.ownerFirstName, "Vorname Eigentümer", 100);
   const ownerLastName = optionalLimitedString(body?.ownerLastName, "Nachname Eigentümer", 100);
+  const ownerCompanyName = optionalLimitedString(body?.ownerCompanyName, "Firma Eigentümerschaft", 200);
+  const ownerBirthDate = parseIsoLocalDate(body?.ownerBirthDate, "Geburtsdatum");
+  const ownerPhone = requiredLimitedString(body?.ownerPhone, "Telefonnummer", 50);
+  const ownerEmail = requiredLimitedString(body?.ownerEmail, "E-Mail-Adresse", 320).toLowerCase();
+  if (!EMAIL_PATTERN.test(ownerEmail)) throw new Error("E-Mail-Adresse ist ungültig.");
   const signerFirstName = optionalLimitedString(body?.signerFirstName, "Vorname Unterzeichner", 100);
   const signerLastName = optionalLimitedString(body?.signerLastName, "Nachname Unterzeichner", 100);
   const explicitSignerName = optionalLimitedString(
@@ -256,7 +273,7 @@ export function parseOfferVollmachtDetails(body: any) {
   const ownerName = [ownerFirstName, ownerLastName].filter(Boolean).join(" ");
   const splitSignerName = [signerFirstName, signerLastName].filter(Boolean).join(" ");
   const signerName = ownerName || explicitSignerName || splitSignerName;
-  const signaturePlace = requiredLimitedString(body?.signaturePlace, "Unterschriftsort", 120);
+  const signaturePlace = safeString(body?.signaturePlace).slice(0, 120) || null;
   const signatureDate = parseIsoLocalDate(body?.signatureDate, "Unterschriftsdatum");
   const signatureMethod =
     optionalLimitedString(body?.signatureMethod, "Signaturmethode", 240) ||
@@ -270,10 +287,16 @@ export function parseOfferVollmachtDetails(body: any) {
     propertyCity,
     parcelNumber,
     landRegisterNumber,
+    buildingNumber,
     bankAccountHolder,
+    bankName,
     bankIban,
+    ownerCompanyName,
     ownerFirstName,
     ownerLastName,
+    ownerBirthDate,
+    ownerPhone,
+    ownerEmail,
     signerFirstName,
     signerLastName,
     signerName,
@@ -381,12 +404,13 @@ export function buildOfferVollmachtResponse(args: {
   req: Request;
 }) {
   const planning = args.planning;
-  const profile = planning?.data?.profile ?? {};
   const address = resolveOfferPropertyAddress(planning, args.customer);
   const expiresAt = getOfferVollmachtExpiresAt(planning);
   const submittedAt = iso(planning?.vollmachtSubmittedAt);
   const vollmachtRequired = isOfferVollmachtRequired(planning);
   const base = getPublicApiBaseUrl(args.req);
+  const signature = planning?.vollmachtSignature ?? {};
+  const legacySubmittedValue = (value: unknown) => submittedAt ? safeString(value) : "";
   return {
     vollmachtRequired,
     submitted: !!submittedAt,
@@ -396,6 +420,7 @@ export function buildOfferVollmachtResponse(args: {
     orderId: safeString(planning?.orderId) || null,
     companyName: safeString(args.company?.name),
     companyLogoUrl: safeString(args.company?.branding?.logoUrl) || null,
+    ...buildPublicCompanyFields(args.company),
     customerName: resolveCustomerName(planning, args.customer),
     customerEmail: resolveCustomerEmail(planning, args.customer) || null,
     objectAddress: address.objectAddress,
@@ -403,19 +428,33 @@ export function buildOfferVollmachtResponse(args: {
     propertyZip: address.propertyZip,
     propertyCity: address.propertyCity,
     parcelNumber:
-      safeString(planning?.parcelNumber) ||
-      safeString(profile?.parcelNumber) ||
-      safeString(args.customer?.parcelNumber),
+      safeString(planning?.vollmachtParcelNumber) ||
+      safeString(signature?.parcelNumber) ||
+      legacySubmittedValue(planning?.parcelNumber) ||
+      null,
     landRegisterNumber:
-      safeString(planning?.landRegisterNumber) ||
-      safeString(profile?.landRegisterNumber) ||
-      safeString(args.customer?.landRegisterNumber),
+      safeString(planning?.vollmachtLandRegisterNumber) ||
+      safeString(signature?.landRegisterNumber) ||
+      legacySubmittedValue(planning?.landRegisterNumber) ||
+      null,
+    buildingNumber:
+      safeString(planning?.vollmachtBuildingNumber) ||
+      safeString(signature?.buildingNumber) ||
+      null,
     bankAccountHolder:
       safeString(planning?.subsidyPayoutAccountHolder) ||
       safeString(args.customer?.subsidyPayoutAccountHolder),
     bankIban:
       safeString(planning?.subsidyPayoutIban) ||
       safeString(args.customer?.subsidyPayoutIban),
+    bankName:
+      safeString(planning?.vollmachtBankName) ||
+      safeString(signature?.bankName) ||
+      null,
+    ownerCompanyName:
+      safeString(planning?.vollmachtOwnerCompanyName) ||
+      safeString(signature?.ownerCompanyName) ||
+      null,
     ownerFirstName:
       safeString(planning?.vollmachtOwnerFirstName) ||
       safeString(planning?.vollmachtSignature?.ownerFirstName) ||
@@ -423,6 +462,18 @@ export function buildOfferVollmachtResponse(args: {
     ownerLastName:
       safeString(planning?.vollmachtOwnerLastName) ||
       safeString(planning?.vollmachtSignature?.ownerLastName) ||
+      null,
+    ownerBirthDate:
+      safeString(planning?.vollmachtOwnerBirthDate) ||
+      safeString(signature?.ownerBirthDate) ||
+      null,
+    ownerPhone:
+      safeString(planning?.vollmachtOwnerPhone) ||
+      safeString(signature?.ownerPhone) ||
+      null,
+    ownerEmail:
+      safeString(planning?.vollmachtOwnerEmail) ||
+      safeString(signature?.ownerEmail) ||
       null,
     signerFirstName:
       safeString(planning?.vollmachtSignerFirstName) ||
@@ -435,10 +486,6 @@ export function buildOfferVollmachtResponse(args: {
     signerName:
       safeString(planning?.vollmachtSignerName) ||
       safeString(planning?.vollmachtSignature?.signerName) ||
-      null,
-    signaturePlace:
-      safeString(planning?.vollmachtSignaturePlace) ||
-      safeString(planning?.vollmachtSignature?.signaturePlace) ||
       null,
     signatureDate:
       safeString(planning?.vollmachtSignatureDate) ||
@@ -455,6 +502,34 @@ export function buildOfferVollmachtResponse(args: {
       ? `${base}/api/public/offer-signature/${encodeURIComponent(args.token)}/vollmacht?download=1`
       : null,
   };
+}
+
+export function buildPublicCompanyFields(company: any) {
+  return {
+    companyStreet: safeString(company?.address?.street) || null,
+    companyZip: safeString(company?.address?.zip) || null,
+    companyCity: safeString(company?.address?.city) || null,
+    companyUid: safeString(company?.uid) || null,
+    companyPhone: safeString(company?.contact?.phone) || null,
+    companyEmail: safeString(company?.contact?.email) || null,
+    companyWebsite: safeString(company?.contact?.website) || null,
+  };
+}
+
+export function resolvePublicCustomerPhone(planning: any, customer: any) {
+  const profile = planning?.data?.profile ?? {};
+  return (
+    safeString(profile?.contactMobile) ||
+    safeString(profile?.contactPhone) ||
+    safeString(profile?.phone) ||
+    safeString(profile?.mobile) ||
+    safeString(profile?.businessPhone) ||
+    safeString(customer?.phone) ||
+    safeString(customer?.mobile) ||
+    safeString(customer?.businessPhone) ||
+    safeString(customer?.businessMobile) ||
+    null
+  );
 }
 
 function removeDuplicatePlace(street: string, place: string) {
@@ -754,11 +829,13 @@ export async function buildPublicOffer(args: { db: Db; planning: any; token: str
     planningId: mongoIdToString(args.planning?._id),
     companyName: safeString(company?.name),
     companyLogoUrl: safeString(company?.branding?.logoUrl),
+    ...buildPublicCompanyFields(company),
     sellerName: seller.sellerName,
     sellerEmail: seller.sellerEmail,
     sellerPhone: seller.sellerPhone,
     customerName: resolveCustomerName(args.planning, customer),
     customerEmail: resolveCustomerEmail(args.planning, customer),
+    customerPhone: resolvePublicCustomerPhone(args.planning, customer),
     ...buildPublicOfferCustomerFields(args.planning, customer),
     projectTitle: safeString(args.planning?.title) || safeString(args.planning?.planningNumber),
     objectAddress: resolveOfferPropertyAddress(args.planning, customer).objectAddress,

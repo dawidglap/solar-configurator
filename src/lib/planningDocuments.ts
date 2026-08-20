@@ -13,6 +13,7 @@ import { renderProjektuebersicht } from "@/lib/pdf/sections/projektuebersicht";
 import { renderTechnischeEckdaten } from "@/lib/pdf/sections/technischeEckdaten";
 import { htmlToPlainText } from "@/lib/htmlToPlainText";
 import { allocateChf05, roundChf05, sumChf05 } from "@/lib/chf";
+import { addCompanyVollmachtPage } from "@/lib/vollmachtPdf";
 
 export type PlanningDocumentType = "angebot" | "auftrag";
 export type PlanningReportSections = {
@@ -347,6 +348,13 @@ function extractPaymentsSource(data: any) {
 export function getEnabledCompanyDocumentKinds(planning: any): CompanyDocumentKind[] {
   void planning;
   return ["agb"];
+}
+
+export function shouldAppendVollmachtPage(
+  planning: any,
+  documentType: PlanningDocumentType,
+) {
+  return documentType === "angebot" && planning?.data?.parts?.formDocuments?.vollmacht === true;
 }
 
 async function appendCompanyOwnedOfferAttachments(args: {
@@ -845,9 +853,12 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   const projectAddress =
     safeString(plannerSnapshot?.address) ||
     [
-      safeString(profile?.street || profile?.buildingStreet),
-      safeString(profile?.zip || profile?.buildingZip),
-      safeString(profile?.city || profile?.buildingCity),
+      [safeString(profile?.buildingStreet || profile?.street), safeString(profile?.buildingStreetNo || profile?.houseNumber)]
+        .filter(Boolean)
+        .join(" "),
+      [safeString(profile?.buildingZip || profile?.zip), safeString(profile?.buildingCity || profile?.city)]
+        .filter(Boolean)
+        .join(" "),
     ]
       .filter(Boolean)
       .join(", ");
@@ -992,6 +1003,18 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     planning,
     companyId: String(planning?.companyId || session?.activeCompanyId || ""),
   });
+
+  if (shouldAppendVollmachtPage(planning, documentType)) {
+    await addCompanyVollmachtPage(pdf, {
+      company,
+      values: {
+        propertyAddress: projectAddress,
+        parcelNumber: null,
+        landRegisterNumber: null,
+        buildingNumber: null,
+      },
+    });
+  }
 
   const pdfBytes = await pdf.save();
 
