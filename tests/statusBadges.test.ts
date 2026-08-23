@@ -35,6 +35,15 @@ test("derives all three Vollmacht badge states", () => {
   });
 });
 
+test("treats a separate Vollmacht request as explicit activation", () => {
+  const badges = derivePlanningBadgeFields({
+    vollmachtManuallyActivated: true,
+    data: { parts: { formDocuments: { vollmacht: false } } },
+  });
+  assert.equal(badges.vollmachtRequired, true);
+  assert.equal(badges.vollmachtStatus, "pending");
+});
+
 test("returns withdrawalUntil only for an onsite-customer signature", () => {
   const signedAt = "2026-08-18T12:30:00.000Z";
   assert.equal(derivePlanningBadgeFields({

@@ -26,7 +26,8 @@ export function normalizeBadgeSignatureStatus(value: unknown): BadgeSignatureSta
 }
 
 export function derivePlanningBadgeFields(planning: any) {
-  const vollmachtRequired = planning?.data?.parts?.formDocuments?.vollmacht !== false;
+  const vollmachtRequired = planning?.vollmachtManuallyActivated === true ||
+    planning?.data?.parts?.formDocuments?.vollmacht !== false;
   const vollmachtSubmittedAt = iso(planning?.vollmachtSubmittedAt);
   const vollmachtStatus: VollmachtStatus = !vollmachtRequired
     ? "not_required"

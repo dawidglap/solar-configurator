@@ -13,6 +13,7 @@ import {
   getOfferVollmachtExpiresAt,
   isOfferVollmachtRequired,
   parseOfferVollmachtDetails,
+  resolveVollmachtTokenContext,
 } from "@/lib/offerSignatures";
 import {
   appendOfferConfirmationSignatureProtocol,
@@ -69,13 +70,15 @@ async function loadVollmachtContext(req: Request, token: string) {
   if (!(await enforceOfferPublicRateLimit(db, req))) return { rateLimited: true as const };
   const planning = await findOfferForVollmacht(db, token);
   if (!planning) return { notFound: true as const };
+  const tokenContext = resolveVollmachtTokenContext(planning, token);
+  if (!tokenContext) return { notFound: true as const };
   const companyId = mongoIdToString(planning?.companyId) || safeString(planning?.companyId);
   const companyObjectId = toObjectIdOrNull(companyId);
   const [company, customer] = await Promise.all([
     companyObjectId ? db.collection("companies").findOne({ _id: companyObjectId }) : null,
     loadPlanningCustomer(db, planning),
   ]);
-  return { db, planning, company, customer, companyId };
+  return { db, planning, company, customer, companyId, tokenContext };
 }
 
 export async function GET(req: Request, { params }: Params) {
@@ -108,7 +111,8 @@ export async function GET(req: Request, { params }: Params) {
         headers: {
           "Content-Type": "application/pdf",
           "Content-Disposition": buildContentDispositionInline(
-            safeString(file.originalFileName) || `vollmacht-${safeString(context.planning?.orderId)}.pdf`,
+            safeString(file.originalFileName) ||
+              `vollmacht-${safeString(context.planning?.orderId) || safeString(context.planning?.planningNumber) || mongoIdToString(context.planning?._id)}.pdf`,
           ),
           "Content-Length": String(pdf.length),
           "Cache-Control": "private, no-store, max-age=0",
@@ -152,13 +156,16 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const details = parseOfferVollmachtDetails(body);
+    const details = parseOfferVollmachtDetails(body, {
+      signatureRequired: context.tokenContext.signatureRequired,
+    });
     const { db, company, customer, companyId } = context;
     const planningId = context.planning._id;
     const customerId = context.customer?._id ?? toObjectIdOrNull(context.planning?.customerId);
     const orderId = safeString(context.planning?.orderId);
-    if (!company || !companyId || !orderId) {
-      throw new Error("Auftragsdaten sind unvollständig.");
+    const isManualRequest = context.tokenContext.kind === "manual";
+    if (!company || !companyId || (!isManualRequest && !orderId)) {
+      throw new Error(isManualRequest ? "Firmendaten sind unvollständig." : "Auftragsdaten sind unvollständig.");
     }
 
     const now = new Date();
@@ -190,14 +197,19 @@ export async function POST(req: Request, { params }: Params) {
       vollmachtSignerName: details.signerName,
       vollmachtSignatureDate: details.signatureDate,
       vollmachtSignatureMethod: details.signatureMethod,
-      vollmachtSignedAt: now,
+      vollmachtSignedAt: details.signaturePng ? now : null,
       vollmachtSignerIp: signerIp,
       vollmachtSignerUserAgent: signerUserAgent,
       updatedAt: now,
     };
     await Promise.all([
       db.collection("plannings").updateOne(
-        { _id: planningId, offerSignatureTokenHash: context.planning.offerSignatureTokenHash },
+        {
+          _id: planningId,
+          ...(isManualRequest
+            ? { vollmachtRequestTokenHash: context.tokenContext.tokenHash }
+            : { offerSignatureTokenHash: context.tokenContext.tokenHash }),
+        },
         {
           $set: {
             ...sharedFields,
@@ -216,7 +228,10 @@ export async function POST(req: Request, { params }: Params) {
       db.collection("auftraege").updateOne(
         {
           companyId: { $in: buildIdVariants(companyId) },
-          $or: [{ orderId }, { planningId: { $in: buildIdVariants(mongoIdToString(planningId)) } }],
+          $or: [
+            ...(orderId ? [{ orderId }] : []),
+            { planningId: { $in: buildIdVariants(mongoIdToString(planningId)) } },
+          ],
         },
         { $set: sharedFields },
       ),
@@ -246,68 +261,86 @@ export async function POST(req: Request, { params }: Params) {
 
     const planning = await db.collection<any>("plannings").findOne({ _id: planningId });
     if (!planning) throw new Error("Planung nicht gefunden.");
-    const commercial = await computePlanningCommercialSummary(db, planning);
     const session = { ...buildInternalOrderSession(planning, safeString(planning?.offerSignerName)), userId: null, name: "System" };
-    const orderGeneratedAt = planning?.orderGeneratedAt || planning?.offerSignedAt || now;
-    const { pdfBytes: orderPdf } = await buildPlanningDocumentPdf({
-      db,
-      planning,
-      company,
-      session,
-      documentType: "auftrag",
-      orderId,
-      orderGeneratedAt,
-      sections: resolveReportSections(planning),
-    });
     const customerName = resolveCustomerName(planning, customer);
-    const totalInklMwst = Number(commercial?.totalInvestmentChf ?? 0);
-    const signedAt = planning?.offerSignedAt instanceof Date
-      ? planning.offerSignedAt
-      : new Date(planning?.offerSignedAt);
-    const withdrawalUntil = planning?.withdrawalUntil
-      ? new Date(planning.withdrawalUntil)
-      : null;
-    const confirmationBasePdf = await createOfferConfirmationPdf({
-      sourcePdf: orderPdf,
-      orderId,
-      offerNumber: safeString(planning?.planningNumber),
-      customerName,
-      projectTitle: safeString(planning?.title) || safeString(planning?.planningNumber),
-      signerName: safeString(planning?.offerSignerName),
-      signedAt,
-      totalInklMwst,
-      payments: normalizeSignaturePayments(planning, totalInklMwst),
-      propertyStreet: details.propertyStreet,
-      propertyHouseNumber: null,
-      propertyZip: details.propertyZip,
-      propertyCity: details.propertyCity,
-      buildingNumber: details.buildingNumber,
-      parcelNumber: details.parcelNumber,
-      landRegisterNumber: details.landRegisterNumber,
-      bankAccountHolder: details.bankAccountHolder,
-      bankIban: details.bankIban,
-      withdrawalRightApplies: planning?.withdrawalRightApplies === true,
-      withdrawalUntil: withdrawalUntil && !Number.isNaN(withdrawalUntil.getTime()) ? withdrawalUntil : null,
-    });
-    const signaturePng = validateSignatureImage(planning?.offerSignatureImage);
-    const confirmationPdf = await appendOfferConfirmationSignatureProtocol({
-      confirmationPdf: confirmationBasePdf,
-      signaturePng,
-      orderId,
-      customerName,
-      projectTitle: safeString(planning?.title) || safeString(planning?.planningNumber),
-      totalInklMwst,
-      signerName: safeString(planning?.offerSignerName),
-      signerEmail: safeString(planning?.offerSignerEmail),
-      place: safeString(planning?.offerSignaturePlaceName) || "Remote",
-      signedAt,
-      signerIp: safeString(planning?.offerSignerIp) || extractRequestIp(req),
-      signerUserAgent: safeString(planning?.offerSignerUserAgent),
-      signedOfferSha256: safeString(planning?.offerSignedPdfSha256),
-    });
+    const documentReference = orderId || safeString(planning?.planningNumber) || mongoIdToString(planningId);
+    let confirmation: Awaited<ReturnType<typeof upsertManagedPlanningFile>> | null = null;
+    if (!isManualRequest) {
+      const commercial = await computePlanningCommercialSummary(db, planning);
+      const orderGeneratedAt = planning?.orderGeneratedAt || planning?.offerSignedAt || now;
+      const { pdfBytes: orderPdf } = await buildPlanningDocumentPdf({
+        db,
+        planning,
+        company,
+        session,
+        documentType: "auftrag",
+        orderId,
+        orderGeneratedAt,
+        sections: resolveReportSections(planning),
+      });
+      const totalInklMwst = Number(commercial?.totalInvestmentChf ?? 0);
+      const signedAt = planning?.offerSignedAt instanceof Date
+        ? planning.offerSignedAt
+        : new Date(planning?.offerSignedAt);
+      const withdrawalUntil = planning?.withdrawalUntil
+        ? new Date(planning.withdrawalUntil)
+        : null;
+      const confirmationBasePdf = await createOfferConfirmationPdf({
+        sourcePdf: orderPdf,
+        orderId,
+        offerNumber: safeString(planning?.planningNumber),
+        customerName,
+        projectTitle: safeString(planning?.title) || safeString(planning?.planningNumber),
+        signerName: safeString(planning?.offerSignerName),
+        signedAt,
+        totalInklMwst,
+        payments: normalizeSignaturePayments(planning, totalInklMwst),
+        propertyStreet: details.propertyStreet,
+        propertyHouseNumber: null,
+        propertyZip: details.propertyZip,
+        propertyCity: details.propertyCity,
+        buildingNumber: details.buildingNumber,
+        parcelNumber: details.parcelNumber,
+        landRegisterNumber: details.landRegisterNumber,
+        bankAccountHolder: details.bankAccountHolder,
+        bankIban: details.bankIban,
+        withdrawalRightApplies: planning?.withdrawalRightApplies === true,
+        withdrawalUntil: withdrawalUntil && !Number.isNaN(withdrawalUntil.getTime())
+          ? withdrawalUntil
+          : null,
+      });
+      const signaturePng = validateSignatureImage(planning?.offerSignatureImage);
+      const confirmationPdf = await appendOfferConfirmationSignatureProtocol({
+        confirmationPdf: confirmationBasePdf,
+        signaturePng,
+        orderId,
+        customerName,
+        projectTitle: safeString(planning?.title) || safeString(planning?.planningNumber),
+        totalInklMwst,
+        signerName: safeString(planning?.offerSignerName),
+        signerEmail: safeString(planning?.offerSignerEmail),
+        place: safeString(planning?.offerSignaturePlaceName) || "Remote",
+        signedAt,
+        signerIp: safeString(planning?.offerSignerIp) || extractRequestIp(req),
+        signerUserAgent: safeString(planning?.offerSignerUserAgent),
+        signedOfferSha256: safeString(planning?.offerSignedPdfSha256),
+      });
+      confirmation = await upsertManagedPlanningFile({
+        db,
+        companyId,
+        planningId: mongoIdToString(planningId),
+        category: "auftrag",
+        title: `Auftragsbestätigung ${orderId}`,
+        originalFileName: `auftragsbestaetigung-${orderId}.pdf`,
+        mimeType: "application/pdf",
+        buffer: confirmationPdf,
+        customerId: safeString(planning?.customerId) || undefined,
+        session,
+      });
+    }
     const vollmachtPdf = await createOfferVollmachtPdf({
       company,
-      orderId,
+      orderId: documentReference,
       offerNumber: safeString(planning?.planningNumber),
       customerName,
       propertyStreet: details.propertyStreet,
@@ -331,130 +364,123 @@ export async function POST(req: Request, { params }: Params) {
       signatureMethod: details.signatureMethod,
       submittedAt: now,
     });
-    const [confirmation, vollmacht, vollmachtSignature] = await Promise.all([
-      upsertManagedPlanningFile({
-        db,
-        companyId,
-        planningId: mongoIdToString(planningId),
-        category: "auftrag",
-        title: `Auftragsbestätigung ${orderId}`,
-        originalFileName: `auftragsbestaetigung-${orderId}.pdf`,
-        mimeType: "application/pdf",
-        buffer: confirmationPdf,
-        customerId: safeString(planning?.customerId) || undefined,
-        session,
-      }),
+    const [vollmacht, vollmachtSignature] = await Promise.all([
       upsertManagedPlanningFile({
         db,
         companyId,
         planningId: mongoIdToString(planningId),
         category: "vollmacht",
-        title: `Vollmacht ${orderId}`,
-        originalFileName: `vollmacht-${orderId}.pdf`,
+        title: `Vollmacht ${documentReference}`,
+        originalFileName: `vollmacht-${documentReference}.pdf`,
         mimeType: "application/pdf",
         buffer: vollmachtPdf,
         customerId: safeString(planning?.customerId) || undefined,
         session,
       }),
-      storeGeneratedSignatureFile({
-        db,
-        planning,
-        category: "signature",
-        type: "vollmacht_signature",
-        title: `Vollmacht ${orderId} - Unterschrift`,
-        fileName: `vollmacht-${orderId}-unterschrift.png`,
-        mimeType: "image/png",
-        buffer: details.signaturePng,
-        actorName: "System",
-      }),
+      details.signaturePng
+        ? storeGeneratedSignatureFile({
+            db,
+            planning,
+            category: "signature",
+            type: "vollmacht_signature",
+            title: `Vollmacht ${documentReference} - Unterschrift`,
+            fileName: `vollmacht-${documentReference}-unterschrift.png`,
+            mimeType: "image/png",
+            buffer: details.signaturePng,
+            actorName: "System",
+          })
+        : Promise.resolve(null),
     ]);
 
-    const currentExpiresAt = getOfferVollmachtExpiresAt(planning);
+    const currentExpiresAt = getOfferVollmachtExpiresAt(planning, token);
     const minimumLinkExpiresAt = new Date(now.getTime() + OFFER_VOLLMACHT_VALIDITY_MS);
-    const expiresAt = currentExpiresAt && currentExpiresAt > minimumLinkExpiresAt
-      ? currentExpiresAt
-      : minimumLinkExpiresAt;
+    const expiresAt = isManualRequest
+      ? context.tokenContext.expiresAt
+      : currentExpiresAt && currentExpiresAt > minimumLinkExpiresAt
+        ? currentExpiresAt
+        : minimumLinkExpiresAt;
+    const signatureFileId = vollmachtSignature?._id ?? null;
+    const signatureRecord = {
+      parcelNumber: details.parcelNumber,
+      landRegisterNumber: details.landRegisterNumber,
+      buildingNumber: details.buildingNumber,
+      bankName: details.bankName,
+      ownerCompanyName: details.ownerCompanyName,
+      ownerFirstName: details.ownerFirstName,
+      ownerLastName: details.ownerLastName,
+      ownerBirthDate: details.ownerBirthDate,
+      ownerPhone: details.ownerPhone,
+      ownerEmail: details.ownerEmail,
+      signerFirstName: details.signerFirstName,
+      signerLastName: details.signerLastName,
+      signerName: details.signerName,
+      signatureDate: details.signatureDate,
+      signatureMethod: details.signatureMethod,
+      signatureImageFileId: signatureFileId,
+      signedAt: details.signaturePng ? now : null,
+      ip: signerIp,
+      userAgent: signerUserAgent,
+    };
+    const auditEntry = buildOfferAuditEntry({
+      event: "vollmacht_submitted",
+      req,
+      tokenHash: context.tokenContext.tokenHash,
+      at: now,
+      meta: {
+        orderId: orderId || null,
+        expiresAt: expiresAt.toISOString(),
+        signerName: details.signerName,
+        signatureRequired: context.tokenContext.signatureRequired,
+        signatureDate: details.signatureDate,
+        signatureMethod: details.signatureMethod,
+        signatureImageFileId: mongoIdToString(signatureFileId),
+        signedAt: details.signaturePng ? now.toISOString() : null,
+      },
+    });
     await Promise.all([
       db.collection<any>("plannings").updateOne(
-        { _id: planningId },
+        {
+          _id: planningId,
+          ...(isManualRequest
+            ? { vollmachtRequestTokenHash: context.tokenContext.tokenHash }
+            : { offerSignatureTokenHash: context.tokenContext.tokenHash }),
+        },
         {
           $set: {
             vollmachtSubmittedAt: now,
             offerVollmachtPdfFileId: vollmacht.doc._id,
-            offerConfirmationPdfFileId: confirmation.doc._id,
-            orderSnapshotFileId: confirmation.doc._id,
-            offerVollmachtTokenExpiresAt: expiresAt,
-            vollmachtSignatureImageFileId: vollmachtSignature._id,
-            vollmachtSignature: {
-              parcelNumber: details.parcelNumber,
-              landRegisterNumber: details.landRegisterNumber,
-              buildingNumber: details.buildingNumber,
-              bankName: details.bankName,
-              ownerCompanyName: details.ownerCompanyName,
-              ownerFirstName: details.ownerFirstName,
-              ownerLastName: details.ownerLastName,
-              ownerBirthDate: details.ownerBirthDate,
-              ownerPhone: details.ownerPhone,
-              ownerEmail: details.ownerEmail,
-              signerFirstName: details.signerFirstName,
-              signerLastName: details.signerLastName,
-              signerName: details.signerName,
-              signatureDate: details.signatureDate,
-              signatureMethod: details.signatureMethod,
-              signatureImageFileId: vollmachtSignature._id,
-              signedAt: now,
-              ip: signerIp,
-              userAgent: signerUserAgent,
-            },
+            ...(confirmation
+              ? {
+                  offerConfirmationPdfFileId: confirmation.doc._id,
+                  orderSnapshotFileId: confirmation.doc._id,
+                  offerVollmachtTokenExpiresAt: expiresAt,
+                }
+              : {}),
+            vollmachtSignatureImageFileId: signatureFileId,
+            vollmachtSignature: signatureRecord,
             updatedAt: now,
           },
           $push: {
-            offerSignatureAudit: buildOfferAuditEntry({
-              event: "vollmacht_submitted",
-              req,
-              tokenHash: safeString(planning?.offerSignatureTokenHash),
-              at: now,
-              meta: {
-                orderId,
-                expiresAt: expiresAt?.toISOString() ?? null,
-                signerName: details.signerName,
-                signatureDate: details.signatureDate,
-                signatureMethod: details.signatureMethod,
-                signatureImageFileId: mongoIdToString(vollmachtSignature._id),
-                signedAt: now.toISOString(),
-              },
-            }) as never,
+            ...(isManualRequest
+              ? { vollmachtRequestAudit: auditEntry as never }
+              : { offerSignatureAudit: auditEntry as never }),
           },
         },
       ),
       db.collection("auftraege").updateOne(
-        { companyId: { $in: buildIdVariants(companyId) }, orderId },
+        {
+          companyId: { $in: buildIdVariants(companyId) },
+          $or: [
+            ...(orderId ? [{ orderId }] : []),
+            { planningId: { $in: buildIdVariants(mongoIdToString(planningId)) } },
+          ],
+        },
         {
           $set: {
             ...sharedFields,
             vollmachtSubmittedAt: now,
-            vollmachtSignatureImageFileId: vollmachtSignature._id,
-            vollmachtSignature: {
-              parcelNumber: details.parcelNumber,
-              landRegisterNumber: details.landRegisterNumber,
-              buildingNumber: details.buildingNumber,
-              bankName: details.bankName,
-              ownerCompanyName: details.ownerCompanyName,
-              ownerFirstName: details.ownerFirstName,
-              ownerLastName: details.ownerLastName,
-              ownerBirthDate: details.ownerBirthDate,
-              ownerPhone: details.ownerPhone,
-              ownerEmail: details.ownerEmail,
-              signerFirstName: details.signerFirstName,
-              signerLastName: details.signerLastName,
-              signerName: details.signerName,
-              signatureDate: details.signatureDate,
-              signatureMethod: details.signatureMethod,
-              signatureImageFileId: vollmachtSignature._id,
-              signedAt: now,
-              ip: signerIp,
-              userAgent: signerUserAgent,
-            },
+            vollmachtSignatureImageFileId: signatureFileId,
+            vollmachtSignature: signatureRecord,
             updatedAt: now,
           },
         },
@@ -469,7 +495,7 @@ export async function POST(req: Request, { params }: Params) {
 
     await emitCompanyRealtimeEvent(companyId, "vollmacht.submitted", {
       planningId: mongoIdToString(planningId),
-      orderId,
+      ...(orderId ? { orderId } : {}),
       submittedAt: now.toISOString(),
     });
 
@@ -481,7 +507,7 @@ export async function POST(req: Request, { params }: Params) {
         kind: "vollmacht_submitted",
         companyId,
         planningId: mongoIdToString(planningId),
-        orderId,
+        orderId: documentReference,
         offerNumber: safeString(planning?.planningNumber),
         companyName: safeString(company?.name),
         customerName,
@@ -492,7 +518,7 @@ export async function POST(req: Request, { params }: Params) {
         downloadUrl: `${publicBase}/vollmacht?download=1`,
         attachment: {
           fileId: vollmacht.doc._id,
-          fileName: `vollmacht-${orderId}.pdf`,
+          fileName: `vollmacht-${documentReference}.pdf`,
           mimeType: "application/pdf",
           buffer: vollmachtPdf,
         },
@@ -503,7 +529,7 @@ export async function POST(req: Request, { params }: Params) {
     return response(origin, {
       ok: true,
       vollmachtPdfUrl: `${publicBase}/vollmacht?download=1`,
-      confirmationPdfUrl: `${publicBase}/pdf?type=confirmation`,
+      confirmationPdfUrl: confirmation ? `${publicBase}/pdf?type=confirmation` : null,
       submittedAt: now.toISOString(),
     });
   } catch (error: any) {

@@ -39,6 +39,7 @@ export const OFFER_SIGNATURE_STATUSES = [
   "expired",
 ] as const;
 export const OFFER_VOLLMACHT_VALIDITY_MS = 30 * 86_400_000;
+export const MAX_VOLLMACHT_REQUEST_DAYS = 90;
 export type OfferSignatureStatus = (typeof OFFER_SIGNATURE_STATUSES)[number];
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -95,6 +96,15 @@ export function buildDefaultOfferSignatureFields() {
     offerSignatureProcessingId: null,
     offerSignatureProcessingAt: null,
     offerVollmachtTokenExpiresAt: null,
+    vollmachtRequestTokenHash: null,
+    vollmachtRequestTokenExpiresAt: null,
+    vollmachtRequestTokenCiphertext: null,
+    vollmachtManuallyActivated: false,
+    vollmachtSignatureRequired: true,
+    vollmachtRequestedAt: null,
+    vollmachtRequestedByUserId: null,
+    vollmachtRequestedByName: null,
+    vollmachtRequestAudit: [],
     vollmachtSubmittedAt: null,
     vollmachtSignedAt: null,
     vollmachtSignatureImageFileId: null,
@@ -163,6 +173,72 @@ export function buildOfferVollmachtLink(token: string) {
   return `${origin}/vollmacht/${encodeURIComponent(token)}`;
 }
 
+export function buildManualVollmachtLink(token: string) {
+  return `${buildOfferVollmachtLink(token)}?modus=formular`;
+}
+
+export function parseVollmachtRequest(body: unknown) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("Ungültige Eingabe.");
+  }
+  const input = body as Record<string, unknown>;
+  const expiresInDays = Number(input.expiresInDays ?? 30);
+  if (
+    !Number.isInteger(expiresInDays) ||
+    expiresInDays < 1 ||
+    expiresInDays > MAX_VOLLMACHT_REQUEST_DAYS
+  ) {
+    throw new Error(
+      `expiresInDays muss eine ganze Zahl zwischen 1 und ${MAX_VOLLMACHT_REQUEST_DAYS} sein.`,
+    );
+  }
+  if (input.signatureRequired !== undefined && typeof input.signatureRequired !== "boolean") {
+    throw new Error("signatureRequired muss ein Boolean sein.");
+  }
+  return {
+    expiresInDays,
+    signatureRequired: input.signatureRequired === true,
+  };
+}
+
+function vollmachtTokenEncryptionKey(secret: string) {
+  return crypto
+    .createHash("sha256")
+    .update(`helionic-vollmacht-request-token:v1\0${secret}`)
+    .digest();
+}
+
+export function encryptVollmachtRequestToken(token: string, secret: string) {
+  if (!isValidOfferToken(token) || !safeString(secret)) {
+    throw new Error("Vollmacht-Token kann nicht verschlüsselt werden.");
+  }
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", vollmachtTokenEncryptionKey(secret), iv);
+  const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ["v1", iv.toString("base64url"), tag.toString("base64url"), encrypted.toString("base64url")].join(".");
+}
+
+export function decryptVollmachtRequestToken(value: unknown, secret: string) {
+  const [version, ivValue, tagValue, encryptedValue] = safeString(value).split(".");
+  if (version !== "v1" || !ivValue || !tagValue || !encryptedValue || !safeString(secret)) return null;
+  try {
+    const decipher = crypto.createDecipheriv(
+      "aes-256-gcm",
+      vollmachtTokenEncryptionKey(secret),
+      Buffer.from(ivValue, "base64url"),
+    );
+    decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+    const token = Buffer.concat([
+      decipher.update(Buffer.from(encryptedValue, "base64url")),
+      decipher.final(),
+    ]).toString("utf8");
+    return isValidOfferToken(token) ? token : null;
+  } catch {
+    return null;
+  }
+}
+
 export function parseOfferSignatureRequest(body: any) {
   const email = safeString(body?.email).toLowerCase();
   if (email && !EMAIL_PATTERN.test(email)) throw new Error("Ungültige E-Mail-Adresse.");
@@ -212,7 +288,8 @@ function parseIsoLocalDate(value: unknown, label: string) {
 }
 
 export function isOfferVollmachtRequired(planning: any) {
-  return planning?.data?.parts?.formDocuments?.vollmacht !== false;
+  return planning?.vollmachtManuallyActivated === true ||
+    planning?.data?.parts?.formDocuments?.vollmacht !== false;
 }
 
 export function parseOfferAcceptanceDetails(body: any) {
@@ -235,7 +312,11 @@ export function parseOfferAcceptanceDetails(body: any) {
   };
 }
 
-export function parseOfferVollmachtDetails(body: any) {
+export function parseOfferVollmachtDetails(
+  body: any,
+  options: { signatureRequired?: boolean } = {},
+) {
+  const signatureRequired = options.signatureRequired !== false;
   const propertyStreet = optionalLimitedString(
     body?.propertyStreet ?? body?.street,
     "Objektstrasse",
@@ -274,12 +355,21 @@ export function parseOfferVollmachtDetails(body: any) {
   const splitSignerName = [signerFirstName, signerLastName].filter(Boolean).join(" ");
   const signerName = ownerName || explicitSignerName || splitSignerName;
   const signaturePlace = safeString(body?.signaturePlace).slice(0, 120) || null;
-  const signatureDate = parseIsoLocalDate(body?.signatureDate, "Unterschriftsdatum");
-  const signatureMethod =
-    optionalLimitedString(body?.signatureMethod, "Signaturmethode", 240) ||
-    DEFAULT_VOLLMACHT_SIGNATURE_METHOD;
+  const signatureDate = safeString(body?.signatureDate)
+    ? parseIsoLocalDate(body?.signatureDate, "Unterschriftsdatum")
+    : signatureRequired
+      ? parseIsoLocalDate(body?.signatureDate, "Unterschriftsdatum")
+      : null;
   const signatureImage = safeString(body?.signatureImage);
-  const signaturePng = validateSignatureImage(signatureImage);
+  const signaturePng = signatureImage
+    ? validateSignatureImage(signatureImage)
+    : signatureRequired
+      ? validateSignatureImage(signatureImage)
+      : null;
+  const signatureMethod = signaturePng
+    ? optionalLimitedString(body?.signatureMethod, "Signaturmethode", 240) ||
+      DEFAULT_VOLLMACHT_SIGNATURE_METHOD
+    : null;
   if (!signerName) throw new Error("Name Unterzeichner ist erforderlich.");
   return {
     propertyStreet,
@@ -342,6 +432,15 @@ export async function ensureOfferSignatureIndexes(db: Db) {
       },
     ),
     db.collection("plannings").createIndex({ offerSignatureStatus: 1, offerSignatureTokenExpiresAt: 1 }),
+    db.collection("plannings").createIndex(
+      { vollmachtRequestTokenHash: 1 },
+      {
+        unique: true,
+        partialFilterExpression: { vollmachtRequestTokenHash: { $type: "string" } },
+        name: "unique_vollmacht_request_token_hash",
+      },
+    ),
+    db.collection("plannings").createIndex({ vollmachtRequestTokenExpiresAt: 1 }),
   ]).then(() => undefined).catch((error) => {
     indexPromise = null;
     throw error;
@@ -371,7 +470,12 @@ export async function findOfferByToken(db: Db, token: string): Promise<any | nul
   });
 }
 
-export function getOfferVollmachtExpiresAt(planning: any) {
+function validDate(value: unknown) {
+  const date = value instanceof Date ? value : safeString(value) ? new Date(safeString(value)) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+function getLegacyOfferVollmachtExpiresAt(planning: any) {
   const explicit = planning?.offerVollmachtTokenExpiresAt
     ? new Date(planning.offerVollmachtTokenExpiresAt)
     : null;
@@ -381,19 +485,70 @@ export function getOfferVollmachtExpiresAt(planning: any) {
   return new Date(signedAt.getTime() + OFFER_VOLLMACHT_VALIDITY_MS);
 }
 
+export type VollmachtTokenContext = {
+  kind: "manual" | "offer";
+  tokenHash: string;
+  expiresAt: Date;
+  signatureRequired: boolean;
+};
+
+export function resolveVollmachtTokenContext(
+  planning: any,
+  token: string,
+  now = new Date(),
+): VollmachtTokenContext | null {
+  if (!isValidOfferToken(token)) return null;
+  const tokenHash = sha256(token);
+  if (
+    planning?.vollmachtManuallyActivated === true &&
+    safeString(planning?.vollmachtRequestTokenHash) === tokenHash
+  ) {
+    const expiresAt = validDate(planning?.vollmachtRequestTokenExpiresAt);
+    if (expiresAt && expiresAt.getTime() > now.getTime()) {
+      return {
+        kind: "manual",
+        tokenHash,
+        expiresAt,
+        signatureRequired: planning?.vollmachtSignatureRequired === true,
+      };
+    }
+  }
+  if (
+    safeString(planning?.offerSignatureTokenHash) === tokenHash &&
+    safeString(planning?.offerSignatureStatus) === "signed"
+  ) {
+    const expiresAt = getLegacyOfferVollmachtExpiresAt(planning);
+    if (expiresAt && expiresAt.getTime() > now.getTime()) {
+      return { kind: "offer", tokenHash, expiresAt, signatureRequired: true };
+    }
+  }
+  return null;
+}
+
+export function getOfferVollmachtExpiresAt(planning: any, token?: string) {
+  if (token) return resolveVollmachtTokenContext(planning, token, new Date(0))?.expiresAt ?? null;
+  if (planning?.vollmachtManuallyActivated === true) {
+    const manual = validDate(planning?.vollmachtRequestTokenExpiresAt);
+    if (manual) return manual;
+  }
+  return getLegacyOfferVollmachtExpiresAt(planning);
+}
+
 export async function findOfferForVollmacht(
   db: Db,
   token: string,
   now = new Date(),
 ): Promise<any | null> {
   if (!isValidOfferToken(token)) return null;
+  const tokenHash = sha256(token);
   const planning = await db.collection("plannings").findOne({
-    offerSignatureTokenHash: sha256(token),
-    offerSignatureStatus: "signed",
+    $or: [
+      { vollmachtRequestTokenHash: tokenHash, vollmachtManuallyActivated: true },
+      { offerSignatureTokenHash: tokenHash, offerSignatureStatus: "signed" },
+    ],
   });
   if (!planning) return null;
-  const expiresAt = getOfferVollmachtExpiresAt(planning);
-  return expiresAt && expiresAt.getTime() > now.getTime() ? planning : null;
+  return resolveVollmachtTokenContext(planning, token, now) ? planning : null;
 }
 
 export function buildOfferVollmachtResponse(args: {
@@ -405,7 +560,8 @@ export function buildOfferVollmachtResponse(args: {
 }) {
   const planning = args.planning;
   const address = resolveOfferPropertyAddress(planning, args.customer);
-  const expiresAt = getOfferVollmachtExpiresAt(planning);
+  const tokenContext = resolveVollmachtTokenContext(planning, args.token, new Date(0));
+  const expiresAt = tokenContext?.expiresAt ?? getOfferVollmachtExpiresAt(planning);
   const submittedAt = iso(planning?.vollmachtSubmittedAt);
   const vollmachtRequired = isOfferVollmachtRequired(planning);
   const base = getPublicApiBaseUrl(args.req);
@@ -413,6 +569,7 @@ export function buildOfferVollmachtResponse(args: {
   const legacySubmittedValue = (value: unknown) => submittedAt ? safeString(value) : "";
   return {
     vollmachtRequired,
+    signatureRequired: tokenContext?.signatureRequired ?? true,
     submitted: !!submittedAt,
     submittedAt,
     expiresAt: expiresAt?.toISOString() ?? null,

@@ -247,6 +247,7 @@ test("validates required Vollmacht and signature fields without hard IBAN valida
       signatureMethod: DEFAULT_VOLLMACHT_SIGNATURE_METHOD,
     },
   );
+  assert.ok(signaturePng);
   assert.equal(signaturePng.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
   assert.equal(
     parseOfferVollmachtDetails({
@@ -325,6 +326,96 @@ test("defaults Vollmacht to required and honors an explicit false flag", async (
     isOfferVollmachtRequired({ data: { parts: { formDocuments: { vollmacht: false } } } }),
     false,
   );
+  assert.equal(
+    isOfferVollmachtRequired({
+      vollmachtManuallyActivated: true,
+      data: { parts: { formDocuments: { vollmacht: false } } },
+    }),
+    true,
+  );
+});
+
+test("creates reusable manual Vollmacht tokens independently of the offer status", async () => {
+  const {
+    buildOfferVollmachtResponse,
+    decryptVollmachtRequestToken,
+    encryptVollmachtRequestToken,
+    findOfferForVollmacht,
+    newOfferSignatureToken,
+    resolveVollmachtTokenContext,
+  } = await loadOffer();
+  const { token, hash } = newOfferSignatureToken();
+  const expiresAt = new Date("2026-09-22T12:00:00.000Z");
+  const planning = {
+    offerSignatureStatus: "none",
+    orderStatus: "generated",
+    data: { parts: { formDocuments: { vollmacht: false } } },
+    vollmachtManuallyActivated: true,
+    vollmachtSignatureRequired: false,
+    vollmachtRequestTokenHash: hash,
+    vollmachtRequestTokenExpiresAt: expiresAt,
+  };
+  const encrypted = encryptVollmachtRequestToken(token, "test-secret");
+  assert.equal(decryptVollmachtRequestToken(encrypted, "test-secret"), token);
+  assert.equal(decryptVollmachtRequestToken(encrypted, "wrong-secret"), null);
+  assert.deepEqual(
+    resolveVollmachtTokenContext(planning, token, new Date("2026-09-01T00:00:00.000Z")),
+    {
+      kind: "manual",
+      tokenHash: hash,
+      expiresAt,
+      signatureRequired: false,
+    },
+  );
+  const db = {
+    collection: () => ({ findOne: async () => planning }),
+  } as any;
+  assert.equal(
+    await findOfferForVollmacht(db, token, new Date("2026-09-01T00:00:00.000Z")),
+    planning,
+  );
+  const response = buildOfferVollmachtResponse({
+    planning,
+    company: null,
+    customer: null,
+    token,
+    req: new Request(`https://planner.helionic.ch/api/public/offer-signature/${token}/vollmacht`),
+  });
+  assert.equal(response.vollmachtRequired, true);
+  assert.equal(response.signatureRequired, false);
+  assert.equal(response.expiresAt, expiresAt.toISOString());
+  assert.equal(response.parcelNumber, null);
+  assert.equal(response.landRegisterNumber, null);
+  assert.equal(response.buildingNumber, null);
+});
+
+test("accepts unsigned manual Vollmacht submissions and validates request options", async () => {
+  const { parseOfferVollmachtDetails, parseVollmachtRequest } = await loadOffer();
+  assert.deepEqual(parseVollmachtRequest({ expiresInDays: 30, signatureRequired: false }), {
+    expiresInDays: 30,
+    signatureRequired: false,
+  });
+  assert.throws(() => parseVollmachtRequest({ expiresInDays: 0 }), /zwischen 1 und 90/);
+  assert.throws(() => parseVollmachtRequest({ signatureRequired: "false" }), /Boolean/);
+
+  const parsed = parseOfferVollmachtDetails({
+    propertyStreet: "Dorfstrasse 1",
+    propertyZip: "3000",
+    propertyCity: "Bern",
+    buildingNumber: "1234567",
+    bankAccountHolder: "Max Mustermann",
+    bankName: "Musterbank",
+    bankIban: "CH9300762011623852957",
+    ownerFirstName: "Max",
+    ownerLastName: "Mustermann",
+    ownerBirthDate: "1990-05-20",
+    ownerPhone: "+41 79 123 45 67",
+    ownerEmail: "max@example.ch",
+  }, { signatureRequired: false });
+  assert.equal(parsed.signerName, "Max Mustermann");
+  assert.equal(parsed.signatureDate, null);
+  assert.equal(parsed.signaturePng, null);
+  assert.equal(parsed.signatureMethod, null);
 });
 
 test("keeps a signed offer token valid for Vollmacht for exactly 30 days", async () => {

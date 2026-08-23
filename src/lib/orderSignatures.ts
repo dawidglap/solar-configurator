@@ -702,9 +702,9 @@ export async function createOfferVollmachtPdf(args: {
   ownerPhone: string;
   ownerEmail: string;
   signerName: string;
-  signatureDate: string;
-  signaturePng: Buffer;
-  signatureMethod: string;
+  signatureDate?: string | null;
+  signaturePng?: Buffer | null;
+  signatureMethod?: string | null;
   submittedAt: Date;
 }) {
   const pdf = await PDFDocument.create();
