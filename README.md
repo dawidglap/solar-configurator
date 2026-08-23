@@ -15,6 +15,43 @@ recipients, seller Reply-To, the public download URL and the generated PDF as a 
 Delivery is idempotent per company/order/type and failed deliveries are retried by the existing
 `/api/cron/signatures-expire` cron job.
 
+## Realtime events (SSE)
+
+Authenticated CRM clients receive company-scoped events from `GET /api/events/stream`. The
+endpoint uses the existing `session` cookie, sends a keep-alive every 25 seconds and limits each
+user to five concurrent streams.
+
+For deployments with more than one application instance, configure Redis for cross-instance
+fan-out:
+
+```bash
+REDIS_URL=redis://USER:PASSWORD@HOST:6379
+```
+
+An optional signed webhook can receive the same event payload:
+
+```bash
+COMPANY_WEBHOOK_URL=https://example.ch/helionic-events
+COMPANY_WEBHOOK_SECRET=SHARED_HMAC_SECRET
+```
+
+The signature is sent as `X-Helionic-Signature: sha256=<hex digest>`. A configured webhook URL is
+not called without a secret.
+
+The reverse proxy must disable response buffering for the SSE path:
+
+```nginx
+location = /api/events/stream {
+    proxy_pass http://planner_upstream;
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    gzip off;
+}
+```
+
 ## Getting Started
 
 First, run the development server:

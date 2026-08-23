@@ -41,6 +41,7 @@ import { POST as generateOrder } from "@/app/api/plannings/[planningId]/generate
 import { buildIdVariants } from "@/lib/tasks";
 import { resolvePlanningSellerContact } from "@/lib/userProfiles";
 import { queueSignatureDocumentEmail } from "@/lib/signatureEmails";
+import { emitCompanyRealtimeEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -476,6 +477,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       ).catch((error) => console.error("STORE CUSTOMER PAYOUT ACCOUNT ERROR:", error));
     }
     const completed = await db.collection("plannings").findOne({ _id: planning._id });
+    await emitCompanyRealtimeEvent(safeString(planning?.companyId), "offer.signed", {
+      planningId: String(planning._id),
+      orderId,
+      signedAt: signedAt.toISOString(),
+    });
     if (completed) {
       await deliverOfferAcceptedEmail({
         db,

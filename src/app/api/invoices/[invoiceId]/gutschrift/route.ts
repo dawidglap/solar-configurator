@@ -12,6 +12,7 @@ import {
 import { getInvoiceContextById } from "@/lib/invoicePdf";
 import { getSessionUserEmail, getSessionUserMeta, safeNumber } from "@/lib/tasks";
 import { roundChf05 } from "@/lib/chf";
+import { emitInvoiceUpdatedEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -129,6 +130,7 @@ export async function POST(
     const invoices = db.collection("invoices");
     const insert = await invoices.insertOne(doc);
     const invoice = await invoices.findOne({ _id: insert.insertedId });
+    if (invoice) await emitInvoiceUpdatedEvent(String(session.activeCompanyId), invoice);
     return jsonResponse(origin, { ok: true, invoice: normalizeInvoice(invoice) }, 200);
   } catch (error: any) {
     console.error("POST INVOICE CREDIT NOTE ERROR:", error);

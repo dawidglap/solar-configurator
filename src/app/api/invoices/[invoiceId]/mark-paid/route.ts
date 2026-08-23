@@ -11,6 +11,7 @@ import {
   resolveInvoicePaymentAndDunningState,
 } from "@/lib/invoices";
 import { safeNumber } from "@/lib/tasks";
+import { emitInvoiceUpdatedEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,6 +106,7 @@ export async function POST(
     );
 
     const invoice = await invoices.findOne({ _id: existing._id });
+    if (invoice) await emitInvoiceUpdatedEvent(String(session.activeCompanyId), invoice);
     return jsonResponse(origin, { ok: true, invoice: normalizeInvoice(invoice) }, 200);
   } catch (error: any) {
     console.error("POST INVOICE MARK-PAID ERROR:", error);

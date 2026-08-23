@@ -44,7 +44,7 @@ import {
   upsertManagedPlanningFile,
 } from "@/lib/planningFiles";
 import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
-import { emitCompanyRealtimeEvent } from "@/lib/realtime";
+import { emitCompanyRealtimeEvent, emitInvoiceUpdatedEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -767,6 +767,21 @@ export async function POST(
         : {}),
     };
 
+    await emitCompanyRealtimeEvent(companyId, "order.created", {
+      planningId,
+      orderId,
+      createdAt:
+        orderGeneratedAt instanceof Date
+          ? orderGeneratedAt.toISOString()
+          : new Date(orderGeneratedAt).toISOString(),
+    });
+    if (invoiceResult.created) {
+      await Promise.all(
+        invoiceResult.invoices.map((invoice) =>
+          emitInvoiceUpdatedEvent(companyId, invoice),
+        ),
+      );
+    }
     await emitCompanyRealtimeEvent(companyId, "orders", {
       orderId,
       status: "generated",

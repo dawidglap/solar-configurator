@@ -223,6 +223,13 @@ export async function POST(
 
     const normalizedAuftrag = normalizeAuftrag(result.auftrag);
     const normalizedMontage = normalizeMontage(result.montage);
+    const orderId = safeString(planning?.orderId);
+    await emitCompanyRealtimeEvent(activeCompanyId, "order.created", {
+      planningId,
+      ...(orderId ? { orderId } : {}),
+      auftragId: normalizedAuftrag.id,
+      createdAt: new Date().toISOString(),
+    });
     await emitCompanyRealtimeEvent(activeCompanyId, "auftrag:updated", {
       auftragId: normalizedAuftrag.id,
       currentStepKey: normalizedAuftrag.currentStepKey,

@@ -20,6 +20,7 @@ import {
 } from "@/lib/planningFiles";
 import { getSessionUserMeta, safeNumber } from "@/lib/tasks";
 import { roundChf05 } from "@/lib/chf";
+import { emitInvoiceUpdatedEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -399,6 +400,7 @@ export async function PATCH(
       }
 
       const invoice = await invoices.findOne({ _id: existing._id });
+      if (invoice) await emitInvoiceUpdatedEvent(String(session.activeCompanyId), invoice);
       return jsonResponse(origin, { ok: true, invoice: normalizeInvoice(invoice) }, 200);
     }
 
@@ -436,6 +438,7 @@ export async function PATCH(
       );
 
       const invoice = await invoices.findOne({ _id: existing._id });
+      if (invoice) await emitInvoiceUpdatedEvent(String(session.activeCompanyId), invoice);
       return jsonResponse(origin, { ok: true, invoice: normalizeInvoice(invoice) }, 200);
     }
 
@@ -610,6 +613,7 @@ export async function PATCH(
     );
 
     const invoice = await invoices.findOne({ _id: existing._id });
+    if (invoice) await emitInvoiceUpdatedEvent(String(session.activeCompanyId), invoice);
     return jsonResponse(origin, { ok: true, invoice: normalizeInvoice(invoice) }, 200);
   } catch (error: any) {
     console.error("PATCH INVOICE ERROR:", error);

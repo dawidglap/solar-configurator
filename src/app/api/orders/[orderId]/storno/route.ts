@@ -6,6 +6,7 @@ import { ensureInvoiceIndexes, getInvoicesCollection, normalizeInvoice } from "@
 import { normalizeOrderFields } from "@/lib/orders";
 import { getSessionUserId, getSessionUserName, isAdminLikeRole } from "@/lib/tasks";
 import { getOrderIdQuery } from "@/lib/orderIds";
+import { emitInvoiceUpdatedEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -157,6 +158,9 @@ export async function POST(
       })
       .sort({ rateIndex: 1, createdAt: 1, _id: 1 })
       .toArray();
+    await Promise.all(
+      affectedInvoices.map((invoice) => emitInvoiceUpdatedEvent(companyId, invoice)),
+    );
 
     return jsonResponse(
       origin,

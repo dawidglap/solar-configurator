@@ -40,6 +40,7 @@ import {
 } from "@/lib/planningFiles";
 import { resolvePlanningSellerContact } from "@/lib/userProfiles";
 import { queueSignatureDocumentEmail } from "@/lib/signatureEmails";
+import { emitCompanyRealtimeEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -465,6 +466,12 @@ export async function POST(req: Request, { params }: Params) {
           )
         : Promise.resolve(null),
     ]);
+
+    await emitCompanyRealtimeEvent(companyId, "vollmacht.submitted", {
+      planningId: mongoIdToString(planningId),
+      orderId,
+      submittedAt: now.toISOString(),
+    });
 
     const publicBase = `${getPublicApiBaseUrl(req)}/api/public/offer-signature/${encodeURIComponent(token)}`;
     try {

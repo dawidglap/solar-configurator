@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import { safeString } from "@/lib/api-session";
 import { buildOfferAuditEntry, enforceOfferPublicRateLimit, ensureActiveOfferToken, ensureOfferSignatureIndexes, findOfferByToken } from "@/lib/offerSignatures";
+import { emitCompanyRealtimeEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs"; export const dynamic = "force-dynamic"; export const revalidate = 0;
 const response = (origin: string | null, body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...getCorsHeaders(origin) } });
@@ -14,6 +15,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const reason = safeString((await req.json().catch(() => ({})))?.reason); if (!reason) return response(origin, { ok: false, message: "Ein Ablehnungsgrund ist erforderlich." }, 400); if (reason.length > 1000) return response(origin, { ok: false, message: "Der Ablehnungsgrund darf maximal 1000 Zeichen lang sein." }, 400);
     const now = new Date(); const result = await db.collection<any>("plannings").updateOne({ _id: planning._id, offerSignatureTokenHash: planning.offerSignatureTokenHash, offerSignatureStatus: { $in: ["sent", "viewed"] } }, { $set: { offerSignatureStatus: "declined", offerSignatureTokenHash: null, offerSignatureDeclinedReason: reason, offerSignatureProcessingId: null, offerSignatureProcessingAt: null, updatedAt: now }, $push: { offerSignatureAudit: buildOfferAuditEntry({ event: "declined", req, tokenHash: planning.offerSignatureTokenHash, at: now, meta: { reason } }) as never } });
     if (!result.matchedCount) return response(origin, { ok: false, message: "Offerte wurde bereits bearbeitet." }, 409);
+    await emitCompanyRealtimeEvent(safeString(planning?.companyId), "offer.declined", {
+      planningId: String(planning._id),
+      declinedAt: now.toISOString(),
+    });
     return response(origin, { ok: true, planningId: String(planning._id), status: "declined" });
   } catch (error) { console.error("DECLINE PUBLIC OFFER ERROR:", error); return response(origin, { ok: false, message: "Ablehnung konnte nicht gespeichert werden." }, 500); }
 }

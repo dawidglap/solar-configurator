@@ -25,6 +25,7 @@ import { computePlanningCommercialSummary } from "@/lib/planningDocuments";
 import { getSessionUserEmail, getSessionUserMeta, safeNumber } from "@/lib/tasks";
 import { roundChf05 } from "@/lib/chf";
 import { expandOrderSearchTerm, getOrderIdQuery } from "@/lib/orderIds";
+import { emitInvoiceUpdatedEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -704,6 +705,7 @@ export async function POST(req: Request) {
 
     const insert = await invoices.insertOne(doc);
     const invoice = await invoices.findOne({ _id: insert.insertedId });
+    if (invoice) await emitInvoiceUpdatedEvent(companyId, invoice);
     return jsonResponse(origin, { ok: true, invoice: normalizeInvoice(invoice) }, 200);
   } catch (error: any) {
     console.error("POST INVOICES ERROR:", error);
