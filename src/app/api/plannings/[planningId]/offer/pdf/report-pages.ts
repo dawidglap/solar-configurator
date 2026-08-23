@@ -425,7 +425,7 @@ function addBerichtOverviewPage(
   const offer = data.offer || {};
   const page = pdf.addPage([PAGE_W, PAGE_H]);
 
-  header(page, font, bold, "Bericht", data.planningNumber, data.documentNumberLabel);
+  header(page, font, bold, "Analyse", data.planningNumber, data.documentNumberLabel);
 
   txt(
     page,
