@@ -21,6 +21,11 @@ import {
   storeGeneratedSignatureFile,
   validateSignatureImage,
 } from "@/lib/orderSignatures";
+import {
+  buildConfirmationPlanningFileTitle,
+  persistGeneratedPlanningPdfByTitle,
+} from "@/lib/planningFiles";
+import { emitCompanyRealtimeEvent } from "@/lib/realtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -155,6 +160,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     if (update.matchedCount === 0) {
       return response(origin, { ok: false, message: "Der Auftrag wurde bereits bearbeitet oder der Link ist abgelaufen." }, 409);
     }
+    const planningId = planning._id.toString();
+    const confirmationTitle = buildConfirmationPlanningFileTitle(orderId);
+    await persistGeneratedPlanningPdfByTitle({
+      db,
+      companyId: safeString(planning?.companyId),
+      planningId,
+      category: "auftrag",
+      title: confirmationTitle,
+      buffer: signedPdf,
+      customerId: safeString(planning?.customerId) || undefined,
+      session: {
+        activeCompanyId: safeString(planning?.companyId),
+        userId: null,
+        name: signerName || "Öffentliche Signatur",
+      },
+    });
     const signedPlanning = { ...planning, signatureRequestedByUserId: planning.signatureRequestedByUserId };
     await Promise.all([
       advanceSignedOrderPipeline(db, planning, signerName).catch((error) =>
@@ -164,12 +185,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         console.error("SIGNATURE NOTIFICATION ERROR:", error),
       ),
     ]);
+    await emitCompanyRealtimeEvent(safeString(planning?.companyId), "offer.signed", {
+      planningId,
+    });
+    const confirmationPdfUrl = `${getPublicApiBaseUrl(req)}/api/public/signature/${encodeURIComponent(token)}/pdf`;
     return response(
       origin,
       {
         ok: true,
         orderId,
-        signedPdfUrl: `${getPublicApiBaseUrl(req)}/api/public/signature/${encodeURIComponent(token)}/pdf`,
+        signedPdfUrl: confirmationPdfUrl,
+        confirmationPdfUrl,
       },
       200,
     );

@@ -33,8 +33,10 @@ import {
   parseOfferAcceptanceDetails,
 } from "@/lib/offerSignatures";
 import {
+  buildConfirmationPlanningFileTitle,
   fetchPlanningFileBuffer,
   getPlanningFilesCollection,
+  persistGeneratedPlanningPdfByTitle,
   upsertManagedPlanningFile,
 } from "@/lib/planningFiles";
 import { POST as generateOrder } from "@/app/api/plannings/[planningId]/generate-order/route";
@@ -342,14 +344,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       signerUserAgent,
       signedOfferSha256: signedPdfSha256,
     });
-    const confirmation = await upsertManagedPlanningFile({
+    const confirmationTitle = buildConfirmationPlanningFileTitle(orderId);
+    const confirmation = await persistGeneratedPlanningPdfByTitle({
       db,
       companyId: safeString(planning.companyId),
       planningId: String(planning._id),
       category: "auftrag",
-      title: `Auftragsbestätigung ${orderId}`,
-      originalFileName: `auftragsbestaetigung-${orderId}.pdf`,
-      mimeType: "application/pdf",
+      title: confirmationTitle,
       buffer: confirmationPdf,
       customerId: safeString(planning.customerId) || undefined,
       session: systemSession,

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import test from "node:test";
 import { PDFDocument } from "pdf-lib";
 
@@ -42,10 +43,84 @@ test("offer signature status serialization exposes no token hash", async () => {
     ...buildDefaultOfferSignatureFields(),
     offerSignatureStatus: "sent",
     offerSignatureTokenHash: "secret-hash",
+    offerConfirmationPdfFileId: "64f000000000000000000002",
+    offerVollmachtPdfFileId: "64f000000000000000000003",
+    vollmachtSubmittedAt: new Date("2026-08-23T10:00:00.000Z"),
   }) as Record<string, unknown>;
   assert.equal(response.signatureStatus, "sent");
   assert.equal(response.signatureLink, null);
+  assert.equal(
+    response.confirmationPdfUrl,
+    "/api/plannings/64f000000000000000000001/files/64f000000000000000000002/download",
+  );
+  assert.equal(
+    response.vollmachtPdfUrl,
+    "/api/plannings/64f000000000000000000001/files/64f000000000000000000003/download",
+  );
+  assert.equal(response.vollmachtSubmittedAt, "2026-08-23T10:00:00.000Z");
+  assert.equal(response.vollmachtRequired, true);
   assert.equal("offerSignatureTokenHash" in response, false);
+});
+
+test("uses AB display numbers and reuses generated PDFs by planningId plus title", async () => {
+  const {
+    buildConfirmationPlanningFileTitle,
+    buildVollmachtPlanningFileTitle,
+    persistGeneratedPlanningPdfByTitle,
+  } = await import("../src/lib/planningFiles");
+  assert.equal(
+    buildConfirmationPlanningFileTitle("AUF-2026-0042"),
+    "Auftragsbestätigung AB-2026-0042",
+  );
+  assert.equal(
+    buildVollmachtPlanningFileTitle("AUF-2026-0042", "ANG-2026-0099"),
+    "Vollmacht AB-2026-0042",
+  );
+  assert.equal(
+    buildVollmachtPlanningFileTitle("", "ANG-2026-0099"),
+    "Vollmacht ANG-2026-0099",
+  );
+
+  const existing = {
+    _id: "file-1",
+    category: "document",
+    title: "Vollmacht AB-2026-0042",
+    originalFileName: "Vollmacht AB-2026-0042.pdf",
+    mimeType: "application/pdf",
+    fileType: "pdf",
+    type: "document",
+    linkToPlanningId: "planning-1",
+    contentHash: crypto.createHash("sha256").update(Buffer.from("unused")).digest("hex"),
+  };
+  let query: unknown = null;
+  const db = {
+    collection: () => ({
+      findOne: async (value: unknown) => {
+        query = value;
+        return existing;
+      },
+      insertOne: async () => {
+        throw new Error("must not insert a duplicate");
+      },
+    }),
+  } as any;
+  const result = await persistGeneratedPlanningPdfByTitle({
+    db,
+    companyId: "company-1",
+    planningId: "planning-1",
+    category: "document",
+    title: "Vollmacht AB-2026-0042",
+    buffer: Buffer.from("unused"),
+    session: {},
+  });
+  assert.equal(result.reused, true);
+  assert.equal(result.doc, existing);
+  assert.deepEqual(query, {
+    companyId: "company-1",
+    planningId: "planning-1",
+    title: "Vollmacht AB-2026-0042",
+    isDeleted: { $ne: true },
+  });
 });
 
 test("public offers expose the same token-protected AGB URL as termsUrl", async () => {

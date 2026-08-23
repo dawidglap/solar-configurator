@@ -27,10 +27,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ planning
     await ensureOfferSignatureIndexes(db);
     const planning = await db.collection("plannings").findOne({ _id: id, companyId: String(session.activeCompanyId) });
     if (!planning) return response(origin, { ok: false, message: "Planung nicht gefunden." }, 404);
-    return response(origin, { ok: true, signature: buildOfferSignatureResponse(planning) });
+    const signature = buildOfferSignatureResponse(planning);
+    return response(origin, {
+      ok: true,
+      signature,
+      confirmationPdfUrl: signature.confirmationPdfUrl,
+      vollmachtPdfUrl: signature.vollmachtPdfUrl,
+      vollmachtSubmittedAt: signature.vollmachtSubmittedAt,
+      vollmachtRequired: signature.vollmachtRequired,
+    });
   } catch (error) {
     console.error("GET OFFER SIGNATURE ERROR:", error);
     return response(origin, { ok: false, message: "Offerten-Signaturstatus konnte nicht geladen werden." }, 500);
   }
 }
-

@@ -35,9 +35,11 @@ import {
   resolveReportSections,
 } from "@/lib/planningDocuments";
 import {
+  buildConfirmationPlanningFileTitle,
+  buildVollmachtPlanningFileTitle,
   fetchPlanningFileBuffer,
   getPlanningFilesCollection,
-  upsertManagedPlanningFile,
+  persistGeneratedPlanningPdfByTitle,
 } from "@/lib/planningFiles";
 import { resolvePlanningSellerContact } from "@/lib/userProfiles";
 import { queueSignatureDocumentEmail } from "@/lib/signatureEmails";
@@ -98,7 +100,7 @@ export async function GET(req: Request, { params }: Params) {
         _id: fileId,
         companyId: context.companyId,
         planningId: mongoIdToString(context.planning?._id),
-        category: "vollmacht",
+        category: { $in: ["document", "vollmacht"] },
         isDeleted: { $ne: true },
       });
       if (!file) return response(origin, { ok: false, message: "PDF nicht gefunden." }, 404);
@@ -264,7 +266,7 @@ export async function POST(req: Request, { params }: Params) {
     const session = { ...buildInternalOrderSession(planning, safeString(planning?.offerSignerName)), userId: null, name: "System" };
     const customerName = resolveCustomerName(planning, customer);
     const documentReference = orderId || safeString(planning?.planningNumber) || mongoIdToString(planningId);
-    let confirmation: Awaited<ReturnType<typeof upsertManagedPlanningFile>> | null = null;
+    let confirmation: Awaited<ReturnType<typeof persistGeneratedPlanningPdfByTitle>> | null = null;
     if (!isManualRequest) {
       const commercial = await computePlanningCommercialSummary(db, planning);
       const orderGeneratedAt = planning?.orderGeneratedAt || planning?.offerSignedAt || now;
@@ -325,14 +327,13 @@ export async function POST(req: Request, { params }: Params) {
         signerUserAgent: safeString(planning?.offerSignerUserAgent),
         signedOfferSha256: safeString(planning?.offerSignedPdfSha256),
       });
-      confirmation = await upsertManagedPlanningFile({
+      const confirmationTitle = buildConfirmationPlanningFileTitle(orderId);
+      confirmation = await persistGeneratedPlanningPdfByTitle({
         db,
         companyId,
         planningId: mongoIdToString(planningId),
         category: "auftrag",
-        title: `Auftragsbestätigung ${orderId}`,
-        originalFileName: `auftragsbestaetigung-${orderId}.pdf`,
-        mimeType: "application/pdf",
+        title: confirmationTitle,
         buffer: confirmationPdf,
         customerId: safeString(planning?.customerId) || undefined,
         session,
@@ -364,15 +365,17 @@ export async function POST(req: Request, { params }: Params) {
       signatureMethod: details.signatureMethod,
       submittedAt: now,
     });
+    const vollmachtTitle = buildVollmachtPlanningFileTitle(
+      orderId,
+      safeString(planning?.planningNumber),
+    );
     const [vollmacht, vollmachtSignature] = await Promise.all([
-      upsertManagedPlanningFile({
+      persistGeneratedPlanningPdfByTitle({
         db,
         companyId,
         planningId: mongoIdToString(planningId),
-        category: "vollmacht",
-        title: `Vollmacht ${documentReference}`,
-        originalFileName: `vollmacht-${documentReference}.pdf`,
-        mimeType: "application/pdf",
+        category: "document",
+        title: vollmachtTitle,
         buffer: vollmachtPdf,
         customerId: safeString(planning?.customerId) || undefined,
         session,

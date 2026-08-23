@@ -132,6 +132,8 @@ export function buildOfferSignatureResponse(planning: any) {
   const signedFileId = mongoIdToString(planning?.offerSignedPdfFileId) || safeString(planning?.offerSignedPdfFileId);
   const confirmationFileId =
     mongoIdToString(planning?.offerConfirmationPdfFileId) || safeString(planning?.offerConfirmationPdfFileId);
+  const vollmachtFileId =
+    mongoIdToString(planning?.offerVollmachtPdfFileId) || safeString(planning?.offerVollmachtPdfFileId);
   return {
     signatureStatus: normalizeOfferSignatureStatus(planning?.offerSignatureStatus),
     signatureRequestedAt: iso(planning?.offerSignatureRequestedAt),
@@ -151,6 +153,10 @@ export function buildOfferSignatureResponse(planning: any) {
     confirmationPdfUrl:
       planningId && confirmationFileId
         ? `/api/plannings/${planningId}/files/${confirmationFileId}/download`
+        : null,
+    vollmachtPdfUrl:
+      planningId && vollmachtFileId
+        ? `/api/plannings/${planningId}/files/${vollmachtFileId}/download`
         : null,
     orderId: safeString(planning?.orderId) || null,
     signaturePlace: normalizeOfferSignaturePlace(planning?.offerSignaturePlace),

@@ -81,6 +81,20 @@ export function normalizePlanningFileCategory(value: unknown): PlanningFileCateg
   return PLANNING_FILE_CATEGORIES.includes(normalized) ? normalized : null;
 }
 
+export function toAuftragsbestaetigungNumber(value: unknown) {
+  const number = safeString(value);
+  return /^AUF-/i.test(number) ? `AB-${number.slice(4)}` : number;
+}
+
+export function buildConfirmationPlanningFileTitle(orderId: unknown) {
+  return `Auftragsbestätigung ${toAuftragsbestaetigungNumber(orderId)}`.trim();
+}
+
+export function buildVollmachtPlanningFileTitle(orderId: unknown, offerNumber: unknown) {
+  const reference = toAuftragsbestaetigungNumber(orderId) || safeString(offerNumber);
+  return `Vollmacht ${reference}`.trim();
+}
+
 export function isSystemManagedPlanningFileCategory(value: unknown) {
   const normalized = safeString(value).toLowerCase();
   return SYSTEM_MANAGED_PLANNING_FILE_CATEGORIES.includes(
@@ -642,6 +656,109 @@ export async function upsertManagedPlanningFile(input: {
     doc: {
       ...existing,
       ...nextDoc,
+    },
+  };
+}
+
+export async function persistGeneratedPlanningPdfByTitle(input: {
+  db: Db;
+  companyId: string;
+  planningId: string;
+  category: Extract<PlanningFileCategory, "auftrag" | "document">;
+  title: string;
+  buffer: Buffer;
+  customerId?: string;
+  session: SessionPayload;
+}) {
+  const companyId = safeString(input.companyId);
+  const planningId = safeString(input.planningId);
+  const title = safeString(input.title);
+  if (!companyId || !planningId || !title) {
+    throw new Error("Planning-Datei benötigt companyId, planningId und title.");
+  }
+
+  const collection = getPlanningFilesCollection(input.db);
+  const existing = await collection.findOne({
+    companyId,
+    planningId,
+    title,
+    isDeleted: { $ne: true },
+  });
+  const originalFileName = `${title}.pdf`;
+  const contentHash = crypto.createHash("sha256").update(input.buffer).digest("hex");
+  const metadata = {
+    category: input.category,
+    title,
+    originalFileName,
+    mimeType: "application/pdf",
+    fileType: "pdf",
+    type: input.category,
+    linkToPlanningId: planningId,
+  };
+
+  if (existing && safeString(existing.contentHash) === contentHash) {
+    const needsMetadataUpdate = Object.entries(metadata).some(
+      ([key, value]) => safeString(existing[key]) !== value,
+    );
+    const nextMetadata = {
+      ...metadata,
+      updatedAt: new Date().toISOString(),
+    };
+    if (needsMetadataUpdate) {
+      await collection.updateOne({ _id: existing._id }, { $set: nextMetadata });
+    }
+    return {
+      reused: true,
+      doc: needsMetadataUpdate ? { ...existing, ...nextMetadata } : existing,
+    };
+  }
+
+  const uploaded = await uploadGeneratedPlanningFileBuffer({
+    companyId,
+    planningId,
+    category: input.category,
+    title,
+    originalFileName,
+    mimeType: "application/pdf",
+    buffer: input.buffer,
+    customerId: input.customerId,
+    session: input.session,
+    type: input.category,
+    linkToPlanningId: planningId,
+  });
+  const doc = {
+    ...uploaded,
+    ...metadata,
+    contentHash,
+  };
+
+  if (!existing) {
+    const result = await collection.insertOne(doc);
+    return { reused: false, doc: { ...doc, _id: result.insertedId } };
+  }
+
+  try {
+    await removePlanningFileCloudinaryAsset(existing);
+  } catch (error) {
+    console.error("REMOVE OLD TITLE-MANAGED PLANNING FILE ERROR:", error);
+  }
+
+  await collection.updateOne(
+    { _id: existing._id },
+    {
+      $set: {
+        ...doc,
+        createdAt: existing.createdAt ?? uploaded.createdAt,
+      },
+    },
+  );
+
+  return {
+    reused: false,
+    doc: {
+      ...existing,
+      ...doc,
+      createdAt: existing.createdAt ?? uploaded.createdAt,
     },
   };
 }
