@@ -10,7 +10,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-export const maxDuration = 3_600;
+export const maxDuration = 1_800;
 
 function jsonError(origin: string | null, message: string, status: number) {
   return new Response(JSON.stringify({ ok: false, message }), {
