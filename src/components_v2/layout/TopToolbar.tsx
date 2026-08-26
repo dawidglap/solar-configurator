@@ -10,7 +10,7 @@ import { SnowGuardCostDialog, SnowSegment } from "../SnowGuardCostDialog";
 import { useSearchParams, useRouter } from "next/navigation";
 import { savePlannerToDb } from "../state/planning/savePlanning";
 
-import { MousePointer, RotateCcw, RotateCw } from "lucide-react";
+import { ClipboardList, MousePointer, RotateCcw, RotateCw } from "lucide-react";
 
 // NUOVE icone topbar (1–10) da react-icons
 import { TbShape3, TbDropletHalf2Filled } from "react-icons/tb";
@@ -33,6 +33,7 @@ import {
 
 import ProjectStatsBar from "../ui/ProjectStatsBar";
 import TopbarAddressSearch from "./TopbarAddressSearch";
+import PlanningOverviewDrawer from "../modules/overview/PlanningOverviewDrawer";
 
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
@@ -225,6 +226,7 @@ export default function TopToolbar() {
 
   // ── Schneefang: Popup & Segmente (nur TopToolbar, lokal)
   const [isSnowDialogOpen, setIsSnowDialogOpen] = useState(false);
+  const [isPlanningOverviewOpen, setIsPlanningOverviewOpen] = useState(false);
   const [snowSegments, setSnowSegments] = useState<SnowSegment[]>([
     // di base un segmento da 10 m, giusto per non partire vuoto
     { id: "sg_init", lengthM: 0 },
@@ -645,6 +647,16 @@ export default function TopToolbar() {
 
         {/* 9) Leeren — placeholder */}
 
+        <button
+          type="button"
+          onClick={() => setIsPlanningOverviewOpen(true)}
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-secondary/35 px-3 text-[11px] font-medium text-foreground transition hover:bg-secondary/70 focus:outline-none focus:ring-2 focus:ring-primary/25"
+          aria-label="Planungsübersicht öffnen"
+        >
+          <ClipboardList className="h-4 w-4" aria-hidden="true" />
+          <span>Planungsübersicht</span>
+        </button>
+
         {/* 10) Speichern — placeholder */}
         <ActionBtn
           onClick={handleSave}
@@ -686,6 +698,11 @@ export default function TopToolbar() {
           segments={snowSegments}
           setSegments={setSnowSegments}
           pricePerM={SNOW_PRICE_PER_M}
+        />
+
+        <PlanningOverviewDrawer
+          open={isPlanningOverviewOpen}
+          onClose={() => setIsPlanningOverviewOpen(false)}
         />
       </div>
     </div>
