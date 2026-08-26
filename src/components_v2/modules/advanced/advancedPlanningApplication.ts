@@ -1,6 +1,10 @@
 import {
   ADVANCED_BLOCK_ENGINE_VERSION,
   ADVANCED_INPUT_SCHEMA_VERSION,
+  GENERIC_EAST_WEST_SYSTEM_ID,
+  GENERIC_MOUNTING_ADAPTER_VERSION,
+  GENERIC_SOUTH_SYSTEM_ID,
+  GREEN_ROOF_GENERIC_DEFAULTS,
   K2_D_DOME_ADAPTER_VERSION,
   K2_D_DOME_SYSTEM_ID,
   K2_S_DOME_ADAPTER_VERSION,
@@ -10,10 +14,14 @@ import {
   calculateK2DDomeAllowedRowSpaceRangeMm,
   calculateK2DDomeOneBlockRailDepthMm,
   computeAdvancedBlockLayout,
+  createGenericEastWestBlock,
+  createGenericSouthBlock,
   createK2DDomeBlock,
   createK2SDomeBlock,
   evaluateK2DDomeBlockLimits,
   resolveSurfacePlanning,
+  validateGreenRoofGenericInputs,
+  type AdvancedBlockDefinition,
   type AdvancedGeometryWarning,
   type AdvancedSurfacePlanningV1,
   type SurfacePlanningV1,
@@ -86,7 +94,8 @@ export type AdvancedPreviewBlock = {
   rotationCanvasDeg: number;
 };
 
-export type AdvancedDerivedSummary = {
+export type AdvancedK2DerivedSummary = {
+  kind: "k2";
   nominalTiltDeg: number;
   effectiveTiltDeg: number;
   serviceCorridorM: number;
@@ -96,6 +105,23 @@ export type AdvancedDerivedSummary = {
   assemblyDimension2M: number;
   rowSpaceRangeM: { min: number; max: number };
 };
+
+export type AdvancedGenericDerivedSummary = {
+  kind: "generic";
+  nominalTiltDeg: number;
+  effectiveTiltDeg: number;
+  pitchXM: number;
+  pitchYM: number;
+  blockDepthM: number;
+  moduleGapXM: number;
+  moduleGapYM: number;
+  blockGapXM: number;
+  blockGapYM: number;
+};
+
+export type AdvancedDerivedSummary =
+  | AdvancedK2DerivedSummary
+  | AdvancedGenericDerivedSummary;
 
 export type AdvancedPlanningPreview =
   | {
@@ -143,12 +169,15 @@ function cloneModules(modules: ModulesConfig): ModulesConfig {
   };
 }
 
-function panelSnapshot(panel: PanelSpec) {
+function panelSnapshot(
+  panel: PanelSpec,
+  orientation: "portrait" | "landscape" = "landscape",
+) {
   return {
     panelSpecId: panel.id,
     widthM: panel.widthM,
     heightM: panel.heightM,
-    orientation: "landscape" as const,
+    orientation,
     powerW: panel.wp,
   };
 }
@@ -165,16 +194,19 @@ export function getDefaultK2SDomeRowSpaceM(): number {
   return clamp(1500, range.min, range.max) / 1000;
 }
 
+function getSafeDefaultK2DDomeRowSpaceM(moduleWidthM: number): number {
+  try {
+    return getDefaultK2DDomeRowSpaceM(moduleWidthM);
+  } catch {
+    return 2.6;
+  }
+}
+
 export function createInitialAdvancedPlanning(input: {
   panel: PanelSpec;
   standardModules: ModulesConfig;
 }): AdvancedSurfacePlanningV1 {
-  let rowSpaceM = 2.6;
-  try {
-    rowSpaceM = getDefaultK2DDomeRowSpaceM(input.panel.widthM);
-  } catch {
-    // The adapter will expose the incompatible module; no K2 formula is copied here.
-  }
+  const rowSpaceM = getSafeDefaultK2DDomeRowSpaceM(input.panel.widthM);
   return {
     schemaVersion: SURFACE_PLANNING_SCHEMA_VERSION,
     mode: "advanced",
@@ -230,8 +262,138 @@ export function replaceAdvancedDraftModule(input: {
     ...config,
     advanced: {
       ...config.advanced,
-      module: panelSnapshot(input.panel),
+      module: panelSnapshot(
+        input.panel,
+        system.systemId === GENERIC_SOUTH_SYSTEM_ID ||
+          system.systemId === GENERIC_EAST_WEST_SYSTEM_ID
+          ? config.advanced.module.orientation
+          : "landscape",
+      ),
       system: nextSystem,
+    },
+  };
+}
+
+function genericSouthSystem(input?: {
+  faceAzimuthDeg?: number;
+  nominalTiltDeg?: number;
+}) {
+  return {
+    systemId: GENERIC_SOUTH_SYSTEM_ID,
+    adapterVersion: GENERIC_MOUNTING_ADAPTER_VERSION,
+    nominalTiltDeg:
+      input?.nominalTiltDeg ?? GREEN_ROOF_GENERIC_DEFAULTS.nominalTiltDeg,
+    faceAzimuthDeg: input?.faceAzimuthDeg ?? 180,
+    moduleGapX: GREEN_ROOF_GENERIC_DEFAULTS.moduleGapX,
+    moduleGapY: GREEN_ROOF_GENERIC_DEFAULTS.moduleGapY,
+    blockGapX: GREEN_ROOF_GENERIC_DEFAULTS.blockGapX,
+    blockGapY: GREEN_ROOF_GENERIC_DEFAULTS.blockGapY,
+  } as const;
+}
+
+function genericEastWestSystem(input?: {
+  primaryFaceAzimuthDeg?: number;
+  nominalTiltDeg?: number;
+}) {
+  return {
+    systemId: GENERIC_EAST_WEST_SYSTEM_ID,
+    adapterVersion: GENERIC_MOUNTING_ADAPTER_VERSION,
+    nominalTiltDeg:
+      input?.nominalTiltDeg ?? GREEN_ROOF_GENERIC_DEFAULTS.nominalTiltDeg,
+    primaryFaceAzimuthDeg: input?.primaryFaceAzimuthDeg ?? 90,
+    interModuleGapM: GREEN_ROOF_GENERIC_DEFAULTS.moduleGapY,
+    moduleGapX: GREEN_ROOF_GENERIC_DEFAULTS.moduleGapX,
+    blockGapX: GREEN_ROOF_GENERIC_DEFAULTS.blockGapX,
+    blockGapY: GREEN_ROOF_GENERIC_DEFAULTS.blockGapY,
+  } as const;
+}
+
+export function setAdvancedSurfaceKind(input: {
+  config: AdvancedSurfacePlanningV1;
+  kind: "flat" | "green";
+}): AdvancedSurfacePlanningV1 {
+  const { config } = input;
+  if (config.surface.kind === input.kind) return config;
+  const currentSystem = config.advanced.system;
+  if (input.kind === "green") {
+    const south =
+      currentSystem.systemId === K2_S_DOME_SYSTEM_ID ||
+      currentSystem.systemId === GENERIC_SOUTH_SYSTEM_ID;
+    const system = south
+      ? genericSouthSystem({
+          faceAzimuthDeg:
+            "faceAzimuthDeg" in currentSystem
+              ? currentSystem.faceAzimuthDeg
+              : 180,
+        })
+      : genericEastWestSystem({
+          primaryFaceAzimuthDeg:
+            "primaryFaceAzimuthDeg" in currentSystem
+              ? currentSystem.primaryFaceAzimuthDeg
+              : 90,
+        });
+    return {
+      ...config,
+      surface: { ...config.surface, kind: "green" },
+      advanced: {
+        ...config.advanced,
+        undersideClearanceM:
+          config.advanced.undersideClearanceM ??
+          GREEN_ROOF_GENERIC_DEFAULTS.undersideClearanceM,
+        system,
+      },
+    };
+  }
+
+  const south =
+    currentSystem.systemId === GENERIC_SOUTH_SYSTEM_ID ||
+    currentSystem.systemId === K2_S_DOME_SYSTEM_ID;
+  const advancedWithoutClearance = { ...config.advanced };
+  delete advancedWithoutClearance.undersideClearanceM;
+  return {
+    ...config,
+    surface: { ...config.surface, kind: "flat" },
+    advanced: {
+      ...advancedWithoutClearance,
+      module: { ...config.advanced.module, orientation: "landscape" },
+      system: south
+        ? {
+            systemId: K2_S_DOME_SYSTEM_ID,
+            adapterVersion: K2_S_DOME_ADAPTER_VERSION,
+            rowSpaceM: getDefaultK2SDomeRowSpaceM(),
+            faceAzimuthDeg:
+              "faceAzimuthDeg" in currentSystem
+                ? currentSystem.faceAzimuthDeg
+                : 180,
+          }
+        : {
+            systemId: K2_D_DOME_SYSTEM_ID,
+            adapterVersion: K2_D_DOME_ADAPTER_VERSION,
+            rowSpaceM: getSafeDefaultK2DDomeRowSpaceM(
+              config.advanced.module.widthM,
+            ),
+            primaryFaceAzimuthDeg:
+              "primaryFaceAzimuthDeg" in currentSystem
+                ? currentSystem.primaryFaceAzimuthDeg
+                : 90,
+          },
+    },
+  };
+}
+
+export function setAdvancedModuleOrientation(input: {
+  config: AdvancedSurfacePlanningV1;
+  orientation: "portrait" | "landscape";
+}): AdvancedSurfacePlanningV1 {
+  if (input.config.surface.kind !== "green") return input.config;
+  return {
+    ...input.config,
+    advanced: {
+      ...input.config.advanced,
+      module: {
+        ...input.config.advanced.module,
+        orientation: input.orientation,
+      },
     },
   };
 }
@@ -241,6 +403,33 @@ export function setAdvancedMountingOrientation(input: {
   orientation: AdvancedMountingOrientation;
 }): AdvancedSurfacePlanningV1 {
   const { config } = input;
+  if (config.surface.kind === "green") {
+    const current = config.advanced.system;
+    return {
+      ...config,
+      advanced: {
+        ...config.advanced,
+        system:
+          input.orientation === "south"
+            ? current.systemId === GENERIC_SOUTH_SYSTEM_ID
+              ? current
+              : genericSouthSystem({
+                  nominalTiltDeg:
+                    "nominalTiltDeg" in current
+                      ? current.nominalTiltDeg
+                      : undefined,
+                })
+            : current.systemId === GENERIC_EAST_WEST_SYSTEM_ID
+              ? current
+              : genericEastWestSystem({
+                  nominalTiltDeg:
+                    "nominalTiltDeg" in current
+                      ? current.nominalTiltDeg
+                      : undefined,
+                }),
+      },
+    };
+  }
   if (input.orientation === "south") {
     const previousAzimuth = config.advanced.system.systemId === K2_S_DOME_SYSTEM_ID
       ? config.advanced.system.faceAzimuthDeg
@@ -268,7 +457,7 @@ export function setAdvancedMountingOrientation(input: {
       system: {
         systemId: K2_D_DOME_SYSTEM_ID,
         adapterVersion: K2_D_DOME_ADAPTER_VERSION,
-        rowSpaceM: getDefaultK2DDomeRowSpaceM(config.advanced.module.widthM),
+        rowSpaceM: getSafeDefaultK2DDomeRowSpaceM(config.advanced.module.widthM),
         primaryFaceAzimuthDeg: previousAzimuth,
       },
     },
@@ -349,9 +538,12 @@ export function computeAdvancedPlanningPreview(input: {
       { code: "invalid-surface", field: "surface", message: "Die Dachfläche oder Bildskalierung ist ungültig." },
     ]);
   }
-  if (input.config.surface.kind !== "flat") {
+  if (
+    input.config.surface.kind !== "flat" &&
+    input.config.surface.kind !== "green"
+  ) {
     return invalidPreview([
-      { code: "unsupported-surface-kind", field: "surface", message: "Advanced V1 unterstützt nur Flachdächer." },
+      { code: "unsupported-surface-kind", field: "surface", message: "Advanced unterstützt Flach- und Gründächer." },
     ]);
   }
 
@@ -364,33 +556,131 @@ export function computeAdvancedPlanningPreview(input: {
   const config = resolved.config;
   const system = config.advanced.system;
   const moduleSpec = config.advanced.module;
-  const adapterResult = system.systemId === K2_D_DOME_SYSTEM_ID
-    ? createK2DDomeBlock({
-        module: moduleSpec,
-        rowSpaceM: system.rowSpaceM,
-        primaryFaceAzimuthDeg: system.primaryFaceAzimuthDeg,
-      })
-    : system.systemId === K2_S_DOME_SYSTEM_ID
-      ? createK2SDomeBlock({
-          module: moduleSpec,
-          rowSpaceM: system.rowSpaceM,
-          faceAzimuthDeg: system.faceAzimuthDeg,
-        })
-      : null;
-  if (!adapterResult) {
+  const isGreenRoof = config.surface.kind === "green";
+  const isGenericSystem =
+    system.systemId === GENERIC_SOUTH_SYSTEM_ID ||
+    system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
+  if (isGreenRoof !== isGenericSystem) {
     return invalidPreview([
-      { code: "unsupported-ui-system", field: "system", message: "Dieses Montagesystem ist in der Oberfläche noch nicht verfügbar." },
+      {
+        code: "surface-system-mismatch",
+        field: "system",
+        message: isGreenRoof
+          ? "Gründach verwendet die freie Vorplanung, nicht K2 Dome Classic."
+          : "Flachdach verwendet weiterhin K2 Dome Classic.",
+      },
     ]);
   }
-  if (!adapterResult.valid) {
-    return invalidPreview(adapterResult.errors.map((error) => mapAdapterError(error.code)));
+
+  let blockDefinition: AdvancedBlockDefinition;
+  let warnings: AdvancedGeometryWarning[] = [];
+  let k2DerivedDimensions:
+    | (Record<string, number> & {
+        nominalTiltDeg: number;
+        effectiveTiltDeg: number;
+        serviceCorridorM: number;
+        moduleLongSideSpacingM: number;
+        assemblyDimension1M: number;
+        assemblyDimension2M: number;
+      })
+    | undefined;
+
+  if (isGreenRoof) {
+    if (
+      system.systemId !== GENERIC_SOUTH_SYSTEM_ID &&
+      system.systemId !== GENERIC_EAST_WEST_SYSTEM_ID
+    ) {
+      return invalidPreview([
+        { code: "unsupported-ui-system", field: "system", message: "Dieses freie Montagesystem ist nicht verfügbar." },
+      ]);
+    }
+    const greenIssues = validateGreenRoofGenericInputs({
+      undersideClearanceM: config.advanced.undersideClearanceM,
+      nominalTiltDeg: system.nominalTiltDeg,
+      spacingsM:
+        system.systemId === GENERIC_SOUTH_SYSTEM_ID
+          ? [
+              system.moduleGapX ?? 0,
+              system.moduleGapY ?? 0,
+              system.blockGapX,
+              system.blockGapY,
+            ]
+          : [
+              system.moduleGapX ?? 0,
+              system.interModuleGapM,
+              system.blockGapX,
+              system.blockGapY,
+            ],
+    });
+    if (greenIssues.length) {
+      return invalidPreview(
+        greenIssues.map((current) => ({
+          code: current.code,
+          field:
+            current.field === "undersideClearanceM"
+              ? "surface"
+              : current.field === "nominalTiltDeg"
+                ? "system"
+                : "layout",
+          message: current.message,
+        })),
+      );
+    }
+    blockDefinition =
+      system.systemId === GENERIC_SOUTH_SYSTEM_ID
+        ? createGenericSouthBlock({
+            module: moduleSpec,
+            nominalTiltDeg: system.nominalTiltDeg,
+            faceAzimuthDeg: system.faceAzimuthDeg,
+            moduleGapX: system.moduleGapX,
+            moduleGapY: system.moduleGapY,
+            blockGapX: system.blockGapX,
+            blockGapY: system.blockGapY,
+          })
+        : createGenericEastWestBlock({
+            module: moduleSpec,
+            nominalTiltDeg: system.nominalTiltDeg,
+            primaryFaceAzimuthDeg: system.primaryFaceAzimuthDeg,
+            interModuleGapM: system.interModuleGapM,
+            moduleGapX: system.moduleGapX,
+            blockGapX: system.blockGapX,
+            blockGapY: system.blockGapY,
+          });
+  } else {
+    const adapterResult =
+      system.systemId === K2_D_DOME_SYSTEM_ID
+        ? createK2DDomeBlock({
+            module: moduleSpec,
+            rowSpaceM: system.rowSpaceM,
+            primaryFaceAzimuthDeg: system.primaryFaceAzimuthDeg,
+          })
+        : system.systemId === K2_S_DOME_SYSTEM_ID
+          ? createK2SDomeBlock({
+              module: moduleSpec,
+              rowSpaceM: system.rowSpaceM,
+              faceAzimuthDeg: system.faceAzimuthDeg,
+            })
+          : null;
+    if (!adapterResult) {
+      return invalidPreview([
+        { code: "unsupported-ui-system", field: "system", message: "Dieses Montagesystem ist in der Oberfläche noch nicht verfügbar." },
+      ]);
+    }
+    if (!adapterResult.valid) {
+      return invalidPreview(
+        adapterResult.errors.map((error) => mapAdapterError(error.code)),
+      );
+    }
+    blockDefinition = adapterResult.definition;
+    warnings = [...adapterResult.warnings];
+    k2DerivedDimensions = adapterResult.derivedDimensions;
   }
 
   const imageAdapter = imageAdapterForRoof(input.roof, input.mppImage);
   const layout = computeAdvancedBlockLayout({
     roofPolygonM: imagePolygonToMetric(input.roof.points, imageAdapter),
     marginM: config.advanced.layout.marginM,
-    blockDefinition: adapterResult.definition,
+    blockDefinition,
     phaseX: config.advanced.layout.phaseX,
     phaseY: config.advanced.layout.phaseY,
     anchorX: config.advanced.layout.anchorX,
@@ -426,7 +716,50 @@ export function computeAdvancedPlanningPreview(input: {
     footprintPx: metricPolygonToImage(block.footprint, imageAdapter),
     rotationCanvasDeg: cartesianAngleToCanvasDeg(block.rotationCartesianDeg),
   }));
-  const derivedDimensions = adapterResult.derivedDimensions;
+  if (isGreenRoof) {
+    const genericSystem = system.systemId === GENERIC_SOUTH_SYSTEM_ID
+      ? system
+      : system.systemId === GENERIC_EAST_WEST_SYSTEM_ID
+        ? system
+        : null;
+    if (!genericSystem) {
+      return invalidPreview([
+        { code: "unsupported-ui-system", field: "system", message: "Dieses freie Montagesystem ist nicht verfügbar." },
+      ]);
+    }
+    return {
+      valid: true,
+      errors: [],
+      warnings,
+      blocks,
+      modules,
+      blockCount: layout.blockCount,
+      moduleCount: layout.moduleCount,
+      derived: {
+        kind: "generic",
+        nominalTiltDeg: genericSystem.nominalTiltDeg,
+        effectiveTiltDeg: genericSystem.nominalTiltDeg,
+        pitchXM: blockDefinition.pitchM.x,
+        pitchYM: blockDefinition.pitchM.y,
+        blockDepthM:
+          blockDefinition.derivedDimensionsM.projectedDepthM ?? 0,
+        moduleGapXM: genericSystem.moduleGapX ?? 0,
+        moduleGapYM:
+          genericSystem.systemId === GENERIC_SOUTH_SYSTEM_ID
+            ? genericSystem.moduleGapY ?? 0
+            : genericSystem.interModuleGapM,
+        blockGapXM: genericSystem.blockGapX,
+        blockGapYM: genericSystem.blockGapY,
+      },
+    };
+  }
+
+  if (!k2DerivedDimensions) {
+    return invalidPreview([
+      { code: "missing-k2-derived-geometry", field: "system", message: "Die K2 Geometrie konnte nicht abgeleitet werden." },
+    ]);
+  }
+  const derivedDimensions = k2DerivedDimensions;
   const isDDome = system.systemId === K2_D_DOME_SYSTEM_ID;
   const rowSpaceRangeM = isDDome
     ? (() => {
@@ -437,7 +770,6 @@ export function computeAdvancedPlanningPreview(input: {
         min: K2_S_DOME_CONSTANTS_MM.rowSpace.min / 1000,
         max: K2_S_DOME_CONSTANTS_MM.rowSpace.max / 1000,
       };
-  const warnings = [...adapterResult.warnings];
   if (isDDome && layout.blocks.length) {
     const limits = evaluateK2DDomeBlockLimits({
       moduleWidthM: moduleSpec.widthM,
@@ -458,6 +790,7 @@ export function computeAdvancedPlanningPreview(input: {
     blockCount: layout.blockCount,
     moduleCount: layout.moduleCount,
     derived: {
+      kind: "k2",
       nominalTiltDeg: derivedDimensions.nominalTiltDeg,
       effectiveTiltDeg: derivedDimensions.effectiveTiltDeg,
       serviceCorridorM: derivedDimensions.serviceCorridorM,
@@ -491,7 +824,17 @@ export function materializeAdvancedPanels(input: {
           systemId: K2_S_DOME_SYSTEM_ID,
           adapterVersion: K2_S_DOME_ADAPTER_VERSION,
         } as const
-      : null;
+      : system.systemId === GENERIC_SOUTH_SYSTEM_ID
+        ? {
+            systemId: GENERIC_SOUTH_SYSTEM_ID,
+            adapterVersion: GENERIC_MOUNTING_ADAPTER_VERSION,
+          } as const
+        : system.systemId === GENERIC_EAST_WEST_SYSTEM_ID
+          ? {
+              systemId: GENERIC_EAST_WEST_SYSTEM_ID,
+              adapterVersion: GENERIC_MOUNTING_ADAPTER_VERSION,
+            } as const
+          : null;
   if (!systemIdentity) return [];
   return input.preview.modules.map((module, index) => ({
     id: input.createPanelId(index),

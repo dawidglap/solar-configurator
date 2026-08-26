@@ -4,5 +4,6 @@ export * from "./genericSouth";
 export * from "./genericEastWest";
 export * from "./blockLayout";
 export * from "./surfacePlanning";
+export * from "./greenRoof";
 export * from "./k2-s-dome";
 export * from "./k2-d-dome";

@@ -18,6 +18,7 @@ export function createGenericEastWestBlock(input: {
   nominalTiltDeg: number;
   primaryFaceAzimuthDeg?: number;
   interModuleGapM?: number;
+  moduleGapX?: number;
   blockGapX?: number;
   blockGapY?: number;
 }): AdvancedBlockDefinition {
@@ -26,12 +27,14 @@ export function createGenericEastWestBlock(input: {
     nominalTiltDeg: input.nominalTiltDeg,
   });
   const interModuleGapM = input.interModuleGapM ?? 0;
-  const gapX = input.blockGapX ?? 0;
-  const gapY = input.blockGapY ?? 0;
+  const moduleGapX = input.moduleGapX ?? 0;
+  const blockGapX = input.blockGapX ?? 0;
+  const blockGapY = input.blockGapY ?? 0;
   for (const [label, value] of [
     ["Inter-module gap", interModuleGapM],
-    ["Block gap X", gapX],
-    ["Block gap Y", gapY],
+    ["Module gap X", moduleGapX],
+    ["Block gap X", blockGapX],
+    ["Block gap Y", blockGapY],
   ] as const) {
     if (!Number.isFinite(value) || value < 0) {
       throw new RangeError(`${label} must be a finite non-negative metric value.`);
@@ -58,8 +61,8 @@ export function createGenericEastWestBlock(input: {
     ),
     blockFootprint,
     pitchM: {
-      x: geometry.crossSlopeM + gapX,
-      y: blockDepthM + gapY,
+      x: geometry.crossSlopeM + moduleGapX + blockGapX,
+      y: blockDepthM + blockGapY,
     },
     moduleSlots: [
       {
@@ -94,8 +97,9 @@ export function createGenericEastWestBlock(input: {
       projectedDepthM: blockDepthM,
       riseM: geometry.riseM,
       interModuleGapM,
-      blockGapX: gapX,
-      blockGapY: gapY,
+      moduleGapX,
+      blockGapX,
+      blockGapY,
     },
     warnings: [],
   };

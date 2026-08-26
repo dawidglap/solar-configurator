@@ -1,7 +1,8 @@
 # Advanced generic block engine
 
-The Advanced engine is a pure TypeScript consumer of `geometry-v2`. It is not
-used by the planner runtime yet, and Standard remains on `legacy-v1`.
+The Advanced engine is a pure TypeScript consumer of `geometry-v2`. Advanced
+per-roof drafts and applied layouts use it in the planner runtime, while
+Standard remains on `legacy-v1`.
 
 ## Physical conventions
 
@@ -42,3 +43,17 @@ Consumers must resolve persisted data through `resolveSurfacePlanning` before
 using it. Unknown future systems or versions remain raw and are reported as
 unsupported Advanced data; they are never downgraded to Standard. Hydration
 does not call a mounting adapter or regenerate materialized panels.
+
+## Green-roof V1 scope
+
+Green roofs use only the versioned generic South and East-West definitions.
+`undersideClearanceM` is persisted with the Advanced mounting inputs because
+Höhe UK describes the underside of the mounting construction, not the physical
+roof surface. It is vertical metadata and does not modify the 2D footprint.
+
+The K2 Product Brochure describes GreenRoof Vento capabilities including
+portrait/landscape modules, 10°/15° variants, S/A/V arrangements and variable
+row spacing. It is not a dimensional system-data sheet. Exact footprints,
+component dimensions, permitted UK-height ranges and row formulas are therefore
+not verified and no `k2-greenroof-vento` adapter exists. Green-roof V1 is
+explicitly a free geometric preliminary layout.

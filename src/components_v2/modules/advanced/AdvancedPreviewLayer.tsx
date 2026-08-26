@@ -4,6 +4,8 @@ import React from "react";
 import { Arrow, Group, Line, Text } from "react-konva";
 
 import {
+  GENERIC_EAST_WEST_SYSTEM_ID,
+  GENERIC_SOUTH_SYSTEM_ID,
   K2_D_DOME_SYSTEM_ID,
   K2_S_DOME_SYSTEM_ID,
   resolveSurfacePlanning,
@@ -87,7 +89,14 @@ export default function AdvancedPreviewLayer() {
     ? system.faceAzimuthDeg
     : system.systemId === K2_D_DOME_SYSTEM_ID
       ? system.primaryFaceAzimuthDeg
-      : undefined;
+      : system.systemId === GENERIC_SOUTH_SYSTEM_ID
+        ? system.faceAzimuthDeg
+        : system.systemId === GENERIC_EAST_WEST_SYSTEM_ID
+          ? system.primaryFaceAzimuthDeg
+          : undefined;
+  const isOpposingSystem =
+    system.systemId === K2_D_DOME_SYSTEM_ID ||
+    system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
 
   return (
     <Group listening={false}>
@@ -106,7 +115,7 @@ export default function AdvancedPreviewLayer() {
                   dash={[5, 3]}
                   fill="rgba(59, 130, 246, 0.05)"
                 />
-                {system.systemId === K2_D_DOME_SYSTEM_ID && a && b && c && d && (
+                {isOpposingSystem && a && b && c && d && (
                   <Line
                     points={[
                       (a.x + d.x) / 2,
@@ -147,7 +156,7 @@ export default function AdvancedPreviewLayer() {
       {typeof primaryAzimuth === "number" && (
         <>
           <DirectionArrow origin={center} azimuthDeg={primaryAzimuth} color="#22c55e" label="Modul" offset={8} />
-          {system.systemId === K2_D_DOME_SYSTEM_ID && (
+          {isOpposingSystem && (
             <DirectionArrow origin={center} azimuthDeg={primaryAzimuth + 180} color="#22c55e" label="Modul" offset={8} />
           )}
         </>

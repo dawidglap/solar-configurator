@@ -17,6 +17,7 @@ import {
   GENERIC_SOUTH_SYSTEM_ID,
   type ModuleOrientation,
 } from "./types";
+import { GREEN_ROOF_UNDERSIDE_CLEARANCE_RANGE_M } from "./greenRoof";
 
 export const SURFACE_PLANNING_SCHEMA_VERSION = 1 as const;
 export const ADVANCED_INPUT_SCHEMA_VERSION = 1 as const;
@@ -54,6 +55,9 @@ export type GenericSouthSystemInputs = {
   adapterVersion: typeof GENERIC_MOUNTING_ADAPTER_VERSION;
   nominalTiltDeg: number;
   faceAzimuthDeg: number;
+  /** Module-to-module spacing before any additional block spacing. */
+  moduleGapX?: number;
+  moduleGapY?: number;
   blockGapX: number;
   blockGapY: number;
 };
@@ -64,6 +68,8 @@ export type GenericEastWestSystemInputs = {
   nominalTiltDeg: number;
   primaryFaceAzimuthDeg: number;
   interModuleGapM: number;
+  /** Cross-axis module spacing before any additional block spacing. */
+  moduleGapX?: number;
   blockGapX: number;
   blockGapY: number;
 };
@@ -92,6 +98,8 @@ export type AdvancedPlanningInputsV1 = {
   inputSchemaVersion: typeof ADVANCED_INPUT_SCHEMA_VERSION;
   advancedEngineVersion: typeof ADVANCED_BLOCK_ENGINE_VERSION;
   geometryEngineVersion: typeof GEOMETRY_V2_ENGINE_VERSION;
+  /** Height of the mounting-system underside; vertical metadata, not plan footprint. */
+  undersideClearanceM?: number;
   module: AdvancedModuleSnapshot;
   system: AdvancedSystemInputs;
   layout: AdvancedLayoutInputs;
@@ -334,28 +342,35 @@ function readSystem(
     if (!valid) invalid.push(issue(`advanced.system.${key}`, "invalid-system-input", `${key} is invalid.`));
     return current as number;
   };
+  const optionalNonNegativeNumber = (key: string): number | undefined => {
+    if (value[key] === undefined) return undefined;
+    return requireNumber(key, { nonNegative: true });
+  };
 
   switch (value.systemId) {
     case GENERIC_SOUTH_SYSTEM_ID: {
       if (value.adapterVersion !== GENERIC_MOUNTING_ADAPTER_VERSION) return unsupportedVersion(GENERIC_MOUNTING_ADAPTER_VERSION);
       const nominalTiltDeg = requireNumber("nominalTiltDeg", { nonNegative: true });
       const faceAzimuthDeg = requireNumber("faceAzimuthDeg");
+      const moduleGapX = optionalNonNegativeNumber("moduleGapX");
+      const moduleGapY = optionalNonNegativeNumber("moduleGapY");
       const blockGapX = requireNumber("blockGapX", { nonNegative: true });
       const blockGapY = requireNumber("blockGapY", { nonNegative: true });
       if (nominalTiltDeg > 90) invalid.push(issue("advanced.system.nominalTiltDeg", "invalid-tilt", "Tilt must not exceed 90 degrees."));
       if (invalid.length) return { status: "invalid", issues: invalid };
-      return { status: "valid", system: { systemId: value.systemId, adapterVersion: value.adapterVersion, nominalTiltDeg, faceAzimuthDeg: normalizeAzimuth(faceAzimuthDeg), blockGapX, blockGapY } };
+      return { status: "valid", system: { systemId: value.systemId, adapterVersion: value.adapterVersion, nominalTiltDeg, faceAzimuthDeg: normalizeAzimuth(faceAzimuthDeg), ...(moduleGapX !== undefined ? { moduleGapX } : {}), ...(moduleGapY !== undefined ? { moduleGapY } : {}), blockGapX, blockGapY } };
     }
     case GENERIC_EAST_WEST_SYSTEM_ID: {
       if (value.adapterVersion !== GENERIC_MOUNTING_ADAPTER_VERSION) return unsupportedVersion(GENERIC_MOUNTING_ADAPTER_VERSION);
       const nominalTiltDeg = requireNumber("nominalTiltDeg", { nonNegative: true });
       const primaryFaceAzimuthDeg = requireNumber("primaryFaceAzimuthDeg");
       const interModuleGapM = requireNumber("interModuleGapM", { nonNegative: true });
+      const moduleGapX = optionalNonNegativeNumber("moduleGapX");
       const blockGapX = requireNumber("blockGapX", { nonNegative: true });
       const blockGapY = requireNumber("blockGapY", { nonNegative: true });
       if (nominalTiltDeg > 90) invalid.push(issue("advanced.system.nominalTiltDeg", "invalid-tilt", "Tilt must not exceed 90 degrees."));
       if (invalid.length) return { status: "invalid", issues: invalid };
-      return { status: "valid", system: { systemId: value.systemId, adapterVersion: value.adapterVersion, nominalTiltDeg, primaryFaceAzimuthDeg: normalizeAzimuth(primaryFaceAzimuthDeg), interModuleGapM, blockGapX, blockGapY } };
+      return { status: "valid", system: { systemId: value.systemId, adapterVersion: value.adapterVersion, nominalTiltDeg, primaryFaceAzimuthDeg: normalizeAzimuth(primaryFaceAzimuthDeg), interModuleGapM, ...(moduleGapX !== undefined ? { moduleGapX } : {}), blockGapX, blockGapY } };
     }
     case K2_S_DOME_SYSTEM_ID: {
       if (value.adapterVersion !== K2_S_DOME_ADAPTER_VERSION) return unsupportedVersion(K2_S_DOME_ADAPTER_VERSION);
@@ -428,6 +443,21 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
     return { status: "unsupported-advanced", effectiveMode: "advanced", raw: value, issues: systemResult.issues };
   }
   const advancedIssues: SurfacePlanningIssue[] = [];
+  const undersideClearanceM = value.advanced.undersideClearanceM;
+  if (
+    undersideClearanceM !== undefined &&
+    (!finite(undersideClearanceM) ||
+      undersideClearanceM < GREEN_ROOF_UNDERSIDE_CLEARANCE_RANGE_M.min ||
+      undersideClearanceM > GREEN_ROOF_UNDERSIDE_CLEARANCE_RANGE_M.max)
+  ) {
+    advancedIssues.push(
+      issue(
+        "advanced.undersideClearanceM",
+        "invalid-underside-clearance",
+        "Underside clearance is outside the supported technical range.",
+      ),
+    );
+  }
   const moduleSnapshot = readModule(value.advanced.module, advancedIssues);
   const layout = readLayout(value.advanced.layout, advancedIssues);
   if (systemResult.status === "invalid") advancedIssues.push(...systemResult.issues);
@@ -446,6 +476,9 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
         inputSchemaVersion: ADVANCED_INPUT_SCHEMA_VERSION,
         advancedEngineVersion: ADVANCED_BLOCK_ENGINE_VERSION,
         geometryEngineVersion: GEOMETRY_V2_ENGINE_VERSION,
+        ...(undersideClearanceM !== undefined
+          ? { undersideClearanceM: undersideClearanceM as number }
+          : {}),
         module: moduleSnapshot,
         system: systemResult.system,
         layout,

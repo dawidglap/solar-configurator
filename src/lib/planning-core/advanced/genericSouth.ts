@@ -16,6 +16,8 @@ export function createGenericSouthBlock(input: {
   module: AdvancedModuleSpecification;
   nominalTiltDeg: number;
   faceAzimuthDeg?: number;
+  moduleGapX?: number;
+  moduleGapY?: number;
   blockGapX?: number;
   blockGapY?: number;
 }): AdvancedBlockDefinition {
@@ -23,10 +25,16 @@ export function createGenericSouthBlock(input: {
     module: input.module,
     nominalTiltDeg: input.nominalTiltDeg,
   });
-  const gapX = input.blockGapX ?? 0;
-  const gapY = input.blockGapY ?? 0;
-  if (!Number.isFinite(gapX) || gapX < 0 || !Number.isFinite(gapY) || gapY < 0) {
-    throw new RangeError("Block gaps must be finite non-negative metric values.");
+  const moduleGapX = input.moduleGapX ?? 0;
+  const moduleGapY = input.moduleGapY ?? 0;
+  const blockGapX = input.blockGapX ?? 0;
+  const blockGapY = input.blockGapY ?? 0;
+  if (
+    [moduleGapX, moduleGapY, blockGapX, blockGapY].some(
+      (value) => !Number.isFinite(value) || value < 0,
+    )
+  ) {
+    throw new RangeError("Module and block gaps must be finite non-negative metric values.");
   }
   const blockFootprint = createCenteredRectangleFootprint({
     widthM: geometry.crossSlopeM,
@@ -41,8 +49,8 @@ export function createGenericSouthBlock(input: {
     ),
     blockFootprint,
     pitchM: {
-      x: geometry.crossSlopeM + gapX,
-      y: geometry.projectedAlongSlopeM + gapY,
+      x: geometry.crossSlopeM + moduleGapX + blockGapX,
+      y: geometry.projectedAlongSlopeM + moduleGapY + blockGapY,
     },
     moduleSlots: [
       {
@@ -59,8 +67,10 @@ export function createGenericSouthBlock(input: {
       crossSlopeM: geometry.crossSlopeM,
       projectedDepthM: geometry.projectedAlongSlopeM,
       riseM: geometry.riseM,
-      blockGapX: gapX,
-      blockGapY: gapY,
+      moduleGapX,
+      moduleGapY,
+      blockGapX,
+      blockGapY,
     },
     warnings: [],
   };
