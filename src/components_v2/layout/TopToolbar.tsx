@@ -20,10 +20,15 @@ import { LuSnowflake, LuShapes } from "react-icons/lu";
 import { FaRegTrashAlt } from "react-icons/fa";
 import { IoIosSave } from "react-icons/io";
 
-// ⬇️ IMPORT FUNZIONI DALLA LOGICA ESISTENTE (ADEGUA PATH SE SERVE)
-import { computeAutoLayoutRects } from "../modules/layout";
-
-import { overlapsReservedRect, overlapsSnowGuard } from "../zones/utils";
+import {
+  computeLegacyStandardLayout,
+  resolveLegacyStandardCanvasAngle,
+} from "@/lib/planning-core/legacy-standard";
+import {
+  resolveLegacyStandardCommitAction,
+  selectLegacyStandardObstacles,
+  TOP_TOOLBAR_LEGACY_POLICY,
+} from "../modules/legacyStandardApplicationPolicy";
 
 import ProjectStatsBar from "../ui/ProjectStatsBar";
 import TopbarAddressSearch from "./TopbarAddressSearch";
@@ -433,80 +438,50 @@ export default function TopToolbar() {
     const roof = layers.find((l) => l.id === selectedId);
     if (!roof?.points?.length) return;
 
-    // === angolo canvas (come ModulesPreview / PanelsKonva) ===
-    const eavesCanvasDeg = -(roof.azimuthDeg ?? 0) + 90;
+    const canvasAngleDeg = resolveLegacyStandardCanvasAngle({
+      roofPolygon: roof.points,
+      legacyRoofAzimuthDeg: roof.azimuthDeg,
+      gridAngleDeg: modules.gridAngleDeg,
+    });
+    const currentState = usePlannerV2Store.getState();
+    const obstacles = selectLegacyStandardObstacles(
+      currentState.zones,
+      currentState.snowGuards,
+      selectedId,
+    );
+    const layout = computeLegacyStandardLayout({
+      generation: {
+        roofPolygon: roof.points,
+        mppImage: snapshot.mppImage,
+        canvasAngleDeg,
+        orientation: modules.orientation,
+        panelSizeM: { widthM: selSpec.widthM, heightM: selSpec.heightM },
+        spacingM: modules.spacingM,
+        marginM: modules.marginM,
+        phaseX: modules.gridPhaseX ?? 0,
+        phaseY: modules.gridPhaseY ?? 0,
+        anchorX: modules.gridAnchorX ?? "start",
+        anchorY: modules.gridAnchorY ?? "start",
+        coverageRatio: modules.coverageRatio ?? 1,
+      },
+      reservedZones: obstacles.reservedZones,
+      snowGuards: obstacles.snowGuards,
+      filterPolicy: TOP_TOOLBAR_LEGACY_POLICY.filterPolicy,
+    });
 
-    // angolo del lato più lungo del poligono
-    let polyDeg = 0,
-      len2 = -1;
-    for (let i = 0; i < roof.points.length; i++) {
-      const j = (i + 1) % roof.points.length;
-      const dx = roof.points[j].x - roof.points[i].x;
-      const dy = roof.points[j].y - roof.points[i].y;
-      const L2 = dx * dx + dy * dy;
-      if (L2 > len2) {
-        len2 = L2;
-        polyDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
-      }
+    const commitAction = resolveLegacyStandardCommitAction(
+      TOP_TOOLBAR_LEGACY_POLICY,
+      layout.count,
+    );
+    if (commitAction === "preserve") return;
+    if (commitAction === "clear") {
+      clearPanelsForRoof(selectedId);
+      return;
     }
-
-    const norm = (d: number) => {
-      const x = d % 360;
-      return x < 0 ? x + 360 : x;
-    };
-    const diff = Math.abs(norm(eavesCanvasDeg - polyDeg));
-    const small = diff > 180 ? 360 - diff : diff;
-    const baseCanvasDeg = small > 5 ? polyDeg : eavesCanvasDeg;
-    const azimuthDeg = baseCanvasDeg + (modules.gridAngleDeg || 0);
-
-    // === rettangoli come la preview ===
-    const rectsAll = computeAutoLayoutRects({
-      polygon: roof.points,
-      mppImage: snapshot.mppImage!,
-      azimuthDeg,
-      orientation: modules.orientation,
-      panelSizeM: { w: selSpec.widthM, h: selSpec.heightM },
-      spacingM: modules.spacingM,
-      marginM: modules.marginM,
-      phaseX: modules.gridPhaseX ?? 0,
-      phaseY: modules.gridPhaseY ?? 0,
-      anchorX: (modules.gridAnchorX as "start" | "center" | "end") ?? "start",
-      anchorY: (modules.gridAnchorY as "start" | "center" | "end") ?? "start",
-      coverageRatio: modules.coverageRatio ?? 1,
-    });
-
-    // === filtro: hindernis + schneefang
-    const rects = rectsAll.filter((r) => {
-      const rectForReserved = {
-        cx: r.cx,
-        cy: r.cy,
-        w: r.wPx,
-        h: r.hPx,
-        angleDeg: r.angleDeg,
-      };
-
-      const rectForSnow = {
-        cx: r.cx,
-        cy: r.cy,
-        wPx: r.wPx,
-        hPx: r.hPx,
-        angleDeg: r.angleDeg,
-      };
-
-      // 1) se tocca una zona riservata → scarta
-      if (overlapsReservedRect(rectForReserved, selectedId, 1)) return false;
-
-      // 2) se tocca una linea neve → scarta
-      if (overlapsSnowGuard(rectForSnow, selectedId, 1)) return false;
-
-      return true;
-    });
-
-    if (!rects.length) return;
 
     // === crea pannelli reali
     const now = Date.now().toString(36);
-    const instances = rects.map((r, idx) => ({
+    const instances = layout.placements.map((r, idx) => ({
       id: `${selectedId}_p_${now}_${idx}`,
       roofId: selectedId,
       cx: r.cx,
@@ -521,7 +496,7 @@ export default function TopToolbar() {
     // 💣 PASSO CHIAVE:
     // prima puliamo TUTTI i pannelli esistenti di questa falda,
     // poi aggiungiamo solo gli autolayout → impossibile avere duplicati
-    clearPanelsForRoof(selectedId);
+    if (commitAction === "replace") clearPanelsForRoof(selectedId);
     addPanelsForRoof(selectedId, instances);
 
     // spegni il raster dopo la conversione (come da brief)

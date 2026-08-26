@@ -1,38 +1,17 @@
-import { computeAutoLayoutRects } from "../../../components_v2/modules/layout";
 import { legacyRectIntersectsPolygon, legacyRectIntersectsSegment } from "./collision";
+import { computeLegacyStandardCandidates } from "./generateLegacyStandardCandidates";
 import type {
-  LegacyStandardCandidate,
+  LegacyPoint,
   LegacyStandardLayoutInput,
   LegacyStandardLayoutResult,
 } from "./types";
 
 export const LEGACY_STANDARD_ENGINE_VERSION = "legacy-v1" as const;
 
-/**
- * Phase 1A compatibility boundary: the frozen generation formulas still live in
- * components_v2/modules/layout.ts, which is itself pure TypeScript. A later,
- * separately approved phase can invert that dependency behind its legacy export.
- */
 export function computeLegacyStandardLayout(
   input: LegacyStandardLayoutInput,
 ): LegacyStandardLayoutResult {
-  const candidates: LegacyStandardCandidate[] = computeAutoLayoutRects({
-    polygon: input.roofPolygon,
-    mppImage: input.mppImage,
-    azimuthDeg: input.canvasAngleDeg,
-    orientation: input.orientation,
-    panelSizeM: {
-      w: input.panelSizeM.widthM,
-      h: input.panelSizeM.heightM,
-    },
-    spacingM: input.spacingM,
-    marginM: input.marginM,
-    phaseX: input.phaseX,
-    phaseY: input.phaseY,
-    anchorX: input.anchorX,
-    anchorY: input.anchorY,
-    coverageRatio: input.coverageRatio,
-  });
+  const candidates = computeLegacyStandardCandidates(input.generation);
 
   let reservedZoneRejections = 0;
   let snowGuardRejections = 0;
@@ -71,4 +50,36 @@ export function computeLegacyStandardLayout(
       snowGuard: snowGuardRejections,
     },
   };
+}
+
+export function resolveLegacyStandardCanvasAngle(input: {
+  roofPolygon: LegacyPoint[];
+  legacyRoofAzimuthDeg?: number;
+  gridAngleDeg?: number;
+}): number {
+  const eavesCanvasDeg = -(input.legacyRoofAzimuthDeg ?? 0) + 90;
+  let polygonAngleDeg = 0;
+  let longestLengthSquared = -1;
+
+  for (let index = 0; index < input.roofPolygon.length; index += 1) {
+    const next = (index + 1) % input.roofPolygon.length;
+    const dx = input.roofPolygon[next].x - input.roofPolygon[index].x;
+    const dy = input.roofPolygon[next].y - input.roofPolygon[index].y;
+    const lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared > longestLengthSquared) {
+      longestLengthSquared = lengthSquared;
+      polygonAngleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    }
+  }
+
+  const normalize = (degrees: number) => {
+    const normalized = degrees % 360;
+    return normalized < 0 ? normalized + 360 : normalized;
+  };
+  const difference = Math.abs(normalize(eavesCanvasDeg - polygonAngleDeg));
+  const smallestDifference = difference > 180 ? 360 - difference : difference;
+  const baseCanvasAngleDeg =
+    smallestDifference > 5 ? polygonAngleDeg : eavesCanvasDeg;
+
+  return baseCanvasAngleDeg + (input.gridAngleDeg || 0);
 }

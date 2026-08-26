@@ -9,7 +9,7 @@ import {
   Group,
   Text,
 } from "react-konva";
-import { computeAutoLayoutRects } from "../modules/layout";
+import { resolveLegacyStandardCanvasAngle } from "@/lib/planning-core/legacy-standard";
 import { isInReservedZone } from "../zones/utils";
 import { RotateCcw } from "lucide-react";
 
@@ -55,35 +55,6 @@ import ReportScreen from "../steps/ReportScreen";
 import OfferScreen from "../steps/OfferScreen";
 import { plannerTheme } from "../theme/plannerTheme";
 import PlannerEmptyState from "../layout/PlannerEmptyState";
-
-// ——— ANGLES HELPERS ———
-function radToDeg(r: number) {
-  return (r * 180) / Math.PI;
-}
-function normDeg(d: number) {
-  const x = d % 360;
-  return x < 0 ? x + 360 : x;
-}
-function angleDiffDeg(a: number, b: number) {
-  let d = Math.abs(normDeg(a) - normDeg(b));
-  return d > 180 ? 360 - d : d;
-}
-function longestEdgeAngleDeg(pts: Pt[] | null | undefined) {
-  if (!pts || pts.length < 2) return 0;
-  let best = 0,
-    maxLen2 = -1;
-  for (let i = 0; i < pts.length; i++) {
-    const j = (i + 1) % pts.length;
-    const dx = pts[j].x - pts[i].x,
-      dy = pts[j].y - pts[i].y;
-    const len2 = dx * dx + dy * dy;
-    if (len2 > maxLen2) {
-      maxLen2 = len2;
-      best = Math.atan2(dy, dx);
-    }
-  }
-  return radToDeg(best);
-}
 
 function pointInPoly(p: Pt, poly: Pt[]): boolean {
   let inside = false;
@@ -333,10 +304,10 @@ export default function CanvasStage() {
   // angolo base griglia in COORDINATE CANVAS (come PanelsKonva)
   const baseGridDeg = useMemo(() => {
     if (!selectedRoof) return 0;
-    const eavesCanvasDeg = -(selectedRoof.azimuthDeg ?? 0) + 90; // azimut → canvas
-    const polyDeg = longestEdgeAngleDeg(selectedRoof.points);
-    // sceglie fra “lato tetto” e “azimut tetto”, come prima
-    return angleDiffDeg(eavesCanvasDeg, polyDeg) > 5 ? polyDeg : eavesCanvasDeg;
+    return resolveLegacyStandardCanvasAngle({
+      roofPolygon: selectedRoof.points,
+      legacyRoofAzimuthDeg: selectedRoof.azimuthDeg,
+    });
   }, [selectedRoof?.azimuthDeg, selectedRoof?.points]);
 
   // 👇 override per-falda letto dallo store

@@ -2,12 +2,17 @@
 'use client';
 
 import { useEffect } from 'react';
+import {
+  computeLegacyStandardLayout,
+  resolveLegacyStandardCanvasAngle,
+} from '@/lib/planning-core/legacy-standard';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import { history } from '../state/history';
-
-// ⬇️ stessi helper usati nel bottone #3
-import { computeAutoLayoutRects } from '../modules/layout';   // <-- adegua path se serve
-import { overlapsReservedRect } from '../zones/utils';        // <-- adegua path se serve
+import {
+  resolveLegacyStandardCommitAction,
+  selectLegacyStandardObstacles,
+  TOOL_HOTKEYS_LEGACY_POLICY,
+} from '../modules/legacyStandardApplicationPolicy';
 
 const isTextTarget = (t: EventTarget | null) => {
   const el = t as HTMLElement | null;
@@ -57,49 +62,43 @@ export default function ToolHotkeys() {
     const roof = layers.find(l => l.id === selectedId);
     if (!roof?.points?.length) return;
 
-    const eavesCanvasDeg = -(roof.azimuthDeg ?? 0) + 90;
-
-    // angolo lato più lungo
-    let polyDeg = 0, len2 = -1;
-    for (let i = 0; i < roof.points.length; i++) {
-      const j = (i + 1) % roof.points.length;
-      const dx = roof.points[j].x - roof.points[i].x;
-      const dy = roof.points[j].y - roof.points[i].y;
-      const L2 = dx * dx + dy * dy;
-      if (L2 > len2) { len2 = L2; polyDeg = Math.atan2(dy, dx) * 180 / Math.PI; }
-    }
-    const norm = (d: number) => { const x = d % 360; return x < 0 ? x + 360 : x; };
-    const diff = Math.abs(norm(eavesCanvasDeg - polyDeg));
-    const small = diff > 180 ? 360 - diff : diff;
-    const baseCanvasDeg = small > 5 ? polyDeg : eavesCanvasDeg;
-    const azimuthDeg = baseCanvasDeg + (modules.gridAngleDeg || 0);
-
-    const rectsAll = computeAutoLayoutRects({
-      polygon: roof.points,
-      mppImage: snapshot.mppImage!,
-      azimuthDeg,
-      orientation: modules.orientation,
-      panelSizeM: { w: selSpec.widthM, h: selSpec.heightM },
-      spacingM: modules.spacingM,
-      marginM:  modules.marginM,
-      phaseX:   modules.gridPhaseX ?? 0,
-      phaseY:   modules.gridPhaseY ?? 0,
-      anchorX: (modules.gridAnchorX as 'start'|'center'|'end') ?? 'start',
-      anchorY: (modules.gridAnchorY as 'start'|'center'|'end') ?? 'start',
-      coverageRatio: modules.coverageRatio ?? 1,
+    const canvasAngleDeg = resolveLegacyStandardCanvasAngle({
+      roofPolygon: roof.points,
+      legacyRoofAzimuthDeg: roof.azimuthDeg,
+      gridAngleDeg: modules.gridAngleDeg,
     });
-
-    const rects = rectsAll.filter(r =>
-      !overlapsReservedRect(
-        { cx: r.cx, cy: r.cy, w: r.wPx, h: r.hPx, angleDeg: r.angleDeg },
-        selectedId,
-        1
-      )
+    const currentState = usePlannerV2Store.getState();
+    const obstacles = selectLegacyStandardObstacles(
+      currentState.zones,
+      currentState.snowGuards,
+      selectedId,
     );
-    if (!rects.length) return;
+    const result = computeLegacyStandardLayout({
+      generation: {
+        roofPolygon: roof.points,
+        mppImage: snapshot.mppImage,
+        canvasAngleDeg,
+        orientation: modules.orientation,
+        panelSizeM: { widthM: selSpec.widthM, heightM: selSpec.heightM },
+        spacingM: modules.spacingM,
+        marginM: modules.marginM,
+        phaseX: modules.gridPhaseX ?? 0,
+        phaseY: modules.gridPhaseY ?? 0,
+        anchorX: modules.gridAnchorX ?? 'start',
+        anchorY: modules.gridAnchorY ?? 'start',
+        coverageRatio: modules.coverageRatio ?? 1,
+      },
+      ...obstacles,
+      filterPolicy: TOOL_HOTKEYS_LEGACY_POLICY.filterPolicy,
+    });
+    const commitAction = resolveLegacyStandardCommitAction(
+      TOOL_HOTKEYS_LEGACY_POLICY,
+      result.count,
+    );
+    if (commitAction !== 'append') return;
 
     const now = Date.now().toString(36);
-    const instances = rects.map((r, idx) => ({
+    const instances = result.placements.map((r, idx) => ({
       id: `${selectedId}_p_${now}_${idx}`,
       roofId: selectedId,
       cx: r.cx, cy: r.cy,

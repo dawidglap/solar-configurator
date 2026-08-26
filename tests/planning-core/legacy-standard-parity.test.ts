@@ -14,6 +14,7 @@ import {
 import {
   computeLegacyStandardLayout,
   LEGACY_STANDARD_ENGINE_VERSION,
+  resolveLegacyStandardCanvasAngle,
   type LegacyReservedZone,
   type LegacySnowGuard,
   type LegacyStandardFilterPolicy,
@@ -87,21 +88,23 @@ function computeCore(
   } = {},
 ) {
   return computeLegacyStandardLayout({
-    roofPolygon: args.polygon,
-    mppImage: args.mppImage,
-    canvasAngleDeg: args.azimuthDeg,
-    orientation: args.orientation,
-    panelSizeM: {
-      widthM: args.panelSizeM.w,
-      heightM: args.panelSizeM.h,
+    generation: {
+      roofPolygon: args.polygon,
+      mppImage: args.mppImage,
+      canvasAngleDeg: args.azimuthDeg,
+      orientation: args.orientation,
+      panelSizeM: {
+        widthM: args.panelSizeM.w,
+        heightM: args.panelSizeM.h,
+      },
+      spacingM: args.spacingM,
+      marginM: args.marginM,
+      phaseX: args.phaseX,
+      phaseY: args.phaseY,
+      anchorX: args.anchorX,
+      anchorY: args.anchorY,
+      coverageRatio: args.coverageRatio,
     },
-    spacingM: args.spacingM,
-    marginM: args.marginM,
-    phaseX: args.phaseX,
-    phaseY: args.phaseY,
-    anchorX: args.anchorX,
-    anchorY: args.anchorY,
-    coverageRatio: args.coverageRatio,
     reservedZones: options.reservedZones ?? [],
     snowGuards: options.snowGuards ?? [],
     filterPolicy: options.filterPolicy ?? NO_FILTERS,
@@ -208,6 +211,30 @@ for (const parityCase of syntheticParityCases) {
     assertUnfilteredParity(parityCase.input);
   });
 }
+
+test("legacy runtime angle uses the eaves canvas angle within the five-degree tolerance", () => {
+  assertClose(
+    resolveLegacyStandardCanvasAngle({
+      roofPolygon: RECTANGLE,
+      legacyRoofAzimuthDeg: 90,
+      gridAngleDeg: 7,
+    }),
+    7,
+    "eaves canvas angle",
+  );
+});
+
+test("legacy runtime angle falls back to the longest polygon edge outside tolerance", () => {
+  assertClose(
+    resolveLegacyStandardCanvasAngle({
+      roofPolygon: RECTANGLE.map((point) => rotate(point, { x: 50, y: 30 }, 30)),
+      legacyRoofAzimuthDeg: 0,
+      gridAngleDeg: 7,
+    }),
+    37,
+    "longest-edge canvas angle",
+  );
+});
 
 test("Planning Core parity: reserved-zone fixture matches the current canonical utility", () => {
   const roofId = "roof-reserved-parity";

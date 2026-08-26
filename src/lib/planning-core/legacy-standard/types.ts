@@ -25,7 +25,7 @@ export type LegacyStandardFilterPolicy = {
   snowGuards: boolean;
 };
 
-export type LegacyStandardLayoutInput = {
+export type LegacyStandardGenerationInput = {
   roofPolygon: LegacyPoint[];
   mppImage: number;
   canvasAngleDeg?: number;
@@ -41,6 +41,10 @@ export type LegacyStandardLayoutInput = {
   anchorX?: LegacyGridAnchor;
   anchorY?: LegacyGridAnchor;
   coverageRatio?: number;
+};
+
+export type LegacyStandardLayoutInput = {
+  generation: LegacyStandardGenerationInput;
   reservedZones: LegacyReservedZone[];
   snowGuards: LegacySnowGuard[];
   filterPolicy: LegacyStandardFilterPolicy;

@@ -9,9 +9,15 @@ import { MdViewModule } from "react-icons/md";
 import OrientationToggle from "../layout/TopToolbar/OrientationToggle";
 import { LuCompass } from "react-icons/lu";
 
-// ⬇️ funzioni esistenti per autolayout e filtri ostacoli
-import { computeAutoLayoutRects } from "../modules/layout";
-import { overlapsReservedRect } from "../zones/utils";
+import {
+  computeLegacyStandardLayout,
+  resolveLegacyStandardCanvasAngle,
+} from "@/lib/planning-core/legacy-standard";
+import {
+  MODULES_PANEL_LEGACY_POLICY,
+  resolveLegacyStandardCommitAction,
+  selectLegacyStandardObstacles,
+} from "../modules/legacyStandardApplicationPolicy";
 import GridRotationControl from "../modules/GridRotationControl";
 
 type Pt = { x: number; y: number };
@@ -121,30 +127,11 @@ export default function ModulesPanel() {
       const roof = layers.find((l) => l.id === selectedId);
       if (!roof?.points?.length) return;
 
-      // calcolo angolo canvas come in CanvasStage / topbar
-      const eavesCanvasDeg = -(roof.azimuthDeg ?? 0) + 90;
-
-      // angolo lato più lungo poligono
-      let polyDeg = 0,
-        len2 = -1;
-      for (let i = 0; i < roof.points.length; i++) {
-        const j = (i + 1) % roof.points.length;
-        const dx = roof.points[j].x - roof.points[i].x;
-        const dy = roof.points[j].y - roof.points[i].y;
-        const L2 = dx * dx + dy * dy;
-        if (L2 > len2) {
-          len2 = L2;
-          polyDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
-        }
-      }
-      const norm = (d: number) => {
-        const x = d % 360;
-        return x < 0 ? x + 360 : x;
-      };
-      const diff = Math.abs(norm(eavesCanvasDeg - polyDeg));
-      const small = diff > 180 ? 360 - diff : diff;
-      const baseCanvasDeg = small > 5 ? polyDeg : eavesCanvasDeg;
-      const azimuthDeg = baseCanvasDeg + (modules.gridAngleDeg || 0);
+      const canvasAngleDeg = resolveLegacyStandardCanvasAngle({
+        roofPolygon: roof.points,
+        legacyRoofAzimuthDeg: roof.azimuthDeg,
+        gridAngleDeg: modules.gridAngleDeg,
+      });
 
       const spacingM =
         typeof modules.spacingM === "number" ? modules.spacingM : 0.02; // default interno
@@ -152,40 +139,46 @@ export default function ModulesPanel() {
         | "portrait"
         | "landscape";
 
-      // rettangoli autolayout
-      const rectsAll = computeAutoLayoutRects({
-        polygon: roof.points,
-        mppImage: snapshot.mppImage!,
-        azimuthDeg,
-        orientation,
-        panelSizeM: { w: selSpec.widthM, h: selSpec.heightM },
-        spacingM,
-        marginM: modules.marginM, // ← rispetta i 20 cm (0.2) di default o quanto scelto
-        phaseX: modules.gridPhaseX ?? 0,
-        phaseY: modules.gridPhaseY ?? 0,
-        anchorX: (modules.gridAnchorX as "start" | "center" | "end") ?? "start",
-        anchorY: (modules.gridAnchorY as "start" | "center" | "end") ?? "start",
-        coverageRatio: modules.coverageRatio ?? 1,
+      const currentState = usePlannerV2Store.getState();
+      const obstacles = selectLegacyStandardObstacles(
+        currentState.zones,
+        currentState.snowGuards,
+        selectedId,
+      );
+      const layout = computeLegacyStandardLayout({
+        generation: {
+          roofPolygon: roof.points,
+          mppImage: snapshot.mppImage,
+          canvasAngleDeg,
+          orientation,
+          panelSizeM: { widthM: selSpec.widthM, heightM: selSpec.heightM },
+          spacingM,
+          marginM: modules.marginM,
+          phaseX: modules.gridPhaseX ?? 0,
+          phaseY: modules.gridPhaseY ?? 0,
+          anchorX: modules.gridAnchorX ?? "start",
+          anchorY: modules.gridAnchorY ?? "start",
+          coverageRatio: modules.coverageRatio ?? 1,
+        },
+        reservedZones: obstacles.reservedZones,
+        snowGuards: obstacles.snowGuards,
+        filterPolicy: MODULES_PANEL_LEGACY_POLICY.filterPolicy,
       });
 
-      // filtra contro Hindernis (nessuna intersezione, neppure parziale)
-      const rects = rectsAll.filter(
-        (r) =>
-          !overlapsReservedRect(
-            { cx: r.cx, cy: r.cy, w: r.wPx, h: r.hPx, angleDeg: r.angleDeg },
-            selectedId,
-            0, // usa 0 px per essere più rigidi sul contatto
-          ),
+      const commitAction = resolveLegacyStandardCommitAction(
+        MODULES_PANEL_LEGACY_POLICY,
+        layout.count,
       );
-      if (!rects.length) {
+      if (commitAction === "preserve") return;
+      if (commitAction === "clear") {
         clearPanelsForRoof(selectedId);
         return;
       }
 
       // sostituisci i pannelli esistenti con i nuovi
-      clearPanelsForRoof(selectedId);
+      if (commitAction === "replace") clearPanelsForRoof(selectedId);
       const now = Date.now().toString(36);
-      const instances = rects.map((r, idx) => ({
+      const instances = layout.placements.map((r, idx) => ({
         id: `${selectedId}_p_${now}_${idx}`,
         roofId: selectedId,
         cx: r.cx,
