@@ -1,4 +1,4 @@
-import { difference, type MultiPolygon, type Pair, type Polygon } from "polygon-clipping";
+import polygonClipping, { type MultiPolygon, type Pair, type Polygon } from "polygon-clipping";
 
 import {
   GEOMETRY_AREA_EPSILON_M2,
@@ -6,6 +6,10 @@ import {
   type MetricPoint,
   type MetricPolygon,
 } from "./types";
+
+// polygon-clipping is CommonJS at runtime; the default namespace keeps the
+// same geometry implementation available in both tsx tests and Next/Webpack.
+const { difference } = polygonClipping;
 
 export type MetricBounds = {
   minX: number;

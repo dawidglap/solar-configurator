@@ -8,6 +8,7 @@ import DetectedRoofsImport from "../panels/DetectedRoofsImport";
 import { MdViewModule } from "react-icons/md";
 import OrientationToggle from "../layout/TopToolbar/OrientationToggle";
 import { LuCompass } from "react-icons/lu";
+import { nanoid } from "nanoid";
 
 import {
   computeLegacyStandardLayout,
@@ -20,6 +21,18 @@ import {
   STANDARD_AUTO_LAYOUT_POLICY,
 } from "../modules/legacyStandardApplicationPolicy";
 import GridRotationControl from "../modules/GridRotationControl";
+import {
+  resolveSurfacePlanning,
+  type AdvancedSurfacePlanningV1,
+} from "@/lib/planning-core/advanced";
+import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
+import {
+  createInitialAdvancedPlanning,
+  createStandardPlanningDraft,
+  computeStandardDraftPanels,
+  hasCommittedPanelsForRoof,
+  resolveRoofPlanningMode,
+} from "../modules/advanced/advancedPlanningApplication";
 
 type Pt = { x: number; y: number };
 
@@ -76,6 +89,10 @@ export default function ModulesPanel() {
   const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
   const selectedPanelId = usePlannerV2Store((s) => s.selectedPanelId);
   const setSelectedPanel = usePlannerV2Store((s) => s.setSelectedPanel);
+  const roofPlanningDrafts = usePlannerV2Store((s) => s.roofPlanningDrafts);
+  const setRoofPlanningDraft = usePlannerV2Store((s) => s.setRoofPlanningDraft);
+  const clearRoofPlanningDraft = usePlannerV2Store((s) => s.clearRoofPlanningDraft);
+  const commitRoofLayout = usePlannerV2Store((s) => s.commitRoofLayout);
 
   // --- Edit inline tilt/az (spostato sotto per evitare TDZ) ---
   const updateRoof = usePlannerV2Store((s) => s.updateRoof);
@@ -84,9 +101,91 @@ export default function ModulesPanel() {
     field: "tilt" | "az";
   } | null>(null);
   const [tempVal, setTempVal] = React.useState<string>("");
+  const [confirmStandardReplace, setConfirmStandardReplace] = React.useState(false);
   const relayoutRef = React.useRef<
     null | ((next?: "portrait" | "landscape") => void)
   >(null);
+
+  const selectedRoof = React.useMemo(
+    () => layers.find((roof) => roof.id === selectedId),
+    [layers, selectedId],
+  );
+  const selectedDraft = selectedId ? roofPlanningDrafts[selectedId] : undefined;
+  const persistedPlanning = resolveSurfacePlanning(selectedRoof?.surfacePlanning);
+  const displayMode = resolveRoofPlanningMode({
+    persisted: selectedRoof?.surfacePlanning,
+    draft: selectedDraft,
+  });
+  const advancedConfig = selectedDraft?.targetMode === "advanced"
+    ? selectedDraft.config
+    : persistedPlanning.status === "supported-advanced"
+      ? persistedPlanning.config
+      : undefined;
+  const standardDraft = selectedDraft?.targetMode === "standard" ? selectedDraft : undefined;
+  const displayedModules = standardDraft?.modules ?? modules;
+  const displayedPanelId = standardDraft?.panelSpecId ?? selectedPanelId;
+
+  const patchDisplayedModules = React.useCallback((patch: Partial<typeof modules>) => {
+    if (selectedRoof && standardDraft) {
+      setRoofPlanningDraft(selectedRoof.id, {
+        ...standardDraft,
+        modules: { ...standardDraft.modules, ...patch },
+      });
+      setConfirmStandardReplace(false);
+      return;
+    }
+    setModules(patch);
+  }, [selectedRoof, setModules, setRoofPlanningDraft, standardDraft]);
+
+  const applyStandardDraft = React.useCallback(() => {
+    if (!selectedRoof || !standardDraft) return;
+    const panel = catalogPanels.find((item) => item.id === standardDraft.panelSpecId);
+    if (!panel || !snapshot.mppImage) return;
+    const current = usePlannerV2Store.getState();
+    const runId = nanoid();
+    const nextPanels = computeStandardDraftPanels({
+      roof: selectedRoof,
+      panel,
+      modules: standardDraft.modules,
+      mppImage: snapshot.mppImage,
+      zones: current.zones,
+      snowGuards: current.snowGuards,
+      createPanelId: (index) => `${selectedRoof.id}_p_${runId}_${index}`,
+    });
+    if (!nextPanels.length) return;
+    commitRoofLayout({ roofId: selectedRoof.id, panels: nextPanels, surfacePlanning: undefined });
+    setSelectedPanel(panel.id);
+    setModules(standardDraft.modules);
+    setConfirmStandardReplace(false);
+  }, [catalogPanels, commitRoofLayout, selectedRoof, setModules, setSelectedPanel, snapshot.mppImage, standardDraft]);
+
+  const chooseAdvanced = React.useCallback(() => {
+    if (!selectedRoof || !selSpec) return;
+    if (selectedDraft?.targetMode === "standard" && persistedPlanning.status === "supported-advanced") {
+      clearRoofPlanningDraft(selectedRoof.id);
+      return;
+    }
+    if (advancedConfig) {
+      setRoofPlanningDraft(selectedRoof.id, { targetMode: "advanced", config: advancedConfig });
+      return;
+    }
+    setRoofPlanningDraft(selectedRoof.id, {
+      targetMode: "advanced",
+      config: createInitialAdvancedPlanning({ panel: selSpec, standardModules: modules }),
+    });
+  }, [advancedConfig, clearRoofPlanningDraft, modules, persistedPlanning.status, selSpec, selectedDraft?.targetMode, selectedRoof, setRoofPlanningDraft]);
+
+  const chooseStandard = React.useCallback(() => {
+    if (!selectedRoof || !selectedPanelId) return;
+    if (persistedPlanning.status === "legacy-standard") {
+      clearRoofPlanningDraft(selectedRoof.id);
+      return;
+    }
+    setRoofPlanningDraft(selectedRoof.id, createStandardPlanningDraft({
+      panelSpecId: selectedPanelId,
+      modules,
+    }));
+  }, [clearRoofPlanningDraft, modules, persistedPlanning.status, selectedPanelId, selectedRoof, setRoofPlanningDraft]);
 
   // blocca i global hotkeys (anche in capture) quando digiti negli input inline
   const stopHotkeysCapture = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -542,6 +641,44 @@ export default function ModulesPanel() {
         )}
       </div>
 
+      {selectedRoof && (
+        <section className="space-y-2">
+          <label className={labelSm}>Planungsmodus</label>
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/25 p-1" role="group" aria-label="Planungsmodus">
+            <button
+              type="button"
+              onClick={chooseStandard}
+              className={`h-8 rounded-md text-[11px] font-medium ${displayMode === "standard" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
+              Standard
+            </button>
+            <button
+              type="button"
+              onClick={chooseAdvanced}
+              disabled={!selSpec}
+              className={`h-8 rounded-md text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-40 ${displayMode === "advanced" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
+              Advanced
+            </button>
+          </div>
+          {displayMode === "advanced" && !advancedConfig && (
+            <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-[10px] text-destructive">
+              Diese Advanced-Konfiguration wird von dieser SOLA-Version nicht unterstützt. Die gespeicherten Module bleiben unverändert.
+            </p>
+          )}
+        </section>
+      )}
+
+      {selectedRoof && displayMode === "advanced" && advancedConfig && (
+        <AdvancedModulesPanel
+          roof={selectedRoof}
+          config={advancedConfig as AdvancedSurfacePlanningV1}
+          isDraft={selectedDraft?.targetMode === "advanced"}
+        />
+      )}
+
+      {displayMode === "standard" && (
+        <>
       {/* === RANDABSTAND === */}
       <section className="space-y-2">
         <label className={labelSm}>Randabstand</label>
@@ -551,8 +688,8 @@ export default function ModulesPanel() {
               type="number"
               step="0.05"
               min="0"
-              value={modules.marginM}
-              onChange={(e) => setModules({ marginM: Number(e.target.value) })}
+              value={displayedModules.marginM}
+              onChange={(e) => patchDisplayedModules({ marginM: Number(e.target.value) })}
               className={inputBase}
               placeholder="0,20"
               aria-label="Randabstand (m)"
@@ -571,8 +708,15 @@ export default function ModulesPanel() {
         <select
           id="panel-select"
           aria-label="Modul wählen"
-          value={selectedPanelId}
-          onChange={(e) => setSelectedPanel(e.target.value)}
+          value={displayedPanelId}
+          onChange={(e) => {
+            if (selectedRoof && standardDraft) {
+              setRoofPlanningDraft(selectedRoof.id, { ...standardDraft, panelSpecId: e.target.value });
+              setConfirmStandardReplace(false);
+            } else {
+              setSelectedPanel(e.target.value);
+            }
+          }}
           className={inputBase}
         >
           {catalogPanels.map((p) => (
@@ -606,17 +750,34 @@ export default function ModulesPanel() {
       {/* === MODULLAYOUT (usa onChange per re-layout immediato) === */}
       <section className="space-y-2">
         <label className={labelSm}>Modullayout</label>
-        <OrientationToggle
-          onChange={(next) => {
-            // appena cambia l'orientamento, rilancia l’autolayout sulla falda selezionata
-            relayoutSelectedRoof(next);
-          }}
-        />
+        {standardDraft ? (
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/25 p-1">
+            {(["portrait", "landscape"] as const).map((orientation) => (
+              <button
+                key={orientation}
+                type="button"
+                onClick={() => patchDisplayedModules({ orientation })}
+                className={`h-8 rounded-md text-[10px] ${displayedModules.orientation === orientation ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              >
+                {orientation === "portrait" ? "Hochformat" : "Querformat"}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <OrientationToggle
+            onChange={(next) => {
+              // appena cambia l'orientamento, rilancia l’autolayout sulla falda selezionata
+              relayoutSelectedRoof(next);
+            }}
+          />
+        )}
       </section>
 
-      <section className="space-y-2">
-        <GridRotationControl />
-      </section>
+      {!standardDraft && (
+        <section className="space-y-2">
+          <GridRotationControl />
+        </section>
+      )}
 
       {/* === MODULNEIGUNG (placeholder, disabled) === */}
       <section className="space-y-1">
@@ -636,6 +797,41 @@ export default function ModulesPanel() {
         </div>
       </section>
 
+      {standardDraft && selectedRoof && (
+        <section className="space-y-2 rounded-xl border border-primary/25 bg-primary/5 p-2">
+          <p className="text-[10px] text-muted-foreground">
+            Die Standard-Vorschau verwendet weiterhin den unveränderten legacy-v1 Motor.
+          </p>
+          {confirmStandardReplace && (
+            <p className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-2 text-[10px]">
+              Das bestehende Layout dieser Dachfläche wird ersetzt. Andere Dachflächen bleiben unverändert.
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="h-9 rounded-lg border border-border text-[11px]"
+              onClick={() => { clearRoofPlanningDraft(selectedRoof.id); setConfirmStandardReplace(false); }}
+            >
+              Abbrechen
+            </button>
+            <button
+              type="button"
+              className="h-9 rounded-lg bg-primary text-[11px] font-medium text-primary-foreground"
+              onClick={() => {
+                if (hasCommittedPanelsForRoof(panels, selectedRoof.id) && !confirmStandardReplace) {
+                  setConfirmStandardReplace(true);
+                } else {
+                  applyStandardDraft();
+                }
+              }}
+            >
+              {confirmStandardReplace ? "Ersetzen bestätigen" : "Layout anwenden"}
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* === WECHSELRICHTER (hidden for now) ===
       <section className="space-y-1">
         <label className={labelSm}>Wechselrichter</label>
@@ -647,6 +843,8 @@ export default function ModulesPanel() {
         </select>
       </section>
       */}
+        </>
+      )}
     </div>
   );
 }

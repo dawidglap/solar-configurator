@@ -5,6 +5,11 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { isToolAllowed, defaultToolFor } from './capabilities';
 import { ALLOWED_TOOLS, DEFAULT_TOOL } from '../../constants/stepTools';
 import { nanoid } from 'nanoid';
+import {
+  applyRoofLayoutTransaction,
+  type RoofPlanningDraft,
+} from '@/components_v2/modules/advanced/advancedPlanningApplication';
+import type { SurfacePlanningV1 } from '@/lib/planning-core/advanced';
 import type { ProfileSlice } from './slices/profileSlice';
 import { createProfileSlice, defaultProfile } from './slices/profileSlice';
 import type { IstSlice } from './slices/istSlice';
@@ -20,6 +25,7 @@ import type {
   View,
   PanelSpec,
   ModulesConfig,
+  PanelInstance,
 } from '@/types/planner';
 
 export type {
@@ -134,6 +140,7 @@ function createInitialPlannerState() {
     catalogPanels: [] as PanelSpec[],
     selectedPanelId: '',
     modules: createDefaultModules(),
+    roofPlanningDrafts: {} as Record<string, RoofPlanningDraft>,
 
     detectedRoofs: [] as DetectedRoof[],
     roofAlign: { rotDeg: 0, pivotPx: undefined } as RoofAlign,
@@ -213,6 +220,14 @@ type PlannerV2State = {
   getSelectedPanel: () => PanelSpec | undefined;
   modules: ModulesConfig;
   setModules: (patch: Partial<ModulesConfig>) => void;
+  roofPlanningDrafts: Record<string, RoofPlanningDraft>;
+  setRoofPlanningDraft: (roofId: string, draft: RoofPlanningDraft) => void;
+  clearRoofPlanningDraft: (roofId: string) => void;
+  commitRoofLayout: (input: {
+    roofId: string;
+    panels: PanelInstance[];
+    surfacePlanning?: SurfacePlanningV1;
+  }) => void;
 
   detectedRoofs: DetectedRoof[];
   setDetectedRoofs: (
@@ -326,6 +341,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             coverageRatio: 1,
             perRoofAngles: {},
           },
+          roofPlanningDrafts: {},
         }));
         history.clear();
       },
@@ -444,6 +460,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
               : [],
 
             modules: saved.modules ?? defaults.modules,
+            roofPlanningDrafts: {},
             roofAlign: saved.roofAlign ?? defaults.roofAlign,
 
             snowGuards: Array.isArray(saved.snowGuards) ? saved.snowGuards : [],
@@ -526,6 +543,41 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 ? { perRoofAngles: nextPerRoof }
                 : {}),
             },
+          };
+        }),
+
+      roofPlanningDrafts: {},
+      setRoofPlanningDraft: (roofId, draft) =>
+        set((state) => ({
+          roofPlanningDrafts: {
+            ...state.roofPlanningDrafts,
+            [roofId]: draft,
+          },
+        })),
+      clearRoofPlanningDraft: (roofId) =>
+        set((state) => {
+          const roofPlanningDrafts = { ...state.roofPlanningDrafts };
+          delete roofPlanningDrafts[roofId];
+          return { roofPlanningDrafts };
+        }),
+      commitRoofLayout: ({ roofId, panels, surfacePlanning }) =>
+        set((state) => {
+          const committed = applyRoofLayoutTransaction({
+            roofs: state.layers,
+            panels: state.panels,
+            roofId,
+            nextPanels: panels,
+            surfacePlanning,
+          });
+          const roofPlanningDrafts = { ...state.roofPlanningDrafts };
+          delete roofPlanningDrafts[roofId];
+          return {
+            layers: committed.roofs,
+            panels: committed.panels,
+            selectedPanelIds: state.selectedPanelIds.filter((panelId) =>
+              committed.panels.some((panel) => panel.id === panelId),
+            ),
+            roofPlanningDrafts,
           };
         }),
 

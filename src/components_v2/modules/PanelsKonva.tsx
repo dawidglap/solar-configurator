@@ -45,6 +45,7 @@ export default function PanelsKonva(props: {
 
   // --- store
   const allPanels = usePlannerV2Store((s) => s.panels) as PanelInst[];
+  const hasPlanningDraft = usePlannerV2Store((s) => Boolean(s.roofPlanningDrafts[roofId]));
   const rawUpdatePanel = usePlannerV2Store((s) => s.updatePanel);
   const panels = React.useMemo(
     () => allPanels.filter((p) => p.roofId === roofId),
@@ -439,6 +440,8 @@ const startMultiDrag = React.useCallback((e: any) => {
   }, [groupBBox, invScale, selectedPanels.length]);
 
   // ======================= RENDER =======================
+ if (hasPlanningDraft) return null;
+
  return (
   <>
     {/* --- CLIPPED: pannelli + guide + banda margine --- */}

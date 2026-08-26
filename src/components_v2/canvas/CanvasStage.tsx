@@ -19,6 +19,7 @@ import ScaleIndicator from "./ScaleIndicator";
 import SonnendachOverlayKonva from "./SonnendachOverlayKonva";
 import OrientationHUD from "./OrientationHUD";
 import ModulesPreview from "../modules/ModulesPreview";
+import AdvancedPreviewLayer from "../modules/advanced/AdvancedPreviewLayer";
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutSpacingM,
@@ -156,6 +157,9 @@ export default function CanvasStage() {
   const selectedId = usePlannerV2Store((s) => s.selectedId);
   const rightOpen = usePlannerV2Store((s) => s.ui.rightPanelOpen);
   const modules = usePlannerV2Store((s) => s.modules);
+  const allPanels = usePlannerV2Store((s) => s.panels);
+  const roofPlanningDrafts = usePlannerV2Store((s) => s.roofPlanningDrafts);
+  const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
   const duplicatePanel = usePlannerV2Store((s) => s.duplicatePanel);
   const addZone = usePlannerV2Store((s) => s.addZone);
   const addSnowGuard = usePlannerV2Store((s) => s.addSnowGuard);
@@ -165,7 +169,6 @@ export default function CanvasStage() {
   const deleteSnowGuard = usePlannerV2Store((s) => s.deleteSnowGuard);
 
   const selPanel = usePlannerV2Store((s) => s.getSelectedPanel());
-  const gridMods = usePlannerV2Store((s) => s.modules);
   const roofAlign = usePlannerV2Store((s) => s.roofAlign);
   const setTool = usePlannerV2Store((s) => s.setTool);
 
@@ -283,6 +286,13 @@ export default function CanvasStage() {
     () => layers.find((l) => l.id === selectedId) ?? null,
     [layers, selectedId],
   );
+  const selectedPlanningDraft = selectedId ? roofPlanningDrafts[selectedId] : undefined;
+  const standardPreviewModules = selectedPlanningDraft?.targetMode === "standard"
+    ? selectedPlanningDraft.modules
+    : modules;
+  const standardPreviewPanel = selectedPlanningDraft?.targetMode === "standard"
+    ? catalogPanels.find((panel) => panel.id === selectedPlanningDraft.panelSpecId)
+    : selPanel;
 
   const baseGridDeg = selectedRoof
     ? resolveStandardAutoLayoutCanvasAngle({
@@ -298,16 +308,16 @@ export default function CanvasStage() {
       roofId: selectedRoof.id,
       roofPolygon: selectedRoof.points,
       legacyRoofAzimuthDeg: selectedRoof.azimuthDeg,
-      gridAngleDeg: gridMods.gridAngleDeg,
-      perRoofAngles: modules.perRoofAngles,
+      gridAngleDeg: standardPreviewModules.gridAngleDeg,
+      perRoofAngles: standardPreviewModules.perRoofAngles,
     })
     : 0;
 
   const hasPanelsOnSelected = useMemo(
     () =>
       !!selectedId &&
-      usePlannerV2Store.getState().panels.some((p) => p.roofId === selectedId),
-    [selectedId, layers],
+      allPanels.some((p) => p.roofId === selectedId),
+    [allPanels, selectedId],
   );
 
   // reset shapeMode on selection change
@@ -953,27 +963,30 @@ export default function CanvasStage() {
                 {/* --- TUTTO IL RESTO (ModulesPreview, SonnendachOverlayKonva, RoofShapesLayer, ZonesLayer, pannelli, anteprime, ecc.) RIMANE QUI DENTRO --- */}
                 {step === "modules" &&
                   selectedRoof &&
-                  selPanel &&
+                  standardPreviewPanel &&
                   snap.mppImage &&
-                  modules.showGrid &&
-                  !hasPanelsOnSelected && (
+                  standardPreviewModules.showGrid &&
+                  selectedPlanningDraft?.targetMode !== "advanced" &&
+                  (!hasPanelsOnSelected || selectedPlanningDraft?.targetMode === "standard") && (
                     <ModulesPreview
                       roofId={selectedRoof.id}
                       polygon={selectedRoof.points}
                       mppImage={snap.mppImage}
                       azimuthDeg={gridDeg}
-                      orientation={modules.orientation}
-                      panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
-                      spacingM={resolveStandardAutoLayoutSpacingM(modules.spacingM)}
-                      marginM={modules.marginM}
+                      orientation={standardPreviewModules.orientation}
+                      panelSizeM={{ w: standardPreviewPanel.widthM, h: standardPreviewPanel.heightM }}
+                      spacingM={resolveStandardAutoLayoutSpacingM(standardPreviewModules.spacingM)}
+                      marginM={standardPreviewModules.marginM}
                       textureUrl="/images/panel.webp"
-                      phaseX={gridMods.gridPhaseX || 0}
-                      phaseY={gridMods.gridPhaseY || 0}
-                      anchorX={(gridMods.gridAnchorX as any) || "start"}
-                      anchorY={(gridMods.gridAnchorY as any) || "start"}
-                      coverageRatio={gridMods.coverageRatio ?? 1}
+                      phaseX={standardPreviewModules.gridPhaseX || 0}
+                      phaseY={standardPreviewModules.gridPhaseY || 0}
+                      anchorX={(standardPreviewModules.gridAnchorX as any) || "start"}
+                      anchorY={(standardPreviewModules.gridAnchorY as any) || "start"}
+                      coverageRatio={standardPreviewModules.coverageRatio ?? 1}
                     />
                   )}
+
+                {step === "modules" && <AdvancedPreviewLayer />}
 
                 <Group listening={!drawingCapturesPointer}>
                   <SonnendachOverlayKonva />
