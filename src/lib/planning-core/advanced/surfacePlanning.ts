@@ -21,6 +21,7 @@ import { GREEN_ROOF_UNDERSIDE_CLEARANCE_RANGE_M } from "./greenRoof";
 
 export const SURFACE_PLANNING_SCHEMA_VERSION = 1 as const;
 export const ADVANCED_INPUT_SCHEMA_VERSION = 1 as const;
+export const MAX_FIXED_BLOCKS_PER_AXIS = 100;
 
 export type SurfaceKind = "pitched" | "flat" | "green";
 
@@ -48,6 +49,12 @@ export type AdvancedLayoutInputs = {
   phaseY: number;
   anchorX: GridAnchor;
   anchorY: GridAnchor;
+  /** Missing/auto preserves the historical Advanced auto-fill behaviour. */
+  quantityMode?: "auto" | "fixed";
+  /** Authoritative fixed-grid column count; derived totals are never persisted. */
+  blocksPerRow?: number;
+  /** Authoritative fixed-grid row count; derived totals are never persisted. */
+  rowCount?: number;
 };
 
 export type GenericSouthSystemInputs = {
@@ -311,6 +318,19 @@ function readLayout(
       issues.push(issue(`advanced.layout.${key}`, "invalid-anchor", `${key} is invalid.`));
     }
   }
+  const quantityMode = value.quantityMode ?? "auto";
+  if (quantityMode !== "auto" && quantityMode !== "fixed") {
+    issues.push(issue("advanced.layout.quantityMode", "invalid-quantity-mode", "Quantity mode is invalid."));
+  }
+  if (quantityMode === "fixed") {
+    for (const key of ["blocksPerRow", "rowCount"] as const) {
+      if (!Number.isInteger(value[key]) || (value[key] as number) <= 0) {
+        issues.push(issue(`advanced.layout.${key}`, "invalid-fixed-quantity", `${key} must be a positive integer.`));
+      } else if ((value[key] as number) > MAX_FIXED_BLOCKS_PER_AXIS) {
+        issues.push(issue(`advanced.layout.${key}`, "fixed-quantity-too-large", `${key} exceeds the technical limit.`));
+      }
+    }
+  }
   if (issues.length > 0) return null;
   return {
     marginM: value.marginM as number,
@@ -318,6 +338,15 @@ function readLayout(
     phaseY: value.phaseY as number,
     anchorX: value.anchorX as GridAnchor,
     anchorY: value.anchorY as GridAnchor,
+    ...(quantityMode === "fixed"
+      ? {
+          quantityMode: "fixed" as const,
+          blocksPerRow: value.blocksPerRow as number,
+          rowCount: value.rowCount as number,
+        }
+      : value.quantityMode === "auto"
+        ? { quantityMode: "auto" as const }
+        : {}),
   };
 }
 

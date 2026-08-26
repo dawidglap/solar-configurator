@@ -11,15 +11,18 @@ import {
   K2_S_DOME_CONSTANTS_MM,
   K2_S_DOME_SYSTEM_ID,
   SURFACE_PLANNING_SCHEMA_VERSION,
+  MAX_FIXED_BLOCKS_PER_AXIS,
   calculateK2DDomeAllowedRowSpaceRangeMm,
   calculateK2DDomeOneBlockRailDepthMm,
   computeAdvancedBlockLayout,
+  computeFixedAdvancedBlockLayout,
   createGenericEastWestBlock,
   createGenericSouthBlock,
   createK2DDomeBlock,
   createK2SDomeBlock,
   evaluateK2DDomeBlockLimits,
   resolveSurfacePlanning,
+  resolveK2ParallelRoofEdgeAlignment,
   validateGreenRoofGenericInputs,
   type AdvancedBlockDefinition,
   type AdvancedGeometryWarning,
@@ -70,7 +73,7 @@ export type RoofPlanningDraft =
 export type AdvancedPreviewError = {
   code: string;
   message: string;
-  field: "module" | "rowSpace" | "surface" | "layout" | "system";
+  field: "module" | "rowSpace" | "surface" | "layout" | "system" | "quantity";
 };
 
 export type AdvancedPreviewModule = {
@@ -92,7 +95,27 @@ export type AdvancedPreviewBlock = {
   centerPx: Pt;
   footprintPx: Pt[];
   rotationCanvasDeg: number;
+  valid: boolean;
+  invalidReasons: Array<"outside-usable-roof" | "reserved-zone" | "snow-guard">;
 };
+
+export type AdvancedQuantitySummary =
+  | {
+      mode: "auto";
+      requestedBlockCount: number;
+      validBlockCount: number;
+      requestedModuleCount: number;
+      validModuleCount: number;
+    }
+  | {
+      mode: "fixed";
+      blocksPerRow: number;
+      rowCount: number;
+      requestedBlockCount: number;
+      validBlockCount: number;
+      requestedModuleCount: number;
+      validModuleCount: number;
+    };
 
 export type AdvancedK2DerivedSummary = {
   kind: "k2";
@@ -128,11 +151,12 @@ export type AdvancedPlanningPreview =
       valid: false;
       errors: AdvancedPreviewError[];
       warnings: AdvancedGeometryWarning[];
-      blocks: [];
-      modules: [];
-      blockCount: 0;
-      moduleCount: 0;
+      blocks: AdvancedPreviewBlock[];
+      modules: AdvancedPreviewModule[];
+      blockCount: number;
+      moduleCount: number;
       derived: null;
+      quantity: AdvancedQuantitySummary | null;
     }
   | {
       valid: true;
@@ -143,6 +167,7 @@ export type AdvancedPlanningPreview =
       blockCount: number;
       moduleCount: number;
       derived: AdvancedDerivedSummary;
+      quantity: AdvancedQuantitySummary;
     };
 
 type PreviewObstacleZone = {
@@ -464,6 +489,95 @@ export function setAdvancedMountingOrientation(input: {
   };
 }
 
+export function setAdvancedQuantityMode(input: {
+  config: AdvancedSurfacePlanningV1;
+  mode: "auto" | "fixed";
+}): AdvancedSurfacePlanningV1 {
+  const layout = { ...input.config.advanced.layout };
+  if (input.mode === "auto") {
+    delete layout.quantityMode;
+    delete layout.blocksPerRow;
+    delete layout.rowCount;
+  } else {
+    layout.quantityMode = "fixed";
+    layout.blocksPerRow = layout.blocksPerRow ?? 5;
+    layout.rowCount = layout.rowCount ?? 3;
+    layout.anchorX = "center";
+    layout.anchorY = "center";
+  }
+  return {
+    ...input.config,
+    advanced: { ...input.config.advanced, layout },
+  };
+}
+
+export function setAdvancedFixedQuantity(input: {
+  config: AdvancedSurfacePlanningV1;
+  blocksPerRow?: number;
+  rowCount?: number;
+}): AdvancedSurfacePlanningV1 {
+  const current = input.config.advanced.layout;
+  const blocksPerRow = input.blocksPerRow ?? current.blocksPerRow ?? 5;
+  const rowCount = input.rowCount ?? current.rowCount ?? 3;
+  if (
+    !Number.isInteger(blocksPerRow) ||
+    blocksPerRow <= 0 ||
+    blocksPerRow > MAX_FIXED_BLOCKS_PER_AXIS ||
+    !Number.isInteger(rowCount) ||
+    rowCount <= 0 ||
+    rowCount > MAX_FIXED_BLOCKS_PER_AXIS
+  ) {
+    return input.config;
+  }
+  return {
+    ...input.config,
+    advanced: {
+      ...input.config.advanced,
+      layout: {
+        ...current,
+        quantityMode: "fixed",
+        blocksPerRow,
+        rowCount,
+      },
+    },
+  };
+}
+
+export function alignAdvancedLayoutParallelToRoofEdge(input: {
+  config: AdvancedSurfacePlanningV1;
+  roof: Pick<RoofArea, "points">;
+  mppImage: number;
+}): AdvancedSurfacePlanningV1 {
+  const alignment = resolveK2ParallelRoofEdgeAlignment({
+    roofPointsPx: input.roof.points,
+    mppImage: input.mppImage,
+  });
+  if (!alignment) return input.config;
+  const system = input.config.advanced.system;
+  if (system.systemId === K2_S_DOME_SYSTEM_ID) {
+    return {
+      ...input.config,
+      advanced: {
+        ...input.config.advanced,
+        system: { ...system, faceAzimuthDeg: alignment.faceAzimuthDeg },
+      },
+    };
+  }
+  if (system.systemId === K2_D_DOME_SYSTEM_ID) {
+    return {
+      ...input.config,
+      advanced: {
+        ...input.config.advanced,
+        system: {
+          ...system,
+          primaryFaceAzimuthDeg: alignment.faceAzimuthDeg,
+        },
+      },
+    };
+  }
+  return input.config;
+}
+
 export function resolveRoofPlanningMode(input: {
   persisted: unknown;
   draft?: RoofPlanningDraft;
@@ -513,16 +627,24 @@ function mapAdapterError(code: string): AdvancedPreviewError {
 function invalidPreview(
   errors: AdvancedPreviewError[],
   warnings: AdvancedGeometryWarning[] = [],
+  partial?: {
+    blocks: AdvancedPreviewBlock[];
+    modules: AdvancedPreviewModule[];
+    blockCount: number;
+    moduleCount: number;
+    quantity: AdvancedQuantitySummary;
+  },
 ): AdvancedPlanningPreview {
   return {
     valid: false,
     errors,
     warnings,
-    blocks: [],
-    modules: [],
-    blockCount: 0,
-    moduleCount: 0,
+    blocks: partial?.blocks ?? [],
+    modules: partial?.modules ?? [],
+    blockCount: partial?.blockCount ?? 0,
+    moduleCount: partial?.moduleCount ?? 0,
     derived: null,
+    quantity: partial?.quantity ?? null,
   };
 }
 
@@ -677,7 +799,7 @@ export function computeAdvancedPlanningPreview(input: {
   }
 
   const imageAdapter = imageAdapterForRoof(input.roof, input.mppImage);
-  const layout = computeAdvancedBlockLayout({
+  const commonLayoutInput = {
     roofPolygonM: imagePolygonToMetric(input.roof.points, imageAdapter),
     marginM: config.advanced.layout.marginM,
     blockDefinition,
@@ -696,8 +818,24 @@ export function computeAdvancedPlanningPreview(input: {
         end: imagePointToMetric(guard.p2, imageAdapter),
         clearanceM: 0,
       })),
-  });
-  const modules = layout.modules.map((module) => ({
+  };
+  const fixedLayout = config.advanced.layout.quantityMode === "fixed"
+    ? computeFixedAdvancedBlockLayout({
+        ...commonLayoutInput,
+        blocksPerRow: config.advanced.layout.blocksPerRow as number,
+        rowCount: config.advanced.layout.rowCount as number,
+      })
+    : null;
+  const automaticLayout = fixedLayout
+    ? null
+    : computeAdvancedBlockLayout(commonLayoutInput);
+  const placedBlocks = fixedLayout
+    ? fixedLayout.validBlocks
+    : automaticLayout?.blocks ?? [];
+  const placedModules = fixedLayout
+    ? fixedLayout.validModules
+    : automaticLayout?.modules ?? [];
+  const modules = placedModules.map((module) => ({
     blockKey: module.blockKey,
     slotIndex: module.slotIndex,
     cx: metricPointToImage(module.centerM, imageAdapter).x,
@@ -710,12 +848,58 @@ export function computeAdvancedPlanningPreview(input: {
     nominalTiltDeg: module.nominalTiltDeg,
     effectiveTiltDeg: module.effectiveTiltDeg,
   }));
-  const blocks = layout.blocks.map((block) => ({
-    blockKey: block.blockKey,
-    centerPx: metricPointToImage(block.centerM, imageAdapter),
-    footprintPx: metricPolygonToImage(block.footprint, imageAdapter),
-    rotationCanvasDeg: cartesianAngleToCanvasDeg(block.rotationCartesianDeg),
-  }));
+  const blocks: AdvancedPreviewBlock[] = fixedLayout
+    ? fixedLayout.candidates.map((candidate) => ({
+        blockKey: candidate.block.blockKey,
+        centerPx: metricPointToImage(candidate.block.centerM, imageAdapter),
+        footprintPx: metricPolygonToImage(candidate.block.footprint, imageAdapter),
+        rotationCanvasDeg: cartesianAngleToCanvasDeg(candidate.block.rotationCartesianDeg),
+        valid: candidate.valid,
+        invalidReasons: [...candidate.reasons],
+      }))
+    : placedBlocks.map((block) => ({
+        blockKey: block.blockKey,
+        centerPx: metricPointToImage(block.centerM, imageAdapter),
+        footprintPx: metricPolygonToImage(block.footprint, imageAdapter),
+        rotationCanvasDeg: cartesianAngleToCanvasDeg(block.rotationCartesianDeg),
+        valid: true,
+        invalidReasons: [],
+      }));
+  const quantity: AdvancedQuantitySummary = fixedLayout
+    ? {
+        mode: "fixed",
+        blocksPerRow: config.advanced.layout.blocksPerRow as number,
+        rowCount: config.advanced.layout.rowCount as number,
+        requestedBlockCount: fixedLayout.requestedBlockCount,
+        validBlockCount: fixedLayout.validBlockCount,
+        requestedModuleCount: fixedLayout.requestedModuleCount,
+        validModuleCount: fixedLayout.validModuleCount,
+      }
+    : {
+        mode: "auto",
+        requestedBlockCount: placedBlocks.length,
+        validBlockCount: placedBlocks.length,
+        requestedModuleCount: placedModules.length,
+        validModuleCount: placedModules.length,
+      };
+
+  if (fixedLayout && !fixedLayout.complete) {
+    return invalidPreview(
+      [{
+        code: "fixed-layout-incomplete",
+        field: "quantity",
+        message: `Die gewünschte Anordnung ${config.advanced.layout.blocksPerRow} × ${config.advanced.layout.rowCount} passt nicht vollständig auf diese Dachfläche. ${fixedLayout.validBlockCount} von ${fixedLayout.requestedBlockCount} Blöcken sind gültig.`,
+      }],
+      warnings,
+      {
+        blocks,
+        modules,
+        blockCount: fixedLayout.validBlockCount,
+        moduleCount: fixedLayout.validModuleCount,
+        quantity,
+      },
+    );
+  }
   if (isGreenRoof) {
     const genericSystem = system.systemId === GENERIC_SOUTH_SYSTEM_ID
       ? system
@@ -733,8 +917,9 @@ export function computeAdvancedPlanningPreview(input: {
       warnings,
       blocks,
       modules,
-      blockCount: layout.blockCount,
-      moduleCount: layout.moduleCount,
+      blockCount: placedBlocks.length,
+      moduleCount: placedModules.length,
+      quantity,
       derived: {
         kind: "generic",
         nominalTiltDeg: genericSystem.nominalTiltDeg,
@@ -770,13 +955,13 @@ export function computeAdvancedPlanningPreview(input: {
         min: K2_S_DOME_CONSTANTS_MM.rowSpace.min / 1000,
         max: K2_S_DOME_CONSTANTS_MM.rowSpace.max / 1000,
       };
-  if (isDDome && layout.blocks.length) {
+  if (isDDome && placedBlocks.length) {
     const limits = evaluateK2DDomeBlockLimits({
       moduleWidthM: moduleSpec.widthM,
       moduleLengthM: moduleSpec.heightM,
       rowSpaceM: system.rowSpaceM,
-      quantityRows: new Set(layout.blocks.map((block) => block.rowIndex)).size,
-      numberOfColumns: new Set(layout.blocks.map((block) => block.columnIndex)).size,
+      quantityRows: new Set(placedBlocks.map((block) => block.rowIndex)).size,
+      numberOfColumns: new Set(placedBlocks.map((block) => block.columnIndex)).size,
     });
     warnings.push(...limits.warnings);
   }
@@ -787,8 +972,9 @@ export function computeAdvancedPlanningPreview(input: {
     warnings,
     blocks,
     modules,
-    blockCount: layout.blockCount,
-    moduleCount: layout.moduleCount,
+    blockCount: placedBlocks.length,
+    moduleCount: placedModules.length,
+    quantity,
     derived: {
       kind: "k2",
       nominalTiltDeg: derivedDimensions.nominalTiltDeg,

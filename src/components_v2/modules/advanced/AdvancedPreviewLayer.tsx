@@ -100,7 +100,7 @@ export default function AdvancedPreviewLayer() {
 
   return (
     <Group listening={false}>
-      {preview?.valid && (
+      {preview && preview.blocks.length > 0 && (
         <Group listening={false}>
           {preview.blocks.map((block) => {
             const points = block.footprintPx.flatMap((point) => [point.x, point.y]);
@@ -110,10 +110,10 @@ export default function AdvancedPreviewLayer() {
                 <Line
                   points={points}
                   closed
-                  stroke={plannerTheme.primary}
+                  stroke={block.valid ? plannerTheme.primary : "#ef4444"}
                   strokeWidth={1.2}
-                  dash={[5, 3]}
-                  fill="rgba(59, 130, 246, 0.05)"
+                  dash={block.valid ? [5, 3] : [3, 2]}
+                  fill={block.valid ? "rgba(59, 130, 246, 0.05)" : "rgba(239, 68, 68, 0.08)"}
                 />
                 {isOpposingSystem && a && b && c && d && (
                   <Line
@@ -123,7 +123,7 @@ export default function AdvancedPreviewLayer() {
                       (b.x + c.x) / 2,
                       (b.y + c.y) / 2,
                     ]}
-                    stroke={plannerTheme.primary}
+                    stroke={block.valid ? plannerTheme.primary : "#ef4444"}
                     strokeWidth={0.8}
                     opacity={0.75}
                   />

@@ -1,9 +1,12 @@
 import {
+  combinePolygonBounds,
   computeUsableRoof,
   generateGridPlacements,
   normalizeDegrees,
+  polygonBounds,
   rotateMetricPoint,
   transformMetricPolygon,
+  validatePlacementFootprint,
 } from "../geometry-v2";
 import { geographicPlanarOrientationToCartesianRotationDeg } from "./moduleGeometry";
 import {
@@ -11,7 +14,9 @@ import {
   type AdvancedBlockDefinition,
   type AdvancedBlockLayoutResult,
   type ComputeAdvancedBlockLayoutInput,
+  type ComputeFixedAdvancedBlockLayoutInput,
   type ExpandedAdvancedModule,
+  type FixedAdvancedBlockLayoutResult,
   type PlacedAdvancedBlock,
 } from "./types";
 
@@ -148,5 +153,168 @@ export function computeAdvancedBlockLayout(
     moduleCount: modules.length,
     rejected: grid.rejected,
     diagnostics: grid.diagnostics,
+  };
+}
+
+function toGridLocal(
+  point: { x: number; y: number },
+  origin: { x: number; y: number },
+  rotationCartesianDeg: number,
+) {
+  return rotateMetricPoint(
+    { x: point.x - origin.x, y: point.y - origin.y },
+    -rotationCartesianDeg,
+  );
+}
+
+function toWorld(
+  point: { x: number; y: number },
+  origin: { x: number; y: number },
+  rotationCartesianDeg: number,
+) {
+  const rotated = rotateMetricPoint(point, rotationCartesianDeg);
+  return { x: rotated.x + origin.x, y: rotated.y + origin.y };
+}
+
+function fixedAxisPositions(input: {
+  min: number;
+  max: number;
+  pitch: number;
+  count: number;
+  phase: number;
+  anchor: "start" | "center" | "end";
+}): number[] {
+  const span = (input.count - 1) * input.pitch;
+  const first =
+    input.anchor === "start"
+      ? input.min + input.phase * input.pitch
+      : input.anchor === "end"
+        ? input.max - span - input.phase * input.pitch
+        : (input.min + input.max - span) / 2 + input.phase * input.pitch;
+  return Array.from({ length: input.count }, (_, index) => first + index * input.pitch);
+}
+
+/**
+ * Generates the exact requested matrix. Invalid candidates are retained with
+ * their collision reasons; callers must not silently reduce the requested
+ * quantity or materialize a partial result.
+ */
+export function computeFixedAdvancedBlockLayout(
+  input: ComputeFixedAdvancedBlockLayoutInput,
+): FixedAdvancedBlockLayoutResult {
+  if (
+    !Number.isInteger(input.blocksPerRow) ||
+    input.blocksPerRow <= 0 ||
+    !Number.isInteger(input.rowCount) ||
+    input.rowCount <= 0
+  ) {
+    throw new RangeError("Fixed block counts must be positive integers.");
+  }
+
+  const requestedBlockCount = input.blocksPerRow * input.rowCount;
+  if (!Number.isSafeInteger(requestedBlockCount) || requestedBlockCount > 10_000) {
+    throw new RangeError("Fixed block grid exceeds the technical limit of 10,000 blocks.");
+  }
+
+  const usableRoof = computeUsableRoof({
+    roofPolygonM: input.roofPolygonM,
+    marginM: input.marginM,
+  });
+  const rejected = {
+    "outside-usable-roof": 0,
+    "reserved-zone": 0,
+    "snow-guard": 0,
+  };
+  if (usableRoof.status !== "valid" || !usableRoof.components.length) {
+    return {
+      engineVersion: ADVANCED_BLOCK_ENGINE_VERSION,
+      usableRoof,
+      candidates: [],
+      validBlocks: [],
+      validModules: [],
+      requestedBlockCount,
+      validBlockCount: 0,
+      requestedModuleCount:
+        requestedBlockCount * input.blockDefinition.moduleSlots.length,
+      validModuleCount: 0,
+      complete: false,
+      rejected,
+      diagnostics: [...usableRoof.diagnostics],
+    };
+  }
+
+  const rotationCartesianDeg =
+    geographicPlanarOrientationToCartesianRotationDeg(
+      input.blockDefinition.planarOrientationDeg,
+    );
+  const gridOriginM = input.gridOriginM ?? { x: 0, y: 0 };
+  const localRoofComponents = usableRoof.components.map((component) =>
+    component.map((point) =>
+      toGridLocal(point, gridOriginM, rotationCartesianDeg),
+    ),
+  );
+  const roofBounds = combinePolygonBounds(localRoofComponents);
+  const footprintBounds = polygonBounds(input.blockDefinition.blockFootprint);
+  const columns = fixedAxisPositions({
+    min: roofBounds.minX - footprintBounds.minX,
+    max: roofBounds.maxX - footprintBounds.maxX,
+    pitch: input.blockDefinition.pitchM.x,
+    count: input.blocksPerRow,
+    phase: input.phaseX ?? 0,
+    anchor: input.anchorX ?? "center",
+  });
+  const rows = fixedAxisPositions({
+    min: roofBounds.minY - footprintBounds.minY,
+    max: roofBounds.maxY - footprintBounds.maxY,
+    pitch: input.blockDefinition.pitchM.y,
+    count: input.rowCount,
+    phase: input.phaseY ?? 0,
+    anchor: input.anchorY ?? "center",
+  });
+
+  const candidates = rows.flatMap((rowPosition, rowIndex) =>
+    columns.map((columnPosition, columnIndex) => {
+      const centerM = toWorld(
+        { x: columnPosition, y: rowPosition },
+        gridOriginM,
+        rotationCartesianDeg,
+      );
+      const block = instantiateAdvancedBlock({
+        definition: input.blockDefinition,
+        centerM,
+        blockIndex: rowIndex * input.blocksPerRow + columnIndex,
+        columnIndex,
+        rowIndex,
+      });
+      const validation = validatePlacementFootprint({
+        footprint: block.footprint,
+        usableRoof,
+        reservedZones: input.reservedZones,
+        snowGuards: input.snowGuards,
+      });
+      for (const reason of validation.reasons) rejected[reason] += 1;
+      return { block, valid: validation.valid, reasons: validation.reasons };
+    }),
+  );
+  const validBlocks = candidates
+    .filter((candidate) => candidate.valid)
+    .map((candidate) => candidate.block);
+  const validModules = validBlocks.flatMap(expandBlockToModules);
+  const requestedModuleCount =
+    requestedBlockCount * input.blockDefinition.moduleSlots.length;
+
+  return {
+    engineVersion: ADVANCED_BLOCK_ENGINE_VERSION,
+    usableRoof,
+    candidates,
+    validBlocks,
+    validModules,
+    requestedBlockCount,
+    validBlockCount: validBlocks.length,
+    requestedModuleCount,
+    validModuleCount: validModules.length,
+    complete: validBlocks.length === requestedBlockCount,
+    rejected,
+    diagnostics: [...usableRoof.diagnostics],
   };
 }

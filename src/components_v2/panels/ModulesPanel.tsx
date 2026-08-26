@@ -33,6 +33,7 @@ import {
   computeStandardDraftPanels,
   hasCommittedPanelsForRoof,
   resolveRoofPlanningMode,
+  setAdvancedSurfaceKind,
 } from "../modules/advanced/advancedPlanningApplication";
 
 type Pt = { x: number; y: number };
@@ -125,6 +126,15 @@ export default function ModulesPanel() {
   const standardDraft = selectedDraft?.targetMode === "standard" ? selectedDraft : undefined;
   const displayedModules = standardDraft?.modules ?? modules;
   const displayedPanelId = standardDraft?.panelSpecId ?? selectedPanelId;
+  const customerRoofType = displayMode === "standard"
+    ? "pitched"
+    : advancedConfig?.surface.kind === "flat"
+      ? "flat"
+      : "preserved-green";
+  const persistedAdvancedSurfaceKind =
+    persistedPlanning.status === "supported-advanced"
+      ? persistedPlanning.config.surface.kind
+      : undefined;
 
   const patchDisplayedModules = React.useCallback((patch: Partial<typeof modules>) => {
     if (selectedRoof && standardDraft) {
@@ -162,19 +172,28 @@ export default function ModulesPanel() {
 
   const chooseAdvanced = React.useCallback(() => {
     if (!selectedRoof || !selSpec) return;
-    if (selectedDraft?.targetMode === "standard" && persistedPlanning.status === "supported-advanced") {
+    if (
+      selectedDraft?.targetMode === "standard" &&
+      persistedPlanning.status === "supported-advanced" &&
+      persistedAdvancedSurfaceKind === "flat"
+    ) {
       clearRoofPlanningDraft(selectedRoof.id);
       return;
     }
     if (advancedConfig) {
-      setRoofPlanningDraft(selectedRoof.id, { targetMode: "advanced", config: advancedConfig });
+      setRoofPlanningDraft(selectedRoof.id, {
+        targetMode: "advanced",
+        config: advancedConfig.surface.kind === "flat"
+          ? advancedConfig
+          : setAdvancedSurfaceKind({ config: advancedConfig, kind: "flat" }),
+      });
       return;
     }
     setRoofPlanningDraft(selectedRoof.id, {
       targetMode: "advanced",
       config: createInitialAdvancedPlanning({ panel: selSpec, standardModules: modules }),
     });
-  }, [advancedConfig, clearRoofPlanningDraft, modules, persistedPlanning.status, selSpec, selectedDraft?.targetMode, selectedRoof, setRoofPlanningDraft]);
+  }, [advancedConfig, clearRoofPlanningDraft, modules, persistedAdvancedSurfaceKind, persistedPlanning.status, selSpec, selectedDraft?.targetMode, selectedRoof, setRoofPlanningDraft]);
 
   const chooseStandard = React.useCallback(() => {
     if (!selectedRoof || !selectedPanelId) return;
@@ -644,27 +663,32 @@ export default function ModulesPanel() {
 
       {selectedRoof && (
         <section className="space-y-2">
-          <label className={labelSm}>Planungsmodus</label>
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/25 p-1" role="group" aria-label="Planungsmodus">
-            <button
-              type="button"
-              onClick={chooseStandard}
-              className={`h-8 rounded-md text-[11px] font-medium ${displayMode === "standard" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-            >
-              Standard
-            </button>
+          <label className={labelSm}>Dachtyp</label>
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/25 p-1" role="group" aria-label="Dachtyp">
             <button
               type="button"
               onClick={chooseAdvanced}
               disabled={!selSpec}
-              className={`h-8 rounded-md text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-40 ${displayMode === "advanced" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              className={`h-8 rounded-md text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-40 ${customerRoofType === "flat" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
             >
-              Advanced
+              Flachdach
+            </button>
+            <button
+              type="button"
+              onClick={chooseStandard}
+              className={`h-8 rounded-md text-[11px] font-medium ${customerRoofType === "pitched" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
+              Schrägdach
             </button>
           </div>
+          {customerRoofType === "preserved-green" && (
+            <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] text-muted-foreground">
+              Die bestehende Gründach-Konfiguration bleibt gespeichert. Neue Gründach-Planungen sind in diesem Workflow derzeit ausgeblendet.
+            </p>
+          )}
           {displayMode === "advanced" && !advancedConfig && (
             <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-[10px] text-destructive">
-              Diese Advanced-Konfiguration wird von dieser SOLA-Version nicht unterstützt. Die gespeicherten Module bleiben unverändert.
+              Diese gespeicherte Flachdach-Konfiguration wird von dieser SOLA-Version nicht unterstützt. Die gespeicherten Module bleiben unverändert.
             </p>
           )}
         </section>
@@ -672,7 +696,7 @@ export default function ModulesPanel() {
 
       {selectedRoof && <RoofDimensionsControl roof={selectedRoof} />}
 
-      {selectedRoof && displayMode === "advanced" && advancedConfig && (
+      {selectedRoof && customerRoofType === "flat" && advancedConfig && (
         <AdvancedModulesPanel
           roof={selectedRoof}
           config={advancedConfig as AdvancedSurfacePlanningV1}
@@ -701,6 +725,22 @@ export default function ModulesPanel() {
           <span className="pb-1 text-[10px] text-muted-foreground">m</span>
         </div>
         {/* Abstand tra pannelli rimane 0,02 interno/non visibile */}
+      </section>
+
+      <section className="space-y-2">
+        <label className={labelSm}>Modulabstand</label>
+        <div className="flex items-end gap-2">
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={displayedModules.spacingM}
+            onChange={(e) => patchDisplayedModules({ spacingM: Number(e.target.value) })}
+            className={inputBase}
+            aria-label="Modulabstand (m)"
+          />
+          <span className="pb-1 text-[10px] text-muted-foreground">m</span>
+        </div>
       </section>
 
       {/* === PV MODUL (select spostata qui) === */}

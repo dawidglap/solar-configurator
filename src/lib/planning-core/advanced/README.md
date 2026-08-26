@@ -57,3 +57,20 @@ row spacing. It is not a dimensional system-data sheet. Exact footprints,
 component dimensions, permitted UK-height ranges and row formulas are therefore
 not verified and no `k2-greenroof-vento` adapter exists. Green-roof V1 is
 explicitly a free geometric preliminary layout.
+
+## Customer quantity workflow
+
+The customer UI is roof-type driven: pitched roofs remain on `legacy-v1`,
+while flat roofs use the K2 Dome adapters. `surfacePlanning.mode` remains an
+internal compatibility detail and is not a customer-facing choice.
+
+`advanced.layout.quantityMode` is optional. Missing or `auto` keeps the
+existing Geometry-v2 auto-fill. `fixed` persists only `blocksPerRow` and
+`rowCount`; total blocks/modules are always derived. The fixed-grid Core keeps
+every requested candidate and reports invalid roof/obstacle placements instead
+of silently reducing the matrix. K2 formulas and adapter versions are not
+changed by this application policy.
+
+`Parallel zur Dachkante` aligns the K2 block-local X/row axis to the physical
+main edge of a rectangle. Generic polygons use their longest edge as the V1
+fallback. The action only updates the draft azimuth and never applies a layout.

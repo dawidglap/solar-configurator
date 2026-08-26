@@ -116,6 +116,33 @@ export type ComputeAdvancedBlockLayoutInput = {
   snowGuards?: SegmentObstacle[];
 };
 
+export type ComputeFixedAdvancedBlockLayoutInput =
+  ComputeAdvancedBlockLayoutInput & {
+    blocksPerRow: number;
+    rowCount: number;
+  };
+
+export type FixedAdvancedBlockCandidate = {
+  block: PlacedAdvancedBlock;
+  valid: boolean;
+  reasons: PlacementInvalidReason[];
+};
+
+export type FixedAdvancedBlockLayoutResult = {
+  engineVersion: typeof ADVANCED_BLOCK_ENGINE_VERSION;
+  usableRoof: UsableRoofGeometry;
+  candidates: FixedAdvancedBlockCandidate[];
+  validBlocks: PlacedAdvancedBlock[];
+  validModules: ExpandedAdvancedModule[];
+  requestedBlockCount: number;
+  validBlockCount: number;
+  requestedModuleCount: number;
+  validModuleCount: number;
+  complete: boolean;
+  rejected: Record<PlacementInvalidReason, number>;
+  diagnostics: GeometryDiagnostic[];
+};
+
 export type AdvancedBlockLayoutResult = {
   engineVersion: typeof ADVANCED_BLOCK_ENGINE_VERSION;
   usableRoof: UsableRoofGeometry;
