@@ -6,6 +6,7 @@ import { usePlannerV2Store } from '@/components_v2/state/plannerV2Store';
 import type { Pt, PanelInstance } from '@/types/planner';
 
 import { overlapsReservedRect, overlapsSnowGuard } from '../../zones/utils';
+import { isPrimaryPointerButton } from '../../canvas/interactionPolicy';
 
 
 type ModRect = { cx: number; cy: number; wPx: number; hPx: number; angleDeg: number };
@@ -14,6 +15,7 @@ type Props = {
   stageRef: React.RefObject<any>;
   toImgCoords: (x: number, y: number) => Pt;
   onDraftChange?: (draft: { a: Pt; b: Pt; poly: Pt[]; rects: ModRect[] } | null) => void;
+  cancelVersion?: number;
 };
 
 /* --------------------------- helpers geometrici --------------------------- */
@@ -220,7 +222,7 @@ function rectsForSelection(poly: Pt[], basics: ReturnType<typeof gridBasics>): M
 }
 
 /* -------------------------------- component -------------------------------- */
-export default function FillAreaController({ stageRef, toImgCoords, onDraftChange }: Props) {
+export default function FillAreaController({ stageRef, toImgCoords, onDraftChange, cancelVersion = 0 }: Props) {
   const step = usePlannerV2Store((s) => s.step);
   const tool = usePlannerV2Store((s) => s.tool);
   const layers = usePlannerV2Store((s) => s.layers);
@@ -268,7 +270,8 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       onDraftChange?.({ a, b, poly, rects });
     };
 
-    const handleClick = () => {
+    const handleClick = (event: { evt?: { button?: number } }) => {
+      if (!isPrimaryPointerButton(event?.evt?.button)) return;
       const p = getMouseImg();
       if (!p) return;
 
@@ -331,7 +334,7 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       draftRef.current = null;
       onDraftChange?.(null);
     };
-  }, [stageRef, step, tool, layers, selectedId, modules.gridAngleDeg, toImgCoords, onDraftChange, addPanelsForRoof]);
+  }, [stageRef, step, tool, layers, selectedId, modules.gridAngleDeg, toImgCoords, onDraftChange, addPanelsForRoof, cancelVersion]);
 
   return null;
 }

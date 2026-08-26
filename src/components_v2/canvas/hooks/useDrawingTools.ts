@@ -5,11 +5,15 @@ import * as React from 'react';
 import type { Pt } from '../../canvas/geom';
 import { rectFrom3WithAz } from '../../canvas/geom';
 import { snapParallelPerp, isNear } from '../utils/snap';
+import type { Tool } from '@/types/planner';
+import {
+    isPrimaryPointerButton,
+    resolveDraftRoofTarget,
+    shouldCancelDraftOnToolChange,
+    shouldIgnorePlannerHotkeyTarget,
+} from '../interactionPolicy';
 // undo/redo globale (resta per le azioni “committed”)
 import { history } from '../../state/history';
-
-// Tool supportati
-type Tool = 'select' | 'draw-roof' | 'draw-rect' | 'draw-reserved' | string;
 
 type Layer = { id: string; name: string; points: Pt[] };
 
@@ -32,42 +36,14 @@ type KeyboardEventMaybeImmediate = KeyboardEvent & {
     stopImmediatePropagation?: () => void;
 };
 
-/** Point-in-polygon (ray casting) per verificare se il punto è dentro una falda */
-function isPointInPolygon(p: Pt, poly: Pt[]): boolean {
-    let inside = false;
-    const n = poly.length;
-    for (let i = 0, j = n - 1; i < n; j = i++) {
-        const xi = poly[i].x, yi = poly[i].y;
-        const xj = poly[j].x, yj = poly[j].y;
-
-        const intersect =
-            yi > p.y !== yj > p.y &&
-            p.x <
-            ((xj - xi) * (p.y - yi)) / ((yj - yi) || 1e-9) +
-            xi;
-
-        if (intersect) inside = !inside;
-    }
-    return inside;
-}
-
-/** true se il punto è dentro **almeno una** falda */
-function isInsideAnyRoof(p: Pt, layers: Layer[]): boolean {
-    for (const l of layers) {
-        if (!l.points || l.points.length < 3) continue;
-        if (isPointInPolygon(p, l.points)) return true;
-    }
-    return false;
-}
-
 export function useDrawingTools<T extends RoofAreaLike>(args: {
     tool: Tool;
     layers: Layer[];
     addRoof: (r: T) => void;
     select: (id?: string) => void;
     toImgCoords: (stageX: number, stageY: number) => Pt;
-    onZoneCommit?: (poly4: Pt[]) => void; // per Hindernis
-    onSnowGuardCommit?: (p1: Pt, p2: Pt) => void; // Schneefang
+    onZoneCommit?: (poly4: Pt[], roofId: string) => void; // per Hindernis
+    onSnowGuardCommit?: (p1: Pt, p2: Pt, roofId: string) => void; // Schneefang
     snap?: SnapOptions;
     setTool: (t: Tool) => void;
 }) {
@@ -85,6 +61,8 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     const [rectDraft, setRectDraft] = React.useState<Pt[] | null>(null); // [A,B] poi C al commit
     const [mouseImg, setMouseImg] = React.useState<Pt | null>(null);
     const [snowDraft, setSnowDraft] = React.useState<Pt[] | null>(null);
+    const reservedTargetRoofIdRef = React.useRef<string | undefined>(undefined);
+    const snowTargetRoofIdRef = React.useRef<string | undefined>(undefined);
 
     // ——— stack redo locali (solo durante il disegno) ———
     const polyRedoRef = React.useRef<Pt[]>([]);
@@ -95,9 +73,41 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     const polyRef = React.useRef(drawingPoly);
     const rectRef = React.useRef(rectDraft);
 
-    React.useEffect(() => { toolRef.current = tool; }, [tool]);
     React.useEffect(() => { polyRef.current = drawingPoly; }, [drawingPoly]);
     React.useEffect(() => { rectRef.current = rectDraft; }, [rectDraft]);
+
+    const clearDraftState = React.useCallback(() => {
+        setDrawingPoly(null);
+        setRectDraft(null);
+        setSnowDraft(null);
+        setMouseImg(null);
+        polyRedoRef.current = [];
+        rectRedoRef.current = [];
+        reservedTargetRoofIdRef.current = undefined;
+        snowTargetRoofIdRef.current = undefined;
+    }, []);
+
+    const previousToolRef = React.useRef(tool);
+    React.useEffect(() => {
+        const previousTool = previousToolRef.current;
+        if (shouldCancelDraftOnToolChange(previousTool, tool)) {
+            clearDraftState();
+        }
+        previousToolRef.current = tool;
+        toolRef.current = tool;
+    }, [tool, clearDraftState]);
+
+    const hasDraft = Boolean(drawingPoly?.length || rectDraft?.length || snowDraft?.length);
+    const cancelDraft = React.useCallback(() => {
+        const didCancel = Boolean(
+            polyRef.current?.length ||
+            rectRef.current?.length ||
+            snowTargetRoofIdRef.current ||
+            reservedTargetRoofIdRef.current,
+        );
+        clearDraftState();
+        return didCancel;
+    }, [clearDraftState]);
 
     // evita doppio-commit su draw-reserved (click + dblclick ravvicinati)
     const lastReservedCommitTs = React.useRef(0);
@@ -190,11 +200,14 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         if (now - lastReservedCommitTs.current < RESERVED_COOLDOWN_MS) return;
         lastReservedCommitTs.current = now;
 
-        history.push('add reserved zone'); // snapshot PRIMA
+        const targetRoofId = reservedTargetRoofIdRef.current;
+        if (!targetRoofId) return;
 
-        onZoneCommit?.(pts);
+        history.push('add reserved zone'); // snapshot PRIMA
+        onZoneCommit?.(pts, targetRoofId);
         setDrawingPoly(null);
         polyRedoRef.current = [];
+        reservedTargetRoofIdRef.current = undefined;
         // 🔵 NON deselezioniamo la falda: lasciamo intatta la selezione corrente
         // (CanvasStage si occupa già di NON selezionare la zona)
         setTool('select');  // torna alla selezione
@@ -202,23 +215,23 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
 
     // —— CLICK handler unico
     const onStageClick = React.useCallback((e: any) => {
+        if (!isPrimaryPointerButton(e?.evt?.button)) return;
         const pos = e.target.getStage().getPointerPosition();
         if (!pos) return;
         const p = toImgCoords(pos.x, pos.y);
 
-        // 🚧 GUARD: Hindernis & Schneefang SOLO dentro una falda
-        if ((tool === 'draw-reserved' || tool === 'draw-snow-guard')) {
-            const insideRoof = isInsideAnyRoof(p, layers);
-            if (!insideRoof) {
-                // reset di qualunque draft parziale
-                setDrawingPoly(null);
-                setRectDraft(null);
-                setSnowDraft(null);
-                polyRedoRef.current = [];
-                rectRedoRef.current = [];
-                setTool('select');
-                return;
-            }
+        // Il primo punto fissa la falda owner; i successivi non possono cambiarla.
+        if (tool === 'draw-reserved' || tool === 'draw-snow-guard') {
+            const targetRef = tool === 'draw-reserved'
+                ? reservedTargetRoofIdRef
+                : snowTargetRoofIdRef;
+            const target = resolveDraftRoofTarget({
+                point: p,
+                roofs: layers,
+                targetRoofId: targetRef.current,
+            });
+            if (!target.accepted || !target.targetRoofId) return;
+            targetRef.current = target.targetRoofId;
         }
 
         // ── Protezione neve: 2 click → linea
@@ -233,8 +246,11 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
             if (snowDraft.length === 1) {
                 const p1 = snowDraft[0];
                 const p2 = p;
-                onSnowGuardCommit?.(p1, p2);
+                const targetRoofId = snowTargetRoofIdRef.current;
+                if (!targetRoofId) return;
+                onSnowGuardCommit?.(p1, p2, targetRoofId);
                 setSnowDraft(null);
+                snowTargetRoofIdRef.current = undefined;
                 setTool('select'); // come gli altri tool di disegno
                 return;
             }
@@ -306,6 +322,12 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
             }
 
             const { pt } = snapParallelPerp(last, p, refDir, SNAP_TOL_DEG);
+            const target = resolveDraftRoofTarget({
+                point: pt,
+                roofs: layers,
+                targetRoofId: reservedTargetRoofIdRef.current,
+            });
+            if (!target.accepted) return;
             addDraftPoint(pt); // pulisce redo locale
             return;
         }
@@ -347,6 +369,10 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     // —— Keybindings locali: Undo/Redo SOLO in modalità disegno
     React.useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
+            if (
+                shouldIgnorePlannerHotkeyTarget(e.target) ||
+                shouldIgnorePlannerHotkeyTarget(document.activeElement)
+            ) return;
             const t = toolRef.current;
             // se non sto disegnando, non intercetto
             if (t !== 'draw-roof' && t !== 'draw-reserved' && t !== 'draw-rect') return;
@@ -379,21 +405,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
                 return;
             }
 
-            // ESC/ENTER come prima (quando sto disegnando)
-            if ((t === 'draw-roof' || t === 'draw-reserved') && key === 'escape') {
-                setDrawingPoly(null);
-                polyRedoRef.current = [];
-                e.preventDefault();
-                e.stopPropagation();
-                (e as KeyboardEventMaybeImmediate).stopImmediatePropagation?.();
-            }
-            if (t === 'draw-rect' && key === 'escape') {
-                setRectDraft(null);
-                rectRedoRef.current = [];
-                e.preventDefault();
-                e.stopPropagation();
-                (e as KeyboardEventMaybeImmediate).stopImmediatePropagation?.();
-            }
             if ((t === 'draw-roof' || t === 'draw-reserved') && key === 'enter' && polyRef.current && polyRef.current.length >= 3) {
                 if (t === 'draw-roof') finishPolygon(polyRef.current);
                 else finishZone(polyRef.current);
@@ -434,5 +445,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         onStageDblClick,
         snowDraft,
         rectPreview,
+        hasDraft,
+        cancelDraft,
     };
 }

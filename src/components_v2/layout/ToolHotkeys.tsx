@@ -14,11 +14,7 @@ import {
   selectLegacyStandardObstacles,
   STANDARD_AUTO_LAYOUT_POLICY,
 } from '../modules/legacyStandardApplicationPolicy';
-
-const isTextTarget = (t: EventTarget | null) => {
-  const el = t as HTMLElement | null;
-  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || (el as any).isContentEditable);
-};
+import { shouldIgnorePlannerHotkeyTarget } from '../canvas/interactionPolicy';
 
 
 
@@ -119,7 +115,10 @@ export default function ToolHotkeys() {
     const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
     const onKey = (e: KeyboardEvent) => {
-      if (isTextTarget(e.target)) return;
+      if (
+        shouldIgnorePlannerHotkeyTarget(e.target) ||
+        shouldIgnorePlannerHotkeyTarget(document.activeElement)
+      ) return;
       // Evita l'undo/redo globale mentre sto disegnando (lascia fare all'hook)
 const t = usePlannerV2Store.getState().tool;
 if (t === 'draw-roof' || t === 'draw-reserved' || t === 'draw-rect') {
@@ -141,7 +140,7 @@ if (t === 'draw-roof' || t === 'draw-reserved' || t === 'draw-rect') {
 
       // TOOLS — sempre disponibili
       if (k === 'a') { applyTool('select', e); return; }
-      if (k === 'escape') { setTool('select' as any); return; }
+      if (k === 'escape') return; // CanvasStage gestisce ESC con una sola priorità.
       if (k === 'd') { applyTool('draw-roof', e); return; }
       if (k === 'r') { applyTool('draw-rect', e); return; }
       if (k === 'h') { applyTool('draw-reserved', e); return; }

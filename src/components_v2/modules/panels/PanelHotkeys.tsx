@@ -264,7 +264,6 @@ export default function PanelHotkeys(props: Props) {
   const selectedIds = usePlannerV2Store((s) => s.selectedPanelIds);
 
   const setSelectedPanels = usePlannerV2Store((s) => s.setSelectedPanels);
-  const clearPanelSelection = usePlannerV2Store((s) => s.clearPanelSelection);
 
   const deletePanelFromStore = usePlannerV2Store((s) => s.deletePanel);
   const deletePanelsBulk = usePlannerV2Store((s) => s.deletePanelsBulk);
@@ -429,15 +428,6 @@ if (isArrowKey) {
 }
 
 
-      // ESC → clear
-      if (key === 'Escape') {
-        if (selectedIds.length) {
-          e.preventDefault();
-          clearPanelSelection();
-        }
-        return;
-      }
-
       // Cmd/Ctrl + A → select all
       if ((key === 'a' || key === 'A') && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -532,7 +522,6 @@ if (isArrowKey) {
     tool,
     setTool,
     panelById,
-    clearPanelSelection,
     setSelectedPanels,
     deletePanelFromStore,
     deletePanelsBulk,

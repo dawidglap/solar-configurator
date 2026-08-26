@@ -312,7 +312,13 @@ export default function RoofShapesLayer({
   // Snapshot punti per drag di gruppo (UNA sola dichiarazione)
   const groupStartPtsRef = useRef<Record<string, Pt[]>>({});
 
-  // --- Keyboard: ESC / DELETE
+  // La selezione di gruppo segue la selezione primaria; ESC è gestito una sola
+  // volta da CanvasStage e porta selectedId a undefined.
+  useEffect(() => {
+    if (!selectedId) setGroupSel([]);
+  }, [selectedId]);
+
+  // --- Keyboard: DELETE
   useEffect(() => {
     const isEditing = (t: EventTarget | null): boolean => {
       const el = t as HTMLElement | null;
@@ -348,11 +354,6 @@ export default function RoofShapesLayer({
 
     const onKey = (e: KeyboardEvent) => {
       if (isEditing(e.target)) return;
-
-      if (e.key === "Escape") {
-        setGroupSel([]);
-        onSelect(undefined);
-      }
 
       if (e.key === "Delete" || e.key === "Backspace") {
         // ⛔️ in modules non eliminiamo falde

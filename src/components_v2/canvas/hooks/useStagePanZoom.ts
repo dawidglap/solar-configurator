@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 type Size = { w: number; h: number };
 type View = { scale?: number; fitScale?: number; offsetX?: number; offsetY?: number };
@@ -16,6 +16,16 @@ export function useStagePanZoom({
     view: View;
     setView: (patch: Partial<View>) => void;
 }) {
+    const [isRightPanning, setIsRightPanning] = useState(false);
+    const viewRef = useRef(view);
+    viewRef.current = view;
+    const rightPanRef = useRef<{
+        clientX: number;
+        clientY: number;
+        offsetX: number;
+        offsetY: number;
+    } | null>(null);
+
     const clampOffset = useCallback(
         (scale: number, ox: number, oy: number) => {
             if (!img) return { x: 0, y: 0 };
@@ -87,5 +97,54 @@ export function useStagePanZoom({
         [view.scale, view.fitScale, clampOffset, setView]
     );
 
-    return { canDrag, onWheel, onDragMove };
+    const beginRightPan = useCallback(
+        (event: MouseEvent) => {
+            if (event.button !== 2) return false;
+
+            rightPanRef.current = {
+                clientX: event.clientX,
+                clientY: event.clientY,
+                offsetX: viewRef.current.offsetX || 0,
+                offsetY: viewRef.current.offsetY || 0,
+            };
+            setIsRightPanning(true);
+            return true;
+        },
+        []
+    );
+
+    const moveRightPan = useCallback(
+        (event: MouseEvent) => {
+            const start = rightPanRef.current;
+            if (!start) return false;
+
+            const currentView = viewRef.current;
+            const scale = currentView.scale || currentView.fitScale || 1;
+            const clamped = clampOffset(
+                scale,
+                start.offsetX + event.clientX - start.clientX,
+                start.offsetY + event.clientY - start.clientY,
+            );
+            setView({ offsetX: clamped.x, offsetY: clamped.y });
+            return true;
+        },
+        [clampOffset, setView]
+    );
+
+    const endRightPan = useCallback(() => {
+        if (!rightPanRef.current) return false;
+        rightPanRef.current = null;
+        setIsRightPanning(false);
+        return true;
+    }, []);
+
+    return {
+        canDrag,
+        isRightPanning,
+        onWheel,
+        onDragMove,
+        beginRightPan,
+        moveRightPan,
+        endRightPan,
+    };
 }

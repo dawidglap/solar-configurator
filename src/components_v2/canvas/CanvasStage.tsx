@@ -58,33 +58,16 @@ import ReportScreen from "../steps/ReportScreen";
 import OfferScreen from "../steps/OfferScreen";
 import { plannerTheme } from "../theme/plannerTheme";
 import PlannerEmptyState from "../layout/PlannerEmptyState";
-
-function pointInPoly(p: Pt, poly: Pt[]): boolean {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].x,
-      yi = poly[i].y;
-    const xj = poly[j].x,
-      yj = poly[j].y;
-    const inter =
-      yi > p.y !== yj > p.y &&
-      p.x < ((xj - xi) * (p.y - yi)) / (yj - yi || 1e-9) + xi;
-    if (inter) inside = !inside;
-  }
-  return inside;
-}
-
-function isInsideAnyRoof(
-  p: Pt,
-  roofs: { id: string; points: Pt[] }[],
-): boolean {
-  for (const r of roofs) {
-    if (r.points?.length >= 3 && pointInPoly(p, r.points)) {
-      return true;
-    }
-  }
-  return false;
-}
+import type { Tool } from "@/types/planner";
+import {
+  findRoofAtPoint,
+  isDrawingInteractionTool,
+  isPrimaryPointerButton,
+  resolveEscapeAction,
+  resolveInteractionCursor,
+  resolvePlannerInteractionMode,
+  shouldIgnorePlannerHotkeyTarget,
+} from "./interactionPolicy";
 
 const deg2rad = (d: number) => (d * Math.PI) / 180;
 function centroid(pts: Pt[]) {
@@ -190,11 +173,10 @@ export default function CanvasStage() {
 
   const selectZone = usePlannerV2Store((s) => s.selectZone); // ⬅️ nuovo
 
-  // wrapper per soddisfare useDrawingTools che tipizza setTool come (t: string) => void
+  // Boundary esplicito tra lo store e l'hook di disegno.
   const setToolForHook = useCallback(
-    (t: string) => {
-      // se hai un tipo Tool a union string, questo cast è sicuro a runtime
-      setTool(t as any);
+    (t: Tool) => {
+      setTool(t);
     },
     [setTool],
   );
@@ -282,9 +264,6 @@ export default function CanvasStage() {
       window.removeEventListener("keydown", onKey, { capture: true } as any);
   }, []);
 
-  // inside CanvasStage, near other useCallbacks
-  const ignoreSelect = useCallback((_: string | undefined) => {}, []);
-
   // draft del riempi-area
   const [fillDraft, setFillDraft] = useState<{
     a: Pt;
@@ -298,6 +277,7 @@ export default function CanvasStage() {
       angleDeg: number;
     }[];
   } | null>(null);
+  const [fillCancelVersion, setFillCancelVersion] = useState(0);
 
   const selectedRoof = useMemo(
     () => layers.find((l) => l.id === selectedId) ?? null,
@@ -457,30 +437,6 @@ export default function CanvasStage() {
         }
       }
 
-      // ---------- ESC con PRIORITÀ ----------
-      if (key === "Escape") {
-        if (st.selectedZoneId) {
-          st.setSelectedZone?.(undefined);
-          ev.preventDefault();
-          ev.stopPropagation();
-          ev.stopImmediatePropagation?.();
-          return;
-        }
-        if (st.clearPanelSelection) {
-          st.clearPanelSelection();
-          ev.preventDefault();
-          ev.stopPropagation();
-          ev.stopImmediatePropagation?.();
-          return;
-        }
-        if (st.selectedId) {
-          st.select?.(undefined);
-          ev.preventDefault();
-          ev.stopPropagation();
-          ev.stopImmediatePropagation?.();
-          return;
-        }
-      }
     };
 
     // capture:true → la guardia corre PRIMA degli altri listener
@@ -538,7 +494,15 @@ export default function CanvasStage() {
   };
 
   // pan/zoom
-  const { canDrag, onWheel, onDragMove } = useStagePanZoom({
+  const {
+    canDrag,
+    isRightPanning,
+    onWheel,
+    onDragMove,
+    beginRightPan,
+    moveRightPan,
+    endRightPan,
+  } = useStagePanZoom({
     img,
     size,
     view,
@@ -583,26 +547,25 @@ export default function CanvasStage() {
     onStageDblClick,
     snowDraft,
     rectPreview,
+    hasDraft: hasDrawingDraft,
+    cancelDraft: cancelDrawingDraft,
   } = useDrawingTools({
     tool: drawingEnabled ? tool : "select",
     layers,
     addRoof,
     select,
     toImgCoords,
-    onZoneCommit: (poly4: Pt[]) => {
-      if (!selectedId) return;
+    onZoneCommit: (poly4: Pt[], targetRoofId: string) => {
       plannerHistory.push("add reserved zone");
       addZone({
         id: nanoid(),
-        roofId: selectedId,
+        roofId: targetRoofId,
         type: "riservata",
         points: poly4,
       });
       selectZone(undefined);
     },
-    // 👇👇👇 NUOVO
-    onSnowGuardCommit: (p1: Pt, p2: Pt) => {
-      if (!selectedId) return;
+    onSnowGuardCommit: (p1: Pt, p2: Pt, targetRoofId: string) => {
       const mpp = snap.mppImage;
       if (!mpp) return;
 
@@ -613,7 +576,7 @@ export default function CanvasStage() {
 
       addSnowGuard({
         id: nanoid(),
-        roofId: selectedId,
+        roofId: targetRoofId,
         p1,
         p2,
         lengthM: Number(lenM.toFixed(2)),
@@ -626,6 +589,108 @@ export default function CanvasStage() {
         : { tolDeg: 5, closeRadius: 5 },
     setTool: setToolForHook,
   });
+
+  // Il pan col tasto destro vive sul container Konva, quindi non può essere
+  // intercettato da roof/panel/zone sottostanti. Il context menu è bloccato
+  // soltanto dentro questo canvas.
+  useEffect(() => {
+    const stage = stageRef.current?.getStage?.();
+    const container = stage?.container?.() as HTMLDivElement | undefined;
+    if (!container) return;
+
+    const onMouseDown = (event: MouseEvent) => {
+      if (!beginRightPan(event)) return;
+      container.focus();
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onMouseMove = (event: MouseEvent) => {
+      if (!moveRightPan(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onMouseUp = (event: MouseEvent) => {
+      if (!endRightPan()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onContextMenu = (event: MouseEvent) => event.preventDefault();
+
+    container.addEventListener("mousedown", onMouseDown, { capture: true });
+    container.addEventListener("contextmenu", onContextMenu);
+    window.addEventListener("mousemove", onMouseMove, { capture: true });
+    window.addEventListener("mouseup", onMouseUp, { capture: true });
+    window.addEventListener("blur", endRightPan);
+
+    return () => {
+      container.removeEventListener("mousedown", onMouseDown, { capture: true });
+      container.removeEventListener("contextmenu", onContextMenu);
+      window.removeEventListener("mousemove", onMouseMove, { capture: true });
+      window.removeEventListener("mouseup", onMouseUp, { capture: true });
+      window.removeEventListener("blur", endRightPan);
+      endRightPan();
+    };
+  }, [img, size.w, size.h, beginRightPan, moveRightPan, endRightPan]);
+
+  const hasFillDraft = Boolean(fillDraft);
+
+  // Un solo owner per ESC: draft, pannelli, zona, Schneefang, falda.
+  useEffect(() => {
+    type EscapeKeyboardEvent = KeyboardEvent & {
+      stopImmediatePropagation?: () => void;
+    };
+
+    const onEscape = (event: EscapeKeyboardEvent) => {
+      if (event.key !== "Escape") return;
+
+      const store = usePlannerV2Store.getState();
+      const action = resolveEscapeAction({
+        ignoredTarget:
+          shouldIgnorePlannerHotkeyTarget(event.target) ||
+          shouldIgnorePlannerHotkeyTarget(document.activeElement),
+        hasDraft: hasDrawingDraft || hasFillDraft,
+        selectedPanelCount: store.selectedPanelIds?.length ?? 0,
+        hasSelectedZone: Boolean(store.selectedZoneId),
+        hasSelectedSnowGuard: Boolean(store.selectedSnowGuardId),
+        hasSelectedRoof: Boolean(store.selectedId),
+      });
+
+      switch (action) {
+        case "cancel-draft":
+          cancelDrawingDraft();
+          if (hasFillDraft) {
+            setFillCancelVersion((version) => version + 1);
+            setFillDraft(null);
+          }
+          break;
+        case "clear-panels":
+          store.clearPanelSelection?.();
+          break;
+        case "clear-zone":
+          store.setSelectedZone?.(undefined);
+          break;
+        case "clear-snow-guard":
+          store.setSelectedSnowGuard?.(undefined);
+          break;
+        case "clear-roof":
+          store.select?.(undefined);
+          break;
+        case "none":
+          return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+    };
+
+    window.addEventListener("keydown", onEscape, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onEscape, { capture: true });
+  }, [hasDrawingDraft, hasFillDraft, cancelDrawingDraft]);
 
   // stile tetti
   const stroke = plannerTheme.roofStroke;
@@ -641,25 +706,22 @@ export default function CanvasStage() {
     return `${Math.round(m2)} m²`;
   };
 
-  // cursore
-  const cursor =
-    drawingEnabled || (step === "modules" && tool === "fill-area")
-      ? "crosshair"
-      : canDrag && !draggingVertex
-        ? "grab"
-        : "default";
+  const drawingCapturesPointer = isDrawingInteractionTool(tool);
+  const interactionMode = resolvePlannerInteractionMode({
+    tool,
+    isRightPanning,
+    isEditing: draggingVertex || draggingPanel,
+  });
+  const cursor = resolveInteractionCursor({
+    mode: interactionMode,
+    canPan: canDrag && !draggingVertex && !draggingPanel,
+  });
 
   useEffect(() => {
     const el = stageRef.current?.getStage?.()?.container?.();
     if (!el) return;
-    if (drawingEnabled || (step === "modules" && tool === "fill-area")) {
-      el.style.cursor = "crosshair";
-    } else if (canDrag && !draggingVertex) {
-      el.style.cursor = "grab";
-    } else {
-      el.style.cursor = "default";
-    }
-  }, [drawingEnabled, step, tool, canDrag, draggingVertex]);
+    el.style.cursor = cursor;
+  }, [cursor, img, size.w, size.h]);
 
   const layerScale = view.scale || view.fitScale || 1;
 
@@ -774,10 +836,8 @@ export default function CanvasStage() {
             y={view.offsetY || 0}
             draggable={
               canDrag &&
-              tool !== "draw-roof" &&
-              tool !== "draw-rect" &&
-              tool !== "draw-reserved" &&
-              tool !== "fill-area" &&
+              !drawingCapturesPointer &&
+              !isRightPanning &&
               !draggingVertex &&
               !draggingPanel
             }
@@ -801,6 +861,7 @@ export default function CanvasStage() {
                 : undefined
             }
             onClick={(evt: any) => {
+              if (!isPrimaryPointerButton(evt?.evt?.button)) return;
               const st = stageRef.current?.getStage?.();
               const pos = st?.getPointerPosition?.();
 
@@ -809,7 +870,7 @@ export default function CanvasStage() {
                 if (!pos) return;
                 const imgPt = toImgCoords(pos.x, pos.y);
 
-                const inside = isInsideAnyRoof(imgPt, layers);
+                const inside = Boolean(findRoofAtPoint(imgPt, layers));
                 if (!inside) {
                   // click fuori da ogni falda:
                   // - dimentichiamo qualsiasi anteprima
@@ -844,9 +905,14 @@ export default function CanvasStage() {
                 store.select?.(undefined);
               }
             }}
-            onDblClick={drawingEnabled ? onStageDblClick : undefined}
-            className={
-              cursor === "grab" ? "cursor-grab active:cursor-grabbing" : ""
+            onDblClick={
+              drawingEnabled
+                ? (evt: any) => {
+                    if (isPrimaryPointerButton(evt?.evt?.button)) {
+                      onStageDblClick?.();
+                    }
+                  }
+                : undefined
             }
           >
             <Layer scaleX={layerScale} scaleY={layerScale}>
@@ -872,10 +938,11 @@ export default function CanvasStage() {
                   width={img.naturalWidth}
                   height={img.naturalHeight}
                   fill="rgba(0,0,0,0.001)"
-                  listening={tool !== "fill-area"} // ⬅️ qui
+                  listening={tool !== "fill-area"}
                   name="bg-catcher"
-                  onClick={() => {
-                    if (tool === "fill-area") return; // safety in più
+                  onClick={(event) => {
+                    if (!isPrimaryPointerButton(event?.evt?.button)) return;
+                    if (drawingCapturesPointer) return;
                     const st = usePlannerV2Store.getState();
                     st.setSelectedZone?.(undefined);
                     st.clearPanelSelection?.();
@@ -908,14 +975,16 @@ export default function CanvasStage() {
                     />
                   )}
 
-                <SonnendachOverlayKonva />
+                <Group listening={!drawingCapturesPointer}>
+                  <SonnendachOverlayKonva />
+                </Group>
 
-                {/* ⬇️ In fill-area disattivo l’ascolto eventi di tetti + zone */}
-                <Group listening={tool !== "fill-area"}>
+                {/* I drawing tool catturano il click: niente selezione/drag sottostante. */}
+                <Group listening={!drawingCapturesPointer}>
                   <RoofShapesLayer
                     layers={layers}
                     selectedId={selectedId}
-                    onSelect={tool === "fill-area" ? ignoreSelect : select}
+                    onSelect={select}
                     showAreaLabels={SHOW_AREA_LABELS}
                     stroke={stroke}
                     strokeSelected={strokeSelected}
@@ -935,7 +1004,7 @@ export default function CanvasStage() {
                     <ZonesLayer
                       key={l.id}
                       roofId={l.id}
-                      interactive={l.id === selectedId && tool !== "fill-area"}
+                      interactive={l.id === selectedId && !drawingCapturesPointer}
                       shapeMode={shapeMode}
                       toImg={toImgCoords}
                       imgW={snap.width ?? img?.naturalWidth ?? 0}
@@ -959,6 +1028,7 @@ export default function CanvasStage() {
                         strokeWidth={isSel ? 2 : 1}
                         lineCap="round"
                         lineJoin="round"
+                        listening={!drawingCapturesPointer}
                         onClick={(e) => {
                           e.cancelBubble = true;
                           setSelectedSnowGuard(sg.id);
@@ -1052,20 +1122,22 @@ export default function CanvasStage() {
                 )}
 
                 {step === "modules" && (
-                  <PanelsLayer
-                    layers={layers}
-                    textureUrl="/images/panel.webp"
-                    selectedPanelId={
-                      usePlannerV2Store.getState().selectedPanelId
-                    }
-                    onSelect={(id?: string) => {
-                      const S = usePlannerV2Store.getState();
-                      // selezione singola: aggiorna l'array di selezione (se presente nello store)
-                      if (S.setSelectedPanels)
-                        S.setSelectedPanels(id ? [id] : []);
-                    }}
-                    stageToImg={toImgCoords}
-                  />
+                  <Group listening={!drawingCapturesPointer}>
+                    <PanelsLayer
+                      layers={layers}
+                      textureUrl="/images/panel.webp"
+                      selectedPanelId={
+                        usePlannerV2Store.getState().selectedPanelId
+                      }
+                      onSelect={(id?: string) => {
+                        const S = usePlannerV2Store.getState();
+                        // selezione singola: aggiorna l'array di selezione (se presente nello store)
+                        if (S.setSelectedPanels)
+                          S.setSelectedPanels(id ? [id] : []);
+                      }}
+                      stageToImg={toImgCoords}
+                    />
+                  </Group>
                 )}
 
                 {/* …tutto il resto che avevi (preview riservata, fill-area preview, PanelsLayer, DrawingOverlays ecc.) */}
@@ -1104,6 +1176,7 @@ export default function CanvasStage() {
           stageRef={stageRef}
           toImgCoords={toImgCoords}
           onDraftChange={setFillDraft}
+          cancelVersion={fillCancelVersion}
         />
       )}
       <ToolHotkeys />
