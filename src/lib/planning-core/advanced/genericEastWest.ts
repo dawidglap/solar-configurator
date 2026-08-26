@@ -5,13 +5,13 @@ import {
   placeLocalFootprint,
 } from "./moduleGeometry";
 import {
-  ADVANCED_BLOCK_ENGINE_VERSION,
-  GENERIC_MOUNTING_DEFINITION_VERSION,
+  GENERIC_EAST_WEST_SYSTEM_ID,
+  GENERIC_MOUNTING_ADAPTER_VERSION,
   type AdvancedBlockDefinition,
   type AdvancedModuleSpecification,
 } from "./types";
 
-export const GENERIC_EAST_WEST_SYSTEM_ID = "generic-east-west" as const;
+export { GENERIC_EAST_WEST_SYSTEM_ID } from "./types";
 
 export function createGenericEastWestBlock(input: {
   module: AdvancedModuleSpecification;
@@ -52,7 +52,7 @@ export function createGenericEastWestBlock(input: {
 
   return {
     mountingSystemId: GENERIC_EAST_WEST_SYSTEM_ID,
-    definitionVersion: `${ADVANCED_BLOCK_ENGINE_VERSION}/${GENERIC_MOUNTING_DEFINITION_VERSION}`,
+    definitionVersion: GENERIC_MOUNTING_ADAPTER_VERSION,
     planarOrientationDeg: normalizeGeographicAzimuth(
       input.primaryFaceAzimuthDeg ?? 90,
     ),
@@ -100,4 +100,3 @@ export function createGenericEastWestBlock(input: {
     warnings: [],
   };
 }
-

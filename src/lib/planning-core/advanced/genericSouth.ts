@@ -1,7 +1,7 @@
 import type { AdvancedModuleSpecification } from "./types";
 import {
-  ADVANCED_BLOCK_ENGINE_VERSION,
-  GENERIC_MOUNTING_DEFINITION_VERSION,
+  GENERIC_MOUNTING_ADAPTER_VERSION,
+  GENERIC_SOUTH_SYSTEM_ID,
   type AdvancedBlockDefinition,
 } from "./types";
 import {
@@ -10,7 +10,7 @@ import {
   normalizeGeographicAzimuth,
 } from "./moduleGeometry";
 
-export const GENERIC_SOUTH_SYSTEM_ID = "generic-south" as const;
+export { GENERIC_SOUTH_SYSTEM_ID } from "./types";
 
 export function createGenericSouthBlock(input: {
   module: AdvancedModuleSpecification;
@@ -35,7 +35,7 @@ export function createGenericSouthBlock(input: {
 
   return {
     mountingSystemId: GENERIC_SOUTH_SYSTEM_ID,
-    definitionVersion: `${ADVANCED_BLOCK_ENGINE_VERSION}/${GENERIC_MOUNTING_DEFINITION_VERSION}`,
+    definitionVersion: GENERIC_MOUNTING_ADAPTER_VERSION,
     planarOrientationDeg: normalizeGeographicAzimuth(
       input.faceAzimuthDeg ?? 180,
     ),
@@ -65,4 +65,3 @@ export function createGenericSouthBlock(input: {
     warnings: [],
   };
 }
-

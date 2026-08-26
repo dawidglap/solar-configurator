@@ -28,3 +28,17 @@ used by the planner runtime yet, and Standard remains on `legacy-v1`.
 
 This engine performs geometric preliminary planning only. It contains no
 structural, ballast, wind, snow-load, rail or fastening calculations.
+
+## Applied per-roof persistence
+
+`surfacePlanning` is an optional field on a roof. Its absence remains the
+legacy Standard contract and is never materialized merely by loading a
+planning. Schema version 1 stores physical surface properties separately from
+Advanced PV inputs, including a geometric module snapshot and exact engine and
+adapter identities. Derived K2 values and generated counts are deliberately not
+authoritative persisted inputs.
+
+Consumers must resolve persisted data through `resolveSurfacePlanning` before
+using it. Unknown future systems or versions remain raw and are reported as
+unsupported Advanced data; they are never downgraded to Standard. Hydration
+does not call a mounting adapter or regenerate materialized panels.

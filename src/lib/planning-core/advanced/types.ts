@@ -11,6 +11,10 @@ import type {
 
 export const ADVANCED_BLOCK_ENGINE_VERSION = "advanced-block-v1" as const;
 export const GENERIC_MOUNTING_DEFINITION_VERSION = "generic-v1" as const;
+export const GENERIC_MOUNTING_ADAPTER_VERSION =
+  `${ADVANCED_BLOCK_ENGINE_VERSION}/${GENERIC_MOUNTING_DEFINITION_VERSION}` as const;
+export const GENERIC_SOUTH_SYSTEM_ID = "generic-south" as const;
+export const GENERIC_EAST_WEST_SYSTEM_ID = "generic-east-west" as const;
 
 export type ModuleOrientation = "portrait" | "landscape";
 
@@ -122,4 +126,3 @@ export type AdvancedBlockLayoutResult = {
   rejected: Record<PlacementInvalidReason, number>;
   diagnostics: GeometryDiagnostic[];
 };
-

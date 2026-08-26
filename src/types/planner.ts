@@ -1,5 +1,10 @@
 // src/types/planner.ts
 
+import type {
+    AdvancedPanelMetadata,
+    SurfacePlanningDocument,
+} from '@/lib/planning-core/advanced/surfacePlanning';
+
 // ───────────────────────────────────────────
 // STEP DEL PLANNER
 // ───────────────────────────────────────────
@@ -52,6 +57,9 @@ export type RoofArea = {
 
     // pronto per “zone vietate” (buchi) — opzionale
     exclusions?: Pt[][];
+
+    /** Last explicitly applied per-surface planning configuration. */
+    surfacePlanning?: SurfacePlanningDocument;
 };
 
 export type Snapshot = {
@@ -115,6 +123,9 @@ export type PanelInstance = {
     orientation: 'portrait' | 'landscape';
     panelId: string;     // riferimento al catalogo
     locked?: boolean;
+
+    /** Absent for every legacy Standard panel. */
+    advanced?: AdvancedPanelMetadata;
 };
 
 // src/types/planner.ts
