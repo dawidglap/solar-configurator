@@ -4,3 +4,4 @@ export * from "./polygon";
 export * from "./usableRoof";
 export * from "./collision";
 export * from "./grid";
+export * from "./roofDimensions";

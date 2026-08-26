@@ -20,6 +20,7 @@ import SonnendachOverlayKonva from "./SonnendachOverlayKonva";
 import OrientationHUD from "./OrientationHUD";
 import ModulesPreview from "../modules/ModulesPreview";
 import AdvancedPreviewLayer from "../modules/advanced/AdvancedPreviewLayer";
+import RoofDimensionLabelsLayer from "./RoofDimensionLabelsLayer";
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutSpacingM,
@@ -987,6 +988,7 @@ export default function CanvasStage() {
                   )}
 
                 {step === "modules" && <AdvancedPreviewLayer />}
+                <RoofDimensionLabelsLayer />
 
                 <Group listening={!drawingCapturesPointer}>
                   <SonnendachOverlayKonva />

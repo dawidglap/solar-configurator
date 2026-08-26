@@ -3,6 +3,7 @@
 
 import React from "react";
 import EdgeLengthBadges from "./EdgeLengthBadges";
+import { analyzeRectangularRoof } from "@/lib/planning-core/geometry-v2";
 
 type Pt = { x: number; y: number };
 type Roof = {
@@ -61,6 +62,7 @@ export default function RoofHudOverlay({
   // posizione sullo Stage (HUD fisso in screen-space)
   const left = ox + midXImg * s;
   const top = Math.max(8, oy + minY * s - 36);
+  const rectangle = analyzeRectangularRoof(selectedRoof.points, mpp ?? 0);
 
   return (
     <>
@@ -77,7 +79,7 @@ export default function RoofHudOverlay({
       )}
 
       {/* Etichette lunghezze lati (corrette per inclinazione e allineate alla rotazione) */}
-      {mpp && imgW > 0 && imgH > 0 && (
+      {mpp && imgW > 0 && imgH > 0 && !rectangle.supported && (
         <EdgeLengthBadges
           points={selectedRoof.points}
           mpp={mpp}

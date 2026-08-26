@@ -26,6 +26,7 @@ import {
   type AdvancedSurfacePlanningV1,
 } from "@/lib/planning-core/advanced";
 import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
+import RoofDimensionsControl from "./RoofDimensionsControl";
 import {
   createInitialAdvancedPlanning,
   createStandardPlanningDraft,
@@ -668,6 +669,8 @@ export default function ModulesPanel() {
           )}
         </section>
       )}
+
+      {selectedRoof && <RoofDimensionsControl roof={selectedRoof} />}
 
       {selectedRoof && displayMode === "advanced" && advancedConfig && (
         <AdvancedModulesPanel

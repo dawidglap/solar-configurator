@@ -20,7 +20,6 @@ function toFlatSafe(pts: Pt[]): number[] | null {
 export default function ZonesLayer({
   roofId,
   interactive = false,
-  shapeMode = 'normal',
   toImg,
   imgW,
   imgH,
@@ -36,6 +35,10 @@ export default function ZonesLayer({
   const selectedZoneId = usePlannerV2Store((s) => s.selectedZoneId);
   const setSelectedZone = usePlannerV2Store((s) => s.setSelectedZone);
   const updateZone = usePlannerV2Store((s) => s.updateZone);
+  const ownerRoofPoints = usePlannerV2Store(
+    (s) => s.layers.find((roof) => roof.id === roofId)?.points ?? [],
+  );
+  const stageScale = usePlannerV2Store((s) => s.view.scale || s.view.fitScale || 1);
 
   const zonesForRoof = useMemo(
     () => zones.filter((z) => z.roofId === roofId),
@@ -91,13 +94,15 @@ export default function ZonesLayer({
               />
             )}
 
-            {/* maniglie quadrate: solo se selezionata + modalità trapezio + interattiva */}
-            {interactive && isSel && shapeMode === 'trapezio' && (
+            {/* Precision editing: selected zones always expose their vertices. */}
+            {interactive && isSel && (
               <ZoneHandlesKonva
                 points={z.points}
+                ownerRoofPoints={ownerRoofPoints}
                 imgW={imgW}
                 imgH={imgH}
                 toImg={toImg}
+                snapRadiusImg={10 / Math.max(stageScale, 0.01)}
                 onDragStart={() => {}}
                 onDragEnd={() => {}}
                 onChange={(next) => updateZone(z.id, { points: next })}
