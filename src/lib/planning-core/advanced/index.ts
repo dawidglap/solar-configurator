@@ -4,3 +4,4 @@ export * from "./genericSouth";
 export * from "./genericEastWest";
 export * from "./blockLayout";
 export * from "./k2-s-dome";
+export * from "./k2-d-dome";
