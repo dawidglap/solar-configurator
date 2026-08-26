@@ -4,14 +4,15 @@
 import { useEffect } from 'react';
 import {
   computeLegacyStandardLayout,
-  resolveLegacyStandardCanvasAngle,
 } from '@/lib/planning-core/legacy-standard';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import { history } from '../state/history';
 import {
-  resolveLegacyStandardCommitAction,
+  resolveStandardAutoLayoutCanvasAngle,
+  resolveStandardAutoLayoutCommitAction,
+  resolveStandardAutoLayoutSpacingM,
   selectLegacyStandardObstacles,
-  TOOL_HOTKEYS_LEGACY_POLICY,
+  STANDARD_AUTO_LAYOUT_POLICY,
 } from '../modules/legacyStandardApplicationPolicy';
 
 const isTextTarget = (t: EventTarget | null) => {
@@ -35,6 +36,7 @@ export default function ToolHotkeys() {
   const snapshot            = usePlannerV2Store(s => s.snapshot);
   const selSpec             = usePlannerV2Store(s => s.getSelectedPanel());
   const addPanelsForRoof    = usePlannerV2Store(s => s.addPanelsForRoof);
+  const clearPanelsForRoof  = usePlannerV2Store(s => s.clearPanelsForRoof);
 
   const stepForTool = (t: string): 'building' | 'modules' => {
     switch (t) {
@@ -62,10 +64,12 @@ export default function ToolHotkeys() {
     const roof = layers.find(l => l.id === selectedId);
     if (!roof?.points?.length) return;
 
-    const canvasAngleDeg = resolveLegacyStandardCanvasAngle({
+    const canvasAngleDeg = resolveStandardAutoLayoutCanvasAngle({
+      roofId: selectedId,
       roofPolygon: roof.points,
       legacyRoofAzimuthDeg: roof.azimuthDeg,
       gridAngleDeg: modules.gridAngleDeg,
+      perRoofAngles: modules.perRoofAngles,
     });
     const currentState = usePlannerV2Store.getState();
     const obstacles = selectLegacyStandardObstacles(
@@ -80,7 +84,7 @@ export default function ToolHotkeys() {
         canvasAngleDeg,
         orientation: modules.orientation,
         panelSizeM: { widthM: selSpec.widthM, heightM: selSpec.heightM },
-        spacingM: modules.spacingM,
+        spacingM: resolveStandardAutoLayoutSpacingM(modules.spacingM),
         marginM: modules.marginM,
         phaseX: modules.gridPhaseX ?? 0,
         phaseY: modules.gridPhaseY ?? 0,
@@ -89,13 +93,10 @@ export default function ToolHotkeys() {
         coverageRatio: modules.coverageRatio ?? 1,
       },
       ...obstacles,
-      filterPolicy: TOOL_HOTKEYS_LEGACY_POLICY.filterPolicy,
+      filterPolicy: STANDARD_AUTO_LAYOUT_POLICY.filterPolicy,
     });
-    const commitAction = resolveLegacyStandardCommitAction(
-      TOOL_HOTKEYS_LEGACY_POLICY,
-      result.count,
-    );
-    if (commitAction !== 'append') return;
+    const commitAction = resolveStandardAutoLayoutCommitAction(result.count);
+    if (commitAction === 'preserve') return;
 
     const now = Date.now().toString(36);
     const instances = result.placements.map((r, idx) => ({
@@ -108,6 +109,7 @@ export default function ToolHotkeys() {
       panelId: selSpec.id,
     }));
 
+    clearPanelsForRoof(selectedId);
     addPanelsForRoof(selectedId, instances);
     if (modules.showGrid) setModules({ showGrid: false });
     setTool('select' as any);
@@ -160,7 +162,7 @@ if (t === 'draw-roof' || t === 'draw-reserved' || t === 'draw-rect') {
 if (st.selectedZoneId) return;
 
     return () => window.removeEventListener('keydown', onKey, { capture: true } as any);
-  }, [step, setStep, setTool, layers, selectedId, modules, setModules, snapshot, selSpec, addPanelsForRoof]);
+  }, [step, setStep, setTool, layers, selectedId, modules, setModules, snapshot, selSpec, addPanelsForRoof, clearPanelsForRoof]);
 
   return null;
 }

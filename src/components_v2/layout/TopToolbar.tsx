@@ -22,12 +22,13 @@ import { IoIosSave } from "react-icons/io";
 
 import {
   computeLegacyStandardLayout,
-  resolveLegacyStandardCanvasAngle,
 } from "@/lib/planning-core/legacy-standard";
 import {
-  resolveLegacyStandardCommitAction,
+  resolveStandardAutoLayoutCanvasAngle,
+  resolveStandardAutoLayoutCommitAction,
+  resolveStandardAutoLayoutSpacingM,
   selectLegacyStandardObstacles,
-  TOP_TOOLBAR_LEGACY_POLICY,
+  STANDARD_AUTO_LAYOUT_POLICY,
 } from "../modules/legacyStandardApplicationPolicy";
 
 import ProjectStatsBar from "../ui/ProjectStatsBar";
@@ -438,10 +439,12 @@ export default function TopToolbar() {
     const roof = layers.find((l) => l.id === selectedId);
     if (!roof?.points?.length) return;
 
-    const canvasAngleDeg = resolveLegacyStandardCanvasAngle({
+    const canvasAngleDeg = resolveStandardAutoLayoutCanvasAngle({
+      roofId: selectedId,
       roofPolygon: roof.points,
       legacyRoofAzimuthDeg: roof.azimuthDeg,
       gridAngleDeg: modules.gridAngleDeg,
+      perRoofAngles: modules.perRoofAngles,
     });
     const currentState = usePlannerV2Store.getState();
     const obstacles = selectLegacyStandardObstacles(
@@ -456,7 +459,7 @@ export default function TopToolbar() {
         canvasAngleDeg,
         orientation: modules.orientation,
         panelSizeM: { widthM: selSpec.widthM, heightM: selSpec.heightM },
-        spacingM: modules.spacingM,
+        spacingM: resolveStandardAutoLayoutSpacingM(modules.spacingM),
         marginM: modules.marginM,
         phaseX: modules.gridPhaseX ?? 0,
         phaseY: modules.gridPhaseY ?? 0,
@@ -466,18 +469,11 @@ export default function TopToolbar() {
       },
       reservedZones: obstacles.reservedZones,
       snowGuards: obstacles.snowGuards,
-      filterPolicy: TOP_TOOLBAR_LEGACY_POLICY.filterPolicy,
+      filterPolicy: STANDARD_AUTO_LAYOUT_POLICY.filterPolicy,
     });
 
-    const commitAction = resolveLegacyStandardCommitAction(
-      TOP_TOOLBAR_LEGACY_POLICY,
-      layout.count,
-    );
+    const commitAction = resolveStandardAutoLayoutCommitAction(layout.count);
     if (commitAction === "preserve") return;
-    if (commitAction === "clear") {
-      clearPanelsForRoof(selectedId);
-      return;
-    }
 
     // === crea pannelli reali
     const now = Date.now().toString(36);
@@ -496,7 +492,7 @@ export default function TopToolbar() {
     // 💣 PASSO CHIAVE:
     // prima puliamo TUTTI i pannelli esistenti di questa falda,
     // poi aggiungiamo solo gli autolayout → impossibile avere duplicati
-    if (commitAction === "replace") clearPanelsForRoof(selectedId);
+    clearPanelsForRoof(selectedId);
     addPanelsForRoof(selectedId, instances);
 
     // spegni il raster dopo la conversione (come da brief)

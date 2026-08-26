@@ -9,7 +9,6 @@ import {
   Group,
   Text,
 } from "react-konva";
-import { resolveLegacyStandardCanvasAngle } from "@/lib/planning-core/legacy-standard";
 import { isInReservedZone } from "../zones/utils";
 import { RotateCcw } from "lucide-react";
 
@@ -20,6 +19,10 @@ import ScaleIndicator from "./ScaleIndicator";
 import SonnendachOverlayKonva from "./SonnendachOverlayKonva";
 import OrientationHUD from "./OrientationHUD";
 import ModulesPreview from "../modules/ModulesPreview";
+import {
+  resolveStandardAutoLayoutCanvasAngle,
+  resolveStandardAutoLayoutSpacingM,
+} from "../modules/legacyStandardApplicationPolicy";
 import OverlayTopToolbar from "../layout/OverlayTopToolbar";
 import OverlayProgressStepper from "../layout/OverlayProgressStepper";
 import CenterAddressSearchOverlay from "../layout/CenterAddressSearchOverlay";
@@ -301,29 +304,24 @@ export default function CanvasStage() {
     [layers, selectedId],
   );
 
-  // angolo base griglia in COORDINATE CANVAS (come PanelsKonva)
-  const baseGridDeg = useMemo(() => {
-    if (!selectedRoof) return 0;
-    return resolveLegacyStandardCanvasAngle({
+  const baseGridDeg = selectedRoof
+    ? resolveStandardAutoLayoutCanvasAngle({
+      roofId: selectedRoof.id,
       roofPolygon: selectedRoof.points,
       legacyRoofAzimuthDeg: selectedRoof.azimuthDeg,
-    });
-  }, [selectedRoof?.azimuthDeg, selectedRoof?.points]);
+    })
+    : 0;
 
-  // 👇 override per-falda letto dallo store
-  const perRoofAngles = modules.perRoofAngles || {};
-  const roofOverrideDeg = selectedRoof
-    ? perRoofAngles[selectedRoof.id]
-    : undefined;
-
-  // angolo finale che useremo per ModulesPreview
-  const gridDeg =
-    typeof roofOverrideDeg === "number"
-      ? roofOverrideDeg
-      : baseGridDeg + (gridMods.gridAngleDeg || 0);
-
-  // applica offset utente
-  // const gridDeg = (baseGridDeg + (gridMods.gridAngleDeg || 0));
+  // angolo finale della preview, condiviso con tutti i percorsi di commit
+  const gridDeg = selectedRoof
+    ? resolveStandardAutoLayoutCanvasAngle({
+      roofId: selectedRoof.id,
+      roofPolygon: selectedRoof.points,
+      legacyRoofAzimuthDeg: selectedRoof.azimuthDeg,
+      gridAngleDeg: gridMods.gridAngleDeg,
+      perRoofAngles: modules.perRoofAngles,
+    })
+    : 0;
 
   const hasPanelsOnSelected = useMemo(
     () =>
@@ -899,7 +897,7 @@ export default function CanvasStage() {
                       azimuthDeg={gridDeg}
                       orientation={modules.orientation}
                       panelSizeM={{ w: selPanel.widthM, h: selPanel.heightM }}
-                      spacingM={modules.spacingM}
+                      spacingM={resolveStandardAutoLayoutSpacingM(modules.spacingM)}
                       marginM={modules.marginM}
                       textureUrl="/images/panel.webp"
                       phaseX={gridMods.gridPhaseX || 0}

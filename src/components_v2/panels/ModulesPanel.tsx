@@ -11,12 +11,13 @@ import { LuCompass } from "react-icons/lu";
 
 import {
   computeLegacyStandardLayout,
-  resolveLegacyStandardCanvasAngle,
 } from "@/lib/planning-core/legacy-standard";
 import {
-  MODULES_PANEL_LEGACY_POLICY,
-  resolveLegacyStandardCommitAction,
+  resolveStandardAutoLayoutCanvasAngle,
+  resolveStandardAutoLayoutCommitAction,
+  resolveStandardAutoLayoutSpacingM,
   selectLegacyStandardObstacles,
+  STANDARD_AUTO_LAYOUT_POLICY,
 } from "../modules/legacyStandardApplicationPolicy";
 import GridRotationControl from "../modules/GridRotationControl";
 
@@ -127,14 +128,15 @@ export default function ModulesPanel() {
       const roof = layers.find((l) => l.id === selectedId);
       if (!roof?.points?.length) return;
 
-      const canvasAngleDeg = resolveLegacyStandardCanvasAngle({
+      const canvasAngleDeg = resolveStandardAutoLayoutCanvasAngle({
+        roofId: selectedId,
         roofPolygon: roof.points,
         legacyRoofAzimuthDeg: roof.azimuthDeg,
         gridAngleDeg: modules.gridAngleDeg,
+        perRoofAngles: modules.perRoofAngles,
       });
 
-      const spacingM =
-        typeof modules.spacingM === "number" ? modules.spacingM : 0.02; // default interno
+      const spacingM = resolveStandardAutoLayoutSpacingM(modules.spacingM);
       const orientation = (nextOrientation ?? modules.orientation) as
         | "portrait"
         | "landscape";
@@ -162,21 +164,14 @@ export default function ModulesPanel() {
         },
         reservedZones: obstacles.reservedZones,
         snowGuards: obstacles.snowGuards,
-        filterPolicy: MODULES_PANEL_LEGACY_POLICY.filterPolicy,
+        filterPolicy: STANDARD_AUTO_LAYOUT_POLICY.filterPolicy,
       });
 
-      const commitAction = resolveLegacyStandardCommitAction(
-        MODULES_PANEL_LEGACY_POLICY,
-        layout.count,
-      );
+      const commitAction = resolveStandardAutoLayoutCommitAction(layout.count);
       if (commitAction === "preserve") return;
-      if (commitAction === "clear") {
-        clearPanelsForRoof(selectedId);
-        return;
-      }
 
       // sostituisci i pannelli esistenti con i nuovi
-      if (commitAction === "replace") clearPanelsForRoof(selectedId);
+      clearPanelsForRoof(selectedId);
       const now = Date.now().toString(36);
       const instances = layout.placements.map((r, idx) => ({
         id: `${selectedId}_p_${now}_${idx}`,
@@ -197,6 +192,7 @@ export default function ModulesPanel() {
       snapshot?.mppImage,
       layers,
       modules.gridAngleDeg,
+      modules.perRoofAngles,
       modules.marginM,
       modules.gridPhaseX,
       modules.gridPhaseY,

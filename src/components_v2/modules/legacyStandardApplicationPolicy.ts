@@ -4,66 +4,65 @@ import type {
   LegacySnowGuard,
   LegacyStandardFilterPolicy,
 } from "@/lib/planning-core/legacy-standard";
+import { resolveLegacyStandardCanvasAngle } from "@/lib/planning-core/legacy-standard";
 
-export type LegacyStandardCommitMode = "replace" | "append";
-export type LegacyStandardEmptyMode = "preserve" | "clear";
-export type LegacyStandardCommitAction =
-  | LegacyStandardCommitMode
-  | LegacyStandardEmptyMode;
+export const STANDARD_AUTO_LAYOUT_SPACING_M = 0.02;
 
-export type LegacyStandardApplicationPolicy = {
+export type StandardAutoLayoutApplicationPolicy = {
   filterPolicy: LegacyStandardFilterPolicy;
-  nonEmpty: LegacyStandardCommitMode;
-  empty: LegacyStandardEmptyMode;
+  nonEmpty: "replace";
+  empty: "preserve";
 };
 
-export const TOP_TOOLBAR_LEGACY_POLICY: LegacyStandardApplicationPolicy = {
+export const STANDARD_AUTO_LAYOUT_POLICY: StandardAutoLayoutApplicationPolicy = {
   filterPolicy: { reservedZones: true, snowGuards: true },
   nonEmpty: "replace",
   empty: "preserve",
 };
 
-export const MODULES_PANEL_LEGACY_POLICY: LegacyStandardApplicationPolicy = {
-  filterPolicy: { reservedZones: true, snowGuards: false },
-  nonEmpty: "replace",
-  empty: "clear",
-};
-
-export const TOOL_HOTKEYS_LEGACY_POLICY: LegacyStandardApplicationPolicy = {
-  filterPolicy: { reservedZones: true, snowGuards: false },
-  nonEmpty: "append",
-  empty: "preserve",
-};
-
-export function resolveLegacyStandardCommitAction(
-  policy: LegacyStandardApplicationPolicy,
+export function resolveStandardAutoLayoutCommitAction(
   placementCount: number,
-): LegacyStandardCommitAction {
-  return placementCount > 0 ? policy.nonEmpty : policy.empty;
+): "replace" | "preserve" {
+  return placementCount > 0
+    ? STANDARD_AUTO_LAYOUT_POLICY.nonEmpty
+    : STANDARD_AUTO_LAYOUT_POLICY.empty;
 }
 
-export function applyLegacyStandardPanelCommit<T extends { roofId: string }>(args: {
+export function applyStandardAutoLayoutPanelCommit<T extends { roofId: string }>(args: {
   existingPanels: readonly T[];
   generatedPanels: readonly T[];
   roofId: string;
-  policy: LegacyStandardApplicationPolicy;
 }): T[] {
-  const action = resolveLegacyStandardCommitAction(
-    args.policy,
-    args.generatedPanels.length,
-  );
+  const action = resolveStandardAutoLayoutCommitAction(args.generatedPanels.length);
 
   if (action === "preserve") return [...args.existingPanels];
-  if (action === "clear") {
-    return args.existingPanels.filter((panel) => panel.roofId !== args.roofId);
-  }
-  if (action === "append") {
-    return [...args.existingPanels, ...args.generatedPanels];
-  }
   return [
     ...args.existingPanels.filter((panel) => panel.roofId !== args.roofId),
     ...args.generatedPanels,
   ];
+}
+
+export function resolveStandardAutoLayoutSpacingM(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : STANDARD_AUTO_LAYOUT_SPACING_M;
+}
+
+export function resolveStandardAutoLayoutCanvasAngle(input: {
+  roofId: string;
+  roofPolygon: LegacyPoint[];
+  legacyRoofAzimuthDeg?: number;
+  gridAngleDeg?: number;
+  perRoofAngles?: Readonly<Record<string, number | undefined>> | null;
+}): number {
+  const roofOverrideDeg = input.perRoofAngles?.[input.roofId];
+  if (typeof roofOverrideDeg === "number") return roofOverrideDeg;
+
+  return resolveLegacyStandardCanvasAngle({
+    roofPolygon: input.roofPolygon,
+    legacyRoofAzimuthDeg: input.legacyRoofAzimuthDeg,
+    gridAngleDeg: input.gridAngleDeg,
+  });
 }
 
 type ZoneLike = {
