@@ -36,6 +36,7 @@
     "test:optional-position-columns": "tsx --test tests/optionalPositionColumns.test.ts",
     "test:chf-rounding": "tsx --test tests/chfRounding.test.ts",
     "test:realtime": "tsx --test tests/realtime.test.ts",
+    "test:planning-legacy": "tsx --test tests/planning-core/*.test.ts",
     "backfill:auftrag-pipeline": "npx tsx scripts/backfill-auftrag-pipeline.ts",
     "backfill:company-subscriptions": "npx tsx scripts/backfill-company-subscriptions.ts",
     "backfill:invoice-dunning-status": "npx tsx scripts/backfill-invoice-dunning-status.ts",
