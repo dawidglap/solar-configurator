@@ -330,6 +330,41 @@
       0 10px 30px -8px hsl(var(--surface-panel-shadow) / 0.22);
   }
 
+  /* Planner overlays sit directly above detailed satellite imagery. */
+  .planner-surface-sidebar {
+    backdrop-filter: blur(64px) saturate(1.18);
+    -webkit-backdrop-filter: blur(64px) saturate(1.18);
+    background: hsl(var(--surface-sidebar-bg) / 0.94);
+    border-color: hsl(var(--surface-panel-border) / 0.28);
+    box-shadow:
+      inset 1px 0 0 hsl(0 0% 100% / 0.08),
+      -12px 0 36px -18px hsl(var(--surface-panel-shadow) / 0.7);
+  }
+
+  .planner-surface-sidebar .glass-input {
+    background: hsl(var(--input) / 0.96);
+    border-color: hsl(var(--border) / 0.42);
+  }
+
+  .planner-surface-sidebar .glass-row {
+    background: hsl(var(--surface-panel-bg) / 0.42);
+    border-color: hsl(var(--border) / 0.26);
+  }
+
+  .planner-surface-sidebar .text-muted-foreground {
+    color: hsl(var(--foreground) / 0.84);
+  }
+
+  .planner-surface-topbar {
+    backdrop-filter: blur(56px) saturate(1.18);
+    -webkit-backdrop-filter: blur(56px) saturate(1.18);
+    background: hsl(var(--surface-topbar-bg) / 0.92);
+    border-color: hsl(var(--surface-panel-border) / 0.26);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.09),
+      0 10px 30px -10px hsl(var(--surface-panel-shadow) / 0.62);
+  }
+
   .glass-input {
     @apply rounded-lg px-3 py-2 text-sm transition-all duration-200;
     background: hsl(var(--input) / var(--surface-input-bg-alpha));

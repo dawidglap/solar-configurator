@@ -190,7 +190,7 @@ export default function OverlayProgressStepper() {
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px" />
 
-      <div className="glass-topbar relative flex h-10 w-full items-center justify-between gap-4 rounded-tl-2xl border-l border-border/60 px-4">
+      <div className="glass-topbar planner-surface-topbar relative flex h-10 w-full items-center justify-between gap-4 rounded-tl-2xl border-l border-border/60 px-4">
         <nav aria-label="Wizard progress" className="min-w-0 flex-1 overflow-hidden">
           <div className="relative flex w-full items-center justify-start gap-3">
             <ol className="relative flex w-auto items-center justify-start gap-2.5">
