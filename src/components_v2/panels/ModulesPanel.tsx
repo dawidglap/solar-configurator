@@ -9,6 +9,7 @@ import { MdViewModule } from "react-icons/md";
 import OrientationToggle from "../layout/TopToolbar/OrientationToggle";
 import { LuCompass } from "react-icons/lu";
 import { nanoid } from "nanoid";
+import toast from "react-hot-toast";
 
 import {
   computeLegacyStandardLayout,
@@ -168,6 +169,7 @@ export default function ModulesPanel() {
     setSelectedPanel(panel.id);
     setModules(standardDraft.modules);
     setConfirmStandardReplace(false);
+    toast.success("Layout angewendet");
   }, [catalogPanels, commitRoofLayout, selectedRoof, setModules, setSelectedPanel, snapshot.mppImage, standardDraft]);
 
   const chooseAdvanced = React.useCallback(() => {
@@ -661,24 +663,36 @@ export default function ModulesPanel() {
         )}
       </div>
 
+      {!selectedRoof && (
+        <section className="rounded-xl border border-dashed border-border/80 bg-muted/10 px-4 py-7 text-center">
+          <MdViewModule className="mx-auto h-6 w-6 text-muted-foreground/70" aria-hidden="true" />
+          <h2 className="mt-2 text-[12px] font-semibold">Dachfläche auswählen</h2>
+          <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+            Klicke auf eine Dachfläche, um die Planung zu starten.
+          </p>
+        </section>
+      )}
+
       {selectedRoof && (
-        <section className="space-y-2">
+        <section className="space-y-2 border-b border-border/60 pb-4">
           <label className={labelSm}>Dachtyp</label>
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/25 p-1" role="group" aria-label="Dachtyp">
+          <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/25 p-1" role="group" aria-label="Dachtyp">
+            <button
+              type="button"
+              onClick={chooseStandard}
+              aria-pressed={customerRoofType === "pitched"}
+              className={`h-11 rounded-lg text-[11px] font-semibold ${customerRoofType === "pitched" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
+              Schrägdach
+            </button>
             <button
               type="button"
               onClick={chooseAdvanced}
               disabled={!selSpec}
-              className={`h-8 rounded-md text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-40 ${customerRoofType === "flat" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              aria-pressed={customerRoofType === "flat"}
+              className={`h-11 rounded-lg text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${customerRoofType === "flat" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
             >
               Flachdach
-            </button>
-            <button
-              type="button"
-              onClick={chooseStandard}
-              className={`h-8 rounded-md text-[11px] font-medium ${customerRoofType === "pitched" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-            >
-              Schrägdach
             </button>
           </div>
           {customerRoofType === "preserved-green" && (
@@ -704,189 +718,88 @@ export default function ModulesPanel() {
         />
       )}
 
-      {displayMode === "standard" && (
-        <>
-      {/* === RANDABSTAND === */}
-      <section className="space-y-2">
-        <label className={labelSm}>Randabstand</label>
-        <div className="flex items-end gap-2">
-          <div className="flex-1">
-            <input
-              type="number"
-              step="0.05"
-              min="0"
-              value={displayedModules.marginM}
-              onChange={(e) => patchDisplayedModules({ marginM: Number(e.target.value) })}
-              className={inputBase}
-              placeholder="0,20"
-              aria-label="Randabstand (m)"
-            />
-          </div>
-          <span className="pb-1 text-[10px] text-muted-foreground">m</span>
-        </div>
-        {/* Abstand tra pannelli rimane 0,02 interno/non visibile */}
-      </section>
-
-      <section className="space-y-2">
-        <label className={labelSm}>Modulabstand</label>
-        <div className="flex items-end gap-2">
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={displayedModules.spacingM}
-            onChange={(e) => patchDisplayedModules({ spacingM: Number(e.target.value) })}
-            className={inputBase}
-            aria-label="Modulabstand (m)"
-          />
-          <span className="pb-1 text-[10px] text-muted-foreground">m</span>
-        </div>
-      </section>
-
-      {/* === PV MODUL (select spostata qui) === */}
-      <section className="space-y-1">
-        <label htmlFor="panel-select" className={labelSm}>
-          PV Modul
-        </label>
-        <select
-          id="panel-select"
-          aria-label="Modul wählen"
-          value={displayedPanelId}
-          onChange={(e) => {
-            if (selectedRoof && standardDraft) {
-              setRoofPlanningDraft(selectedRoof.id, { ...standardDraft, panelSpecId: e.target.value });
-              setConfirmStandardReplace(false);
-            } else {
-              setSelectedPanel(e.target.value);
-            }
-          }}
-          className={inputBase}
-        >
-          {catalogPanels.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.brand} {p.model} — {p.wp} W
-            </option>
-          ))}
-        </select>
-      </section>
-
-      {/* === BLINDMODULE (disabled) === */}
-      {/* <section className="space-y-1">
-        <label className={labelSm}>Blindmodule</label>
-        <select disabled className={`${inputBase} cursor-not-allowed bg-neutral-900 text-neutral-500 border-neutral-800`}>
-          <option>Auswählen</option>
-        </select>
-      </section> */}
-
-      {/* === UNTERKONSTRUKTION (hidden for now) ===
-      <section className="space-y-1">
-        <label className={labelSm}>Unterkonstruktion</label>
-        <select
-          disabled
-          className={`${inputBase} cursor-not-allowed opacity-55`}
-        >
-          <option>System auswählen</option>
-        </select>
-      </section>
-      */}
-
-      {/* === MODULLAYOUT (usa onChange per re-layout immediato) === */}
-      <section className="space-y-2">
-        <label className={labelSm}>Modullayout</label>
-        {standardDraft ? (
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/25 p-1">
-            {(["portrait", "landscape"] as const).map((orientation) => (
-              <button
-                key={orientation}
-                type="button"
-                onClick={() => patchDisplayedModules({ orientation })}
-                className={`h-8 rounded-md text-[10px] ${displayedModules.orientation === orientation ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              >
-                {orientation === "portrait" ? "Hochformat" : "Querformat"}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <OrientationToggle
-            onChange={(next) => {
-              // appena cambia l'orientamento, rilancia l’autolayout sulla falda selezionata
-              relayoutSelectedRoof(next);
-            }}
-          />
-        )}
-      </section>
-
-      {!standardDraft && (
-        <section className="space-y-2">
-          <GridRotationControl />
-        </section>
-      )}
-
-      {/* === MODULNEIGUNG (placeholder, disabled) === */}
-      <section className="space-y-1">
-        <label className={labelSm}>Modulneigung</label>
-        <div className="flex items-end gap-2">
-          <input
-            type="number"
-            min={0}
-            max={100}
-            step={1}
-            value={0}
-            disabled
-            className={`${inputBase} cursor-not-allowed opacity-55`}
-            aria-label="Modulneigung (%)"
-          />
-          <span className="pb-1 text-[10px] text-muted-foreground">%</span>
-        </div>
-      </section>
-
-      {standardDraft && selectedRoof && (
-        <section className="space-y-2 rounded-xl border border-primary/25 bg-primary/5 p-2">
-          <p className="text-[10px] text-muted-foreground">
-            Die Standard-Vorschau verwendet weiterhin den unveränderten legacy-v1 Motor.
-          </p>
-          {confirmStandardReplace && (
-            <p className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-2 text-[10px]">
-              Das bestehende Layout dieser Dachfläche wird ersetzt. Andere Dachflächen bleiben unverändert.
-            </p>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              className="h-9 rounded-lg border border-border text-[11px]"
-              onClick={() => { clearRoofPlanningDraft(selectedRoof.id); setConfirmStandardReplace(false); }}
-            >
-              Abbrechen
-            </button>
-            <button
-              type="button"
-              className="h-9 rounded-lg bg-primary text-[11px] font-medium text-primary-foreground"
-              onClick={() => {
-                if (hasCommittedPanelsForRoof(panels, selectedRoof.id) && !confirmStandardReplace) {
-                  setConfirmStandardReplace(true);
+      {selectedRoof && displayMode === "standard" && (
+        <div className="space-y-4">
+          <section className="space-y-1">
+            <label htmlFor="panel-select" className={labelSm}>Modul</label>
+            <select
+              id="panel-select"
+              aria-label="Modul wählen"
+              value={displayedPanelId}
+              onChange={(event) => {
+                if (standardDraft) {
+                  setRoofPlanningDraft(selectedRoof.id, { ...standardDraft, panelSpecId: event.target.value });
+                  setConfirmStandardReplace(false);
                 } else {
-                  applyStandardDraft();
+                  setSelectedPanel(event.target.value);
                 }
               }}
+              className={inputBase}
             >
-              {confirmStandardReplace ? "Ersetzen bestätigen" : "Layout anwenden"}
-            </button>
-          </div>
-        </section>
-      )}
+              {catalogPanels.map((panel) => (
+                <option key={panel.id} value={panel.id}>{panel.brand} {panel.model} — {panel.wp} W</option>
+              ))}
+            </select>
+          </section>
 
-      {/* === WECHSELRICHTER (hidden for now) ===
-      <section className="space-y-1">
-        <label className={labelSm}>Wechselrichter</label>
-        <select
-          disabled
-          className={`${inputBase} cursor-not-allowed opacity-55`}
-        >
-          <option>Auswählen</option>
-        </select>
-      </section>
-      */}
-        </>
+          <section className="space-y-2">
+            <label className={labelSm}>Layout</label>
+            {standardDraft ? (
+              <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/25 p-1">
+                {(["portrait", "landscape"] as const).map((orientation) => (
+                  <button key={orientation} type="button" onClick={() => patchDisplayedModules({ orientation })} className={`h-9 rounded-lg text-[10px] font-medium ${displayedModules.orientation === orientation ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>
+                    {orientation === "portrait" ? "Hochformat" : "Querformat"}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <OrientationToggle onChange={(next) => relayoutSelectedRoof(next)} />
+            )}
+          </section>
+
+          <section className="grid grid-cols-2 gap-2">
+            <label className="space-y-1 text-[10px] text-muted-foreground">
+              Modulabstand
+              <span className="flex items-center gap-1">
+                <input type="number" step="0.01" min="0" value={displayedModules.spacingM} onChange={(event) => patchDisplayedModules({ spacingM: Number(event.target.value) })} className={inputBase} aria-label="Modulabstand (m)" />
+                <span>m</span>
+              </span>
+            </label>
+            <label className="space-y-1 text-[10px] text-muted-foreground">
+              Randabstand
+              <span className="flex items-center gap-1">
+                <input type="number" step="0.05" min="0" value={displayedModules.marginM} onChange={(event) => patchDisplayedModules({ marginM: Number(event.target.value) })} className={inputBase} aria-label="Randabstand (m)" />
+                <span>m</span>
+              </span>
+            </label>
+          </section>
+
+          <details className="rounded-xl border border-border/60 text-[10px]">
+            <summary className="cursor-pointer px-3 py-2.5 font-medium text-muted-foreground">Feinjustierung</summary>
+            <div className="border-t border-border/60 p-3">
+              {!standardDraft
+                ? <GridRotationControl />
+                : <p className="text-muted-foreground">Die technische Rasterausrichtung bleibt beim bestehenden Standard-Layout unverändert.</p>}
+            </div>
+          </details>
+
+          {standardDraft && (
+            <section className="sticky bottom-0 -mx-2 space-y-2 border-y border-primary/25 bg-background/95 p-3 backdrop-blur">
+              <p className="text-[11px] font-semibold text-primary">Standard-Layout Vorschau</p>
+              {confirmStandardReplace && (
+                <p className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-2 text-[10px]">Das bestehende Layout dieser Dachfläche wird ersetzt. Andere Dachflächen bleiben unverändert.</p>
+              )}
+              <p className="text-[10px] text-muted-foreground">Nicht angewendete Änderungen</p>
+              <div className="grid grid-cols-[0.8fr_1.2fr] gap-2">
+                <button type="button" className="h-9 rounded-lg border border-border text-[11px]" onClick={() => { clearRoofPlanningDraft(selectedRoof.id); setConfirmStandardReplace(false); }}>Abbrechen</button>
+                <button type="button" className="h-9 rounded-lg bg-primary text-[11px] font-medium text-primary-foreground" onClick={() => {
+                  if (hasCommittedPanelsForRoof(panels, selectedRoof.id) && !confirmStandardReplace) setConfirmStandardReplace(true);
+                  else applyStandardDraft();
+                }}>{confirmStandardReplace ? "Ersetzen bestätigen" : "Layout anwenden"}</button>
+              </div>
+            </section>
+          )}
+        </div>
       )}
     </div>
   );
