@@ -14,6 +14,7 @@ import {
 } from '../interactionPolicy';
 // undo/redo globale (resta per le azioni “committed”)
 import { history } from '../../state/history';
+import { createRafPointChannel } from '../performance/rafPointChannel';
 
 type Layer = { id: string; name: string; points: Pt[] };
 
@@ -59,8 +60,8 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     // stato locale di disegno
     const [drawingPoly, setDrawingPoly] = React.useState<Pt[] | null>(null);
     const [rectDraft, setRectDraft] = React.useState<Pt[] | null>(null); // [A,B] poi C al commit
-    const [mouseImg, setMouseImg] = React.useState<Pt | null>(null);
     const [snowDraft, setSnowDraft] = React.useState<Pt[] | null>(null);
+    const pointerChannel = React.useMemo(() => createRafPointChannel(), []);
     const reservedTargetRoofIdRef = React.useRef<string | undefined>(undefined);
     const snowTargetRoofIdRef = React.useRef<string | undefined>(undefined);
 
@@ -77,15 +78,15 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     React.useEffect(() => { rectRef.current = rectDraft; }, [rectDraft]);
 
     const clearDraftState = React.useCallback(() => {
+        pointerChannel.clear();
         setDrawingPoly(null);
         setRectDraft(null);
         setSnowDraft(null);
-        setMouseImg(null);
         polyRedoRef.current = [];
         rectRedoRef.current = [];
         reservedTargetRoofIdRef.current = undefined;
         snowTargetRoofIdRef.current = undefined;
-    }, []);
+    }, [pointerChannel]);
 
     const previousToolRef = React.useRef(tool);
     React.useEffect(() => {
@@ -116,8 +117,10 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     const onStageMouseMove = React.useCallback((e: any) => {
         const pos = e.target.getStage().getPointerPosition();
         if (!pos) return;
-        setMouseImg(toImgCoords(pos.x, pos.y));
-    }, [toImgCoords]);
+        pointerChannel.publish(toImgCoords(pos.x, pos.y));
+    }, [pointerChannel, toImgCoords]);
+
+    React.useEffect(() => () => pointerChannel.destroy(), [pointerChannel]);
 
     // —— helper: aggiunge un punto al draft, pulendo il redo locale
     const addDraftPoint = React.useCallback((pt: Pt) => {
@@ -419,32 +422,14 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         return () => window.removeEventListener('keydown', onKey, { capture: true } as any);
     }, [popLastPoint, pushRedoPoint, finishPolygon, finishZone]);
 
-    // Preview per draw-rect: linea tra il primo punto e il mouse
-    const rectPreview = React.useMemo<Pt[] | null>(() => {
-        // usiamo questa preview solo quando il tool è draw-rect
-        if (tool !== 'draw-rect') return null;
-        if (!rectDraft) return null;
-        if (!mouseImg) return null;
-
-        // se ho solo il primo punto (A), mostra A → mouse
-        if (rectDraft.length === 1) {
-            return [rectDraft[0], mouseImg];
-        }
-
-        // per ora, nessuna preview negli altri casi
-        return null;
-    }, [tool, rectDraft, mouseImg]);
-
-
     return {
         drawingPoly,
         rectDraft,
-        mouseImg,
+        pointerChannel,
         onStageMouseMove,
         onStageClick,
         onStageDblClick,
         snowDraft,
-        rectPreview,
         hasDraft,
         cancelDraft,
     };

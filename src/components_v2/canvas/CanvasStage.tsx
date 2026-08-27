@@ -41,6 +41,7 @@ import { useBaseImage } from "../canvas/hooks/useBaseImage";
 import { useStagePanZoom } from "../canvas/hooks/useStagePanZoom";
 import { useDrawingTools } from "../canvas/hooks/useDrawingTools";
 import DrawingOverlays from "./DrawingOverlays";
+import TransientDrawingPreviews from "./TransientDrawingPreviews";
 import PanelHotkeys from "../modules/panels/PanelHotkeys";
 import { nanoid } from "nanoid";
 import ZonesLayer from "../zones/ZonesLayer";
@@ -510,6 +511,7 @@ export default function CanvasStage() {
     isRightPanning,
     onWheel,
     onDragMove,
+    onDragEnd: onStageDragEnd,
     beginRightPan,
     moveRightPan,
     endRightPan,
@@ -552,12 +554,11 @@ export default function CanvasStage() {
   const {
     drawingPoly,
     rectDraft,
-    mouseImg,
+    pointerChannel,
     onStageMouseMove,
     onStageClick,
     onStageDblClick,
     snowDraft,
-    rectPreview,
     hasDraft: hasDrawingDraft,
     cancelDraft: cancelDrawingDraft,
   } = useDrawingTools({
@@ -610,7 +611,7 @@ export default function CanvasStage() {
     if (!container) return;
 
     const onMouseDown = (event: MouseEvent) => {
-      if (!beginRightPan(event)) return;
+      if (!beginRightPan(event, stage)) return;
       container.focus();
       event.preventDefault();
       event.stopPropagation();
@@ -853,6 +854,7 @@ export default function CanvasStage() {
               !draggingPanel
             }
             onDragMove={onDragMove}
+            onDragEnd={onStageDragEnd}
             onWheel={onWheel}
             // handler di disegno SOLO in building
             onMouseMove={(evt: any) => {
@@ -1064,45 +1066,6 @@ export default function CanvasStage() {
                   );
                 })}
 
-                {/* preview linea neve mentre disegni */}
-                {tool === "draw-snow-guard" &&
-                  snowDraft &&
-                  snowDraft.length === 1 &&
-                  mouseImg && (
-                    <Line
-                      points={[
-                        snowDraft[0].x,
-                        snowDraft[0].y,
-                        mouseImg.x,
-                        mouseImg.y,
-                      ]}
-                      stroke={plannerTheme.primary}
-                      strokeWidth={1}
-                      lineCap="round"
-                      listening={false}
-                      dash={[4, 4]}
-                    />
-                  )}
-
-                {/* preview per draw-rect: linea A → mouse dopo il primo click */}
-                {tool === "draw-rect" &&
-                  rectPreview &&
-                  rectPreview.length === 2 && (
-                    <Line
-                      points={[
-                        rectPreview[0].x,
-                        rectPreview[0].y,
-                        rectPreview[1].x,
-                        rectPreview[1].y,
-                      ]}
-                      stroke={plannerTheme.primary}
-                      strokeWidth={1}
-                      lineCap="round"
-                      listening={false}
-                      dash={[4, 4]}
-                    />
-                  )}
-
                 {/* Draft visivo per fill-area */}
                 {tool === "fill-area" && fillDraft && (
                   <Group listening={false}>
@@ -1155,19 +1118,37 @@ export default function CanvasStage() {
                   </Group>
                 )}
 
-                {/* …tutto il resto che avevi (preview riservata, fill-area preview, PanelsLayer, DrawingOverlays ecc.) */}
+              </Group>
+            </Layer>
+            <Layer scaleX={layerScale} scaleY={layerScale} listening={false} perfectDrawEnabled={false}>
+              <Group
+                x={img?.naturalWidth ? img.naturalWidth / 2 : 0}
+                y={img?.naturalHeight ? img.naturalHeight / 2 : 0}
+                offsetX={img?.naturalWidth ? img.naturalWidth / 2 : 0}
+                offsetY={img?.naturalHeight ? img.naturalHeight / 2 : 0}
+                rotation={rotateDeg}
+                listening={false}
+              >
                 {step === "building" && (
-                  <DrawingOverlays
-                    tool={tool}
-                    drawingPoly={drawingPoly}
-                    rectDraft={rectDraft}
-                    mouseImg={mouseImg}
-                    stroke={stroke}
-                    areaLabel={areaLabel}
-                    mpp={snap.mppImage}
-                    roofSnapDeg={baseGridDeg}
-                    canvasRotateDeg={rotateDeg} // ⬅️ nuovo: snap allineati allo schermo
-                  />
+                  <>
+                    <DrawingOverlays
+                      tool={tool}
+                      drawingPoly={drawingPoly}
+                      rectDraft={rectDraft}
+                      pointerChannel={pointerChannel}
+                      stroke={stroke}
+                      areaLabel={areaLabel}
+                      mpp={snap.mppImage}
+                      roofSnapDeg={baseGridDeg}
+                      canvasRotateDeg={rotateDeg}
+                    />
+                    <TransientDrawingPreviews
+                      tool={tool}
+                      snowDraft={snowDraft}
+                      rectDraft={rectDraft}
+                      pointer={pointerChannel}
+                    />
+                  </>
                 )}
               </Group>
             </Layer>

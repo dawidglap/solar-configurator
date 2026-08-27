@@ -12,7 +12,9 @@ import { PanelItem } from './panels/PanelItem';
 import { Guides } from './panels/Guides';
 import { RoofMarginBand } from './panels/RoofMarginBand';
 import { isInReservedZone } from '../zones/utils';
+import { legacyPointInPolygon } from '@/lib/planning-core/legacy-standard/collision';
 import { plannerTheme } from '../theme/plannerTheme';
+import { createLatestFrameScheduler, type FrameScheduler } from '../canvas/performance/latestFrameScheduler';
 
 const SNAP_STAGE_PX = 6;            // snap forza (px schermo)
 const HANDLE_STAGE_PX = 24;         // lato handle (px schermo)
@@ -47,6 +49,8 @@ export default function PanelsKonva(props: {
   const allPanels = usePlannerV2Store((s) => s.panels) as PanelInst[];
   const hasPlanningDraft = usePlannerV2Store((s) => Boolean(s.roofPlanningDrafts[roofId]));
   const rawUpdatePanel = usePlannerV2Store((s) => s.updatePanel);
+  const updatePanelsBulk = usePlannerV2Store((s) => s.updatePanelsBulk);
+  const allZones = usePlannerV2Store((s) => s.zones);
   const panels = React.useMemo(
     () => allPanels.filter((p) => p.roofId === roofId),
     [allPanels, roofId]
@@ -60,7 +64,7 @@ export default function PanelsKonva(props: {
   // scale corrente
   const stageScale = usePlannerV2Store((s) => s.view.scale || s.view.fitScale || 1);
   const invScale = 1 / (stageScale || 1);
-  const snapPxImg = React.useMemo(() => SNAP_STAGE_PX * invScale, [stageScale]);
+  const snapPxImg = React.useMemo(() => SNAP_STAGE_PX * invScale, [invScale]);
 
   // margine progetto → px immagine
   const marginM = usePlannerV2Store((s) => s.modules.marginM) ?? 0;
@@ -68,6 +72,18 @@ export default function PanelsKonva(props: {
   const edgeMarginPx = React.useMemo(() => (mpp ? marginM / mpp : 0), [marginM, mpp]);
   const spacingM = usePlannerV2Store((s) => s.modules.spacingM) ?? 0;
   const gapPx = React.useMemo(() => (mpp ? spacingM / mpp : 0), [spacingM, mpp]);
+  const reservedPolygons = React.useMemo(
+    () => allZones
+      .filter((zone) => zone.roofId === roofId && zone.type === 'riservata')
+      .map((zone) => zone.points),
+    [allZones, roofId],
+  );
+  const isReservedCenter = React.useCallback(
+    (cx: number, cy: number) => reservedPolygons.some((polygon) =>
+      legacyPointInPolygon({ x: cx, y: cy }, polygon),
+    ),
+    [reservedPolygons],
+  );
 
   // texture pannello (opzionale)
   const [img, setImg] = React.useState<HTMLImageElement | null>(null);
@@ -104,8 +120,14 @@ export default function PanelsKonva(props: {
   const theta = (defaultAngleDeg * Math.PI) / 180;
   const ex = { x: Math.cos(theta), y: Math.sin(theta) }; // u axis
   const ey = { x: -Math.sin(theta), y: Math.cos(theta) }; // v axis
-  const project = (pt: Pt) => ({ u: pt.x * ex.x + pt.y * ex.y, v: pt.x * ey.x + pt.y * ey.y });
-  const fromUV = (u: number, v: number): Pt => ({ x: u * ex.x + v * ey.x, y: u * ex.y + v * ey.y });
+  const project = React.useCallback(
+    (pt: Pt) => ({ u: pt.x * ex.x + pt.y * ex.y, v: pt.x * ey.x + pt.y * ey.y }),
+    [ex.x, ex.y, ey.x, ey.y],
+  );
+  const fromUV = React.useCallback(
+    (u: number, v: number): Pt => ({ x: u * ex.x + v * ey.x, y: u * ex.y + v * ey.y }),
+    [ex.x, ex.y, ey.x, ey.y],
+  );
 
   // bounds UV falda
   const uvBounds = React.useMemo(() => {
@@ -118,20 +140,15 @@ export default function PanelsKonva(props: {
       if (uv.v > maxV) maxV = uv.v;
     }
     return { minU, maxU, minV, maxV };
-  }, [roofPolygon, theta]);
+  }, [roofPolygon, project]);
 
-    const updatePanel = React.useCallback(
-    (id: string, patch: Partial<PanelInst>) => {
+  const normalizePanelCandidate = React.useCallback(
+    (id: string, proposedCx: number, proposedCy: number): Pt | null => {
       const panel = allPanels.find((p) => p.id === id);
-      if (!panel) {
-        // fallback: se per qualche motivo non troviamo il pannello
-        rawUpdatePanel(id, patch as any);
-        return;
-      }
+      if (!panel) return null;
 
-      // centro proposto
-      let nextCx = patch.cx ?? panel.cx;
-      let nextCy = patch.cy ?? panel.cy;
+      let nextCx = proposedCx;
+      let nextCy = proposedCy;
 
       if (typeof nextCx === 'number' && typeof nextCy === 'number') {
         const uv = project({ x: nextCx, y: nextCy });
@@ -162,33 +179,38 @@ export default function PanelsKonva(props: {
         nextCy = corrected.y;
 
         // se dopo la correzione il centro cade in una zona riservata → non aggiornare
-        if (isInReservedZone({ x: nextCx, y: nextCy }, roofId)) {
-          return;
-        }
+        if (isReservedCenter(nextCx, nextCy)) return null;
       }
 
-      rawUpdatePanel(id, { ...patch, cx: nextCx, cy: nextCy } as any);
+      return { x: nextCx, y: nextCy };
     },
-    [allPanels, rawUpdatePanel, project, fromUV, uvBounds, edgeMarginPx, roofId]
+    [allPanels, project, fromUV, uvBounds, edgeMarginPx, isReservedCenter]
+  );
+
+  const updatePanel = React.useCallback(
+    (id: string, patch: Partial<PanelInst>) => {
+      const panel = allPanels.find((p) => p.id === id);
+      if (!panel) {
+        rawUpdatePanel(id, patch as any);
+        return;
+      }
+
+      const normalized = normalizePanelCandidate(
+        id,
+        patch.cx ?? panel.cx,
+        patch.cy ?? panel.cy,
+      );
+      if (!normalized) return;
+
+      rawUpdatePanel(id, { ...patch, cx: normalized.x, cy: normalized.y } as any);
+    },
+    [allPanels, rawUpdatePanel, normalizePanelCandidate]
   );
 
 
 
-  // ⬇️ PRIMA del `return ( ... )`
-const roofBBox = React.useMemo(() => {
-  if (!roofPolygon.length) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of roofPolygon) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-  }
-  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-}, [roofPolygon]);
-
   // drag singolo (immutato)
-  const { startDrag, hintU, hintV } = usePanelDragSnap({
+  const { startDrag, hintURef, hintVRef } = usePanelDragSnap({
     defaultAngleDeg,
     project,
     fromUV,
@@ -203,7 +225,8 @@ const roofBBox = React.useMemo(() => {
     snapPxImg,
     edgeMarginPx,
     gapPx,
-    reservedGuard: (cx, cy) => !isInReservedZone({ x: cx, y: cy }, roofId),
+    reservedGuard: (cx, cy) => !isReservedCenter(cx, cy),
+    normalizeCandidate: normalizePanelCandidate,
   });
 
 
@@ -300,6 +323,10 @@ const roofBBox = React.useMemo(() => {
     anchorId: string;
     anchorInitUV: { u: number; v: number; hw: number; hh: number };
     guides: { uCenters: number[]; uEdges: number[]; vCenters: number[]; vEdges: number[] };
+    nodes: Map<string, any>;
+    selectionNodes: Map<string, any>;
+    final: { id: string; cx: number; cy: number }[] | null;
+    frame: FrameScheduler<Pt>;
   } | null>(null);
 
   const beginGroupDrag = React.useCallback((e: any) => {
@@ -328,40 +355,28 @@ const roofBBox = React.useMemo(() => {
       excludeIds: new Set(selectedPanels.map(p => p.id)),
     });
 
-    dragStateRef.current = {
-      stage,
-      startImg,
-      inProgress: true,
-      init: selectedPanels.map(p => {
-        const uv = project({ x: p.cx, y: p.cy });
-        return { id: p.id, cx: p.cx, cy: p.cy, u: uv.u, v: uv.v };
-      }),
-      anchorId: anchor.id,
-      anchorInitUV: { u: anchorUV.u, v: anchorUV.v, hw: anchorHW, hh: anchorHH },
-      guides,
-    };
+    const nodes = new Map<string, any>();
+    const selectionNodes = new Map<string, any>();
+    selectedPanels.forEach((panel) => {
+      const node = stage.findOne(`#panel-node-${panel.id}`);
+      if (node) nodes.set(panel.id, node);
+      const selectionNode = stage.findOne(`#panel-selection-${panel.id}`);
+      if (selectionNode) selectionNodes.set(panel.id, selectionNode);
+    });
 
-    const ns = '.groupDrag';
-    setGroupHintU(null); setGroupHintV(null);
-
-    const onMove = () => {
+    const onFrame = (curImg: Pt) => {
       const st = dragStateRef.current;
       if (!st || !st.inProgress) return;
-
-      const pt = st.stage.getPointerPosition();
-      if (!pt) return;
-      const curImg = stageToImg(pt.x, pt.y);
 
       const dImgX = curImg.x - st.startImg.x;
       const dImgY = curImg.y - st.startImg.y;
 
-      // candidato: sposto l'ANCORA di (dx,dy) in immagine → UV
+      const anchorInit = st.init.find(i => i.id === st.anchorId)!;
       const anchorCandUV = project({
-        x: st.init.find(i => i.id === st.anchorId)!.cx + dImgX,
-        y: st.init.find(i => i.id === st.anchorId)!.cy + dImgY,
+        x: anchorInit.cx + dImgX,
+        y: anchorInit.cy + dImgY,
       });
 
-      // snap identico al singolo (su ANCORA), con stesse hint lines
       const snapped = snapUVToGuides({
         curU: anchorCandUV.u,
         curV: anchorCandUV.v,
@@ -376,37 +391,73 @@ const roofBBox = React.useMemo(() => {
       setGroupHintU(snapped.hintU);
       setGroupHintV(snapped.hintV);
 
-      // ΔUV finale (dopo snap) rispetto all'UV iniziale dell'ancora
       const dU = snapped.bestU - st.anchorInitUV.u;
       const dV = snapped.bestV - st.anchorInitUV.v;
-
-      // nuova posizione in IMG per ogni pannello selezionato (rigido)
       const proposed = st.init.map(i => {
         const pNew = fromUV(i.u + dU, i.v + dV);
         return { id: i.id, cx: pNew.x, cy: pNew.y };
       });
 
-      // vincoli: bounds + reserved + overlap con non selezionati
       for (const q of proposed) {
         const pp = panels.find(x => x.id === q.id)!;
-        if (!isInsideBounds(pp, q.cx, q.cy)) return; // blocca il movimento
+        if (!isInsideBounds(pp, q.cx, q.cy)) return;
       }
       if (anyOverlapWithNonSelected(proposed)) return;
 
-      // applica
-      for (const q of proposed) {
-        updatePanel(q.id, { cx: q.cx, cy: q.cy });
-      }
+      st.final = proposed;
+      proposed.forEach((position) => {
+        st.nodes.get(position.id)?.position({ x: position.cx, y: position.cy });
+        st.selectionNodes.get(position.id)?.position({ x: position.cx, y: position.cy });
+      });
+      st.nodes.values().next().value?.getLayer?.()?.batchDraw?.();
+    };
+
+    const frame = createLatestFrameScheduler(onFrame);
+    dragStateRef.current = {
+      stage,
+      startImg,
+      inProgress: true,
+      init: selectedPanels.map(p => {
+        const uv = project({ x: p.cx, y: p.cy });
+        return { id: p.id, cx: p.cx, cy: p.cy, u: uv.u, v: uv.v };
+      }),
+      anchorId: anchor.id,
+      anchorInitUV: { u: anchorUV.u, v: anchorUV.v, hw: anchorHW, hh: anchorHH },
+      guides,
+      nodes,
+      selectionNodes,
+      final: null,
+      frame,
+    };
+
+    const ns = '.groupDrag';
+    setGroupHintU(null); setGroupHintV(null);
+
+    const onMove = () => {
+      const st = dragStateRef.current;
+      if (!st || !st.inProgress) return;
+
+      const pt = st.stage.getPointerPosition();
+      if (!pt) return;
+      st.frame.schedule(stageToImg(pt.x, pt.y));
     };
 
     const onEnd = () => {
       const st = dragStateRef.current;
       if (!st) return;
+      st.frame.flush();
       st.inProgress = false;
       st.stage.off('mousemove' + ns);
       st.stage.off('touchmove' + ns);
       st.stage.off('mouseup' + ns);
       st.stage.off('touchend' + ns);
+      if (st.final) {
+        const patches = Object.fromEntries(
+          st.final.map((position) => [position.id, { cx: position.cx, cy: position.cy }]),
+        );
+        updatePanelsBulk(patches);
+      }
+      st.frame.cancel();
       dragStateRef.current = null;
       setGroupHintU(null); setGroupHintV(null);
       onDragEnd?.();
@@ -419,7 +470,7 @@ const roofBBox = React.useMemo(() => {
     groupBBox, selectedPanels, stageToImg, allPanels, roofId,
     defaultAngleDeg, project, uvBounds, edgeMarginPx, snapPxImg,
     fromUV, panels, isInsideBounds, anyOverlapWithNonSelected,
-    updatePanel, onDragStart, onDragEnd,
+    updatePanelsBulk, onDragStart, onDragEnd,
   ]);
 
   
@@ -430,14 +481,6 @@ const startMultiDrag = React.useCallback((e: any) => {
   beginGroupDrag(e);          // riusa la logica già pronta
 }, [groupBBox, selectedPanels.length, beginGroupDrag]);
 
-
-  const handlePos = React.useMemo(() => {
-    if (!groupBBox || selectedPanels.length < 2) return null;
-    return {
-      x: groupBBox.x + groupBBox.w / 2,
-      y: groupBBox.y + groupBBox.h + HANDLE_GAP_STAGE_PX * invScale,
-    };
-  }, [groupBBox, invScale, selectedPanels.length]);
 
   // ======================= RENDER =======================
  if (hasPlanningDraft) return null;
@@ -478,7 +521,11 @@ const startMultiDrag = React.useCallback((e: any) => {
         );
       })}
 
-      <Guides hintU={groupHintU ?? hintU} hintV={groupHintV ?? hintV} />
+      {groupHintU || groupHintV ? (
+        <Guides hintU={groupHintU} hintV={groupHintV} />
+      ) : (
+        <Guides hintURef={hintURef} hintVRef={hintVRef} />
+      )}
 
     </Group>
 

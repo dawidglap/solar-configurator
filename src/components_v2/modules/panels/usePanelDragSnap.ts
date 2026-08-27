@@ -2,8 +2,10 @@
 'use client';
 
 import React from 'react';
+import type Konva from 'konva';
 import type { Pt } from './math';
 import { angleDiffDeg } from './math';
+import { createLatestFrameScheduler, type FrameScheduler } from '../../canvas/performance/latestFrameScheduler';
 
 export type UV = { u: number; v: number };
 export type UVBounds = { minU: number; maxU: number; minV: number; maxV: number };
@@ -35,6 +37,7 @@ type Args = {
     // IO
     stageToImg?: (x: number, y: number) => Pt;
     updatePanel: (id: string, patch: Partial<PanelInst>) => void;
+    normalizeCandidate?: (id: string, cx: number, cy: number) => Pt | null;
 
     // UX
     onSelect?: (id?: string) => void;
@@ -57,6 +60,65 @@ function isParallel(angleA: number, angleB: number) {
     return Math.min(diff, Math.abs(diff - 180)) <= 5;
 }
 
+export type StaticPanelUV = {
+    id: string;
+    u: number;
+    v: number;
+    hw: number;
+    hh: number;
+};
+
+export function buildPanelDragStaticGeometry(input: {
+    allPanels: PanelInst[];
+    roofId: string;
+    excludeId: string;
+    defaultAngleDeg: number;
+    project: ProjectFn;
+}): StaticPanelUV[] {
+    return input.allPanels.flatMap((panel) => {
+        if (panel.roofId !== input.roofId || panel.id === input.excludeId) return [];
+        const angle = (typeof panel.angleDeg === 'number' ? panel.angleDeg : input.defaultAngleDeg) || 0;
+        if (!isParallel(angle, input.defaultAngleDeg)) return [];
+        const uv = input.project({ x: panel.cx, y: panel.cy });
+        return [{
+            id: panel.id,
+            u: uv.u,
+            v: uv.v,
+            hw: panel.wPx / 2,
+            hh: panel.hPx / 2,
+        }];
+    });
+}
+
+export function resolveNoOverlapCached(input: {
+    u: number;
+    v: number;
+    hw: number;
+    hh: number;
+    gapPx: number;
+    panels: StaticPanelUV[];
+}): UV {
+    let { u, v } = input;
+    for (let pass = 0; pass < 4; pass++) {
+        let changed = false;
+        for (const panel of input.panels) {
+            const minU = input.hw + panel.hw + input.gapPx;
+            const minV = input.hh + panel.hh + input.gapPx;
+            const du = u - panel.u;
+            const dv = v - panel.v;
+            const penU = minU - Math.abs(du);
+            const penV = minV - Math.abs(dv);
+            if (penU > 0 && penV > 0) {
+                if (penU < penV) u = panel.u + (du >= 0 ? minU : -minU);
+                else v = panel.v + (dv >= 0 ? minV : -minV);
+                changed = true;
+            }
+        }
+        if (!changed) break;
+    }
+    return { u, v };
+}
+
 export function usePanelDragSnap({
     defaultAngleDeg,
     project,
@@ -73,12 +135,18 @@ export function usePanelDragSnap({
     edgeMarginPx = 0,
     gapPx = 0,
     reservedGuard,
+    normalizeCandidate,
 }: Args) {
     // Refs stato drag
     const stageRef = React.useRef<any>(null);
     const draggingIdRef = React.useRef<string | null>(null);
     const startOffsetRef = React.useRef<{ dx: number; dy: number } | null>(null);
     const dragSizeHalfRef = React.useRef<{ hw: number; hh: number } | null>(null);
+    const draggedNodeRef = React.useRef<Konva.Node | null>(null);
+    const draggedSelectionNodeRef = React.useRef<Konva.Node | null>(null);
+    const dragStartPanelRef = React.useRef<PanelInst | null>(null);
+    const finalPositionRef = React.useRef<Pt | null>(null);
+    const frameRef = React.useRef<FrameScheduler<Pt> | null>(null);
 
     // Guide calcolate (altri pannelli + bordi tetto)
     const guidesRef = React.useRef<{
@@ -88,14 +156,20 @@ export function usePanelDragSnap({
         vEdges: number[];
     }>({ uCenters: [], uEdges: [], vCenters: [], vEdges: [] });
 
-    // Hints visuali (linee)
-    const [hintU, setHintU] = React.useState<number[] | null>(null);
-    const [hintV, setHintV] = React.useState<number[] | null>(null);
+    const hintURef = React.useRef<Konva.Line | null>(null);
+    const hintVRef = React.useRef<Konva.Line | null>(null);
+
+    const setGuide = React.useCallback((ref: React.MutableRefObject<Konva.Line | null>, points: number[] | null) => {
+        const node = ref.current;
+        if (!node) return;
+        node.points(points ?? []);
+        node.visible(Boolean(points));
+    }, []);
 
     const clearHints = React.useCallback(() => {
-        setHintU(null);
-        setHintV(null);
-    }, []);
+        setGuide(hintURef, null);
+        setGuide(hintVRef, null);
+    }, [setGuide]);
 
     const buildGuides = React.useCallback(
         (excludeId?: string) => {
@@ -134,56 +208,53 @@ export function usePanelDragSnap({
     );
 
     // --- risoluzione overlap (spinge fuori lungo asse con penetrazione minore)
+    const staticPanelsRef = React.useRef<Array<{ id: string; u: number; v: number; hw: number; hh: number }>>([]);
+
     const resolveNoOverlap = React.useCallback(
-        (u0: number, v0: number, hw: number, hh: number, excludeId: string) => {
-            let u = u0, v = v0;
-            for (let pass = 0; pass < 4; pass++) {
-                let changed = false;
-
-                for (const t of allPanels) {
-                    if (t.roofId !== roofId || t.id === excludeId) continue;
-
-                    const tAngle = (typeof t.angleDeg === 'number' ? t.angleDeg : defaultAngleDeg) || 0;
-                    if (!isParallel(tAngle, defaultAngleDeg)) continue;
-
-                    const uv = project({ x: t.cx, y: t.cy });
-                    const thw = t.wPx / 2, thh = t.hPx / 2;
-
-                    const minU = hw + thw + gapPx;
-                    const minV = hh + thh + gapPx;
-
-                    const du = u - uv.u;
-                    const dv = v - uv.v;
-
-                    const penU = minU - Math.abs(du);
-                    const penV = minV - Math.abs(dv);
-
-                    if (penU > 0 && penV > 0) {
-                        if (penU < penV) {
-                            u = uv.u + (du >= 0 ? minU : -minU);
-                        } else {
-                            v = uv.v + (dv >= 0 ? minV : -minV);
-                        }
-                        changed = true;
-                    }
-                }
-
-                if (!changed) break;
-            }
-            return { u, v };
+        (u0: number, v0: number, hw: number, hh: number) => {
+            return resolveNoOverlapCached({
+                u: u0,
+                v: v0,
+                hw,
+                hh,
+                gapPx,
+                panels: staticPanelsRef.current,
+            });
         },
-        [allPanels, roofId, defaultAngleDeg, project, gapPx]
+        [gapPx]
     );
 
-    const endDrag = React.useCallback(() => {
+    const endDrag = React.useCallback((commit = true) => {
+        frameRef.current?.flush();
         const st = stageRef.current;
         if (st) st.off('.paneldrag');
+        if (commit && draggingIdRef.current && finalPositionRef.current) {
+            updatePanel(draggingIdRef.current, {
+                cx: finalPositionRef.current.x,
+                cy: finalPositionRef.current.y,
+            });
+        } else if (!commit && draggedNodeRef.current && dragStartPanelRef.current) {
+            draggedNodeRef.current.position({
+                x: dragStartPanelRef.current.cx,
+                y: dragStartPanelRef.current.cy,
+            });
+            draggedNodeRef.current.getLayer()?.batchDraw();
+            draggedSelectionNodeRef.current?.position({
+                x: dragStartPanelRef.current.cx,
+                y: dragStartPanelRef.current.cy,
+            });
+        }
+        frameRef.current?.cancel();
         draggingIdRef.current = null;
         startOffsetRef.current = null;
         dragSizeHalfRef.current = null;
+        draggedNodeRef.current = null;
+        draggedSelectionNodeRef.current = null;
+        dragStartPanelRef.current = null;
+        finalPositionRef.current = null;
         clearHints();
         onDragEnd?.();
-    }, [onDragEnd, clearHints]);
+    }, [onDragEnd, clearHints, updatePanel]);
 
     const startDrag = React.useCallback(
         (panelId: string, e: any) => {
@@ -205,6 +276,18 @@ export function usePanelDragSnap({
             startOffsetRef.current = { dx: p.cx - mouseImg.x, dy: p.cy - mouseImg.y };
             draggingIdRef.current = panelId;
             dragSizeHalfRef.current = { hw: p.wPx / 2, hh: p.hPx / 2 };
+            draggedNodeRef.current = e.target;
+            draggedSelectionNodeRef.current = st.findOne(`#panel-selection-${panelId}`) ?? null;
+            dragStartPanelRef.current = { ...p };
+            finalPositionRef.current = { x: p.cx, y: p.cy };
+
+            staticPanelsRef.current = buildPanelDragStaticGeometry({
+                allPanels,
+                roofId,
+                excludeId: panelId,
+                defaultAngleDeg,
+                project,
+            });
 
             // precalcola guide (altri pannelli + bordi tetto)
             guidesRef.current = buildGuides(panelId);
@@ -213,15 +296,11 @@ export function usePanelDragSnap({
             const ns = '.paneldrag';
             st.off(ns);
 
-            st.on('mousemove' + ns + ' touchmove' + ns, () => {
+            const applyPointerFrame = (q: Pt) => {
                 const id = draggingIdRef.current;
                 const off = startOffsetRef.current;
                 const sz = dragSizeHalfRef.current;
                 if (!id || !off || !sz) return;
-
-                const mp = st.getPointerPosition();
-                if (!mp) return;
-                const q = stageToImg(mp.x, mp.y);
 
                 // posizione candidata (px immagine)
                 const cand = { x: q.x + off.dx, y: q.y + off.dy };
@@ -263,7 +342,7 @@ export function usePanelDragSnap({
                 }
 
                 // --- NO-OVERLAP
-                const separated = resolveNoOverlap(bestU, bestV, sz.hw, sz.hh, id);
+                const separated = resolveNoOverlap(bestU, bestV, sz.hw, sz.hh);
                 bestU = separated.u;
                 bestV = separated.v;
 
@@ -271,23 +350,41 @@ export function usePanelDragSnap({
                 if (snappedU) {
                     const a = fromUV(bestU, uvBounds.minV);
                     const b = fromUV(bestU, uvBounds.maxV);
-                    setHintU([a.x, a.y, b.x, b.y]);
-                } else setHintU(null);
+                    setGuide(hintURef, [a.x, a.y, b.x, b.y]);
+                } else setGuide(hintURef, null);
 
                 if (snappedV) {
                     const a = fromUV(uvBounds.minU, bestV);
                     const b = fromUV(uvBounds.maxU, bestV);
-                    setHintV([a.x, a.y, b.x, b.y]);
-                } else setHintV(null);
+                    setGuide(hintVRef, [a.x, a.y, b.x, b.y]);
+                } else setGuide(hintVRef, null);
 
                 const snapped = fromUV(bestU, bestV);
                 if (reservedGuard && !reservedGuard(snapped.x, snapped.y)) return;
+                const normalized = normalizeCandidate
+                    ? normalizeCandidate(id, snapped.x, snapped.y)
+                    : snapped;
+                if (!normalized) return;
 
-                updatePanel(id, { cx: snapped.x, cy: snapped.y });
+                finalPositionRef.current = normalized;
+                const node = draggedNodeRef.current;
+                if (node) {
+                    node.position({ x: normalized.x, y: normalized.y });
+                    draggedSelectionNodeRef.current?.position({ x: normalized.x, y: normalized.y });
+                    node.getLayer()?.batchDraw();
+                }
+            };
+
+            frameRef.current = createLatestFrameScheduler(applyPointerFrame);
+
+            st.on('mousemove' + ns + ' touchmove' + ns, () => {
+                const mp = st.getPointerPosition();
+                if (!mp) return;
+                frameRef.current?.schedule(stageToImg(mp.x, mp.y));
             });
 
-            st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns, endDrag);
-            st.on('mouseleave' + ns, endDrag);
+            st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns, () => endDrag(true));
+            st.on('mouseleave' + ns, () => endDrag(true));
         },
         [
             allPanels,
@@ -303,19 +400,33 @@ export function usePanelDragSnap({
             clearHints,
             resolveNoOverlap,
             reservedGuard,
+            normalizeCandidate,
             buildGuides,
+            setGuide,
+            defaultAngleDeg,
+            roofId,
         ]
     );
 
     React.useEffect(() => {
-        return () => {
-            try { stageRef.current?.off('.paneldrag'); } catch { }
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape' || !draggingIdRef.current) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            endDrag(false);
         };
-    }, []);
+        window.addEventListener('keydown', onKeyDown, { capture: true });
+        return () => {
+            frameRef.current?.cancel();
+            try { stageRef.current?.off('.paneldrag'); } catch { }
+            window.removeEventListener('keydown', onKeyDown, { capture: true });
+        };
+    }, [endDrag]);
 
     return {
         startDrag,
-        hintU, hintV,
+        hintURef, hintVRef,
     };
 }
 

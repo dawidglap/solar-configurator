@@ -19,6 +19,8 @@ export function useStagePanZoom({
     const [isRightPanning, setIsRightPanning] = useState(false);
     const viewRef = useRef(view);
     viewRef.current = view;
+    const activeStageRef = useRef<any>(null);
+    const finalOffsetRef = useRef<{ x: number; y: number } | null>(null);
     const rightPanRef = useRef<{
         clientX: number;
         clientY: number;
@@ -92,14 +94,22 @@ export function useStagePanZoom({
             const s = view.scale || view.fitScale || 1;
             const cl = clampOffset(s, ox, oy);
             e.target.position({ x: cl.x, y: cl.y });
-            setView({ offsetX: cl.x, offsetY: cl.y });
+            finalOffsetRef.current = cl;
         },
-        [view.scale, view.fitScale, clampOffset, setView]
+        [view.scale, view.fitScale, clampOffset]
     );
 
+    const onDragEnd = useCallback(() => {
+        const final = finalOffsetRef.current;
+        finalOffsetRef.current = null;
+        if (final) setView({ offsetX: final.x, offsetY: final.y });
+    }, [setView]);
+
     const beginRightPan = useCallback(
-        (event: MouseEvent) => {
+        (event: MouseEvent, stage?: any) => {
             if (event.button !== 2) return false;
+
+            activeStageRef.current = stage ?? null;
 
             rightPanRef.current = {
                 clientX: event.clientX,
@@ -125,7 +135,12 @@ export function useStagePanZoom({
                 start.offsetX + event.clientX - start.clientX,
                 start.offsetY + event.clientY - start.clientY,
             );
-            setView({ offsetX: clamped.x, offsetY: clamped.y });
+            finalOffsetRef.current = clamped;
+            const stage = activeStageRef.current;
+            if (stage) {
+                stage.position({ x: clamped.x, y: clamped.y });
+                stage.batchDraw();
+            }
             return true;
         },
         [clampOffset, setView]
@@ -134,15 +149,20 @@ export function useStagePanZoom({
     const endRightPan = useCallback(() => {
         if (!rightPanRef.current) return false;
         rightPanRef.current = null;
+        const final = finalOffsetRef.current;
+        finalOffsetRef.current = null;
+        activeStageRef.current = null;
+        if (final) setView({ offsetX: final.x, offsetY: final.y });
         setIsRightPanning(false);
         return true;
-    }, []);
+    }, [setView]);
 
     return {
         canDrag,
         isRightPanning,
         onWheel,
         onDragMove,
+        onDragEnd,
         beginRightPan,
         moveRightPan,
         endRightPan,

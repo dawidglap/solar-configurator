@@ -2,7 +2,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Circle as KonvaCircle } from 'react-konva';
+import { Circle as KonvaCircle, Line as KonvaLine } from 'react-konva';
+import { plannerTheme } from '../theme/plannerTheme';
+import { createLatestFrameScheduler, type FrameScheduler } from './performance/latestFrameScheduler';
 
 type Pt = { x: number; y: number };
 
@@ -31,10 +33,13 @@ export default function RoofHandlesKonva({
 }) {
   // --- stato/refs base
   const [active, setActive] = useState<number | null>(null);
+  const [livePoints, setLivePoints] = useState<Pt[] | null>(null);
   const activeRef = useRef<number | null>(null);
   const stageRef = useRef<import('konva/lib/Stage').Stage | null>(null);
   const ptsRef = useRef(points);
-  ptsRef.current = points;
+  ptsRef.current = livePoints ?? points;
+  const livePointsRef = useRef<Pt[] | null>(null);
+  const frameRef = useRef<FrameScheduler<{ x: number; y: number }> | null>(null);
 
   // --- stato per highlight snap
   const [hoverSnap, setHoverSnap] = useState<{ x: number; y: number } | null>(null);
@@ -73,23 +78,24 @@ function dedupCoincident(pts: Pt[], eps: number): Pt[] {
 }
 
 
-const endDrag = useCallback(() => {
+const endDrag = useCallback((commit = true) => {
+  frameRef.current?.flush();
   const st = stageRef.current;
   if (st) st.off('.roofdrag');
 
-  // ⬇️ DEDUP alla fine del drag (irrevocabile salvo undo)
-  const src = ptsRef.current;
+  const src = livePointsRef.current ?? points;
   const eps = Math.max(1, snapRadiusImg * 0.8);   // soglia vicina al raggio snap
   const deduped = dedupCoincident(src, eps);
-  if (deduped !== src && deduped.length !== src.length) {
-    onChange(deduped); // scrive lo stato "fuso"
-  }
+  if (commit) onChange(deduped);
 
+  frameRef.current?.cancel();
+  livePointsRef.current = null;
+  setLivePoints(null);
   activeRef.current = null;
   setActive(null);
   setHoverSnap(null); // pulisci highlight
   onDragEnd?.();
-}, [onDragEnd, snapRadiusImg, onChange]);
+}, [onDragEnd, snapRadiusImg, onChange, points]);
 
 
   const startDrag = useCallback(
@@ -97,6 +103,9 @@ const endDrag = useCallback(() => {
       e.cancelBubble = true; // non propagare al poligono
       setActive(i);
       activeRef.current = i;
+      const initial = points.map((point) => ({ ...point }));
+      livePointsRef.current = initial;
+      setLivePoints(initial);
       onDragStart?.();
 
       const st = e.target.getStage();
@@ -106,49 +115,73 @@ const endDrag = useCallback(() => {
       const ns = '.roofdrag';
       st.off(ns); // safety
 
-      st.on('mousemove' + ns + ' touchmove' + ns, () => {
+      frameRef.current = createLatestFrameScheduler(({ x, y }) => {
         const idx = activeRef.current;
         if (idx === null) return;
-        const pos = st.getPointerPosition();
-        if (!pos) return;
-
-        // stage -> image coords
-        const p = toImg(pos.x, pos.y);
-        const nx = clamp(p.x, 0, imgW);
-        const ny = clamp(p.y, 0, imgH);
-
-        const src = ptsRef.current;
+        const nx = clamp(x, 0, imgW);
+        const ny = clamp(y, 0, imgH);
+        const src = livePointsRef.current ?? initial;
 
         // SNAP VERTEX-VERTEX (se c'è hit, usiamo le coords del target)
         const hit = nearestTarget(nx, ny, idx);
         if (hit) {
           setHoverSnap({ x: hit.x, y: hit.y });
           const snapped = src.map((pt, j) => (j === idx ? { x: hit.x, y: hit.y } : pt));
-          onChange(snapped);
+          livePointsRef.current = snapped;
+          setLivePoints(snapped);
         } else {
           setHoverSnap(null);
           const next = src.map((pt, j) => (j === idx ? { x: nx, y: ny } : pt));
-          onChange(next);
+          livePointsRef.current = next;
+          setLivePoints(next);
         }
       });
 
-      st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns, endDrag);
-      st.on('mouseleave' + ns, endDrag);
+      st.on('mousemove' + ns + ' touchmove' + ns, () => {
+        const pos = st.getPointerPosition();
+        if (!pos) return;
+        frameRef.current?.schedule(toImg(pos.x, pos.y));
+      });
+
+      st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns, () => endDrag(true));
+      st.on('mouseleave' + ns, () => endDrag(true));
     },
-    [imgW, imgH, toImg, onChange, onDragStart, endDrag]
+    [imgW, imgH, toImg, onDragStart, endDrag, points]
   );
 
   // cleanup
   useEffect(() => {
-    return () => {
-      stageRef.current?.off('.roofdrag');
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || activeRef.current === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      endDrag(false);
     };
-  }, []);
+    window.addEventListener('keydown', onEscape, { capture: true });
+    return () => {
+      frameRef.current?.cancel();
+      stageRef.current?.off('.roofdrag');
+      window.removeEventListener('keydown', onEscape, { capture: true });
+    };
+  }, [endDrag]);
+
+  const displayedPoints = livePoints ?? points;
 
   return (
     <>
+      {livePoints && (
+        <KonvaLine
+          points={livePoints.flatMap((point) => [point.x, point.y])}
+          closed
+          stroke={plannerTheme.primary}
+          strokeWidth={1}
+          listening={false}
+          perfectDrawEnabled={false}
+        />
+      )}
       {/* maniglie vertici */}
-      {points.map((p, i) => (
+      {displayedPoints.map((p, i) => (
         <KonvaCircle
           key={i}
           x={p.x}

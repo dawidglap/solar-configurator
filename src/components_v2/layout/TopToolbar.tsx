@@ -700,10 +700,12 @@ export default function TopToolbar() {
           pricePerM={SNOW_PRICE_PER_M}
         />
 
-        <PlanningOverviewDrawer
-          open={isPlanningOverviewOpen}
-          onClose={() => setIsPlanningOverviewOpen(false)}
-        />
+        {isPlanningOverviewOpen && (
+          <PlanningOverviewDrawer
+            open
+            onClose={() => setIsPlanningOverviewOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

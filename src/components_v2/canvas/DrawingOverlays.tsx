@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useSyncExternalStore } from 'react';
 import {
   Line as KonvaLine,
   Circle as KonvaCircle,
@@ -11,6 +12,7 @@ import {
 
 import { snapParallelPerp, isNear, Pt } from './utils/snap';
 import { plannerTheme } from '../theme/plannerTheme';
+import type { RafPointChannel } from './performance/rafPointChannel';
 
 function rectFrom3(A: Pt, B: Pt, C: Pt): Pt[] {
   const vx = B.x - A.x;
@@ -217,7 +219,7 @@ export default function DrawingOverlays({
   tool,
   drawingPoly,
   rectDraft,
-  mouseImg,
+  pointerChannel,
   stroke,
   areaLabel,
   mpp,
@@ -229,13 +231,18 @@ export default function DrawingOverlays({
   tool: string;
   drawingPoly: Pt[] | null;
   rectDraft: Pt[] | null;
-  mouseImg: Pt | null;
+  pointerChannel: RafPointChannel;
   stroke: string;
   areaLabel: (pts: Pt[]) => string | null;
   mpp?: number;
   roofSnapDeg?: number;
   canvasRotateDeg?: number;
 }) {
+  const mouseImg = useSyncExternalStore(
+    pointerChannel.subscribe,
+    pointerChannel.getSnapshot,
+    pointerChannel.getServerSnapshot,
+  );
   // palette UI essenziale
   const PREVIEW = plannerTheme.primary;
   const ACCEPT  = plannerTheme.roofStrokeSelected;

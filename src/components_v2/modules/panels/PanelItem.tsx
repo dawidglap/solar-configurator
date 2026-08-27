@@ -77,6 +77,7 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
     };
 
     const base = {
+      id: `panel-node-${id}`,
       x: cx,
       y: cy,
       width: wPx,
@@ -88,6 +89,7 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
       // importante: contrassegna come interattivo per non far fare "clear" allo Stage
       name: INTERACTIVE_NAME,
       listening: true,
+      perfectDrawEnabled: false,
 
       // niente draggable Konva (drag gestito dal nostro hook)
       draggable: false,
@@ -132,6 +134,7 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
 
         {selected && (
           <Rect
+            id={`panel-selection-${id}`}
             x={cx}
             y={cy}
             width={wPx}
