@@ -104,6 +104,7 @@ test("continuous interactions keep global commits at gesture boundaries", () => 
   assert.equal(panelSource.match(/updatePanel\(/g)?.length, 1);
   assert.equal(zoneSource.match(/onChange\(/g)?.length, 1);
   assert.ok(panelSource.includes("node.position"));
+  assert.ok(panelSource.includes("endDrag(false)"));
   assert.ok(zoneSource.includes("setLivePoints"));
   assert.equal(panSource.includes("setView({ offsetX: cl.x, offsetY: cl.y })"), false);
 });

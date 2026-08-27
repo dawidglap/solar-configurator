@@ -329,6 +329,37 @@ export default function PanelsKonva(props: {
     frame: FrameScheduler<Pt>;
   } | null>(null);
 
+  const cancelGroupDrag = React.useCallback(() => {
+    const state = dragStateRef.current;
+    if (!state) return false;
+    state.stage.off('.groupDrag');
+    state.frame.cancel();
+    state.init.forEach((initial) => {
+      state.nodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
+      state.selectionNodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
+    });
+    state.nodes.values().next().value?.getLayer?.()?.batchDraw?.();
+    dragStateRef.current = null;
+    setGroupHintU(null);
+    setGroupHintV(null);
+    onDragEnd?.();
+    return true;
+  }, [onDragEnd]);
+
+  React.useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !cancelGroupDrag()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener('keydown', onEscape, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', onEscape, { capture: true });
+      cancelGroupDrag();
+    };
+  }, [cancelGroupDrag]);
+
   const beginGroupDrag = React.useCallback((e: any) => {
     if (!groupBBox || selectedPanels.length < 2 || !stageToImg) return;
 
