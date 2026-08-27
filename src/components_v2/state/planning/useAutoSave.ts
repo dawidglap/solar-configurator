@@ -15,7 +15,8 @@ export function useAutoSave() {
   useEffect(() => {
     if (!planningId) return;
 
-    const unsubscribe = usePlannerV2Store.subscribe(() => {
+    const unsubscribe = usePlannerV2Store.subscribe((state) => {
+      if (!state.hydrationReady) return;
       const payload = buildPlannerPayloadFromStore();
 
       const fingerprint = JSON.stringify({

@@ -1,7 +1,7 @@
 // src/components_v2/state/usePlanningLoad.ts
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { usePlannerV2Store } from "./plannerV2Store";
 import { normalizePlannerStep } from "./normalizePlannerStep";
@@ -10,6 +10,13 @@ import {
   buildTiledSnapshot,
   TILE_SWISSTOPO_SAT,
 } from "../utils/stitchTilesWMTS";
+import {
+  createPlanningRouteLoadState,
+  planningRouteKey,
+  resolvePlannerUrlStep,
+  resolvePlanningRouteStatus,
+  type PlanningRouteLoadState,
+} from "./planning/plannerLoadState";
 
 /** normalizza "Herr"/"Frau" -> "herr"/"frau" */
 function mapSalutation(v: any): "herr" | "frau" | null {
@@ -190,6 +197,10 @@ export function usePlanningLoad() {
   const initialStep = sp.get("initialStep");
   const stepParam = sp.get("step");
   const currentStepParam = sp.get("currentStep");
+  const routeKey = planningRouteKey(planningId);
+  const [loadState, setLoadState] = useState<PlanningRouteLoadState>(() =>
+    createPlanningRouteLoadState(planningId),
+  );
 
   const setStep = usePlannerV2Store((s) => s.setStep);
   const resetPlanner = usePlannerV2Store((s) => s.resetPlanner);
@@ -201,13 +212,24 @@ export function usePlanningLoad() {
   const setHydrationReady = usePlannerV2Store((s) => s.setHydrationReady);
 
   useEffect(() => {
+    const requestedStepFromUrl = resolvePlannerUrlStep({
+      plannerStep,
+      initialStep,
+      step: stepParam,
+      currentStep: currentStepParam,
+    });
+
     if (!planningId) {
+      setHydrationReady(false);
+      setStep(requestedStepFromUrl ?? "building");
       setHydrationReady(true);
+      setLoadState({ routeKey, status: "ready" });
       return;
     }
 
     let cancelled = false;
     setHydrationReady(false);
+    setLoadState({ routeKey, status: "loading" });
 
     (async () => {
       try {
@@ -221,15 +243,13 @@ export function usePlanningLoad() {
         }
 
         const json = await res.json().catch(() => null);
-        if (!json?.ok || cancelled) return;
+        if (!json?.ok) {
+          throw new Error("Planning response is invalid.");
+        }
+        if (cancelled) return;
 
         const planning = json.planning;
         const data = planning?.data ?? {};
-        const requestedStepFromUrl =
-          normalizePlannerStep(plannerStep) ||
-          normalizePlannerStep(initialStep) ||
-          normalizePlannerStep(stepParam) ||
-          normalizePlannerStep(currentStepParam);
         const requestedStep =
           requestedStepFromUrl ||
           normalizePlannerStep(planning?.currentStep) ||
@@ -290,9 +310,18 @@ export function usePlanningLoad() {
           const h: any = (await import("./history")).history;
           h?.clear?.();
         } catch {}
-      } finally {
         if (!cancelled) {
           setHydrationReady(true);
+          setLoadState({ routeKey, status: "ready" });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to load planning:", error);
+          setLoadState({
+            routeKey,
+            status: "error",
+            error: "Planung konnte nicht geladen werden.",
+          });
         }
       }
     })();
@@ -315,5 +344,16 @@ export function usePlanningLoad() {
     setSnapshot,
     setAddress,
     setHydrationReady,
+    routeKey,
   ]);
+
+  const status = resolvePlanningRouteStatus({ planningId, loadState });
+  return {
+    status,
+    ready: status === "ready",
+    error:
+      loadState.routeKey === routeKey && loadState.status === "error"
+        ? loadState.error
+        : undefined,
+  };
 }
