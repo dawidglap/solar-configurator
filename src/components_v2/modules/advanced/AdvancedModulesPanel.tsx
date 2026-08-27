@@ -138,6 +138,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
     blocksPerRow,
     rowCount,
     powerW: config.advanced.module.powerW,
+    montageFieldCount: preview.montageFieldCount,
   });
 
   const apply = React.useCallback(() => {
@@ -475,6 +476,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
           <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
             <span className="text-muted-foreground">Module</span><strong className="text-right">{result.moduleCount}</strong>
             <span className="text-muted-foreground">K2 Blocks</span><strong className="text-right">{result.blockCount}</strong>
+            <span className="text-muted-foreground">Montagefelder</span><strong className="text-right">{result.montageFieldCount ?? 0}</strong>
             {result.powerKWp != null && <><span className="text-muted-foreground">Leistung</span><strong className="text-right">{fmt(result.powerKWp)} kWp</strong></>}
             <span className="text-muted-foreground">System</span><span className="text-right">{isSDome ? "Süd · K2 S-Dome" : "Ost-West · K2 D-Dome"}</span>
             <span className="text-muted-foreground">Anordnung</span><span className="text-right">{result.arrangementLabel}</span>

@@ -8,6 +8,7 @@ export type GuidedPlanningResultInput = {
   blocksPerRow?: number;
   rowCount?: number;
   powerW?: number;
+  montageFieldCount?: number;
 };
 
 export type GuidedPlanningResult = {
@@ -19,6 +20,7 @@ export type GuidedPlanningResult = {
   arrangementLabel: string;
   validityLabel: string | null;
   guidance: string | null;
+  montageFieldCount?: number;
 };
 
 /**
@@ -47,6 +49,9 @@ export function buildGuidedPlanningResult(
         ? `${input.validBlockCount} von ${input.requestedBlockCount} Blocks gültig`
         : null,
       guidance: "Passe Anzahl, Ausrichtung oder Abstände an.",
+      ...(input.montageFieldCount !== undefined
+        ? { montageFieldCount: input.montageFieldCount }
+        : {}),
     };
   }
 
@@ -61,5 +66,8 @@ export function buildGuidedPlanningResult(
     arrangementLabel,
     validityLabel: null,
     guidance: null,
+    ...(input.montageFieldCount !== undefined
+      ? { montageFieldCount: input.montageFieldCount }
+      : {}),
   };
 }

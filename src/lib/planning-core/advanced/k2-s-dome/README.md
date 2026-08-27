@@ -18,6 +18,11 @@
 - Modules repeat by 18 mm along their long side, with 47 mm terminal extensions.
 - The minimum low-side terminal extension is 20 mm; the high-side extension
   used by the rail-direction block-size formula is 38.7 mm.
+- Maximum continuous field dimensions: 12 m in rail direction and 15 m
+  towards the module long side (plan view, drawing 07-482-05).
+- Detail Y shows 200 mm between separated BasicRail sections. This is a rail
+  break detail, not a module-grid pitch or an instruction to move modules;
+  Montagefeld grouping therefore does not alter placement coordinates.
 
 The drawing uses module width as the inclined dimension and module length along
 the columns. Under the SOLA module convention this adapter therefore supports
@@ -42,5 +47,5 @@ rail direction. The grid pitches are `module length + 18 mm` and `rowSpaceM`.
 
 - Optional hardware extensions beyond the minimum documented envelope.
 - Ballast, statics, wind/snow loads, fastening or structural verification.
-- Megablock generation or enforcement of the 12 m / 15 m block limits.
+- Physical mounting/rail segmentation beyond deterministic Montagefeld grouping.
 - Any formula from a different K2 system or datasheet revision.

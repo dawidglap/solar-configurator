@@ -126,6 +126,8 @@ test("fixed D-Dome 5 x 3 produces exact topology, 15 blocks and 30 modules", () 
   assert.equal(result.quantity.requestedModuleCount, 30);
   assert.equal(result.blockCount, 15);
   assert.equal(result.moduleCount, 30);
+  assert.equal(result.montageFieldCount, 1);
+  assert.equal(result.montageFields[0].blockCount, 15);
   assert.deepEqual(
     result.blocks.map((block) => block.blockKey),
     Array.from({ length: 3 }, (_, row) =>
@@ -144,6 +146,7 @@ test("fixed S-Dome 5 x 3 produces 15 blocks and 15 modules", () => {
   assert.equal(result.quantity.requestedModuleCount, 15);
   assert.equal(result.blockCount, 15);
   assert.equal(result.moduleCount, 15);
+  assert.equal(result.montageFieldCount, 1);
 });
 
 test("a reserved collision keeps the requested 5 x 3 matrix and reports 14 of 15", () => {
@@ -194,10 +197,80 @@ test("fixed Apply materializes exactly 15 stable D-Dome pairs", () => {
   assert.equal(panels.length, 30);
   const blockKeys = new Set(panels.map((panel) => panel.advanced?.blockKey));
   assert.equal(blockKeys.size, 15);
+  assert.equal(new Set(panels.map((panel) => panel.advanced?.montageFieldKey)).size, 1);
   for (const blockKey of blockKeys) {
     const pair = panels.filter((panel) => panel.advanced?.blockKey === blockKey);
     assert.deepEqual(pair.map((panel) => panel.advanced?.slotIndex), [0, 1]);
+    assert.equal(new Set(pair.map((panel) => panel.advanced?.montageFieldKey)).size, 1);
   }
+});
+
+test("large K2 preview and Apply preserve block-to-Montagefeld membership", () => {
+  let config = setAdvancedFixedQuantity({
+    config: setAdvancedQuantityMode({ config: initialConfig(), mode: "fixed" }),
+    blocksPerRow: 12,
+    rowCount: 8,
+  });
+  config = {
+    ...config,
+    advanced: {
+      ...config.advanced,
+      system: {
+        ...config.advanced.system,
+        rowSpaceM: 2.6,
+      } as AdvancedSurfacePlanningV1["advanced"]["system"],
+    },
+  };
+  const result = preview(config, rectangleRoof({ widthM: 60, heightM: 45 }));
+  assert.equal(result.valid, true);
+  if (!result.valid) return;
+  assert.ok(result.montageFieldCount > 1);
+  assert.equal(
+    result.montageFields.reduce((sum, field) => sum + field.blockCount, 0),
+    96,
+  );
+  const panels = materializeAdvancedPanels({
+    roofId: "roof-a",
+    config,
+    preview: result,
+    layoutRunId: "large-fields",
+    createPanelId: (index) => `large-${index}`,
+  });
+  assert.equal(panels.length, 192);
+  assert.equal(
+    new Set(panels.map((panel) => panel.advanced?.montageFieldKey)).size,
+    result.montageFieldCount,
+  );
+  for (const modulePreview of result.modules) {
+    const materialized = panels.find(
+      (panel) =>
+        panel.advanced?.blockKey.endsWith(`:${modulePreview.blockKey}`) &&
+        panel.advanced.slotIndex === modulePreview.slotIndex,
+    );
+    assert.ok(materialized);
+    assert.ok(
+      materialized.advanced?.montageFieldKey?.endsWith(
+        `:${modulePreview.montageFieldKey}`,
+      ),
+    );
+    assert.equal(materialized.cx, modulePreview.cx);
+    assert.equal(materialized.cy, modulePreview.cy);
+    assert.equal(materialized.angleDeg, modulePreview.angleDeg);
+  }
+});
+
+test("automatic K2 layout assigns every placed block to exactly one Montagefeld", () => {
+  const result = preview(initialConfig(), rectangleRoof({ widthM: 60, heightM: 45 }));
+  assert.equal(result.valid, true);
+  if (!result.valid) return;
+  assert.ok(result.montageFieldCount > 1);
+  const assigned = result.montageFields.flatMap((field) =>
+    result.blocks
+      .filter((block) => block.montageFieldKey === field.fieldKey)
+      .map((block) => block.blockKey),
+  );
+  assert.equal(assigned.length, result.blockCount);
+  assert.equal(new Set(assigned).size, result.blockCount);
 });
 
 test("quantity inputs roundtrip while derived totals remain absent", () => {

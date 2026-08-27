@@ -45,6 +45,7 @@ adapter therefore emits a technical warning and does not invent an extension.
 
 ## Not implemented
 
-- Automatic splitting at 12 m / 16 m; limit helpers only emit warnings.
+- Physical separation between Montagefelder: the drawing does not specify one,
+  so deterministic grouping does not alter placement coordinates.
 - Ballast, statics, wind/snow loads, fastening or structural verification.
 - Optional hardware extensions or formulas from other K2 revisions.

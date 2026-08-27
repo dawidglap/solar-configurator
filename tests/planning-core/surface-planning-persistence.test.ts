@@ -265,6 +265,7 @@ test("D-Dome panel metadata preserves stable shared block identity and opposing 
       advancedEngineVersion: ADVANCED_BLOCK_ENGINE_VERSION,
       geometryEngineVersion: GEOMETRY_V2_ENGINE_VERSION,
       blockKey: "roof-c:block:3:4",
+      montageFieldKey: "roof-c:field:1",
       slotIndex,
       systemId: K2_D_DOME_SYSTEM_ID,
       adapterVersion: K2_D_DOME_ADAPTER_VERSION,
@@ -278,6 +279,7 @@ test("D-Dome panel metadata preserves stable shared block identity and opposing 
   const loaded = jsonRoundTrip(panels);
   assert.deepEqual(loaded, panels);
   assert.equal(loaded[0].advanced?.blockKey, loaded[1].advanced?.blockKey);
+  assert.equal(loaded[0].advanced?.montageFieldKey, loaded[1].advanced?.montageFieldKey);
   assert.deepEqual(loaded.map((panel) => panel.advanced?.slotIndex), [0, 1]);
   assert.deepEqual(loaded.map((panel) => panel.advanced?.moduleFaceAzimuthDeg), [90, 270]);
 

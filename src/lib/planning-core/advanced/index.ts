@@ -6,5 +6,6 @@ export * from "./blockLayout";
 export * from "./surfacePlanning";
 export * from "./greenRoof";
 export * from "./roofEdgeAlignment";
+export * from "./k2MontageFields";
 export * from "./k2-s-dome";
 export * from "./k2-d-dome";

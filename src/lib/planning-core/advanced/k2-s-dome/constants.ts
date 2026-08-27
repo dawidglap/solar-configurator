@@ -15,7 +15,10 @@ export const K2_S_DOME_CONSTANTS_MM = {
   moduleLongSideSpacing: 18,
   longSideTerminalExtension: 47,
   lowSideMinimumTerminalExtension: 20,
+  maxBlockRailDirection: 12_000,
+  maxBlockLongSide: 15_000,
+  /** Detail Y shows this break between BasicRail sections; it is not a module-grid gap. */
+  documentedBasicRailSeparation: 200,
 } as const;
 
 export const K2_S_DOME_NOMINAL_TILT_DEG = 10;
-

@@ -20,7 +20,7 @@ import {
   createGenericSouthBlock,
   createK2DDomeBlock,
   createK2SDomeBlock,
-  evaluateK2DDomeBlockLimits,
+  groupK2MontageFields,
   resolveSurfacePlanning,
   resolveK2ParallelRoofEdgeAlignment,
   validateGreenRoofGenericInputs,
@@ -78,6 +78,7 @@ export type AdvancedPreviewError = {
 
 export type AdvancedPreviewModule = {
   blockKey: string;
+  montageFieldKey?: string;
   slotIndex: number;
   cx: number;
   cy: number;
@@ -92,11 +93,21 @@ export type AdvancedPreviewModule = {
 
 export type AdvancedPreviewBlock = {
   blockKey: string;
+  montageFieldKey?: string;
   centerPx: Pt;
   footprintPx: Pt[];
   rotationCanvasDeg: number;
   valid: boolean;
   invalidReasons: Array<"outside-usable-roof" | "reserved-zone" | "snow-guard">;
+};
+
+export type AdvancedPreviewMontageField = {
+  fieldKey: string;
+  blockCount: number;
+  moduleCount: number;
+  railSizeM: number;
+  longSideSizeM: number;
+  outlinePx: Pt[];
 };
 
 export type AdvancedQuantitySummary =
@@ -153,6 +164,8 @@ export type AdvancedPlanningPreview =
       warnings: AdvancedGeometryWarning[];
       blocks: AdvancedPreviewBlock[];
       modules: AdvancedPreviewModule[];
+      montageFields: AdvancedPreviewMontageField[];
+      montageFieldCount: number;
       blockCount: number;
       moduleCount: number;
       derived: null;
@@ -164,6 +177,8 @@ export type AdvancedPlanningPreview =
       warnings: AdvancedGeometryWarning[];
       blocks: AdvancedPreviewBlock[];
       modules: AdvancedPreviewModule[];
+      montageFields: AdvancedPreviewMontageField[];
+      montageFieldCount: number;
       blockCount: number;
       moduleCount: number;
       derived: AdvancedDerivedSummary;
@@ -630,6 +645,7 @@ function invalidPreview(
   partial?: {
     blocks: AdvancedPreviewBlock[];
     modules: AdvancedPreviewModule[];
+    montageFields?: AdvancedPreviewMontageField[];
     blockCount: number;
     moduleCount: number;
     quantity: AdvancedQuantitySummary;
@@ -641,6 +657,8 @@ function invalidPreview(
     warnings,
     blocks: partial?.blocks ?? [],
     modules: partial?.modules ?? [],
+    montageFields: partial?.montageFields ?? [],
+    montageFieldCount: partial?.montageFields?.length ?? 0,
     blockCount: partial?.blockCount ?? 0,
     moduleCount: partial?.moduleCount ?? 0,
     derived: null,
@@ -835,8 +853,40 @@ export function computeAdvancedPlanningPreview(input: {
   const placedModules = fixedLayout
     ? fixedLayout.validModules
     : automaticLayout?.modules ?? [];
+  const montageFieldGrouping = system.systemId === K2_D_DOME_SYSTEM_ID
+    ? groupK2MontageFields({
+        systemId: K2_D_DOME_SYSTEM_ID,
+        adapterVersion: K2_D_DOME_ADAPTER_VERSION,
+        blocks: placedBlocks,
+        moduleWidthM: moduleSpec.widthM,
+        moduleLengthM: moduleSpec.heightM,
+        rowSpaceM: system.rowSpaceM,
+      })
+    : system.systemId === K2_S_DOME_SYSTEM_ID
+      ? groupK2MontageFields({
+          systemId: K2_S_DOME_SYSTEM_ID,
+          adapterVersion: K2_S_DOME_ADAPTER_VERSION,
+          blocks: placedBlocks,
+          moduleWidthM: moduleSpec.widthM,
+          moduleLengthM: moduleSpec.heightM,
+          rowSpaceM: system.rowSpaceM,
+        })
+      : null;
+  const montageFieldKeyByBlock = montageFieldGrouping?.blockToFieldKey ?? {};
+  const montageFields: AdvancedPreviewMontageField[] =
+    montageFieldGrouping?.fields.map((field) => ({
+      fieldKey: field.fieldKey,
+      blockCount: field.blockCount,
+      moduleCount: field.moduleCount,
+      railSizeM: field.railSizeM,
+      longSideSizeM: field.longSideSizeM,
+      outlinePx: metricPolygonToImage(field.outline, imageAdapter),
+    })) ?? [];
   const modules = placedModules.map((module) => ({
     blockKey: module.blockKey,
+    ...(montageFieldKeyByBlock[module.blockKey]
+      ? { montageFieldKey: montageFieldKeyByBlock[module.blockKey] }
+      : {}),
     slotIndex: module.slotIndex,
     cx: metricPointToImage(module.centerM, imageAdapter).x,
     cy: metricPointToImage(module.centerM, imageAdapter).y,
@@ -851,6 +901,9 @@ export function computeAdvancedPlanningPreview(input: {
   const blocks: AdvancedPreviewBlock[] = fixedLayout
     ? fixedLayout.candidates.map((candidate) => ({
         blockKey: candidate.block.blockKey,
+        ...(montageFieldKeyByBlock[candidate.block.blockKey]
+          ? { montageFieldKey: montageFieldKeyByBlock[candidate.block.blockKey] }
+          : {}),
         centerPx: metricPointToImage(candidate.block.centerM, imageAdapter),
         footprintPx: metricPolygonToImage(candidate.block.footprint, imageAdapter),
         rotationCanvasDeg: cartesianAngleToCanvasDeg(candidate.block.rotationCartesianDeg),
@@ -859,6 +912,9 @@ export function computeAdvancedPlanningPreview(input: {
       }))
     : placedBlocks.map((block) => ({
         blockKey: block.blockKey,
+        ...(montageFieldKeyByBlock[block.blockKey]
+          ? { montageFieldKey: montageFieldKeyByBlock[block.blockKey] }
+          : {}),
         centerPx: metricPointToImage(block.centerM, imageAdapter),
         footprintPx: metricPolygonToImage(block.footprint, imageAdapter),
         rotationCanvasDeg: cartesianAngleToCanvasDeg(block.rotationCartesianDeg),
@@ -894,6 +950,7 @@ export function computeAdvancedPlanningPreview(input: {
       {
         blocks,
         modules,
+        montageFields,
         blockCount: fixedLayout.validBlockCount,
         moduleCount: fixedLayout.validModuleCount,
         quantity,
@@ -917,6 +974,8 @@ export function computeAdvancedPlanningPreview(input: {
       warnings,
       blocks,
       modules,
+      montageFields: [],
+      montageFieldCount: 0,
       blockCount: placedBlocks.length,
       moduleCount: placedModules.length,
       quantity,
@@ -955,23 +1014,14 @@ export function computeAdvancedPlanningPreview(input: {
         min: K2_S_DOME_CONSTANTS_MM.rowSpace.min / 1000,
         max: K2_S_DOME_CONSTANTS_MM.rowSpace.max / 1000,
       };
-  if (isDDome && placedBlocks.length) {
-    const limits = evaluateK2DDomeBlockLimits({
-      moduleWidthM: moduleSpec.widthM,
-      moduleLengthM: moduleSpec.heightM,
-      rowSpaceM: system.rowSpaceM,
-      quantityRows: new Set(placedBlocks.map((block) => block.rowIndex)).size,
-      numberOfColumns: new Set(placedBlocks.map((block) => block.columnIndex)).size,
-    });
-    warnings.push(...limits.warnings);
-  }
-
   return {
     valid: true,
     errors: [],
     warnings,
     blocks,
     modules,
+    montageFields,
+    montageFieldCount: montageFields.length,
     blockCount: placedBlocks.length,
     moduleCount: placedModules.length,
     quantity,
@@ -1038,6 +1088,9 @@ export function materializeAdvancedPanels(input: {
       advancedEngineVersion: ADVANCED_BLOCK_ENGINE_VERSION,
       geometryEngineVersion: GEOMETRY_V2_ENGINE_VERSION,
       blockKey: `${input.roofId}:${input.layoutRunId}:${module.blockKey}`,
+      ...(module.montageFieldKey
+        ? { montageFieldKey: `${input.roofId}:${input.layoutRunId}:${module.montageFieldKey}` }
+        : {}),
       slotIndex: module.slotIndex,
       nominalTiltDeg: module.nominalTiltDeg,
       effectiveTiltDeg: module.effectiveTiltDeg,

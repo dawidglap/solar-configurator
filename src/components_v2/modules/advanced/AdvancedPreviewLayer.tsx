@@ -141,6 +141,29 @@ export default function AdvancedPreviewLayer() {
               fill="rgba(30, 64, 175, 0.45)"
             />
           ))}
+          {preview.montageFields.map((field, fieldIndex) => {
+            const labelPoint = centroid(field.outlinePx);
+            return (
+              <Group key={field.fieldKey} listening={false}>
+                <Line
+                  points={field.outlinePx.flatMap((point) => [point.x, point.y])}
+                  closed
+                  stroke={plannerTheme.primary}
+                  strokeWidth={1.6}
+                  dash={[9, 5]}
+                  opacity={0.72}
+                />
+                <Text
+                  x={labelPoint.x + 4}
+                  y={labelPoint.y + 4}
+                  text={`F${fieldIndex + 1}`}
+                  fill={plannerTheme.primary}
+                  fontSize={9}
+                  fontStyle="bold"
+                />
+              </Group>
+            );
+          })}
         </Group>
       )}
 

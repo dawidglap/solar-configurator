@@ -156,6 +156,12 @@ function RoofCard({
                   value={roof.blockCount === undefined ? "Nicht verfügbar" : roof.blockCount}
                 />
               )}
+              {isK2 && (
+                <RoofValue
+                  label="Montagefelder"
+                  value={roof.montageFieldCount === undefined ? "Nicht verfügbar" : roof.montageFieldCount}
+                />
+              )}
               {roof.arrangement.mode === "fixed" && (
                 <RoofValue label="Reihen" value={roof.arrangement.rowCount} />
               )}

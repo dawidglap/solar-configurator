@@ -34,6 +34,7 @@ export type PlanningOverviewPanelInput = {
   panelId: string;
   advanced?: {
     blockKey?: string;
+    montageFieldKey?: string;
   };
 };
 
@@ -79,6 +80,7 @@ export type PlanningOverviewRoof = {
     | { mode: "fixed"; blocksPerRow: number; rowCount: number };
   moduleCount: number;
   blockCount?: number;
+  montageFieldCount?: number;
   power: PlanningOverviewPower;
   moduleLabel?: string;
   marginM?: number;
@@ -220,6 +222,22 @@ function uniqueBlockCount(
   return new Set(panels.map((panel) => panel.advanced!.blockKey)).size;
 }
 
+function uniqueMontageFieldCount(
+  panels: readonly PlanningOverviewPanelInput[],
+): number | undefined {
+  if (panels.length === 0) return 0;
+  if (
+    panels.some(
+      (panel) =>
+        typeof panel.advanced?.montageFieldKey !== "string" ||
+        panel.advanced.montageFieldKey.length === 0,
+    )
+  ) {
+    return undefined;
+  }
+  return new Set(panels.map((panel) => panel.advanced!.montageFieldKey)).size;
+}
+
 function systemModuleCount(systemId: string): number | undefined {
   if (
     systemId === K2_D_DOME_SYSTEM_ID ||
@@ -260,6 +278,7 @@ export function buildPlanningOverview(
       mode: "standard",
     };
     let blockCount: number | undefined;
+    let montageFieldCount: number | undefined;
     let marginM: number | undefined;
     let rowSpaceM: number | undefined;
     let serviceCorridorM: number | undefined;
@@ -280,6 +299,12 @@ export function buildPlanningOverview(
       roofModulePowerW = advanced.module.powerW;
       configuredPanelSpecId = advanced.module.panelSpecId;
       blockCount = uniqueBlockCount(committedPanels);
+      if (
+        system.systemId === K2_D_DOME_SYSTEM_ID ||
+        system.systemId === K2_S_DOME_SYSTEM_ID
+      ) {
+        montageFieldCount = uniqueMontageFieldCount(committedPanels);
+      }
       arrangement =
         advanced.layout.quantityMode === "fixed"
           ? {
@@ -424,6 +449,7 @@ export function buildPlanningOverview(
       arrangement,
       moduleCount: committedPanels.length,
       ...(blockCount !== undefined ? { blockCount } : {}),
+      ...(montageFieldCount !== undefined ? { montageFieldCount } : {}),
       power,
       ...(labels.length === 1
         ? { moduleLabel: labels[0] }

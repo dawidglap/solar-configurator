@@ -15,6 +15,7 @@ test("guided result card presents a valid fixed D-Dome 5 x 3 without recalculati
     blocksPerRow: 5,
     rowCount: 3,
     powerW: 440,
+    montageFieldCount: 1,
   });
 
   assert.deepEqual(result, {
@@ -26,6 +27,7 @@ test("guided result card presents a valid fixed D-Dome 5 x 3 without recalculati
     arrangementLabel: "5 × 3",
     validityLabel: null,
     guidance: null,
+    montageFieldCount: 1,
   });
 });
 

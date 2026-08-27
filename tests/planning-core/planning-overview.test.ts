@@ -108,6 +108,7 @@ function advancedPanels(input: {
   roofId: string;
   blockCount: number;
   modulesPerBlock: number;
+  montageFieldCount?: number;
 }): PlanningOverviewPanelInput[] {
   return Array.from(
     { length: input.blockCount * input.modulesPerBlock },
@@ -116,6 +117,14 @@ function advancedPanels(input: {
       panelId: "module-440",
       advanced: {
         blockKey: `${input.roofId}:block:${Math.floor(panelIndex / input.modulesPerBlock)}`,
+        ...(input.montageFieldCount
+          ? {
+              montageFieldKey: `${input.roofId}:field:${Math.floor(
+                Math.floor(panelIndex / input.modulesPerBlock) /
+                  Math.ceil(input.blockCount / input.montageFieldCount),
+              )}`,
+            }
+          : {}),
       },
     }),
   );
@@ -146,6 +155,33 @@ test("mixed committed planning produces 3 roofs, 52 modules and 22.88 kWp", () =
   assert.equal(overview.roofs[0].surfaceKind, "pitched");
   assert.equal(overview.roofs[0].systemId, undefined);
   assert.deepEqual(overview.roofs[0].roofDimensions, { lengthM: 12, widthM: 6 });
+});
+
+test("K2 overview derives Montagefelder only from committed panel metadata", () => {
+  const roof = rectangleRoof(
+    "d",
+    k2Config({ system: "d", quantity: { blocksPerRow: 5, rowCount: 3 } }),
+  );
+  const committed = advancedPanels({
+    roofId: "d",
+    blockCount: 15,
+    modulesPerBlock: 2,
+    montageFieldCount: 2,
+  });
+  const overview = buildPlanningOverview({
+    roofs: [roof],
+    panels: committed,
+    catalogModules: CATALOG,
+  });
+  assert.equal(overview.roofs[0].blockCount, 15);
+  assert.equal(overview.roofs[0].montageFieldCount, 2);
+  assert.equal(overview.roofs[0].moduleCount, 30);
+
+  const legacyMaterialization = buildPlanningOverview({
+    roofs: [roof],
+    panels: advancedPanels({ roofId: "d", blockCount: 15, modulesPerBlock: 2 }),
+  });
+  assert.equal(legacyMaterialization.roofs[0].montageFieldCount, undefined);
 });
 
 test("D-Dome fixed 5 by 3 reports 15 committed blocks and 30 modules", () => {

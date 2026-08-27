@@ -156,6 +156,8 @@ export type AdvancedPanelMetadata = AdvancedPanelSystemIdentity & {
   advancedEngineVersion: typeof ADVANCED_BLOCK_ENGINE_VERSION;
   geometryEngineVersion: typeof GEOMETRY_V2_ENGINE_VERSION;
   blockKey: string;
+  /** Deterministic K2 continuous-field identity; absent on legacy materializations. */
+  montageFieldKey?: string;
   slotIndex: number;
   nominalTiltDeg: number;
   effectiveTiltDeg: number;
