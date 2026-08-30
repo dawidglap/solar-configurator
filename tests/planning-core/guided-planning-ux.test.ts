@@ -66,8 +66,8 @@ test("guided sidebar exposes primary choices and keeps fine tuning collapsed by 
   );
 
   assert.ok(modulesPanel.includes("Dachfläche auswählen"));
-  assert.ok(modulesPanel.includes("Klicke auf eine Dachfläche, um die Planung zu starten."));
-  assert.ok(modulesPanel.includes('selectedRoof && displayMode === "standard"'));
+  assert.ok(modulesPanel.includes("Klicke auf eine Dachfläche, um Module zu planen."));
+  assert.ok(modulesPanel.includes('step === "modules" && selectedRoof && displayMode === "standard"'));
   assert.ok(modulesPanel.includes("Schrägdach"));
   assert.ok(modulesPanel.includes("Flachdach"));
   assert.ok(modulesPanel.includes("Feinjustierung"));
@@ -92,7 +92,9 @@ test("K2 controls remain contextual to the flat-roof panel", () => {
     "utf8",
   );
 
-  assert.ok(modulesPanel.includes('customerRoofType === "flat" && advancedConfig'));
+  assert.ok(modulesPanel.includes('step === "modules"'));
+  assert.ok(modulesPanel.includes('customerRoofType === "flat"'));
+  assert.ok(modulesPanel.includes('step === "building"'));
   assert.ok(advancedPanel.includes("K2 S-Dome 6.10"));
   assert.ok(advancedPanel.includes("K2 D-Dome 6.10"));
   assert.ok(advancedPanel.includes("Wartungsgang"));

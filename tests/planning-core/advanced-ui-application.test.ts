@@ -263,3 +263,42 @@ test("S/T: Advanced to Standard is a draft until atomic legacy apply clears only
   assert.equal(result.panels.some((panel) => panel.id === "advanced-old"), false);
   assert.equal(result.panels.some((panel) => panel.id === "other"), true);
 });
+
+test("roof type confirmation resets only the selected roof and clears its transient draft", async () => {
+  const { usePlannerV2Store } = await import("../../src/components_v2/state/plannerV2Store");
+  usePlannerV2Store.getState().resetPlanner();
+
+  const roofA = roof("roof-a");
+  const roofB = { ...roof("roof-b"), surfacePlanning: advancedConfig() };
+  const draft = createStandardPlanningDraft({
+    panelSpecId: MODULE.id,
+    modules: STANDARD_MODULES,
+  });
+  usePlannerV2Store.setState({
+    layers: [roofA, roofB],
+    panels: [
+      oldPanel("roof-a", "a-1"),
+      oldPanel("roof-a", "a-2"),
+      oldPanel("roof-b", "b-1"),
+    ],
+    selectedPanelIds: ["a-1", "b-1"],
+    roofPlanningDrafts: { "roof-a": draft },
+  });
+
+  usePlannerV2Store.getState().commitRoofLayout({
+    roofId: "roof-a",
+    panels: [],
+    surfacePlanning: advancedConfig(),
+  });
+
+  const state = usePlannerV2Store.getState();
+  assert.equal(state.panels.some((panel) => panel.roofId === "roof-a"), false);
+  assert.deepEqual(state.panels.map((panel) => panel.id), ["b-1"]);
+  assert.equal(state.selectedPanelIds.includes("a-1"), false);
+  assert.equal(state.selectedPanelIds.includes("b-1"), true);
+  assert.equal(state.roofPlanningDrafts["roof-a"], undefined);
+  assert.equal(resolveSurfacePlanning(state.layers[0].surfacePlanning).status, "supported-advanced");
+  assert.deepEqual(state.layers[1].surfacePlanning, roofB.surfacePlanning);
+
+  usePlannerV2Store.getState().resetPlanner();
+});

@@ -11,9 +11,7 @@ import { LuCompass } from "react-icons/lu";
 import { nanoid } from "nanoid";
 import toast from "react-hot-toast";
 
-import {
-  computeLegacyStandardLayout,
-} from "@/lib/planning-core/legacy-standard";
+import { computeLegacyStandardLayout } from "@/lib/planning-core/legacy-standard";
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutCommitAction,
@@ -28,13 +26,12 @@ import {
 } from "@/lib/planning-core/advanced";
 import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
 import RoofDimensionsControl from "./RoofDimensionsControl";
+import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
 import {
   createInitialAdvancedPlanning,
-  createStandardPlanningDraft,
   computeStandardDraftPanels,
   hasCommittedPanelsForRoof,
   resolveRoofPlanningMode,
-  setAdvancedSurfaceKind,
 } from "../modules/advanced/advancedPlanningApplication";
 
 type Pt = { x: number; y: number };
@@ -94,7 +91,9 @@ export default function ModulesPanel() {
   const setSelectedPanel = usePlannerV2Store((s) => s.setSelectedPanel);
   const roofPlanningDrafts = usePlannerV2Store((s) => s.roofPlanningDrafts);
   const setRoofPlanningDraft = usePlannerV2Store((s) => s.setRoofPlanningDraft);
-  const clearRoofPlanningDraft = usePlannerV2Store((s) => s.clearRoofPlanningDraft);
+  const clearRoofPlanningDraft = usePlannerV2Store(
+    (s) => s.clearRoofPlanningDraft,
+  );
   const commitRoofLayout = usePlannerV2Store((s) => s.commitRoofLayout);
 
   // --- Edit inline tilt/az (spostato sotto per evitare TDZ) ---
@@ -104,7 +103,11 @@ export default function ModulesPanel() {
     field: "tilt" | "az";
   } | null>(null);
   const [tempVal, setTempVal] = React.useState<string>("");
-  const [confirmStandardReplace, setConfirmStandardReplace] = React.useState(false);
+  const [confirmStandardReplace, setConfirmStandardReplace] =
+    React.useState(false);
+  const [pendingRoofType, setPendingRoofType] = React.useState<
+    "pitched" | "flat" | null
+  >(null);
   const relayoutRef = React.useRef<
     null | ((next?: "portrait" | "landscape") => void)
   >(null);
@@ -114,44 +117,49 @@ export default function ModulesPanel() {
     [layers, selectedId],
   );
   const selectedDraft = selectedId ? roofPlanningDrafts[selectedId] : undefined;
-  const persistedPlanning = resolveSurfacePlanning(selectedRoof?.surfacePlanning);
+  const persistedPlanning = resolveSurfacePlanning(
+    selectedRoof?.surfacePlanning,
+  );
   const displayMode = resolveRoofPlanningMode({
     persisted: selectedRoof?.surfacePlanning,
     draft: selectedDraft,
   });
-  const advancedConfig = selectedDraft?.targetMode === "advanced"
-    ? selectedDraft.config
-    : persistedPlanning.status === "supported-advanced"
-      ? persistedPlanning.config
-      : undefined;
-  const standardDraft = selectedDraft?.targetMode === "standard" ? selectedDraft : undefined;
+  const advancedConfig =
+    selectedDraft?.targetMode === "advanced"
+      ? selectedDraft.config
+      : persistedPlanning.status === "supported-advanced"
+        ? persistedPlanning.config
+        : undefined;
+  const standardDraft =
+    selectedDraft?.targetMode === "standard" ? selectedDraft : undefined;
   const displayedModules = standardDraft?.modules ?? modules;
   const displayedPanelId = standardDraft?.panelSpecId ?? selectedPanelId;
-  const customerRoofType = displayMode === "standard"
-    ? "pitched"
-    : advancedConfig?.surface.kind === "flat"
-      ? "flat"
-      : "preserved-green";
-  const persistedAdvancedSurfaceKind =
-    persistedPlanning.status === "supported-advanced"
-      ? persistedPlanning.config.surface.kind
-      : undefined;
-
-  const patchDisplayedModules = React.useCallback((patch: Partial<typeof modules>) => {
-    if (selectedRoof && standardDraft) {
-      setRoofPlanningDraft(selectedRoof.id, {
-        ...standardDraft,
-        modules: { ...standardDraft.modules, ...patch },
-      });
-      setConfirmStandardReplace(false);
-      return;
-    }
-    setModules(patch);
-  }, [selectedRoof, setModules, setRoofPlanningDraft, standardDraft]);
+  const customerRoofType =
+    displayMode === "standard"
+      ? "pitched"
+      : advancedConfig?.surface.kind === "flat"
+        ? "flat"
+        : "preserved-green";
+  const patchDisplayedModules = React.useCallback(
+    (patch: Partial<typeof modules>) => {
+      if (selectedRoof && standardDraft) {
+        setRoofPlanningDraft(selectedRoof.id, {
+          ...standardDraft,
+          modules: { ...standardDraft.modules, ...patch },
+        });
+        setConfirmStandardReplace(false);
+        return;
+      }
+      setModules(patch);
+    },
+    [selectedRoof, setModules, setRoofPlanningDraft, standardDraft],
+  );
 
   const applyStandardDraft = React.useCallback(() => {
     if (!selectedRoof || !standardDraft) return;
-    const panel = catalogPanels.find((item) => item.id === standardDraft.panelSpecId);
+    const panel = catalogPanels.find(
+      (item) => item.id === standardDraft.panelSpecId,
+    );
     if (!panel || !snapshot.mppImage) return;
     const current = usePlannerV2Store.getState();
     const runId = nanoid();
@@ -165,55 +173,69 @@ export default function ModulesPanel() {
       createPanelId: (index) => `${selectedRoof.id}_p_${runId}_${index}`,
     });
     if (!nextPanels.length) return;
-    commitRoofLayout({ roofId: selectedRoof.id, panels: nextPanels, surfacePlanning: undefined });
+    commitRoofLayout({
+      roofId: selectedRoof.id,
+      panels: nextPanels,
+      surfacePlanning: undefined,
+    });
     setSelectedPanel(panel.id);
     setModules(standardDraft.modules);
     setConfirmStandardReplace(false);
     toast.success("Layout angewendet");
-  }, [catalogPanels, commitRoofLayout, selectedRoof, setModules, setSelectedPanel, snapshot.mppImage, standardDraft]);
+  }, [
+    catalogPanels,
+    commitRoofLayout,
+    selectedRoof,
+    setModules,
+    setSelectedPanel,
+    snapshot.mppImage,
+    standardDraft,
+  ]);
 
-  const chooseAdvanced = React.useCallback(() => {
-    if (!selectedRoof || !selSpec) return;
-    if (
-      selectedDraft?.targetMode === "standard" &&
-      persistedPlanning.status === "supported-advanced" &&
-      persistedAdvancedSurfaceKind === "flat"
-    ) {
-      clearRoofPlanningDraft(selectedRoof.id);
-      return;
-    }
-    if (advancedConfig) {
-      setRoofPlanningDraft(selectedRoof.id, {
-        targetMode: "advanced",
-        config: advancedConfig.surface.kind === "flat"
-          ? advancedConfig
-          : setAdvancedSurfaceKind({ config: advancedConfig, kind: "flat" }),
+  const requestRoofTypeChange = React.useCallback(
+    (next: "pitched" | "flat") => {
+      if (!selectedRoof || customerRoofType === "preserved-green") return;
+      if (customerRoofType === next) return;
+      setPendingRoofType(next);
+    },
+    [customerRoofType, selectedRoof],
+  );
+
+  const confirmRoofTypeChange = React.useCallback(() => {
+    if (!selectedRoof || !pendingRoofType) return;
+
+    if (pendingRoofType === "flat") {
+      if (!selSpec) return;
+      const nextConfig = createInitialAdvancedPlanning({
+        panel: selSpec,
+        standardModules: modules,
       });
-      return;
+      commitRoofLayout({
+        roofId: selectedRoof.id,
+        panels: [],
+        surfacePlanning: nextConfig,
+      });
+    } else {
+      commitRoofLayout({
+        roofId: selectedRoof.id,
+        panels: [],
+        surfacePlanning: undefined,
+      });
     }
-    setRoofPlanningDraft(selectedRoof.id, {
-      targetMode: "advanced",
-      config: createInitialAdvancedPlanning({ panel: selSpec, standardModules: modules }),
-    });
-  }, [advancedConfig, clearRoofPlanningDraft, modules, persistedAdvancedSurfaceKind, persistedPlanning.status, selSpec, selectedDraft?.targetMode, selectedRoof, setRoofPlanningDraft]);
 
-  const chooseStandard = React.useCallback(() => {
-    if (!selectedRoof || !selectedPanelId) return;
-    if (persistedPlanning.status === "legacy-standard") {
-      clearRoofPlanningDraft(selectedRoof.id);
-      return;
-    }
-    setRoofPlanningDraft(selectedRoof.id, createStandardPlanningDraft({
-      panelSpecId: selectedPanelId,
-      modules,
-    }));
-  }, [clearRoofPlanningDraft, modules, persistedPlanning.status, selectedPanelId, selectedRoof, setRoofPlanningDraft]);
+    setPendingRoofType(null);
+    setConfirmStandardReplace(false);
+    toast.success("Dachtyp geändert. Die Dachfläche kann neu geplant werden.");
+  }, [commitRoofLayout, modules, pendingRoofType, selSpec, selectedRoof]);
+
+  React.useEffect(() => {
+    setPendingRoofType(null);
+  }, [selectedRoof?.id]);
 
   // blocca i global hotkeys (anche in capture) quando digiti negli input inline
   const stopHotkeysCapture = (e: React.KeyboardEvent<HTMLInputElement>) => {
     e.stopPropagation();
     // prova a bloccare eventuali native listeners in capture
-    // @ts-ignore
     if (e.nativeEvent?.stopImmediatePropagation)
       e.nativeEvent.stopImmediatePropagation();
   };
@@ -228,11 +250,11 @@ export default function ModulesPanel() {
 
       if (field === "tilt") {
         const v = Math.max(0, Math.min(60, raw));
-        updateRoof(roofId, { tiltDeg: v, source: "manual" as any });
+        updateRoof(roofId, { tiltDeg: v, source: "manual" });
       } else {
         const display = Math.round(raw); // valore inserito in UI (0° = N)
         const stored = (((display - 180) % 360) + 360) % 360; // inverti la +180° della UI
-        updateRoof(roofId, { azimuthDeg: stored, source: "manual" as any });
+        updateRoof(roofId, { azimuthDeg: stored, source: "manual" });
       }
 
       setEditing(null);
@@ -259,8 +281,7 @@ export default function ModulesPanel() {
 
       const spacingM = resolveStandardAutoLayoutSpacingM(modules.spacingM);
       const orientation = (nextOrientation ?? modules.orientation) as
-        | "portrait"
-        | "landscape";
+        "portrait" | "landscape";
 
       const currentState = usePlannerV2Store.getState();
       const obstacles = selectLegacyStandardObstacles(
@@ -331,27 +352,6 @@ export default function ModulesPanel() {
     relayoutRef.current = relayoutSelectedRoof;
   }, [relayoutSelectedRoof]);
 
-  // --- helpers area corretta per inclinazione ---
-  const polygonAreaPx2 = (pts: Pt[]) => {
-    let a = 0;
-    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-      a += (pts[j].x + pts[i].x) * (pts[j].y - pts[i].y);
-    }
-    return Math.abs(a / 2);
-  };
-
-  const roofAreaM2Corrected = React.useCallback(
-    (pts: Pt[] | undefined, mpp?: number, tiltDeg?: number) => {
-      if (!pts?.length || !mpp) return 0;
-      const m2Plan = polygonAreaPx2(pts) * mpp * mpp; // area in pianta
-      if (typeof tiltDeg !== "number") return m2Plan;
-      const tiltRad = (tiltDeg * Math.PI) / 180;
-      const cos = Math.max(0.1736, Math.cos(tiltRad)); // clamp (≥ cos 80°) per sicurezza
-      return m2Plan / cos; // area di falda (superficie reale)
-    },
-    [],
-  );
-
   return (
     <div className="w-full max-w-[240px] space-y-4 p-2 text-foreground">
       {/* === EBENEN (tabella compatta) === */}
@@ -360,7 +360,7 @@ export default function ModulesPanel() {
           Mg.{layers.length ? ` (${layers.length})` : ""}
         </div>
 
-        {detected?.length > 0 && (
+        {step === "building" && detected?.length > 0 && (
           <div className="mb-2">
             <div className="mb-1 text-[10px] font-medium text-muted-foreground">
               Erkannte Dächer
@@ -375,29 +375,34 @@ export default function ModulesPanel() {
           </p>
         ) : (
           <div className="text-[10px]">
-            {/* Header (7 colonne, griglia aggiornata) */}
-            <div className="grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-6 text-[10px] text-muted-foreground">
-              <div className="font-medium">D</div>
-              <div className="flex items-center justify-center">
-                <MdViewModule className="h-3 w-3" />
+            {step === "building" ? (
+              <div className="grid h-6 grid-cols-[28px_52px_38px_58px_32px] items-center px-1 text-[10px] text-muted-foreground">
+                <div className="font-medium">D</div>
+                <div className="text-right font-medium">m²</div>
+                <div
+                  className="flex items-center justify-center"
+                  title="Neigung (°)"
+                >
+                  <IconTilt className="h-3.5 w-3.5 opacity-90" />
+                </div>
+                <div
+                  className="flex items-center justify-center"
+                  title="Ausrichtung (° vs N)"
+                >
+                  <LuCompass className="h-4 w-4 opacity-90" />
+                </div>
+                <div />
               </div>
-              <div className="text-right font-medium">m²</div>
-              <div className="text-right font-medium">kWp</div>
-              <div
-                className="flex items-center justify-center"
-                title="Neigung (°)"
-              >
-                <IconTilt className="h-3.5 w-3.5 opacity-90" />
+            ) : (
+              <div className="grid h-6 grid-cols-[1fr_58px_70px] items-center px-1 text-[10px] text-muted-foreground">
+                <div className="font-medium">Dachfläche</div>
+                <div className="flex items-center justify-center gap-1">
+                  <MdViewModule className="h-3 w-3" />
+                  <span>Module</span>
+                </div>
+                <div className="text-right font-medium">kWp</div>
               </div>
-              <div
-                className="flex items-center justify-center"
-                title="Ausrichtung (° vs N)"
-              >
-                <LuCompass className="h-4 w-4 opacity-90" />
-              </div>
-
-              <div />
-            </div>
+            )}
 
             {/* Righe (monolinea) */}
             <ul className="divide-y divide-border/70">
@@ -419,17 +424,11 @@ export default function ModulesPanel() {
                   maximumFractionDigits: 2,
                 });
 
-                const toCard4 = (az: number) =>
-                  ["N", "E", "S", "W"][Math.round(norm360(az) / 90) % 4];
-
                 const az =
                   typeof l.azimuthDeg === "number"
                     ? norm360(l.azimuthDeg)
                     : undefined;
-                const tilt =
-                  typeof (l as any).tiltDeg === "number"
-                    ? (l as any).tiltDeg
-                    : undefined;
+                const tilt = typeof l.tiltDeg === "number" ? l.tiltDeg : undefined;
 
                 const tiltShort = tilt != null ? Math.round(tilt) : undefined;
 
@@ -437,25 +436,16 @@ export default function ModulesPanel() {
                 const azView = az != null ? toViewAz(az) : undefined;
                 const azShort = azView != null ? Math.round(azView) : undefined; // <-- ricalcola qui
 
-                const src = (l as any).source as
-                  | "sonnendach"
-                  | "manual"
-                  | undefined;
+                const src = l.source;
                 const srcBadge =
                   src === "sonnendach" ? "S" : src === "manual" ? "M" : "";
-                const m2Plan = mpp
-                  ? polygonAreaPx2(l.points as Pt[]) * mpp * mpp
-                  : 0;
-                const m2Slope = roofAreaM2Corrected(
-                  l.points as Pt[],
-                  mpp,
-                  tilt,
-                );
                 return (
                   <li key={roofId}>
                     <div
                       className={[
-                        "grid grid-cols-[20px_24px_26px_44px_32px_32px_32px] items-center px-1 h-8",
+                        step === "building"
+                          ? "grid h-8 grid-cols-[28px_52px_38px_58px_32px] items-center px-1"
+                          : "grid h-8 grid-cols-[1fr_58px_70px] items-center px-1",
                         active
                           ? "bg-primary/15 text-primary ring-1 ring-primary/30"
                           : "glass-row text-foreground",
@@ -471,189 +461,193 @@ export default function ModulesPanel() {
                         {`D${i + 1}`}
                       </button>
 
-                      {/* # moduli */}
-                      <button
-                        onClick={() => select(roofId)}
-                        title={`${count} Module`}
-                        aria-label={`${count} Module`}
-                        className="tabular-nums text-center opacity-80"
-                      >
-                        {count}
-                      </button>
-
-                      {/* m² (corretto per inclinazione; tooltip mostra anche la planimetrica) */}
-                      <div className="tabular-nums text-right opacity-80">
-                        <RoofAreaInfo
-                          points={l.points as Pt[]}
-                          mpp={mpp}
-                          variant="text"
-                          showUnit={false}
-                          tiltDeg={(l as any).tiltDeg}
-                          correctForTilt
-                        />
-                      </div>
-
-                      {/* kWp */}
-                      <div className="tabular-nums text-right opacity-80">
-                        {fmtDe2.format(kWp || 0)}
-                      </div>
-
-                      {/* tilt (°) */}
-                      <div
-                        className="tabular-nums text-center opacity-80"
-                        title="Neigung (°)"
-                        onClick={() => {
-                          if (
-                            editing?.id === roofId &&
-                            editing.field === "tilt"
-                          )
-                            return;
-                          setEditing({ id: roofId, field: "tilt" });
-                          setTempVal(
-                            tiltShort != null ? String(tiltShort) : "",
-                          );
-                        }}
-                      >
-                        {editing?.id === roofId && editing.field === "tilt" ? (
-                          <input
-                            autoFocus
-                            type="number"
-                            min={0}
-                            max={60}
-                            step={1}
-                            value={tempVal}
-                            onChange={(e) => setTempVal(e.target.value)}
-                            onBlur={() => commitInline(roofId, "tilt")}
-                            data-stop-hotkeys="true"
-                            onKeyDownCapture={stopHotkeysCapture} // ⬅️ blocca i listener globali
-                            onKeyDown={(e) => {
-                              // gestiamo noi i tasti principali
-                              if (e.key === "Enter") {
-                                commitInline(roofId, "tilt");
-                                return;
-                              }
-                              if (e.key === "Escape") {
-                                setEditing(null);
-                                return;
-                              }
-                              // Delete / Backspace: svuota il campo ma NON propagare
-                              if (e.key === "Delete" || e.key === "Backspace") {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                // @ts-ignore
-                                if (e.nativeEvent?.stopImmediatePropagation)
-                                  e.nativeEvent.stopImmediatePropagation();
-                                setTempVal("");
-                                return;
-                              }
-                            }}
-                            className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
-                            style={{ padding: 0 }}
-                          />
-                        ) : (
-                          <span>
-                            {tiltShort != null ? `${tiltShort}°` : "—"}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* azimuth (°) – UI mostra (interno + 180) */}
-                      <div
-                        className="tabular-nums text-center opacity-80"
-                        title={
-                          azView != null
-                            ? `${Math.round(azView)}° ${toCard8(azView)}`
-                            : "Ausrichtung"
-                        }
-                        onClick={() => {
-                          if (editing?.id === roofId && editing.field === "az")
-                            return;
-                          setEditing({ id: roofId, field: "az" });
-                          setTempVal(azShort != null ? String(azShort) : "");
-                        }}
-                      >
-                        {editing?.id === roofId && editing.field === "az" ? (
-                          <input
-                            autoFocus
-                            type="number"
-                            min={0}
-                            max={359}
-                            step={1}
-                            value={tempVal}
-                            onChange={(e) => setTempVal(e.target.value)}
-                            onBlur={() => commitInline(roofId, "az")}
-                            data-stop-hotkeys="true"
-                            onKeyDownCapture={stopHotkeysCapture} // ⬅️ blocca i listener globali
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                commitInline(roofId, "az");
-                                return;
-                              }
-                              if (e.key === "Escape") {
-                                setEditing(null);
-                                return;
-                              }
-                              if (e.key === "Delete" || e.key === "Backspace") {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                // @ts-ignore
-                                if (e.nativeEvent?.stopImmediatePropagation)
-                                  e.nativeEvent.stopImmediatePropagation();
-                                setTempVal("");
-                                return;
-                              }
-                            }}
-                            className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
-                            style={{ padding: 0 }}
-                          />
-                        ) : (
-                          <span>
-                            {azShort != null
-                              ? `${toCard8(azShort)} ${azShort}°`
-                              : "—"}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* elimina / fonte */}
-                      <div className="flex items-center justify-end  gap-1">
-                        {srcBadge && (
-                          <span
-                            className={[
-                              "inline-flex  h-[14px] min-w-[14px] items-center justify-center rounded-sm px-[4px] text-[9px]",
-                              active
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-secondary text-muted-foreground",
-                            ].join(" ")}
-                            title={srcBadge === "S" ? "Sonnendach" : "Manuell"}
+                      {step === "modules" ? (
+                        <>
+                          <button
+                            onClick={() => select(roofId)}
+                            title={`${count} Module`}
+                            aria-label={`${count} Module`}
+                            className="tabular-nums text-center opacity-80"
                           >
-                            {srcBadge}
-                          </span>
-                        )}
-                        <button
-                          disabled={step === "modules"}
-                          onClick={() => {
-                            if (step === "modules") return; // ⛔️ blocco in UI
-                            delLayer(roofId);
-                          }}
-                          title={
-                            step === "modules"
-                              ? "Löschen nur im Schritt „Gebäude“"
-                              : "Löschen"
-                          }
-                          aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
-                          className={[
-                            "text-[12px] leading-none",
-                            step === "modules"
-                              ? "opacity-30 cursor-not-allowed"
-                              : active
-                                ? "opacity-90 hover:opacity-100"
-                                : "opacity-60 hover:opacity-100 hover:text-destructive",
-                          ].join(" ")}
-                        >
-                          ✕
-                        </button>
-                      </div>
+                            {count}
+                          </button>
+                          <button
+                            onClick={() => select(roofId)}
+                            className="tabular-nums text-right opacity-80"
+                          >
+                            {fmtDe2.format(kWp || 0)}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="tabular-nums text-right opacity-80">
+                            <RoofAreaInfo
+                              points={l.points as Pt[]}
+                              mpp={mpp}
+                              variant="text"
+                              showUnit={false}
+                              tiltDeg={l.tiltDeg}
+                              correctForTilt
+                            />
+                          </div>
+                          <div
+                            className="tabular-nums text-center opacity-80"
+                            title="Neigung (°)"
+                            onClick={() => {
+                              if (
+                                editing?.id === roofId &&
+                                editing.field === "tilt"
+                              )
+                                return;
+                              setEditing({ id: roofId, field: "tilt" });
+                              setTempVal(
+                                tiltShort != null ? String(tiltShort) : "",
+                              );
+                            }}
+                          >
+                            {editing?.id === roofId &&
+                            editing.field === "tilt" ? (
+                              <input
+                                autoFocus
+                                type="number"
+                                min={0}
+                                max={60}
+                                step={1}
+                                value={tempVal}
+                                onChange={(e) => setTempVal(e.target.value)}
+                                onBlur={() => commitInline(roofId, "tilt")}
+                                data-stop-hotkeys="true"
+                                onKeyDownCapture={stopHotkeysCapture} // ⬅️ blocca i listener globali
+                                onKeyDown={(e) => {
+                                  // gestiamo noi i tasti principali
+                                  if (e.key === "Enter") {
+                                    commitInline(roofId, "tilt");
+                                    return;
+                                  }
+                                  if (e.key === "Escape") {
+                                    setEditing(null);
+                                    return;
+                                  }
+                                  // Delete / Backspace: svuota il campo ma NON propagare
+                                  if (
+                                    e.key === "Delete" ||
+                                    e.key === "Backspace"
+                                  ) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (e.nativeEvent?.stopImmediatePropagation)
+                                      e.nativeEvent.stopImmediatePropagation();
+                                    setTempVal("");
+                                    return;
+                                  }
+                                }}
+                                className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
+                                style={{ padding: 0 }}
+                              />
+                            ) : (
+                              <span>
+                                {tiltShort != null ? `${tiltShort}°` : "—"}
+                              </span>
+                            )}
+                          </div>
+
+                          <div
+                            className="tabular-nums text-center opacity-80"
+                            title={
+                              azView != null
+                                ? `${Math.round(azView)}° ${toCard8(azView)}`
+                                : "Ausrichtung"
+                            }
+                            onClick={() => {
+                              if (
+                                editing?.id === roofId &&
+                                editing.field === "az"
+                              )
+                                return;
+                              setEditing({ id: roofId, field: "az" });
+                              setTempVal(
+                                azShort != null ? String(azShort) : "",
+                              );
+                            }}
+                          >
+                            {editing?.id === roofId &&
+                            editing.field === "az" ? (
+                              <input
+                                autoFocus
+                                type="number"
+                                min={0}
+                                max={359}
+                                step={1}
+                                value={tempVal}
+                                onChange={(e) => setTempVal(e.target.value)}
+                                onBlur={() => commitInline(roofId, "az")}
+                                data-stop-hotkeys="true"
+                                onKeyDownCapture={stopHotkeysCapture} // ⬅️ blocca i listener globali
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    commitInline(roofId, "az");
+                                    return;
+                                  }
+                                  if (e.key === "Escape") {
+                                    setEditing(null);
+                                    return;
+                                  }
+                                  if (
+                                    e.key === "Delete" ||
+                                    e.key === "Backspace"
+                                  ) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (e.nativeEvent?.stopImmediatePropagation)
+                                      e.nativeEvent.stopImmediatePropagation();
+                                    setTempVal("");
+                                    return;
+                                  }
+                                }}
+                                className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
+                                style={{ padding: 0 }}
+                              />
+                            ) : (
+                              <span>
+                                {azShort != null
+                                  ? `${toCard8(azShort)} ${azShort}°`
+                                  : "—"}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-end gap-1">
+                            {srcBadge && (
+                              <span
+                                className={[
+                                  "inline-flex  h-[14px] min-w-[14px] items-center justify-center rounded-sm px-[4px] text-[9px]",
+                                  active
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-secondary text-muted-foreground",
+                                ].join(" ")}
+                                title={
+                                  srcBadge === "S" ? "Sonnendach" : "Manuell"
+                                }
+                              >
+                                {srcBadge}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => delLayer(roofId)}
+                              title="Dachfläche löschen"
+                              aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
+                              className={[
+                                "text-[12px] leading-none",
+                                active
+                                  ? "opacity-90 hover:opacity-100"
+                                  : "opacity-60 hover:opacity-100 hover:text-destructive",
+                              ].join(" ")}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </li>
                 );
@@ -665,21 +659,32 @@ export default function ModulesPanel() {
 
       {!selectedRoof && (
         <section className="rounded-xl border border-dashed border-border/80 bg-muted/10 px-4 py-7 text-center">
-          <MdViewModule className="mx-auto h-6 w-6 text-muted-foreground/70" aria-hidden="true" />
-          <h2 className="mt-2 text-[12px] font-semibold">Dachfläche auswählen</h2>
+          <MdViewModule
+            className="mx-auto h-6 w-6 text-muted-foreground/70"
+            aria-hidden="true"
+          />
+          <h2 className="mt-2 text-[12px] font-semibold">
+            Dachfläche auswählen
+          </h2>
           <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-            Klicke auf eine Dachfläche, um die Planung zu starten.
+            {step === "building"
+              ? "Klicke auf eine Dachfläche, um ihre Eigenschaften zu bearbeiten."
+              : "Klicke auf eine Dachfläche, um Module zu planen."}
           </p>
         </section>
       )}
 
-      {selectedRoof && (
+      {step === "building" && selectedRoof && (
         <section className="space-y-2 border-b border-border/60 pb-4">
           <label className={labelSm}>Dachtyp</label>
-          <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/25 p-1" role="group" aria-label="Dachtyp">
+          <div
+            className="grid grid-cols-2 gap-1 rounded-xl bg-muted/25 p-1"
+            role="group"
+            aria-label="Dachtyp"
+          >
             <button
               type="button"
-              onClick={chooseStandard}
+              onClick={() => requestRoofTypeChange("pitched")}
               aria-pressed={customerRoofType === "pitched"}
               className={`h-11 rounded-lg text-[11px] font-semibold ${customerRoofType === "pitched" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
             >
@@ -687,7 +692,7 @@ export default function ModulesPanel() {
             </button>
             <button
               type="button"
-              onClick={chooseAdvanced}
+              onClick={() => requestRoofTypeChange("flat")}
               disabled={!selSpec}
               aria-pressed={customerRoofType === "flat"}
               className={`h-11 rounded-lg text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${customerRoofType === "flat" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
@@ -697,38 +702,51 @@ export default function ModulesPanel() {
           </div>
           {customerRoofType === "preserved-green" && (
             <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] text-muted-foreground">
-              Die bestehende Gründach-Konfiguration bleibt gespeichert. Neue Gründach-Planungen sind in diesem Workflow derzeit ausgeblendet.
+              Die bestehende Gründach-Konfiguration bleibt gespeichert. Neue
+              Gründach-Planungen sind in diesem Workflow derzeit ausgeblendet.
             </p>
           )}
           {displayMode === "advanced" && !advancedConfig && (
             <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-[10px] text-destructive">
-              Diese gespeicherte Flachdach-Konfiguration wird von dieser SOLA-Version nicht unterstützt. Die gespeicherten Module bleiben unverändert.
+              Diese gespeicherte Flachdach-Konfiguration wird von dieser
+              SOLA-Version nicht unterstützt. Die gespeicherten Module bleiben
+              unverändert.
             </p>
           )}
         </section>
       )}
 
-      {selectedRoof && <RoofDimensionsControl roof={selectedRoof} />}
-
-      {selectedRoof && customerRoofType === "flat" && advancedConfig && (
-        <AdvancedModulesPanel
-          roof={selectedRoof}
-          config={advancedConfig as AdvancedSurfacePlanningV1}
-          isDraft={selectedDraft?.targetMode === "advanced"}
-        />
+      {step === "building" && selectedRoof && (
+        <RoofDimensionsControl roof={selectedRoof} />
       )}
 
-      {selectedRoof && displayMode === "standard" && (
+      {step === "modules" &&
+        selectedRoof &&
+        customerRoofType === "flat" &&
+        advancedConfig && (
+          <AdvancedModulesPanel
+            roof={selectedRoof}
+            config={advancedConfig as AdvancedSurfacePlanningV1}
+            isDraft={selectedDraft?.targetMode === "advanced"}
+          />
+        )}
+
+      {step === "modules" && selectedRoof && displayMode === "standard" && (
         <div className="space-y-4">
           <section className="space-y-1">
-            <label htmlFor="panel-select" className={labelSm}>Modul</label>
+            <label htmlFor="panel-select" className={labelSm}>
+              Modul
+            </label>
             <select
               id="panel-select"
               aria-label="Modul wählen"
               value={displayedPanelId}
               onChange={(event) => {
                 if (standardDraft) {
-                  setRoofPlanningDraft(selectedRoof.id, { ...standardDraft, panelSpecId: event.target.value });
+                  setRoofPlanningDraft(selectedRoof.id, {
+                    ...standardDraft,
+                    panelSpecId: event.target.value,
+                  });
                   setConfirmStandardReplace(false);
                 } else {
                   setSelectedPanel(event.target.value);
@@ -737,7 +755,9 @@ export default function ModulesPanel() {
               className={inputBase}
             >
               {catalogPanels.map((panel) => (
-                <option key={panel.id} value={panel.id}>{panel.brand} {panel.model} — {panel.wp} W</option>
+                <option key={panel.id} value={panel.id}>
+                  {panel.brand} {panel.model} — {panel.wp} W
+                </option>
               ))}
             </select>
           </section>
@@ -747,13 +767,20 @@ export default function ModulesPanel() {
             {standardDraft ? (
               <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/25 p-1">
                 {(["portrait", "landscape"] as const).map((orientation) => (
-                  <button key={orientation} type="button" onClick={() => patchDisplayedModules({ orientation })} className={`h-9 rounded-lg text-[10px] font-medium ${displayedModules.orientation === orientation ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>
+                  <button
+                    key={orientation}
+                    type="button"
+                    onClick={() => patchDisplayedModules({ orientation })}
+                    className={`h-9 rounded-lg text-[10px] font-medium ${displayedModules.orientation === orientation ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                  >
                     {orientation === "portrait" ? "Hochformat" : "Querformat"}
                   </button>
                 ))}
               </div>
             ) : (
-              <OrientationToggle onChange={(next) => relayoutSelectedRoof(next)} />
+              <OrientationToggle
+                onChange={(next) => relayoutSelectedRoof(next)}
+              />
             )}
           </section>
 
@@ -761,46 +788,118 @@ export default function ModulesPanel() {
             <label className="space-y-1 text-[10px] text-muted-foreground">
               Modulabstand
               <span className="flex items-center gap-1">
-                <input type="number" step="0.01" min="0" value={displayedModules.spacingM} onChange={(event) => patchDisplayedModules({ spacingM: Number(event.target.value) })} className={inputBase} aria-label="Modulabstand (m)" />
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={displayedModules.spacingM}
+                  onChange={(event) =>
+                    patchDisplayedModules({
+                      spacingM: Number(event.target.value),
+                    })
+                  }
+                  className={inputBase}
+                  aria-label="Modulabstand (m)"
+                />
                 <span>m</span>
               </span>
             </label>
             <label className="space-y-1 text-[10px] text-muted-foreground">
               Randabstand
               <span className="flex items-center gap-1">
-                <input type="number" step="0.05" min="0" value={displayedModules.marginM} onChange={(event) => patchDisplayedModules({ marginM: Number(event.target.value) })} className={inputBase} aria-label="Randabstand (m)" />
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  value={displayedModules.marginM}
+                  onChange={(event) =>
+                    patchDisplayedModules({
+                      marginM: Number(event.target.value),
+                    })
+                  }
+                  className={inputBase}
+                  aria-label="Randabstand (m)"
+                />
                 <span>m</span>
               </span>
             </label>
           </section>
 
           <details className="rounded-xl border border-border/60 text-[10px]">
-            <summary className="cursor-pointer px-3 py-2.5 font-medium text-muted-foreground">Feinjustierung</summary>
+            <summary className="cursor-pointer px-3 py-2.5 font-medium text-muted-foreground">
+              Feinjustierung
+            </summary>
             <div className="border-t border-border/60 p-3">
-              {!standardDraft
-                ? <GridRotationControl />
-                : <p className="text-muted-foreground">Die technische Rasterausrichtung bleibt beim bestehenden Standard-Layout unverändert.</p>}
+              {!standardDraft ? (
+                <GridRotationControl />
+              ) : (
+                <p className="text-muted-foreground">
+                  Die technische Rasterausrichtung bleibt beim bestehenden
+                  Standard-Layout unverändert.
+                </p>
+              )}
             </div>
           </details>
 
           {standardDraft && (
             <section className="sticky bottom-0 -mx-2 space-y-2 border-y border-primary/25 bg-background/95 p-3 backdrop-blur">
-              <p className="text-[11px] font-semibold text-primary">Standard-Layout Vorschau</p>
+              <p className="text-[11px] font-semibold text-primary">
+                Standard-Layout Vorschau
+              </p>
               {confirmStandardReplace && (
-                <p className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-2 text-[10px]">Das bestehende Layout dieser Dachfläche wird ersetzt. Andere Dachflächen bleiben unverändert.</p>
+                <p className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-2 text-[10px]">
+                  Das bestehende Layout dieser Dachfläche wird ersetzt. Andere
+                  Dachflächen bleiben unverändert.
+                </p>
               )}
-              <p className="text-[10px] text-muted-foreground">Nicht angewendete Änderungen</p>
+              <p className="text-[10px] text-muted-foreground">
+                Nicht angewendete Änderungen
+              </p>
               <div className="grid grid-cols-[0.8fr_1.2fr] gap-2">
-                <button type="button" className="h-9 rounded-lg border border-border text-[11px]" onClick={() => { clearRoofPlanningDraft(selectedRoof.id); setConfirmStandardReplace(false); }}>Abbrechen</button>
-                <button type="button" className="h-9 rounded-lg bg-primary text-[11px] font-medium text-primary-foreground" onClick={() => {
-                  if (hasCommittedPanelsForRoof(panels, selectedRoof.id) && !confirmStandardReplace) setConfirmStandardReplace(true);
-                  else applyStandardDraft();
-                }}>{confirmStandardReplace ? "Ersetzen bestätigen" : "Layout anwenden"}</button>
+                <button
+                  type="button"
+                  className="h-9 rounded-lg border border-border text-[11px]"
+                  onClick={() => {
+                    clearRoofPlanningDraft(selectedRoof.id);
+                    setConfirmStandardReplace(false);
+                  }}
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="button"
+                  className="h-9 rounded-lg bg-primary text-[11px] font-medium text-primary-foreground"
+                  onClick={() => {
+                    if (
+                      hasCommittedPanelsForRoof(panels, selectedRoof.id) &&
+                      !confirmStandardReplace
+                    )
+                      setConfirmStandardReplace(true);
+                    else applyStandardDraft();
+                  }}
+                >
+                  {confirmStandardReplace
+                    ? "Ersetzen bestätigen"
+                    : "Layout anwenden"}
+                </button>
               </div>
             </section>
           )}
         </div>
       )}
+
+      <RoofTypeChangeDialog
+        open={pendingRoofType !== null}
+        currentLabel={customerRoofType === "flat" ? "Flachdach" : "Schrägdach"}
+        nextLabel={pendingRoofType === "flat" ? "Flachdach" : "Schrägdach"}
+        moduleCount={
+          selectedRoof
+            ? panels.filter((panel) => panel.roofId === selectedRoof.id).length
+            : 0
+        }
+        onCancel={() => setPendingRoofType(null)}
+        onConfirm={confirmRoofTypeChange}
+      />
     </div>
   );
 }
