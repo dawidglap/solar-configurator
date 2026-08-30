@@ -3,7 +3,14 @@
 import React from "react";
 import { usePlannerV2Store } from "./state/plannerV2Store";
 import { resolveRoofFallAzimuth, roofAzimuthCardinal } from "./roof/roofOrientation";
-import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
+import {
+  GENERIC_EAST_WEST_SYSTEM_ID,
+  GENERIC_SOUTH_SYSTEM_ID,
+  K2_D_DOME_SYSTEM_ID,
+  K2_S_DOME_SYSTEM_ID,
+  resolveSurfacePlanning,
+  type AdvancedSurfacePlanningV1,
+} from "@/lib/planning-core/advanced";
 
 const TICKS = Array.from({ length: 36 }, (_, i) => i * 10); // alle 10°
 
@@ -17,16 +24,33 @@ export default function CompassHUD() {
   const roof = layers.find((l) => l.id === selectedId);
   if (!roof) return null;
   const persistedPlanning = resolveSurfacePlanning(roof.surfacePlanning);
-  const surfaceKind = draft?.targetMode === "advanced"
-    ? draft.config.surface.kind
-    : persistedPlanning.status === "supported-advanced" ||
-        persistedPlanning.status === "supported-standard"
-      ? persistedPlanning.config.surface.kind
-      : "pitched";
-  if (surfaceKind === "flat") return null;
-  const roofDirectionDeg = resolveRoofFallAzimuth(roof);
-  if (roofDirectionDeg == null) return null;
-  const label = roofAzimuthCardinal(roofDirectionDeg);
+  const advancedConfig: AdvancedSurfacePlanningV1 | undefined =
+    draft?.targetMode === "advanced"
+      ? draft.config
+      : persistedPlanning.status === "supported-advanced"
+        ? persistedPlanning.config
+        : undefined;
+  const isFlat = advancedConfig?.surface.kind === "flat";
+  const system = advancedConfig?.advanced.system;
+  const primaryModuleAzimuthDeg = system?.systemId === K2_S_DOME_SYSTEM_ID ||
+      system?.systemId === GENERIC_SOUTH_SYSTEM_ID
+    ? system.faceAzimuthDeg
+    : system?.systemId === K2_D_DOME_SYSTEM_ID ||
+        system?.systemId === GENERIC_EAST_WEST_SYSTEM_ID
+      ? system.primaryFaceAzimuthDeg
+      : undefined;
+  const opposingModules = system?.systemId === K2_D_DOME_SYSTEM_ID ||
+    system?.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
+  const primaryDirectionDeg = isFlat
+    ? primaryModuleAzimuthDeg
+    : resolveRoofFallAzimuth(roof);
+  if (primaryDirectionDeg == null) return null;
+  const directionDegs = opposingModules && isFlat
+    ? [primaryDirectionDeg, (primaryDirectionDeg + 180) % 360]
+    : [primaryDirectionDeg];
+  const numericLabel = directionDegs
+    .map((direction) => `${Math.round(direction)}° ${roofAzimuthCardinal(direction)}`)
+    .join(" / ");
 
   return (
     <div className="fixed right-3 top-24 z-[260] pointer-events-none mt-4">
@@ -81,19 +105,19 @@ export default function CompassHUD() {
             <div className="w-[2px] h-10 rounded-full bg-red-500/90" />
           </div>
 
-          {/* GRÜNER Pfeil = Dachausrichtung */}
-          <div
-            className="absolute left-1/2 top-1/2"
-            style={{
-              transform: `translate(-50%, -50%) rotate(${roofDirectionDeg}deg)`,
-              transformOrigin: "center",
-            }}
-          >
-            {/* Schaft */}
-            <div className="w-[3px] h-10 rounded-full bg-emerald-400/90 shadow-[0_0_8px_rgba(16,185,129,0.7)] mx-auto" />
-            {/* Spitze */}
-            <div className="w-0 h-0 border-l-[5px] border-r-[5px] border-b-[7px] border-l-transparent border-r-transparent border-b-emerald-400 mx-auto -mt-1" />
-          </div>
+          {directionDegs.map((directionDeg) => (
+            <div
+              key={directionDeg}
+              className="absolute left-1/2 top-1/2"
+              style={{
+                transform: `translate(-50%, -50%) rotate(${directionDeg}deg)`,
+                transformOrigin: "center",
+              }}
+            >
+              <div className="mx-auto h-10 w-[3px] rounded-full bg-emerald-400/90 shadow-[0_0_8px_rgba(16,185,129,0.7)]" />
+              <div className="mx-auto -mt-1 h-0 w-0 border-b-[7px] border-l-[5px] border-r-[5px] border-b-emerald-400 border-l-transparent border-r-transparent" />
+            </div>
+          ))}
 
           {/* kleiner Kreis in der Mitte */}
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-neutral-900/95 border border-neutral-700/70" />
@@ -101,7 +125,7 @@ export default function CompassHUD() {
 
         {/* numerische Anzeige z.B. „268° W“ */}
         <div className="text-[11px] leading-none tracking-wide tabular-nums">
-          {Math.round(roofDirectionDeg)}° {label}
+          {numericLabel}
         </div>
 
         {/* Legende Nord vs Dach */}
@@ -112,12 +136,12 @@ export default function CompassHUD() {
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block w-2 h-[2px] bg-emerald-400" />
-            Dach
+            {isFlat ? "Module" : "Dach"}
           </span>
         </div>
 
         <div className="text-[9px] text-neutral-500">
-          Gefällerichtung relativ zu Nord
+          {isFlat ? "Modulausrichtung relativ zu Nord" : "Gefällerichtung relativ zu Nord"}
         </div>
       </div>
     </div>
