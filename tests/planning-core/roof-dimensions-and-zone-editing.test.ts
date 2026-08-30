@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  analyzeRoofSegments,
   analyzeRectangularRoof,
+  resizeRoofSegment,
   resizeRectangularRoof,
   type MetricPoint,
 } from "../../src/lib/planning-core/geometry-v2";
@@ -111,7 +113,7 @@ test("zero, negative, non-finite and excessive dimensions are rejected", () => {
   }
 });
 
-test("generic and concave polygons remain read-only for direct dimensions", () => {
+test("generic and concave polygons do not masquerade as semantic rectangles", () => {
   const concave = [
     { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 },
     { x: 50, y: 25 }, { x: 0, y: 50 },
@@ -222,4 +224,76 @@ test("reserved edits outside the owner roof or creating self-intersection are re
   });
   assert.equal(selfIntersection.accepted, false);
   assert.deepEqual(selfIntersection.points, ZONE);
+});
+
+test("generic roof segments expose every real polygon edge in metres", () => {
+  const polygon = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 120, y: 50 },
+    { x: 50, y: 90 },
+    { x: 0, y: 50 },
+  ];
+  const segments = analyzeRoofSegments(polygon, MPP_IMAGE);
+  assert.equal(segments.length, 5);
+  assert.equal(segments[0].lengthM, 10);
+  assert.ok(Math.abs(segments[1].lengthM - Math.hypot(20, 50) * MPP_IMAGE) < EPSILON);
+});
+
+test("manual segment length keeps its midpoint/direction and updates the polygon", () => {
+  const polygon = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 120, y: 50 },
+    { x: 50, y: 90 },
+    { x: 0, y: 50 },
+  ];
+  const resized = resizeRoofSegment({
+    pointsPx: polygon,
+    mppImage: MPP_IMAGE,
+    segmentIndex: 0,
+    lengthM: 12,
+  });
+  assert.equal(resized.valid, true);
+  if (!resized.valid) return;
+  assert.deepEqual(resized.points[0], { x: -10, y: 0 });
+  assert.deepEqual(resized.points[1], { x: 110, y: 0 });
+  assert.deepEqual(resized.points[3], polygon[3]);
+  assert.equal(resized.segments[0].lengthM, 12);
+  assert.equal(
+    resizeRoofSegment({
+      pointsPx: polygon,
+      mppImage: MPP_IMAGE,
+      segmentIndex: 0,
+      lengthM: 0,
+    }).valid,
+    false,
+  );
+});
+
+test("pitched segment values use the same true-length correction for display and editing", () => {
+  const polygon = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+    { x: 0, y: 100 },
+  ];
+  const segments = analyzeRoofSegments(polygon, MPP_IMAGE, {
+    tiltDeg: 60,
+    fallAzimuthDeg: 90,
+  });
+  assert.ok(Math.abs(segments[0].lengthM - 20) < EPSILON);
+  const resized = resizeRoofSegment({
+    pointsPx: polygon,
+    mppImage: MPP_IMAGE,
+    segmentIndex: 0,
+    lengthM: 12,
+    tiltDeg: 60,
+    fallAzimuthDeg: 90,
+  });
+  assert.equal(resized.valid, true);
+  if (!resized.valid) return;
+  assert.ok(Math.abs(resized.segments[0].lengthM - 12) < EPSILON);
+  assert.ok(Math.abs(resized.points[0].x - 20) < EPSILON);
+  assert.ok(Math.abs(resized.points[1].x - 80) < EPSILON);
 });

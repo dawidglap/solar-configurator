@@ -2,7 +2,7 @@
 
 import React from "react";
 import { usePlannerV2Store } from "./state/plannerV2Store";
-import { normalizeRoofAzimuthDeg, roofAzimuthCardinal } from "./roof/roofOrientation";
+import { resolveRoofFallAzimuth, roofAzimuthCardinal } from "./roof/roofOrientation";
 
 const TICKS = Array.from({ length: 36 }, (_, i) => i * 10); // alle 10°
 
@@ -11,8 +11,9 @@ export default function CompassHUD() {
   const selectedId = usePlannerV2Store((s) => s.selectedId);
 
   const roof = layers.find((l) => l.id === selectedId);
-  if (!roof || typeof roof.azimuthDeg !== "number") return null;
-  const roofDirectionDeg = normalizeRoofAzimuthDeg(roof.azimuthDeg);
+  if (!roof) return null;
+  const roofDirectionDeg = resolveRoofFallAzimuth(roof);
+  if (roofDirectionDeg == null) return null;
   const label = roofAzimuthCardinal(roofDirectionDeg);
 
   return (

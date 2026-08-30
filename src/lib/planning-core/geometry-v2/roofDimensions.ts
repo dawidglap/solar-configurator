@@ -1,3 +1,4 @@
+import { isSimpleMetricPolygon, polygonArea } from "./polygon";
 import type { MetricPoint } from "./types";
 
 export const MIN_EDITABLE_ROOF_DIMENSION_M = 0.1;
@@ -119,6 +120,146 @@ function validDimension(value: number): boolean {
     value >= MIN_EDITABLE_ROOF_DIMENSION_M &&
     value <= MAX_EDITABLE_ROOF_DIMENSION_M
   );
+}
+
+export type RoofSegmentDimension = {
+  segmentIndex: number;
+  startPointIndex: number;
+  endPointIndex: number;
+  lengthM: number;
+};
+
+export type RoofSegmentMeasurementOptions = {
+  tiltDeg?: number;
+  fallAzimuthDeg?: number;
+};
+
+export function roofSegmentLengthM(
+  vectorPx: MetricPoint,
+  mppImage: number,
+  options: RoofSegmentMeasurementOptions = {},
+): number {
+  const planLengthPx = Math.hypot(vectorPx.x, vectorPx.y);
+  if (
+    !(options.tiltDeg && options.tiltDeg > 0) ||
+    typeof options.fallAzimuthDeg !== "number"
+  ) {
+    return planLengthPx * mppImage;
+  }
+  const azimuthRad = (options.fallAzimuthDeg * Math.PI) / 180;
+  const fallUnit = { x: Math.sin(azimuthRad), y: -Math.cos(azimuthRad) };
+  const parallelPx = vectorPx.x * fallUnit.x + vectorPx.y * fallUnit.y;
+  const perpendicularPx =
+    vectorPx.x * -fallUnit.y + vectorPx.y * fallUnit.x;
+  const cosine = Math.max(
+    Math.cos((Math.min(options.tiltDeg, 80) * Math.PI) / 180),
+    Math.cos((80 * Math.PI) / 180),
+  );
+  return Math.hypot(parallelPx / cosine, perpendicularPx) * mppImage;
+}
+
+export function analyzeRoofSegments(
+  pointsPx: readonly MetricPoint[],
+  mppImage: number,
+  options: RoofSegmentMeasurementOptions = {},
+): RoofSegmentDimension[] {
+  if (!(mppImage > 0) || !Number.isFinite(mppImage) || pointsPx.length < 3) return [];
+  return pointsPx.map((point, segmentIndex) => {
+    const endPointIndex = (segmentIndex + 1) % pointsPx.length;
+    const end = pointsPx[endPointIndex];
+    return {
+      segmentIndex,
+      startPointIndex: segmentIndex,
+      endPointIndex,
+      lengthM: roofSegmentLengthM(
+        { x: end.x - point.x, y: end.y - point.y },
+        mppImage,
+        options,
+      ),
+    };
+  });
+}
+
+export type ResizeRoofSegmentResult =
+  | { valid: true; points: MetricPoint[]; segments: RoofSegmentDimension[] }
+  | {
+      valid: false;
+      reason:
+        | "invalid-scale"
+        | "invalid-segment"
+        | "invalid-length"
+        | "invalid-polygon";
+    };
+
+/**
+ * Changes one polygon edge without inventing an axis or bounding-box constraint.
+ * The selected edge keeps its midpoint and direction; its two vertices move
+ * symmetrically. Neighbouring edges follow those vertices.
+ */
+export function resizeRoofSegment(input: {
+  pointsPx: readonly MetricPoint[];
+  mppImage: number;
+  segmentIndex: number;
+  lengthM: number;
+  tiltDeg?: number;
+  fallAzimuthDeg?: number;
+}): ResizeRoofSegmentResult {
+  if (!(input.mppImage > 0) || !Number.isFinite(input.mppImage)) {
+    return { valid: false, reason: "invalid-scale" };
+  }
+  if (!validDimension(input.lengthM)) return { valid: false, reason: "invalid-length" };
+  if (
+    input.pointsPx.length < 3 ||
+    !Number.isInteger(input.segmentIndex) ||
+    input.segmentIndex < 0 ||
+    input.segmentIndex >= input.pointsPx.length
+  ) {
+    return { valid: false, reason: "invalid-segment" };
+  }
+
+  const startIndex = input.segmentIndex;
+  const endIndex = (startIndex + 1) % input.pointsPx.length;
+  const start = input.pointsPx[startIndex];
+  const end = input.pointsPx[endIndex];
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const currentLengthPx = Math.hypot(dx, dy);
+  if (!(currentLengthPx > 1e-6)) return { valid: false, reason: "invalid-segment" };
+
+  const currentLengthM = roofSegmentLengthM(
+    { x: dx, y: dy },
+    input.mppImage,
+    { tiltDeg: input.tiltDeg, fallAzimuthDeg: input.fallAzimuthDeg },
+  );
+  const halfLengthPx = (currentLengthPx * input.lengthM) / currentLengthM / 2;
+  const ux = dx / currentLengthPx;
+  const uy = dy / currentLengthPx;
+  const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+  const points = input.pointsPx.map((point) => ({ ...point }));
+  points[startIndex] = {
+    x: midpoint.x - ux * halfLengthPx,
+    y: midpoint.y - uy * halfLengthPx,
+  };
+  points[endIndex] = {
+    x: midpoint.x + ux * halfLengthPx,
+    y: midpoint.y + uy * halfLengthPx,
+  };
+
+  const metricPoints = points.map((point) => ({
+    x: point.x * input.mppImage,
+    y: point.y * input.mppImage,
+  }));
+  if (!isSimpleMetricPolygon(metricPoints) || polygonArea(metricPoints) <= 0.01) {
+    return { valid: false, reason: "invalid-polygon" };
+  }
+  return {
+    valid: true,
+    points,
+    segments: analyzeRoofSegments(points, input.mppImage, {
+      tiltDeg: input.tiltDeg,
+      fallAzimuthDeg: input.fallAzimuthDeg,
+    }),
+  };
 }
 
 export function resizeRectangularRoof(input: {

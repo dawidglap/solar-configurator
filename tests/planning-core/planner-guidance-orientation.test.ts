@@ -9,7 +9,9 @@ import {
 import {
   formatRoofAzimuth,
   normalizeRoofAzimuthDeg,
+  resolveRoofFallAzimuth,
   roofAzimuthCardinal,
+  sonnendachAzimuthToRoofFallDirection,
 } from "../../src/components_v2/roof/roofOrientation";
 
 test("A, D, R and H always resolve to the advertised planner tools", () => {
@@ -28,13 +30,16 @@ test("drawing shortcuts resolve the building step while selection preserves cont
   assert.equal(resolvePlannerStepForTool("fill-area", "building"), "modules");
 });
 
-test("roof direction uses one geographic convention without a hidden 180 degree inversion", () => {
+test("Sonnendach normal is converted once to the geographic roof fall direction", () => {
   assert.equal(normalizeRoofAzimuthDeg(360), 0);
   assert.equal(normalizeRoofAzimuthDeg(-104), 256);
   assert.equal(roofAzimuthCardinal(76), "E");
   assert.equal(roofAzimuthCardinal(256), "W");
   assert.equal(formatRoofAzimuth(76), "76° E");
   assert.equal(formatRoofAzimuth(256), "256° W");
+  assert.equal(sonnendachAzimuthToRoofFallDirection(256), 76);
+  assert.equal(resolveRoofFallAzimuth({ azimuthDeg: 256, source: "sonnendach" }), 76);
+  assert.equal(resolveRoofFallAzimuth({ azimuthDeg: 76, source: "manual" }), 76);
 });
 
 test("contextual help and pitched-roof slope controls remain visible in source", () => {
@@ -54,6 +59,14 @@ test("contextual help and pitched-roof slope controls remain visible in source",
     new URL("../../src/components_v2/compassHUD.tsx", import.meta.url),
     "utf8",
   );
+  const canvas = readFileSync(
+    new URL("../../src/components_v2/canvas/CanvasStage.tsx", import.meta.url),
+    "utf8",
+  );
+  const dimensions = readFileSync(
+    new URL("../../src/components_v2/panels/RoofDimensionsControl.tsx", import.meta.url),
+    "utf8",
+  );
 
   assert.ok(toolbar.includes("CircleHelp"));
   assert.ok(help.includes("Gebäudeplanung – Hilfe"));
@@ -61,6 +74,9 @@ test("contextual help and pitched-roof slope controls remain visible in source",
   assert.ok(help.includes("Rechteck zeichnen"));
   assert.ok(help.includes("Hindernis zeichnen"));
   assert.ok(panel.includes("PitchedRoofSlopeControl"));
-  assert.equal(panel.includes("norm360(a + 180)"), false);
+  assert.ok(panel.includes("resolveRoofFallAzimuth"));
+  assert.ok(panel.includes("Bestehende Module"));
+  assert.ok(canvas.includes("showPanelsInBuilding"));
+  assert.ok(dimensions.includes("Dachfläche · Kantenlängen"));
   assert.equal(compass.includes("+ rotateDeg"), false);
 });

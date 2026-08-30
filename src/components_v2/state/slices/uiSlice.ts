@@ -18,6 +18,7 @@ export const createUiSlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
         rightPanelOpen: false,
         leftPanelOpen: false,
         searchOpen: false,
+        showPanelsInBuilding: true,
     },
 
     setUI: (partial) =>

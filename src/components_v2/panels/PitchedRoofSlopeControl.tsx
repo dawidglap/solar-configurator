@@ -7,23 +7,25 @@ import {
   formatRoofAzimuth,
   normalizeRoofAzimuthDeg,
   ROOF_DIRECTION_CHOICES,
+  resolveRoofFallAzimuth,
 } from "../roof/roofOrientation";
 
 type Props = { roof: RoofArea };
 
 export default function PitchedRoofSlopeControl({ roof }: Props) {
   const updateRoof = usePlannerV2Store((state) => state.updateRoof);
+  const resolvedAzimuth = resolveRoofFallAzimuth(roof);
   const [tiltInput, setTiltInput] = React.useState(
     roof.tiltDeg == null ? "" : String(roof.tiltDeg),
   );
   const [azimuthInput, setAzimuthInput] = React.useState(
-    roof.azimuthDeg == null ? "" : String(Math.round(roof.azimuthDeg)),
+    resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth)),
   );
 
   React.useEffect(() => {
     setTiltInput(roof.tiltDeg == null ? "" : String(roof.tiltDeg));
-    setAzimuthInput(roof.azimuthDeg == null ? "" : String(Math.round(roof.azimuthDeg)));
-  }, [roof.azimuthDeg, roof.id, roof.tiltDeg]);
+    setAzimuthInput(resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth)));
+  }, [resolvedAzimuth, roof.id, roof.tiltDeg]);
 
   const commitTilt = () => {
     const value = Number(tiltInput);
@@ -36,12 +38,12 @@ export default function PitchedRoofSlopeControl({ roof }: Props) {
 
   const commitAzimuth = (raw?: number) => {
     if (raw == null && azimuthInput.trim() === "") {
-      setAzimuthInput(roof.azimuthDeg == null ? "" : String(Math.round(roof.azimuthDeg)));
+      setAzimuthInput(resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth)));
       return;
     }
     const candidate = raw ?? Number(azimuthInput);
     if (!Number.isFinite(candidate)) {
-      setAzimuthInput(roof.azimuthDeg == null ? "" : String(Math.round(roof.azimuthDeg)));
+      setAzimuthInput(resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth)));
       return;
     }
     const value = normalizeRoofAzimuthDeg(candidate);
@@ -49,10 +51,7 @@ export default function PitchedRoofSlopeControl({ roof }: Props) {
     updateRoof(roof.id, { azimuthDeg: value, source: "manual" });
   };
 
-  const currentAzimuth =
-    typeof roof.azimuthDeg === "number"
-      ? normalizeRoofAzimuthDeg(roof.azimuthDeg)
-      : undefined;
+  const currentAzimuth = resolvedAzimuth;
 
   return (
     <section className="space-y-3 border-b border-border/60 pb-4">

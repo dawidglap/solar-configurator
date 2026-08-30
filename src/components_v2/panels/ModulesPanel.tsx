@@ -8,6 +8,7 @@ import DetectedRoofsImport from "../panels/DetectedRoofsImport";
 import { MdViewModule } from "react-icons/md";
 import OrientationToggle from "../layout/TopToolbar/OrientationToggle";
 import { LuCompass } from "react-icons/lu";
+import { Eye, EyeOff } from "lucide-react";
 import { nanoid } from "nanoid";
 import toast from "react-hot-toast";
 
@@ -28,6 +29,7 @@ import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
 import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
 import PitchedRoofSlopeControl from "./PitchedRoofSlopeControl";
+import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import {
   createInitialAdvancedPlanning,
   computeStandardDraftPanels,
@@ -76,6 +78,10 @@ export default function ModulesPanel() {
   const mpp = usePlannerV2Store((s) => s.snapshot.mppImage);
   const detected = usePlannerV2Store((s) => s.detectedRoofs);
   const step = usePlannerV2Store((s) => s.step);
+  const showPanelsInBuilding = usePlannerV2Store(
+    (s) => s.ui.showPanelsInBuilding,
+  );
+  const setUI = usePlannerV2Store((s) => s.setUI);
 
   // --- Moduli / pannelli ---
   const panels = usePlannerV2Store((s) => s.panels);
@@ -426,9 +432,7 @@ export default function ModulesPanel() {
                 });
 
                 const az =
-                  typeof l.azimuthDeg === "number"
-                    ? norm360(l.azimuthDeg)
-                    : undefined;
+                  resolveRoofFallAzimuth(l);
                 const tilt = typeof l.tiltDeg === "number" ? l.tiltDeg : undefined;
 
                 const tiltShort = tilt != null ? Math.round(tilt) : undefined;
@@ -656,6 +660,27 @@ export default function ModulesPanel() {
           </div>
         )}
       </div>
+
+      {step === "building" && panels.length > 0 && (
+        <button
+          type="button"
+          aria-pressed={showPanelsInBuilding}
+          onClick={() =>
+            setUI({ showPanelsInBuilding: !showPanelsInBuilding })
+          }
+          className="flex h-9 w-full items-center justify-between rounded-xl border border-border/70 bg-muted/15 px-3 text-[11px] font-medium text-foreground hover:bg-muted/30"
+        >
+          <span>Bestehende Module</span>
+          <span className="flex items-center gap-1.5 text-primary">
+            {showPanelsInBuilding ? (
+              <Eye className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <EyeOff className="h-4 w-4" aria-hidden="true" />
+            )}
+            {showPanelsInBuilding ? "Sichtbar" : "Ausgeblendet"}
+          </span>
+        </button>
+      )}
 
       {!selectedRoof && (
         <section className="rounded-xl border border-dashed border-border/80 bg-muted/10 px-4 py-7 text-center">

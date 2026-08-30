@@ -23,6 +23,7 @@ export type UIState = {
     rightPanelOpen: boolean;
     leftPanelOpen: boolean;
     searchOpen: boolean;
+    showPanelsInBuilding: boolean;
 };
 
 export type Tool =

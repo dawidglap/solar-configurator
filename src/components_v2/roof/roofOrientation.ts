@@ -12,6 +12,21 @@ export function formatRoofAzimuth(value: number): string {
   return `${Math.round(normalized)}° ${roofAzimuthCardinal(normalized)}`;
 }
 
+/** Converts the imported Sonnendach direction to the roof's downhill direction. */
+export function sonnendachAzimuthToRoofFallDirection(value: number): number {
+  return normalizeRoofAzimuthDeg(value + 180);
+}
+
+export function resolveRoofFallAzimuth(input: {
+  azimuthDeg?: number;
+  source?: "manual" | "sonnendach";
+}): number | undefined {
+  if (typeof input.azimuthDeg !== "number") return undefined;
+  return input.source === "sonnendach"
+    ? sonnendachAzimuthToRoofFallDirection(input.azimuthDeg)
+    : normalizeRoofAzimuthDeg(input.azimuthDeg);
+}
+
 export const ROOF_DIRECTION_CHOICES = [
   { azimuthDeg: 0, label: "N" },
   { azimuthDeg: 45, label: "NE" },

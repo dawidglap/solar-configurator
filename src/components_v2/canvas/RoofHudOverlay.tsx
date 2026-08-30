@@ -4,6 +4,7 @@
 import React from "react";
 import EdgeLengthBadges from "./EdgeLengthBadges";
 import { analyzeRectangularRoof } from "@/lib/planning-core/geometry-v2";
+import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 
 type Pt = { x: number; y: number };
 type Roof = {
@@ -11,6 +12,7 @@ type Roof = {
   points: Pt[];
   azimuthDeg?: number;
   tiltDeg?: number;
+  source?: "manual" | "sonnendach";
 } | null;
 
 export default function RoofHudOverlay({
@@ -89,7 +91,7 @@ export default function RoofHudOverlay({
           rotateDeg={rotateDeg}
           color={edgeColor}
           tiltDeg={selectedRoof.tiltDeg}
-          eavesAzimuthDeg={selectedRoof.azimuthDeg}
+          fallAzimuthDeg={resolveRoofFallAzimuth(selectedRoof)}
         />
       )}
     </>

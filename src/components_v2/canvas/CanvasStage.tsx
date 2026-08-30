@@ -36,6 +36,7 @@ import LeftLayersOverlay from "../layout/LeftLayersOverlay";
 import PanelsLayer from "../modules/panels/PanelsLayer";
 import RoofShapesLayer from "./RoofShapesLayer";
 import RoofAzimuthArrows from "./RoofAzimuthArrows";
+import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import RoofHudOverlay from "./RoofHudOverlay";
 import { useContainerSize } from "../canvas/hooks/useContainerSize";
 import { useBaseImage } from "../canvas/hooks/useBaseImage";
@@ -293,6 +294,12 @@ export default function CanvasStage() {
   const selectedRoofIsPitched = selectedRoof
     ? resolveSurfacePlanning(selectedRoof.surfacePlanning).status === "legacy-standard"
     : false;
+  const selectedRoofFallAzimuth = selectedRoof
+    ? resolveRoofFallAzimuth(selectedRoof)
+    : undefined;
+  const showPanelsInBuilding = usePlannerV2Store(
+    (state) => state.ui.showPanelsInBuilding,
+  );
   const selectedPlanningDraft = selectedId ? roofPlanningDrafts[selectedId] : undefined;
   const standardPreviewModules = selectedPlanningDraft?.targetMode === "standard"
     ? selectedPlanningDraft.modules
@@ -1027,11 +1034,11 @@ export default function CanvasStage() {
                     selectedRoof &&
                     typeof selectedRoof.tiltDeg === "number" &&
                     selectedRoof.tiltDeg > 0 &&
-                    typeof selectedRoof.azimuthDeg === "number" && (
+                    typeof selectedRoofFallAzimuth === "number" && (
                       <RoofAzimuthArrows
                         points={selectedRoof.points}
                         view={view}
-                        azimuthDeg={selectedRoof.azimuthDeg}
+                        azimuthDeg={selectedRoofFallAzimuth}
                         tiltDeg={selectedRoof.tiltDeg}
                         color="#39d0bc"
                         opacity={0.9}
@@ -1122,8 +1129,12 @@ export default function CanvasStage() {
                   </Group>
                 )}
 
-                {step === "modules" && (
-                  <Group listening={!drawingCapturesPointer}>
+                {(step === "modules" ||
+                  (step === "building" && showPanelsInBuilding)) && (
+                  <Group
+                    listening={step === "modules" && !drawingCapturesPointer}
+                    opacity={step === "building" ? 0.72 : 1}
+                  >
                     <PanelsLayer
                       layers={layers}
                       textureUrl="/images/panel.webp"

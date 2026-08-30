@@ -1,7 +1,8 @@
 // src/components_v2/canvas/EdgeLengthBadges.tsx
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
+import { roofSegmentLengthM } from '@/lib/planning-core/geometry-v2';
 
 type Pt = { x: number; y: number };
 type View = { scale?: number; offsetX?: number; offsetY?: number };
@@ -12,30 +13,7 @@ function formatMeters(m: number) {
   return `${Math.round(m)} m`;
 }
 
-function normDeg(d: number) { const x = d % 360; return x < 0 ? x + 360 : x; }
 function deg2rad(d: number) { return (d * Math.PI) / 180; }
-
-/** lunghezza reale lato corretta per inclinazione (se disponibili tilt+gronda) */
-function correctedLenM(
-  vpx: { x:number; y:number },
-  mpp: number,
-  tiltDeg?: number,
-  fallUnit?: { x:number; y:number } | null
-) {
-  const planLenPx = Math.hypot(vpx.x, vpx.y);
-  if (!tiltDeg || !fallUnit) return planLenPx * mpp;
-
-  // componente parallela/perpendicolare alla “caduta” (perp. alla gronda)
-  const vParPlan  = vpx.x * fallUnit.x + vpx.y * fallUnit.y;      // px
-  const vPerpPlan = vpx.x * (-fallUnit.y) + vpx.y * (fallUnit.x); // px
-
-  const cosT = Math.max(0.1736, Math.cos(deg2rad(tiltDeg)));      // ≥ cos 80°
-  const vParTrue  = vParPlan / cosT;                               // de-foreshortening
-  const vPerpTrue = vPerpPlan;
-
-  const trueLenPx = Math.hypot(vParTrue, vPerpTrue);
-  return trueLenPx * mpp;
-}
 
 /**
  * Badge lunghezza per ogni lato.
@@ -54,7 +32,7 @@ export default function EdgeLengthBadges({
   edgeOffsetPx = 18,
   // opzionali per correzione inclinazione
   tiltDeg,
-  eavesAzimuthDeg,
+  fallAzimuthDeg,
 }: {
   points: Pt[];
   mpp: number;
@@ -66,24 +44,15 @@ export default function EdgeLengthBadges({
   fontSize?: number;
   edgeOffsetPx?: number;
   tiltDeg?: number;
-  /** azimut della GRONDA in gradi (come salvato nello store, non “+180 UI”) */
-  eavesAzimuthDeg?: number;
+  /** Geographic downhill direction: 0=N, 90=E, 180=S, 270=W. */
+  fallAzimuthDeg?: number;
 }) {
   const s  = view.scale  ?? 1;
   const ox = view.offsetX ?? 0;
   const oy = view.offsetY ?? 0;
 
-  // vettore unitario “caduta” (perp. alla gronda) in coordinate immagine
-  const fallUnit = useMemo(() => {
-    if (typeof eavesAzimuthDeg !== 'number') return null;
-    const eavesCanvasDeg = -(eavesAzimuthDeg) + 90;       // convenzione canvas
-    const fallDeg = normDeg(eavesCanvasDeg - 90);         // perpendicolare
-    const th = deg2rad(fallDeg);
-    return { x: Math.cos(th), y: Math.sin(th) };
-  }, [eavesAzimuthDeg]);
-
   // immagine → schermo con rotazione attorno al centro immagine
-  const imgToScreen = (p: Pt) => {
+  const imgToScreen = useCallback((p: Pt) => {
     const cx = imgW / 2, cy = imgH / 2;
     const dx = p.x - cx, dy = p.y - cy;
     const t  = deg2rad(rotateDeg);
@@ -91,7 +60,7 @@ export default function EdgeLengthBadges({
     const ry = dx * Math.sin(t) + dy * Math.cos(t);
     const x2 = cx + rx, y2 = cy + ry;
     return { left: ox + x2 * s, top: oy + y2 * s };
-  };
+  }, [imgH, imgW, ox, oy, rotateDeg, s]);
 
   const items = useMemo(() => {
     if (!points || points.length < 2 || !mpp || !imgW || !imgH) return [];
@@ -107,8 +76,12 @@ export default function EdgeLengthBadges({
       if (L < 1e-3) continue;
 
       // lunghezza corretta (se tilt/gronda disponibili)
-      const lenM = correctedLenM({ x: dx, y: dy }, mpp, tiltDeg, fallUnit);
-      const text = formatMeters(lenM);
+      const lenM = roofSegmentLengthM(
+        { x: dx, y: dy },
+        mpp,
+        { tiltDeg, fallAzimuthDeg },
+      );
+      const text = `K${i + 1} · ${formatMeters(lenM)}`;
 
       // punto medio + offset normale (in SPAZIO IMMAGINE)
       const mid: Pt = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -124,7 +97,7 @@ export default function EdgeLengthBadges({
       out.push({ key: `${i}-${i + 1}`, left, top, text, deg });
     }
     return out;
-  }, [points, mpp, imgW, imgH, s, ox, oy, edgeOffsetPx, tiltDeg, fallUnit, rotateDeg]);
+  }, [points, mpp, imgW, imgH, s, edgeOffsetPx, tiltDeg, fallAzimuthDeg, rotateDeg, imgToScreen]);
 
   return (
     <>
@@ -138,7 +111,7 @@ export default function EdgeLengthBadges({
             transform: `translate(-50%, -50%) rotate(${it.deg}deg)`,
             transformOrigin: 'center',
             background: 'transparent',
-            color: '#fff',
+            color,
             borderRadius: 3,
             padding: '1px 4px',
             fontSize,

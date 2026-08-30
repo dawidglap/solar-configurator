@@ -93,6 +93,7 @@ const DEFAULT_UI = {
   rightPanelOpen: false,
   leftPanelOpen: false,
   searchOpen: false,
+  showPanelsInBuilding: true,
 };
 
 function createDefaultModules(): ModulesConfig {
