@@ -1,42 +1,19 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React from "react";
 import { usePlannerV2Store } from "./state/plannerV2Store";
-
-type Props = {
-  /** Drehung des Orientierungs-HUD (°), 0 = Rohbild */
-  rotateDeg: number;
-};
+import { normalizeRoofAzimuthDeg, roofAzimuthCardinal } from "./roof/roofOrientation";
 
 const TICKS = Array.from({ length: 36 }, (_, i) => i * 10); // alle 10°
 
-function normDeg(d: number) {
-  let a = d % 360;
-  if (a < 0) a += 360;
-  return a;
-}
-
-function dirLabel(deg: number) {
-  const a = normDeg(deg);
-  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-  const idx = Math.round(a / 45) % 8;
-  return dirs[idx];
-}
-
-export default function CompassHUD({ rotateDeg }: Props) {
+export default function CompassHUD() {
   const layers = usePlannerV2Store((s) => s.layers);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
 
   const roof = layers.find((l) => l.id === selectedId);
-  const roofAzimuthDeg = roof?.azimuthDeg ?? 0;
-
-  // Orientierung des Dachs = tatsächlicher Dachazimut + HUD-Rotation
-  const roofDirectionDeg = useMemo(
-    () => normDeg(roofAzimuthDeg + rotateDeg),
-    [roofAzimuthDeg, rotateDeg],
-  );
-
-  const label = dirLabel(roofDirectionDeg);
+  if (!roof || typeof roof.azimuthDeg !== "number") return null;
+  const roofDirectionDeg = normalizeRoofAzimuthDeg(roof.azimuthDeg);
+  const label = roofAzimuthCardinal(roofDirectionDeg);
 
   return (
     <div className="fixed right-3 top-24 z-[260] pointer-events-none mt-4">
@@ -127,7 +104,7 @@ export default function CompassHUD({ rotateDeg }: Props) {
         </div>
 
         <div className="text-[9px] text-neutral-500">
-          Dachausrichtung relativ zu Nord
+          Gefällerichtung relativ zu Nord
         </div>
       </div>
     </div>

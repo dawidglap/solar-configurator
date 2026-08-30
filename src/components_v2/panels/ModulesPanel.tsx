@@ -27,6 +27,7 @@ import {
 import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
 import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
+import PitchedRoofSlopeControl from "./PitchedRoofSlopeControl";
 import {
   createInitialAdvancedPlanning,
   computeStandardDraftPanels,
@@ -253,7 +254,7 @@ export default function ModulesPanel() {
         updateRoof(roofId, { tiltDeg: v, source: "manual" });
       } else {
         const display = Math.round(raw); // valore inserito in UI (0° = N)
-        const stored = (((display - 180) % 360) + 360) % 360; // inverti la +180° della UI
+        const stored = ((display % 360) + 360) % 360;
         updateRoof(roofId, { azimuthDeg: stored, source: "manual" });
       }
 
@@ -432,8 +433,7 @@ export default function ModulesPanel() {
 
                 const tiltShort = tilt != null ? Math.round(tilt) : undefined;
 
-                const toViewAz = (a: number) => norm360(a + 180); // conversione per la UI
-                const azView = az != null ? toViewAz(az) : undefined;
+                const azView = az;
                 const azShort = azView != null ? Math.round(azView) : undefined; // <-- ricalcola qui
 
                 const src = l.source;
@@ -718,6 +718,10 @@ export default function ModulesPanel() {
 
       {step === "building" && selectedRoof && (
         <RoofDimensionsControl roof={selectedRoof} />
+      )}
+
+      {step === "building" && selectedRoof && customerRoofType === "pitched" && (
+        <PitchedRoofSlopeControl roof={selectedRoof} />
       )}
 
       {step === "modules" &&

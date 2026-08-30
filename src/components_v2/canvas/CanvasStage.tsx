@@ -35,6 +35,7 @@ import OverlayLeftToggle from "../layout/OverlayLeftToggle";
 import LeftLayersOverlay from "../layout/LeftLayersOverlay";
 import PanelsLayer from "../modules/panels/PanelsLayer";
 import RoofShapesLayer from "./RoofShapesLayer";
+import RoofAzimuthArrows from "./RoofAzimuthArrows";
 import RoofHudOverlay from "./RoofHudOverlay";
 import { useContainerSize } from "../canvas/hooks/useContainerSize";
 import { useBaseImage } from "../canvas/hooks/useBaseImage";
@@ -62,6 +63,7 @@ import OfferScreen from "../steps/OfferScreen";
 import { plannerTheme } from "../theme/plannerTheme";
 import PlannerEmptyState from "../layout/PlannerEmptyState";
 import type { Tool } from "@/types/planner";
+import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
 import {
   findRoofAtPoint,
   isDrawingInteractionTool,
@@ -288,6 +290,9 @@ export default function CanvasStage() {
     () => layers.find((l) => l.id === selectedId) ?? null,
     [layers, selectedId],
   );
+  const selectedRoofIsPitched = selectedRoof
+    ? resolveSurfacePlanning(selectedRoof.surfacePlanning).status === "legacy-standard"
+    : false;
   const selectedPlanningDraft = selectedId ? roofPlanningDrafts[selectedId] : undefined;
   const standardPreviewModules = selectedPlanningDraft?.targetMode === "standard"
     ? selectedPlanningDraft.modules
@@ -1017,6 +1022,24 @@ export default function CanvasStage() {
                     areaLabel={areaLabel}
                   />
 
+                  {step === "building" &&
+                    selectedRoofIsPitched &&
+                    selectedRoof &&
+                    typeof selectedRoof.tiltDeg === "number" &&
+                    selectedRoof.tiltDeg > 0 &&
+                    typeof selectedRoof.azimuthDeg === "number" && (
+                      <RoofAzimuthArrows
+                        points={selectedRoof.points}
+                        view={view}
+                        azimuthDeg={selectedRoof.azimuthDeg}
+                        tiltDeg={selectedRoof.tiltDeg}
+                        color="#39d0bc"
+                        opacity={0.9}
+                        stepPx={72}
+                        lenPx={30}
+                      />
+                    )}
+
                   {layers.map((l) => (
                     <ZonesLayer
                       key={l.id}
@@ -1202,7 +1225,7 @@ export default function CanvasStage() {
 
       <RoofHotkeys />
 
-      <CompassHUD rotateDeg={rotateDeg} />
+      <CompassHUD />
 
       <CanvasHotkeys />
 

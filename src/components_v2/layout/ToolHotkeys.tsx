@@ -1,7 +1,7 @@
 // src/components_v2/layout/ToolHotkeys.tsx
 'use client';
 
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import {
   computeLegacyStandardLayout,
 } from '@/lib/planning-core/legacy-standard';
@@ -15,6 +15,8 @@ import {
   STANDARD_AUTO_LAYOUT_POLICY,
 } from '../modules/legacyStandardApplicationPolicy';
 import { shouldIgnorePlannerHotkeyTarget } from '../canvas/interactionPolicy';
+import { resolvePlannerStepForTool, resolvePlannerToolHotkey } from './toolHotkeyPolicy';
+import type { Tool } from '@/types/planner';
 
 
 
@@ -34,27 +36,17 @@ export default function ToolHotkeys() {
   const addPanelsForRoof    = usePlannerV2Store(s => s.addPanelsForRoof);
   const clearPanelsForRoof  = usePlannerV2Store(s => s.clearPanelsForRoof);
 
-  const stepForTool = (t: string): 'building' | 'modules' => {
-    switch (t) {
-      case 'fill-area':            return 'modules';
-      case 'draw-roof':
-      case 'draw-reserved':
-      case 'draw-rect':            return 'building';
-      default:                     return step as any;
-    }
-  };
-
-  const applyTool = (t: any, e?: KeyboardEvent) => {
-    if (e) { e.preventDefault(); e.stopPropagation(); (e as any).stopImmediatePropagation?.(); }
-    const target = stepForTool(t);
-    if (target && target !== step) setStep(target as any);
+  const applyTool = useCallback((t: Tool, e?: KeyboardEvent) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); }
+    const target = resolvePlannerStepForTool(t, step);
+    if (target !== step) setStep(target);
     setTool(t);
-  };
+  }, [setStep, setTool, step]);
 
   // ⬇️ stessa logica del bottone #3 (MdViewModule)
-  const convertSelectedRoofToModules = () => {
+  const convertSelectedRoofToModules = useCallback(() => {
     // porta UI in modules
-    if (step !== 'modules') setStep('modules' as any);
+    if (step !== 'modules') setStep('modules');
 
     if (!selectedId || !selSpec || !snapshot?.mppImage) return;
     const roof = layers.find(l => l.id === selectedId);
@@ -108,8 +100,8 @@ export default function ToolHotkeys() {
     clearPanelsForRoof(selectedId);
     addPanelsForRoof(selectedId, instances);
     if (modules.showGrid) setModules({ showGrid: false });
-    setTool('select' as any);
-  };
+    setTool('select');
+  }, [addPanelsForRoof, clearPanelsForRoof, layers, modules, selectedId, selSpec, setModules, setStep, setTool, snapshot.mppImage, step]);
 
   useEffect(() => {
     const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
@@ -119,12 +111,6 @@ export default function ToolHotkeys() {
         shouldIgnorePlannerHotkeyTarget(e.target) ||
         shouldIgnorePlannerHotkeyTarget(document.activeElement)
       ) return;
-      // Evita l'undo/redo globale mentre sto disegnando (lascia fare all'hook)
-const t = usePlannerV2Store.getState().tool;
-if (t === 'draw-roof' || t === 'draw-reserved' || t === 'draw-rect') {
-  return; // non gestire qui: l'hook intercetterà Cmd/Ctrl+Z
-}
-
       const k = e.key?.toLowerCase();
       const meta = e.metaKey;
       const ctrl = e.ctrlKey;
@@ -133,35 +119,30 @@ if (t === 'draw-roof' || t === 'draw-reserved' || t === 'draw-rect') {
       // UNDO / REDO
       const isUndo = (isMac && meta && k === 'z' && !shift) || (!isMac && ctrl && k === 'z' && !shift);
       const isRedo = (isMac && meta && k === 'z' && shift) || (!isMac && ctrl && ((shift && k === 'z') || k === 'y'));
-      if (isUndo) { e.preventDefault(); e.stopPropagation(); (e as any).stopImmediatePropagation?.(); history.undo(); return; }
-      if (isRedo) { e.preventDefault(); e.stopPropagation(); (e as any).stopImmediatePropagation?.(); history.redo(); return; }
+      const activeTool = usePlannerV2Store.getState().tool;
+      const isDrawing = activeTool === 'draw-roof' || activeTool === 'draw-reserved' || activeTool === 'draw-rect';
+      if (isDrawing && (isUndo || isRedo)) return;
+      if (isUndo) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); history.undo(); return; }
+      if (isRedo) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); history.redo(); return; }
 
       if (meta || ctrl || e.altKey) return;
 
       // TOOLS — sempre disponibili
-      if (k === 'a') { applyTool('select', e); return; }
       if (k === 'escape') return; // CanvasStage gestisce ESC con una sola priorità.
-      if (k === 'd') { applyTool('draw-roof', e); return; }
-      if (k === 'r') { applyTool('draw-rect', e); return; }
-      if (k === 'h') { applyTool('draw-reserved', e); return; }
-      if (k === 'f') { applyTool('fill-area', e); return; }
+      const nextTool = resolvePlannerToolHotkey(k);
+      if (nextTool) { applyTool(nextTool, e); return; }
 
       // NEW: Umwandeln → **U**
       if (k === 'u') {
-        e.preventDefault(); e.stopPropagation(); (e as any).stopImmediatePropagation?.();
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
         convertSelectedRoofToModules();
         return;
       }
     };
 
     window.addEventListener('keydown', onKey, { capture: true });
-    const st = usePlannerV2Store.getState();
-// Se c'è una zona selezionata, NON gestire qui Delete.
-// (La priorità di delete-zone è più alta)
-if (st.selectedZoneId) return;
-
-    return () => window.removeEventListener('keydown', onKey, { capture: true } as any);
-  }, [step, setStep, setTool, layers, selectedId, modules, setModules, snapshot, selSpec, addPanelsForRoof, clearPanelsForRoof]);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [applyTool, convertSelectedRoofToModules]);
 
   return null;
 }

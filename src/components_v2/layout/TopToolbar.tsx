@@ -10,7 +10,7 @@ import { SnowGuardCostDialog, SnowSegment } from "../SnowGuardCostDialog";
 import { useSearchParams, useRouter } from "next/navigation";
 import { savePlannerToDb } from "../state/planning/savePlanning";
 
-import { ClipboardList, MousePointer, RotateCcw, RotateCw } from "lucide-react";
+import { CircleHelp, ClipboardList, MousePointer, RotateCcw, RotateCw } from "lucide-react";
 
 // NUOVE icone topbar (1–10) da react-icons
 import { TbShape3, TbDropletHalf2Filled } from "react-icons/tb";
@@ -34,6 +34,7 @@ import {
 import ProjectStatsBar from "../ui/ProjectStatsBar";
 import TopbarAddressSearch from "./TopbarAddressSearch";
 import PlanningOverviewDrawer from "../modules/overview/PlanningOverviewDrawer";
+import PlannerHelpDialog from "./PlannerHelpDialog";
 
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
@@ -227,6 +228,7 @@ export default function TopToolbar() {
   // ── Schneefang: Popup & Segmente (nur TopToolbar, lokal)
   const [isSnowDialogOpen, setIsSnowDialogOpen] = useState(false);
   const [isPlanningOverviewOpen, setIsPlanningOverviewOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [snowSegments, setSnowSegments] = useState<SnowSegment[]>([
     // di base un segmento da 10 m, giusto per non partire vuoto
     { id: "sg_init", lengthM: 0 },
@@ -641,6 +643,15 @@ export default function TopToolbar() {
 
       {/* DESTRA: 7–10 compatti + Undo/Redo */}
       <div className="flex items-center ms-auto gap-1">
+        <button
+          type="button"
+          onClick={() => setIsHelpOpen(true)}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/70 bg-secondary/35 text-muted-foreground transition hover:bg-secondary/70 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+          aria-label={`${step === "building" ? "Gebäudeplanung" : "Modulplanung"} Hilfe öffnen`}
+          title="Hilfe"
+        >
+          <CircleHelp className="h-4 w-4" aria-hidden="true" />
+        </button>
         {/* 7) Neue Variante — placeholder */}
 
         {/* 8) Trasparenza — placeholder */}
@@ -706,6 +717,12 @@ export default function TopToolbar() {
             onClose={() => setIsPlanningOverviewOpen(false)}
           />
         )}
+        <PlannerHelpDialog
+          open={isHelpOpen}
+          step={step}
+          onClose={() => setIsHelpOpen(false)}
+          onChooseTool={(nextTool) => setTool(nextTool)}
+        />
       </div>
     </div>
   );
