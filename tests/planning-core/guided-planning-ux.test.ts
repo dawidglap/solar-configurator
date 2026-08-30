@@ -100,4 +100,8 @@ test("customizable default-system controls remain contextual to the flat-roof pa
   assert.ok(advancedPanel.includes("Modulneigung"));
   assert.ok(advancedPanel.includes("DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG"));
   assert.equal(advancedPanel.includes("mm · K2"), false);
+  assert.ok(advancedPanel.includes("scrollIntoView"));
+  assert.ok(advancedPanel.includes("manualOrientationInputRef.current?.focus"));
+  assert.ok(advancedPanel.includes("step={0.01}"));
+  assert.ok(advancedPanel.includes("azimuth.toFixed(2)"));
 });

@@ -79,12 +79,29 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
   const [confirmReplace, setConfirmReplace] = React.useState(false);
   const [modulePickerOpen, setModulePickerOpen] = React.useState(false);
   const [fineTuningOpen, setFineTuningOpen] = React.useState(false);
+  const manualOrientationInputRef = React.useRef<HTMLInputElement>(null);
+  const focusManualOrientationRef = React.useRef(false);
+  const focusManualOrientation = React.useCallback(() => {
+    manualOrientationInputRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    manualOrientationInputRef.current?.focus({ preventScroll: true });
+    manualOrientationInputRef.current?.select();
+  }, []);
 
   React.useEffect(() => {
     setModulePickerOpen(false);
     setFineTuningOpen(false);
     setConfirmReplace(false);
   }, [roof.id]);
+
+  React.useEffect(() => {
+    if (!fineTuningOpen || !focusManualOrientationRef.current) return;
+    focusManualOrientationRef.current = false;
+    const frame = window.requestAnimationFrame(focusManualOrientation);
+    return () => window.cancelAnimationFrame(frame);
+  }, [fineTuningOpen, focusManualOrientation]);
 
   const preview = React.useMemo(
     () =>
@@ -217,6 +234,15 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
       ...(field === "nominalTiltDeg" ? { nominalTiltDeg: value } : {}),
       ...(field === "moduleGapM" ? { moduleGapM: value } : {}),
     }));
+  };
+
+  const openManualOrientation = () => {
+    if (fineTuningOpen) {
+      window.requestAnimationFrame(focusManualOrientation);
+      return;
+    }
+    focusManualOrientationRef.current = true;
+    setFineTuningOpen(true);
   };
 
   if (config.surface.kind !== "flat" || !isSupportedSystem) {
@@ -360,7 +386,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
       <section className="space-y-3 border-b border-border/60 pb-4">
         <div className="flex items-center justify-between gap-2">
           <h3 className={labelClass}>Ausrichtung</h3>
-          <button type="button" className="text-[10px] font-medium text-primary hover:underline" onClick={() => setFineTuningOpen(true)}>Manuell</button>
+          <button type="button" className="text-[10px] font-medium text-primary hover:underline" onClick={openManualOrientation}>Manuell</button>
         </div>
         <button
           type="button"
@@ -445,7 +471,21 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
           <label className="block space-y-1 text-muted-foreground">
             Ausrichtung manuell
             <span className="flex items-center gap-2">
-              <input className={inputClass} type="number" min={0} max={359} step={1} value={azimuth} onChange={(event) => patchDefaultSystemNumber("azimuth", Number(event.target.value))} />
+              <input
+                ref={manualOrientationInputRef}
+                className={inputClass}
+                type="number"
+                min={0}
+                max={359.99}
+                step={0.01}
+                value={Number(azimuth.toFixed(2))}
+                onChange={(event) =>
+                  patchDefaultSystemNumber(
+                    "azimuth",
+                    Math.round(Number(event.target.value) * 100) / 100,
+                  )
+                }
+              />
               <span>°</span>
             </span>
           </label>
