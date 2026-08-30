@@ -13,6 +13,8 @@ import {
 
 export { GENERIC_EAST_WEST_SYSTEM_ID } from "./types";
 
+const MIN_COLLISION_DEPTH_M = 1e-6;
+
 export function createGenericEastWestBlock(input: {
   module: AdvancedModuleSpecification;
   nominalTiltDeg: number;
@@ -49,7 +51,7 @@ export function createGenericEastWestBlock(input: {
   });
   const moduleFootprint = createCenteredRectangleFootprint({
     widthM: geometry.crossSlopeM,
-    depthM: projectedDepthM,
+    depthM: Math.max(projectedDepthM, MIN_COLLISION_DEPTH_M),
   });
   const moduleCenterOffsetM = interModuleGapM / 2 + projectedDepthM / 2;
 

@@ -40,8 +40,8 @@ export function deriveTiltedModuleGeometry(input: {
     ["Nominal tilt", input.nominalTiltDeg],
     ["Effective tilt", effectiveTiltDeg],
   ] as const) {
-    if (!Number.isFinite(value) || value < 0 || value >= 90) {
-      throw new RangeError(`${label} must be in the range [0, 90).`);
+    if (!Number.isFinite(value) || value < 0 || value > 90) {
+      throw new RangeError(`${label} must be in the range [0, 90].`);
     }
   }
 
@@ -91,4 +91,3 @@ export function placeLocalFootprint(input: {
     rotationCartesianDeg: input.localRotationCartesianDeg ?? 0,
   });
 }
-

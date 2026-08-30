@@ -10,6 +10,8 @@ import {
   normalizeGeographicAzimuth,
 } from "./moduleGeometry";
 
+const MIN_COLLISION_DEPTH_M = 1e-6;
+
 export { GENERIC_SOUTH_SYSTEM_ID } from "./types";
 
 export function createGenericSouthBlock(input: {
@@ -38,7 +40,9 @@ export function createGenericSouthBlock(input: {
   }
   const blockFootprint = createCenteredRectangleFootprint({
     widthM: geometry.crossSlopeM,
-    depthM: geometry.projectedAlongSlopeM,
+    // A 90° module has a line-shaped plan projection. Geometry v2 validates
+    // polygons, so retain a sub-millimetre collision envelope deterministically.
+    depthM: Math.max(geometry.projectedAlongSlopeM, MIN_COLLISION_DEPTH_M),
   });
 
   return {

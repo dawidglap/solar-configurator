@@ -5,6 +5,8 @@ import { nanoid } from "nanoid";
 import toast from "react-hot-toast";
 
 import {
+  GENERIC_EAST_WEST_SYSTEM_ID,
+  GENERIC_SOUTH_SYSTEM_ID,
   K2_D_DOME_SYSTEM_ID,
   K2_S_DOME_SYSTEM_ID,
   type AdvancedSurfacePlanningV1,
@@ -14,12 +16,15 @@ import { usePlannerV2Store } from "../../state/plannerV2Store";
 import {
   alignAdvancedLayoutParallelToRoofEdge,
   computeAdvancedPlanningPreview,
+  DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG,
+  getAdvancedRowSpaceM,
   hasCommittedPanelsForRoof,
   materializeAdvancedPanels,
   replaceAdvancedDraftModule,
   setAdvancedFixedQuantity,
   setAdvancedMountingOrientation,
   setAdvancedQuantityMode,
+  updateDefaultFlatSystem,
 } from "./advancedPlanningApplication";
 import { buildGuidedPlanningResult } from "./guidedPlanningPresentation";
 
@@ -104,20 +109,27 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
   const system = config.advanced.system;
   const isSDome = system.systemId === K2_S_DOME_SYSTEM_ID;
   const isDDome = system.systemId === K2_D_DOME_SYSTEM_ID;
+  const isGenericSouth = system.systemId === GENERIC_SOUTH_SYSTEM_ID;
+  const isGenericEastWest = system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
   const isK2System = isSDome || isDDome;
-  const orientation = isSDome ? "south" : "east-west";
-  const azimuth = isSDome
+  const isSupportedSystem = isK2System || isGenericSouth || isGenericEastWest;
+  const isSouthSystem = isSDome || isGenericSouth;
+  const isOpposingSystem = isDDome || isGenericEastWest;
+  const orientation = isSouthSystem ? "south" : "east-west";
+  const azimuth = isSouthSystem
     ? system.faceAzimuthDeg
-    : isDDome
+    : isOpposingSystem
       ? system.primaryFaceAzimuthDeg
       : 90;
-  const rowSpaceM = isK2System ? system.rowSpaceM : 0;
+  const rowSpaceM = getAdvancedRowSpaceM(config);
+  const nominalTiltDeg = "nominalTiltDeg" in system ? system.nominalTiltDeg : 10;
+  const moduleGapM = "moduleGapX" in system ? system.moduleGapX ?? 0.018 : 0.018;
   const moduleId = config.advanced.module.panelSpecId ?? "";
   const hasPanels = hasCommittedPanelsForRoof(panels, roof.id);
   const canApply =
     isDraft &&
     config.surface.kind === "flat" &&
-    isK2System &&
+    isSupportedSystem &&
     preview.valid &&
     preview.moduleCount > 0 &&
     !!moduleId;
@@ -125,7 +137,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
   const blocksPerRow = config.advanced.layout.blocksPerRow ?? 5;
   const rowCount = config.advanced.layout.rowCount ?? 3;
   const requestedBlocks = blocksPerRow * rowCount;
-  const requestedModules = requestedBlocks * (isDDome ? 2 : 1);
+  const requestedModules = requestedBlocks * (isOpposingSystem ? 2 : 1);
   const selectedCatalogPanel = catalogPanels.find((panel) => panel.id === moduleId);
   const previewQuantity = preview.quantity;
   const result = buildGuidedPlanningResult({
@@ -192,38 +204,22 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
       },
     });
 
-  const patchSystemNumber = (field: "rowSpaceM" | "azimuth", value: number) => {
-    if (!Number.isFinite(value) || !isK2System) return;
-    if (isSDome) {
-      update({
-        ...config,
-        advanced: {
-          ...config.advanced,
-          system: {
-            ...system,
-            ...(field === "rowSpaceM"
-              ? { rowSpaceM: value }
-              : { faceAzimuthDeg: normalizeAzimuth(value) }),
-          },
-        },
-      });
-    } else if (isDDome) {
-      update({
-        ...config,
-        advanced: {
-          ...config.advanced,
-          system: {
-            ...system,
-            ...(field === "rowSpaceM"
-              ? { rowSpaceM: value }
-              : { primaryFaceAzimuthDeg: normalizeAzimuth(value) }),
-          },
-        },
-      });
-    }
+  const patchDefaultSystemNumber = (
+    field: "rowSpaceM" | "azimuth" | "nominalTiltDeg" | "moduleGapM",
+    value: number,
+  ) => {
+    if (!Number.isFinite(value) || !isSupportedSystem) return;
+    update(updateDefaultFlatSystem({
+      config,
+      orientation,
+      ...(field === "rowSpaceM" ? { rowSpaceM: Math.round(value * 100) / 100 } : {}),
+      ...(field === "azimuth" ? { azimuthDeg: normalizeAzimuth(value) } : {}),
+      ...(field === "nominalTiltDeg" ? { nominalTiltDeg: value } : {}),
+      ...(field === "moduleGapM" ? { moduleGapM: value } : {}),
+    }));
   };
 
-  if (config.surface.kind !== "flat" || !isK2System) {
+  if (config.surface.kind !== "flat" || !isSupportedSystem) {
     return (
       <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] text-muted-foreground">
         Diese bestehende Dachkonfiguration bleibt gespeichert, kann in diesem Workflow aber nicht neu erstellt werden.
@@ -244,7 +240,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
           >
             <MountingChoiceGraphic opposing={false} />
             <span>Süd</span>
-            <span className="text-[9px] font-normal opacity-75">K2 S-Dome 6.10</span>
+            <span className="text-[9px] font-normal opacity-75">Standardsystem</span>
           </button>
           <button
             type="button"
@@ -254,7 +250,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
           >
             <MountingChoiceGraphic opposing />
             <span>Ost-West</span>
-            <span className="text-[9px] font-normal opacity-75">K2 D-Dome 6.10</span>
+            <span className="text-[9px] font-normal opacity-75">Standardsystem</span>
           </button>
         </div>
       </section>
@@ -273,7 +269,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
                 {config.advanced.module.powerW != null ? `${fmt(config.advanced.module.powerW, 0)} W · ` : ""}
                 {fmt(config.advanced.module.heightM * 1000, 0)} × {fmt(config.advanced.module.widthM * 1000, 0)} mm
               </p>
-              <p className="mt-1 text-[10px] text-muted-foreground">Querformat · K2</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">Querformat</p>
             </div>
             <button
               type="button"
@@ -329,7 +325,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
         </div>
         {quantityMode === "auto" && (
           <p className="text-[10px] text-muted-foreground">
-            {preview.blockCount} K2 Blocks · {preview.moduleCount} Module
+            {preview.blockCount} Blöcke · {preview.moduleCount} Module
           </p>
         )}
         {quantityMode === "fixed" && (
@@ -354,7 +350,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
             </div>
             <div className="rounded-xl border border-border/60 bg-muted/15 p-3 text-center text-[11px] leading-relaxed">
               <strong>{blocksPerRow} × {rowCount}</strong>
-              <span className="block text-muted-foreground">= {requestedBlocks} K2 Blocks</span>
+              <span className="block text-muted-foreground">= {requestedBlocks} Blöcke</span>
               <span className="block font-semibold text-foreground">= {requestedModules} Module</span>
             </div>
           </>
@@ -375,7 +371,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
         </button>
         <div className="flex items-center justify-between rounded-lg bg-muted/15 px-3 py-2 text-[10px]">
           <span className="text-muted-foreground">Modulausrichtung</span>
-          <strong>{isDDome ? `${fmt(azimuth, 0)}° / ${fmt(normalizeAzimuth(azimuth + 180), 0)}°` : `${fmt(azimuth, 0)}°`}</strong>
+          <strong>{isOpposingSystem ? `${fmt(azimuth, 0)}° / ${fmt(normalizeAzimuth(azimuth + 180), 0)}°` : `${fmt(azimuth, 0)}°`}</strong>
         </div>
       </section>
 
@@ -389,19 +385,49 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
               type="number"
               min={0}
               step={0.01}
-              value={rowSpaceM}
-              onChange={(event) => patchSystemNumber("rowSpaceM", Number(event.target.value))}
+              value={Number(rowSpaceM.toFixed(2))}
+              onChange={(event) => patchDefaultSystemNumber("rowSpaceM", Number(event.target.value))}
             />
             <span>m</span>
           </div>
         </label>
-        {preview.derived?.kind === "k2" && (
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-            <span>Wartungsgang</span><span className="text-right text-foreground">{fmt(preview.derived.serviceCorridorM)} m</span>
-            <span>Modulabstand</span><span className="text-right text-foreground">{fmt(preview.derived.moduleLongSideSpacingM * 1000, 0)} mm · K2</span>
-            <span>Modulneigung</span><span className="text-right font-medium text-foreground" title="Die geometrische Systemneigung wird anhand der K2-Systemmaße berechnet.">10°</span>
-          </div>
-        )}
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] text-muted-foreground">
+          <span>Wartungsgang</span>
+          <span className="text-right text-foreground">
+            {fmt(preview.derived?.kind === "generic"
+              ? preview.derived.blockGapYM
+              : preview.derived?.kind === "k2"
+                ? preview.derived.serviceCorridorM
+                : 0)} m
+          </span>
+          <label htmlFor={`advanced-module-gap-${roof.id}`} className="self-center">Modulabstand</label>
+          <span className="flex items-center justify-end gap-1">
+            <input
+              id={`advanced-module-gap-${roof.id}`}
+              className={`${inputClass} max-w-20 text-right`}
+              type="number"
+              min={0}
+              step={1}
+              value={Math.round(moduleGapM * 1000)}
+              onChange={(event) => patchDefaultSystemNumber("moduleGapM", Number(event.target.value) / 1000)}
+            />
+            <span>mm</span>
+          </span>
+          <label htmlFor={`advanced-module-tilt-${roof.id}`} className="self-center">Modulneigung</label>
+          <span className="flex items-center justify-end gap-1">
+            <input
+              id={`advanced-module-tilt-${roof.id}`}
+              className={`${inputClass} max-w-20 text-right`}
+              type="number"
+              min={DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.min}
+              max={DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.max}
+              step={0.5}
+              value={nominalTiltDeg}
+              onChange={(event) => patchDefaultSystemNumber("nominalTiltDeg", Number(event.target.value))}
+            />
+            <span>°</span>
+          </span>
+        </div>
         <label className="block space-y-1 text-[10px] text-muted-foreground">
           Randabstand
           <span className="flex items-center gap-2">
@@ -419,7 +445,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
           <label className="block space-y-1 text-muted-foreground">
             Ausrichtung manuell
             <span className="flex items-center gap-2">
-              <input className={inputClass} type="number" min={0} max={359} step={1} value={azimuth} onChange={(event) => patchSystemNumber("azimuth", Number(event.target.value))} />
+              <input className={inputClass} type="number" min={0} max={359} step={1} value={azimuth} onChange={(event) => patchDefaultSystemNumber("azimuth", Number(event.target.value))} />
               <span>°</span>
             </span>
           </label>
@@ -453,12 +479,9 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
             </label>
           ))}
           </div>
-          {preview.derived?.kind === "k2" && (
-            <div className="border-t border-border/60 pt-2 text-muted-foreground">
-              <p>Effektive geometrische Neigung: {fmt(preview.derived.effectiveTiltDeg, 3)}°</p>
-              <p className="mt-1">{isSDome ? "K2 S-Dome 6.10 Classic" : "K2 D-Dome 6.10 Classic"}</p>
-            </div>
-          )}
+          <div className="border-t border-border/60 pt-2 text-muted-foreground">
+            <p>System: Standardsystem</p>
+          </div>
           {preview.warnings.some((warning) => warning.code.includes("block-size")) && (
             <p className="text-amber-700 dark:text-amber-300">Die K2 Blockgrösse überschreitet die dokumentierte Systemgrenze.</p>
           )}
@@ -475,10 +498,10 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
         {result.status === "valid" && (
           <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
             <span className="text-muted-foreground">Module</span><strong className="text-right">{result.moduleCount}</strong>
-            <span className="text-muted-foreground">K2 Blocks</span><strong className="text-right">{result.blockCount}</strong>
-            <span className="text-muted-foreground">Montagefelder</span><strong className="text-right">{result.montageFieldCount ?? 0}</strong>
+            <span className="text-muted-foreground">Blöcke</span><strong className="text-right">{result.blockCount}</strong>
+            {preview.montageFieldCount > 0 && <><span className="text-muted-foreground">Montagefelder</span><strong className="text-right">{result.montageFieldCount ?? 0}</strong></>}
             {result.powerKWp != null && <><span className="text-muted-foreground">Leistung</span><strong className="text-right">{fmt(result.powerKWp)} kWp</strong></>}
-            <span className="text-muted-foreground">System</span><span className="text-right">{isSDome ? "Süd · K2 S-Dome" : "Ost-West · K2 D-Dome"}</span>
+            <span className="text-muted-foreground">System</span><span className="text-right">{isSouthSystem ? "Süd · Standardsystem" : "Ost-West · Standardsystem"}</span>
             <span className="text-muted-foreground">Anordnung</span><span className="text-right">{result.arrangementLabel}</span>
           </div>
         )}

@@ -82,7 +82,7 @@ test("guided sidebar exposes primary choices and keeps fine tuning collapsed by 
   assert.equal(advancedPanel.includes("Primäre Ausrichtung"), false);
 });
 
-test("K2 controls remain contextual to the flat-roof panel", () => {
+test("customizable default-system controls remain contextual to the flat-roof panel", () => {
   const modulesPanel = readFileSync(
     new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),
     "utf8",
@@ -95,9 +95,9 @@ test("K2 controls remain contextual to the flat-roof panel", () => {
   assert.ok(modulesPanel.includes('step === "modules"'));
   assert.ok(modulesPanel.includes('customerRoofType === "flat"'));
   assert.ok(modulesPanel.includes('step === "building"'));
-  assert.ok(advancedPanel.includes("K2 S-Dome 6.10"));
-  assert.ok(advancedPanel.includes("K2 D-Dome 6.10"));
+  assert.ok(advancedPanel.includes("Standardsystem"));
   assert.ok(advancedPanel.includes("Wartungsgang"));
   assert.ok(advancedPanel.includes("Modulneigung"));
-  assert.ok(advancedPanel.includes(">10°<"));
+  assert.ok(advancedPanel.includes("DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG"));
+  assert.equal(advancedPanel.includes("mm · K2"), false);
 });

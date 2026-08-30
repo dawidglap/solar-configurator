@@ -3,15 +3,27 @@
 import React from "react";
 import { usePlannerV2Store } from "./state/plannerV2Store";
 import { resolveRoofFallAzimuth, roofAzimuthCardinal } from "./roof/roofOrientation";
+import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
 
 const TICKS = Array.from({ length: 36 }, (_, i) => i * 10); // alle 10°
 
 export default function CompassHUD() {
   const layers = usePlannerV2Store((s) => s.layers);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
+  const draft = usePlannerV2Store((s) =>
+    s.selectedId ? s.roofPlanningDrafts[s.selectedId] : undefined,
+  );
 
   const roof = layers.find((l) => l.id === selectedId);
   if (!roof) return null;
+  const persistedPlanning = resolveSurfacePlanning(roof.surfacePlanning);
+  const surfaceKind = draft?.targetMode === "advanced"
+    ? draft.config.surface.kind
+    : persistedPlanning.status === "supported-advanced" ||
+        persistedPlanning.status === "supported-standard"
+      ? persistedPlanning.config.surface.kind
+      : "pitched";
+  if (surfaceKind === "flat") return null;
   const roofDirectionDeg = resolveRoofFallAzimuth(roof);
   if (roofDirectionDeg == null) return null;
   const label = roofAzimuthCardinal(roofDirectionDeg);

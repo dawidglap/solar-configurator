@@ -167,7 +167,8 @@ export default function AdvancedPreviewLayer() {
         </Group>
       )}
 
-      {typeof config.surface.fallAzimuthDeg === "number" && (
+      {config.surface.kind !== "flat" &&
+        typeof config.surface.fallAzimuthDeg === "number" && (
         <DirectionArrow
           origin={center}
           azimuthDeg={config.surface.fallAzimuthDeg}

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  GENERIC_EAST_WEST_SYSTEM_ID,
   K2_D_DOME_SYSTEM_ID,
   K2_S_DOME_SYSTEM_ID,
   resolveSurfacePlanning,
@@ -17,6 +18,7 @@ import {
   replaceAdvancedDraftModule,
   resolveRoofPlanningMode,
   setAdvancedMountingOrientation,
+  updateDefaultFlatSystem,
 } from "../../src/components_v2/modules/advanced/advancedPlanningApplication";
 import type { ModulesConfig, PanelInstance, PanelSpec, RoofArea } from "../../src/types/planner";
 
@@ -139,6 +141,30 @@ test("F/G: changing row space or margin recomputes a deterministic preview", () 
   assert.notDeepEqual(first.blocks.map((block) => block.centerPx), second.blocks.map((block) => block.centerPx));
   assert.ok(third.blockCount < first.blockCount);
   assert.deepEqual(preview(base), first);
+});
+
+test("customer-editable flat defaults replace vendor claims and drive geometry", () => {
+  const config = updateDefaultFlatSystem({
+    config: advancedConfig(),
+    orientation: "east-west",
+    rowSpaceM: 2.61,
+    nominalTiltDeg: 35,
+    moduleGapM: 0.025,
+  });
+  assert.equal(config.advanced.system.systemId, GENERIC_EAST_WEST_SYSTEM_ID);
+  assert.equal(config.advanced.system.nominalTiltDeg, 35);
+  assert.equal(config.advanced.system.moduleGapX, 0.025);
+  const result = preview(config);
+  assert.equal(result.valid, true);
+  if (!result.valid || result.derived.kind !== "generic") return;
+  assert.equal(result.derived.nominalTiltDeg, 35);
+  assert.equal(result.derived.pitchYM, 2.61);
+
+  const vertical = updateDefaultFlatSystem({ config, nominalTiltDeg: 90 });
+  const verticalResult = preview(vertical);
+  assert.equal(verticalResult.valid, true);
+  if (!verticalResult.valid) return;
+  assert.ok(verticalResult.moduleCount > 0);
 });
 
 test("H: D-Dome preview and materialized output preserve block-to-two-module parity", () => {

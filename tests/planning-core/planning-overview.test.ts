@@ -360,7 +360,7 @@ test("Advanced block count remains unavailable when committed panels lack block 
   assert.equal(overview.roofs[0].blockCount, undefined);
 });
 
-test("planner exposes the overview entry point and roof-selection workflow", () => {
+test("overview capability remains available while the toolbar entry point is hidden", () => {
   const toolbar = readFileSync(
     new URL("../../src/components_v2/layout/TopToolbar.tsx", import.meta.url),
     "utf8",
@@ -372,8 +372,8 @@ test("planner exposes the overview entry point and roof-selection workflow", () 
     ),
     "utf8",
   );
-  assert.ok(toolbar.includes("Planungsübersicht"));
-  assert.ok(toolbar.includes("<PlanningOverviewDrawer"));
+  assert.equal(toolbar.includes("Planungsübersicht"), false);
+  assert.equal(toolbar.includes("<PlanningOverviewDrawer"), false);
   assert.ok(drawer.includes('select(roofId)'));
   assert.ok(drawer.includes('setStep("modules")'));
   assert.ok(drawer.includes("rightPanelOpen: true"));

@@ -10,7 +10,7 @@ import { SnowGuardCostDialog, SnowSegment } from "../SnowGuardCostDialog";
 import { useSearchParams, useRouter } from "next/navigation";
 import { savePlannerToDb } from "../state/planning/savePlanning";
 
-import { CircleHelp, ClipboardList, MousePointer, RotateCcw, RotateCw } from "lucide-react";
+import { CircleHelp, MousePointer, RotateCcw, RotateCw } from "lucide-react";
 
 // NUOVE icone topbar (1–10) da react-icons
 import { TbShape3, TbDropletHalf2Filled } from "react-icons/tb";
@@ -33,7 +33,6 @@ import {
 
 import ProjectStatsBar from "../ui/ProjectStatsBar";
 import TopbarAddressSearch from "./TopbarAddressSearch";
-import PlanningOverviewDrawer from "../modules/overview/PlanningOverviewDrawer";
 import PlannerHelpDialog from "./PlannerHelpDialog";
 
 /* ───────────────────── Keycaps ───────────────────── */
@@ -227,7 +226,6 @@ export default function TopToolbar() {
 
   // ── Schneefang: Popup & Segmente (nur TopToolbar, lokal)
   const [isSnowDialogOpen, setIsSnowDialogOpen] = useState(false);
-  const [isPlanningOverviewOpen, setIsPlanningOverviewOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [snowSegments, setSnowSegments] = useState<SnowSegment[]>([
     // di base un segmento da 10 m, giusto per non partire vuoto
@@ -646,7 +644,7 @@ export default function TopToolbar() {
         <button
           type="button"
           onClick={() => setIsHelpOpen(true)}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/70 bg-secondary/35 text-muted-foreground transition hover:bg-secondary/70 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-amber-300/80 bg-amber-400 text-neutral-950 shadow-sm transition hover:bg-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
           aria-label={`${step === "building" ? "Gebäudeplanung" : "Modulplanung"} Hilfe öffnen`}
           title="Hilfe"
         >
@@ -657,16 +655,6 @@ export default function TopToolbar() {
         {/* 8) Trasparenza — placeholder */}
 
         {/* 9) Leeren — placeholder */}
-
-        <button
-          type="button"
-          onClick={() => setIsPlanningOverviewOpen(true)}
-          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-secondary/35 px-3 text-[11px] font-medium text-foreground transition hover:bg-secondary/70 focus:outline-none focus:ring-2 focus:ring-primary/25"
-          aria-label="Planungsübersicht öffnen"
-        >
-          <ClipboardList className="h-4 w-4" aria-hidden="true" />
-          <span>Planungsübersicht</span>
-        </button>
 
         {/* 10) Speichern — placeholder */}
         <ActionBtn
@@ -711,12 +699,6 @@ export default function TopToolbar() {
           pricePerM={SNOW_PRICE_PER_M}
         />
 
-        {isPlanningOverviewOpen && (
-          <PlanningOverviewDrawer
-            open
-            onClose={() => setIsPlanningOverviewOpen(false)}
-          />
-        )}
         <PlannerHelpDialog
           open={isHelpOpen}
           step={step}

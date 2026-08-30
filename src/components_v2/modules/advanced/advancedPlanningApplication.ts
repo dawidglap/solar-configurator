@@ -55,6 +55,11 @@ import {
 
 export type AdvancedMountingOrientation = "south" | "east-west";
 
+export const DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG = { min: 8.5, max: 90 } as const;
+export const DEFAULT_FLAT_MODULE_GAP_M = 0.018;
+export const DEFAULT_FLAT_EAST_WEST_CENTER_GAP_M = 0.078;
+const MAX_DEFAULT_FLAT_SPACING_M = 20;
+
 export type StandardPlanningDraft = {
   targetMode: "standard";
   panelSpecId: string;
@@ -200,6 +205,10 @@ type PreviewSnowGuard = {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizeAzimuth(value: number): number {
+  return ((value % 360) + 360) % 360;
 }
 
 function cloneModules(modules: ModulesConfig): ModulesConfig {
@@ -348,6 +357,107 @@ function genericEastWestSystem(input?: {
   } as const;
 }
 
+function moduleProjectedDepthM(
+  config: AdvancedSurfacePlanningV1,
+  nominalTiltDeg: number,
+): number {
+  const moduleSpec = config.advanced.module;
+  const alongSlopeM = moduleSpec.orientation === "portrait"
+    ? moduleSpec.heightM
+    : moduleSpec.widthM;
+  return alongSlopeM * Math.cos((nominalTiltDeg * Math.PI) / 180);
+}
+
+function currentSystemRowSpaceM(config: AdvancedSurfacePlanningV1): number {
+  const system = config.advanced.system;
+  if (system.systemId === K2_S_DOME_SYSTEM_ID || system.systemId === K2_D_DOME_SYSTEM_ID) {
+    return system.rowSpaceM;
+  }
+  const projectedDepthM = moduleProjectedDepthM(config, system.nominalTiltDeg);
+  return system.systemId === GENERIC_SOUTH_SYSTEM_ID
+    ? projectedDepthM + (system.moduleGapY ?? 0) + system.blockGapY
+    : projectedDepthM * 2 + system.interModuleGapM + system.blockGapY;
+}
+
+export function updateDefaultFlatSystem(input: {
+  config: AdvancedSurfacePlanningV1;
+  orientation?: AdvancedMountingOrientation;
+  rowSpaceM?: number;
+  nominalTiltDeg?: number;
+  moduleGapM?: number;
+  azimuthDeg?: number;
+}): AdvancedSurfacePlanningV1 {
+  const { config } = input;
+  const current = config.advanced.system;
+  const currentOrientation: AdvancedMountingOrientation =
+    current.systemId === K2_S_DOME_SYSTEM_ID || current.systemId === GENERIC_SOUTH_SYSTEM_ID
+      ? "south"
+      : "east-west";
+  const orientation = input.orientation ?? currentOrientation;
+  const currentTilt =
+    "nominalTiltDeg" in current ? current.nominalTiltDeg : 10;
+  const nominalTiltDeg = clamp(
+    input.nominalTiltDeg ?? currentTilt,
+    DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.min,
+    DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.max,
+  );
+  const currentModuleGapM =
+    "moduleGapX" in current
+      ? current.moduleGapX ?? DEFAULT_FLAT_MODULE_GAP_M
+      : DEFAULT_FLAT_MODULE_GAP_M;
+  const moduleGapM = clamp(
+    input.moduleGapM ?? currentModuleGapM,
+    0,
+    MAX_DEFAULT_FLAT_SPACING_M,
+  );
+  const desiredRowSpaceM = clamp(
+    input.rowSpaceM ?? currentSystemRowSpaceM(config),
+    0,
+    MAX_DEFAULT_FLAT_SPACING_M,
+  );
+  const projectedDepthM = moduleProjectedDepthM(config, nominalTiltDeg);
+  const currentAzimuth =
+    "faceAzimuthDeg" in current
+      ? current.faceAzimuthDeg
+      : "primaryFaceAzimuthDeg" in current
+        ? current.primaryFaceAzimuthDeg
+        : orientation === "south" ? 180 : 90;
+  const azimuthDeg = normalizeAzimuth(input.azimuthDeg ?? currentAzimuth);
+
+  const system = orientation === "south"
+    ? {
+        systemId: GENERIC_SOUTH_SYSTEM_ID,
+        adapterVersion: GENERIC_MOUNTING_ADAPTER_VERSION,
+        nominalTiltDeg,
+        faceAzimuthDeg: azimuthDeg,
+        moduleGapX: moduleGapM,
+        moduleGapY: 0,
+        blockGapX: 0,
+        blockGapY: Math.max(0, desiredRowSpaceM - projectedDepthM),
+      } as const
+    : {
+        systemId: GENERIC_EAST_WEST_SYSTEM_ID,
+        adapterVersion: GENERIC_MOUNTING_ADAPTER_VERSION,
+        nominalTiltDeg,
+        primaryFaceAzimuthDeg: azimuthDeg,
+        interModuleGapM: DEFAULT_FLAT_EAST_WEST_CENTER_GAP_M,
+        moduleGapX: moduleGapM,
+        blockGapX: 0,
+        blockGapY: Math.max(
+          0,
+          desiredRowSpaceM - projectedDepthM * 2 - DEFAULT_FLAT_EAST_WEST_CENTER_GAP_M,
+        ),
+      } as const;
+  return {
+    ...config,
+    advanced: { ...config.advanced, system },
+  };
+}
+
+export function getAdvancedRowSpaceM(config: AdvancedSurfacePlanningV1): number {
+  return currentSystemRowSpaceM(config);
+}
+
 export function setAdvancedSurfaceKind(input: {
   config: AdvancedSurfacePlanningV1;
   kind: "flat" | "green";
@@ -470,6 +580,12 @@ export function setAdvancedMountingOrientation(input: {
       },
     };
   }
+  if (
+    config.advanced.system.systemId === GENERIC_SOUTH_SYSTEM_ID ||
+    config.advanced.system.systemId === GENERIC_EAST_WEST_SYSTEM_ID
+  ) {
+    return updateDefaultFlatSystem({ config, orientation: input.orientation });
+  }
   if (input.orientation === "south") {
     const previousAzimuth = config.advanced.system.systemId === K2_S_DOME_SYSTEM_ID
       ? config.advanced.system.faceAzimuthDeg
@@ -569,7 +685,10 @@ export function alignAdvancedLayoutParallelToRoofEdge(input: {
   });
   if (!alignment) return input.config;
   const system = input.config.advanced.system;
-  if (system.systemId === K2_S_DOME_SYSTEM_ID) {
+  if (
+    system.systemId === K2_S_DOME_SYSTEM_ID ||
+    system.systemId === GENERIC_SOUTH_SYSTEM_ID
+  ) {
     return {
       ...input.config,
       advanced: {
@@ -578,7 +697,10 @@ export function alignAdvancedLayoutParallelToRoofEdge(input: {
       },
     };
   }
-  if (system.systemId === K2_D_DOME_SYSTEM_ID) {
+  if (
+    system.systemId === K2_D_DOME_SYSTEM_ID ||
+    system.systemId === GENERIC_EAST_WEST_SYSTEM_ID
+  ) {
     return {
       ...input.config,
       advanced: {
@@ -700,14 +822,12 @@ export function computeAdvancedPlanningPreview(input: {
   const isGenericSystem =
     system.systemId === GENERIC_SOUTH_SYSTEM_ID ||
     system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
-  if (isGreenRoof !== isGenericSystem) {
+  if (isGreenRoof && !isGenericSystem) {
     return invalidPreview([
       {
         code: "surface-system-mismatch",
         field: "system",
-        message: isGreenRoof
-          ? "Gründach verwendet die freie Vorplanung, nicht K2 Dome Classic."
-          : "Flachdach verwendet weiterhin K2 Dome Classic.",
+        message: "Gründach verwendet die freie Vorplanung, nicht K2 Dome Classic.",
       },
     ]);
   }
@@ -725,7 +845,7 @@ export function computeAdvancedPlanningPreview(input: {
       })
     | undefined;
 
-  if (isGreenRoof) {
+  if (isGenericSystem) {
     if (
       system.systemId !== GENERIC_SOUTH_SYSTEM_ID &&
       system.systemId !== GENERIC_EAST_WEST_SYSTEM_ID
@@ -734,27 +854,55 @@ export function computeAdvancedPlanningPreview(input: {
         { code: "unsupported-ui-system", field: "system", message: "Dieses freie Montagesystem ist nicht verfügbar." },
       ]);
     }
-    const greenIssues = validateGreenRoofGenericInputs({
-      undersideClearanceM: config.advanced.undersideClearanceM,
-      nominalTiltDeg: system.nominalTiltDeg,
-      spacingsM:
-        system.systemId === GENERIC_SOUTH_SYSTEM_ID
-          ? [
-              system.moduleGapX ?? 0,
-              system.moduleGapY ?? 0,
-              system.blockGapX,
-              system.blockGapY,
-            ]
-          : [
-              system.moduleGapX ?? 0,
-              system.interModuleGapM,
-              system.blockGapX,
-              system.blockGapY,
-            ],
-    });
-    if (greenIssues.length) {
+    const spacingsM = system.systemId === GENERIC_SOUTH_SYSTEM_ID
+      ? [
+          system.moduleGapX ?? 0,
+          system.moduleGapY ?? 0,
+          system.blockGapX,
+          system.blockGapY,
+        ]
+      : [
+          system.moduleGapX ?? 0,
+          system.interModuleGapM,
+          system.blockGapX,
+          system.blockGapY,
+        ];
+    const genericIssues = isGreenRoof
+      ? validateGreenRoofGenericInputs({
+          undersideClearanceM: config.advanced.undersideClearanceM,
+          nominalTiltDeg: system.nominalTiltDeg,
+          spacingsM,
+        })
+      : [
+          ...(
+            system.nominalTiltDeg < DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.min ||
+            system.nominalTiltDeg > DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.max ||
+            !Number.isFinite(system.nominalTiltDeg)
+              ? [{
+                  code: "invalid-generic-tilt" as const,
+                  field: "nominalTiltDeg" as const,
+                  message: `Die Modulneigung muss zwischen ${DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.min}° und ${DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.max}° liegen.`,
+                }]
+              : []
+          ),
+          ...(
+            spacingsM.some(
+              (value) =>
+                !Number.isFinite(value) ||
+                value < 0 ||
+                value > MAX_DEFAULT_FLAT_SPACING_M,
+            )
+              ? [{
+                  code: "invalid-generic-spacing" as const,
+                  field: "spacing" as const,
+                  message: "Die Systemabstände sind ungültig.",
+                }]
+              : []
+          ),
+        ];
+    if (genericIssues.length) {
       return invalidPreview(
-        greenIssues.map((current) => ({
+        genericIssues.map((current) => ({
           code: current.code,
           field:
             current.field === "undersideClearanceM"
@@ -957,7 +1105,7 @@ export function computeAdvancedPlanningPreview(input: {
       },
     );
   }
-  if (isGreenRoof) {
+  if (isGenericSystem) {
     const genericSystem = system.systemId === GENERIC_SOUTH_SYSTEM_ID
       ? system
       : system.systemId === GENERIC_EAST_WEST_SYSTEM_ID
