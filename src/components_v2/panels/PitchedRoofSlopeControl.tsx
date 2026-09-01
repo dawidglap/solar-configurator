@@ -1,6 +1,11 @@
 "use client";
 
 import React from "react";
+import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
+import {
+  resolveRoofEdgeMarginM,
+  shouldShowRoofFallDirection,
+} from "@/lib/planning/roofProperties";
 import type { RoofArea } from "@/types/planner";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import {
@@ -10,150 +15,254 @@ import {
   resolveRoofFallAzimuth,
 } from "../roof/roofOrientation";
 
-type Props = { roof: RoofArea };
+type Props = {
+  roof: RoofArea;
+  roofKind: "pitched" | "flat" | "green";
+};
 
-export default function PitchedRoofSlopeControl({ roof }: Props) {
+const inputClass = "glass-input h-8 min-w-0 flex-1 rounded-lg px-2 text-[11px]";
+
+export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
   const updateRoof = usePlannerV2Store((state) => state.updateRoof);
-  const resolvedAzimuth = resolveRoofFallAzimuth(roof);
-  const [tiltInput, setTiltInput] = React.useState(
-    roof.tiltDeg == null ? "" : String(roof.tiltDeg),
-  );
+  const planningDraft = usePlannerV2Store((state) => state.roofPlanningDrafts[roof.id]);
+  const setPlanningDraft = usePlannerV2Store((state) => state.setRoofPlanningDraft);
+  const standardMarginM = usePlannerV2Store((state) => state.modules.marginM);
+  const resolvedPlanning = resolveSurfacePlanning(roof.surfacePlanning);
+  const advancedConfig = resolvedPlanning.status === "supported-advanced"
+    ? resolvedPlanning.config
+    : undefined;
+  const slopeDeg = advancedConfig?.surface.slopeDeg ?? roof.tiltDeg ?? 0;
+  const resolvedAzimuth = advancedConfig?.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(roof);
+  const marginM = resolveRoofEdgeMarginM(roof, standardMarginM);
+  const [tiltInput, setTiltInput] = React.useState(String(slopeDeg));
+  const [marginInput, setMarginInput] = React.useState(String(marginM));
   const [azimuthInput, setAzimuthInput] = React.useState(
-    resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth)),
+    resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth * 100) / 100),
   );
 
   React.useEffect(() => {
-    setTiltInput(roof.tiltDeg == null ? "" : String(roof.tiltDeg));
-    setAzimuthInput(resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth)));
-  }, [resolvedAzimuth, roof.id, roof.tiltDeg]);
+    setTiltInput(String(slopeDeg));
+    setMarginInput(String(marginM));
+    setAzimuthInput(
+      resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth * 100) / 100),
+    );
+  }, [marginM, resolvedAzimuth, roof.id, slopeDeg]);
 
-  const commitTilt = () => {
-    const value = Number(tiltInput);
-    if (!Number.isFinite(value) || value < 1 || value > 80) {
-      setTiltInput(roof.tiltDeg == null ? "" : String(roof.tiltDeg));
+  const patchAdvanced = (patch: {
+    slopeDeg?: number;
+    fallAzimuthDeg?: number;
+    marginM?: number;
+  }) => {
+    if (!advancedConfig) return roof.surfacePlanning;
+    return {
+      ...advancedConfig,
+      surface: {
+        ...advancedConfig.surface,
+        ...(patch.slopeDeg !== undefined ? { slopeDeg: patch.slopeDeg } : {}),
+        ...(patch.fallAzimuthDeg !== undefined
+          ? { fallAzimuthDeg: patch.fallAzimuthDeg }
+          : {}),
+      },
+      advanced: {
+        ...advancedConfig.advanced,
+        layout: {
+          ...advancedConfig.advanced.layout,
+          ...(patch.marginM !== undefined ? { marginM: patch.marginM } : {}),
+        },
+      },
+    };
+  };
+
+  const patchCurrentDraft = (patch: {
+    slopeDeg?: number;
+    fallAzimuthDeg?: number;
+    marginM?: number;
+  }) => {
+    if (!planningDraft) return;
+    if (planningDraft.targetMode === "standard") {
+      if (patch.marginM === undefined) return;
+      setPlanningDraft(roof.id, {
+        ...planningDraft,
+        modules: { ...planningDraft.modules, marginM: patch.marginM },
+      });
       return;
     }
-    updateRoof(roof.id, { tiltDeg: value, source: "manual" });
+    const config = planningDraft.config;
+    setPlanningDraft(roof.id, {
+      ...planningDraft,
+      config: {
+        ...config,
+        surface: {
+          ...config.surface,
+          ...(patch.slopeDeg !== undefined ? { slopeDeg: patch.slopeDeg } : {}),
+          ...(patch.fallAzimuthDeg !== undefined
+            ? { fallAzimuthDeg: patch.fallAzimuthDeg }
+            : {}),
+        },
+        advanced: {
+          ...config.advanced,
+          layout: {
+            ...config.advanced.layout,
+            ...(patch.marginM !== undefined ? { marginM: patch.marginM } : {}),
+          },
+        },
+      },
+    });
+  };
+
+  const commitTilt = () => {
+    const value = Number(tiltInput.replace(",", "."));
+    const minimum = roofKind === "pitched" ? 0.1 : 0;
+    if (!Number.isFinite(value) || value < minimum || value > 80) {
+      setTiltInput(String(slopeDeg));
+      return;
+    }
+    updateRoof(roof.id, {
+      tiltDeg: value,
+      surfacePlanning: patchAdvanced({ slopeDeg: value }),
+    });
+    patchCurrentDraft({ slopeDeg: value });
+  };
+
+  const commitMargin = () => {
+    const value = Number(marginInput.replace(",", "."));
+    if (!Number.isFinite(value) || value < 0 || value > 50) {
+      setMarginInput(String(marginM));
+      return;
+    }
+    updateRoof(roof.id, {
+      edgeMarginM: value,
+      surfacePlanning: patchAdvanced({ marginM: value }),
+    });
+    patchCurrentDraft({ marginM: value });
   };
 
   const commitAzimuth = (raw?: number) => {
-    if (raw == null && azimuthInput.trim() === "") {
-      setAzimuthInput(resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth)));
-      return;
-    }
-    const candidate = raw ?? Number(azimuthInput);
+    const candidate = raw ?? Number(azimuthInput.replace(",", "."));
     if (!Number.isFinite(candidate)) {
-      setAzimuthInput(resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth)));
+      setAzimuthInput(resolvedAzimuth == null ? "" : String(resolvedAzimuth));
       return;
     }
     const value = normalizeRoofAzimuthDeg(candidate);
-    setAzimuthInput(String(Math.round(value)));
-    updateRoof(roof.id, { azimuthDeg: value, source: "manual" });
+    setAzimuthInput(String(Math.round(value * 100) / 100));
+    updateRoof(roof.id, {
+      fallAzimuthDeg: value,
+      surfacePlanning: patchAdvanced({ fallAzimuthDeg: value }),
+    });
+    patchCurrentDraft({ fallAzimuthDeg: value });
   };
 
-  const currentAzimuth = resolvedAzimuth;
+  const showFallDirection = shouldShowRoofFallDirection(roofKind, slopeDeg);
+  const selectedPreset = ROOF_DIRECTION_CHOICES.find(
+    (choice) => resolvedAzimuth != null && Math.abs(choice.azimuthDeg - resolvedAzimuth) < 0.01,
+  );
 
   return (
     <section className="space-y-3 border-b border-border/60 pb-4">
-      <div>
-        <h3 className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Dachneigung
-        </h3>
-        <label className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+      <label className="block space-y-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Dachneigung
+        <span className="mt-1 flex items-center gap-2 font-normal normal-case">
           <input
-            type="number"
-            min={1}
-            max={80}
-            step={0.5}
+            type="text"
+            inputMode="decimal"
             value={tiltInput}
-            placeholder="z. B. 20"
             onChange={(event) => setTiltInput(event.target.value)}
             onBlur={commitTilt}
             onKeyDown={(event) => {
               event.stopPropagation();
-              if (event.key === "Enter") commitTilt();
+              if (event.key === "Enter") event.currentTarget.blur();
               if (event.key === "Escape") {
-                setTiltInput(roof.tiltDeg == null ? "" : String(roof.tiltDeg));
+                setTiltInput(String(slopeDeg));
+                event.currentTarget.blur();
               }
             }}
-            className="glass-input h-8 min-w-0 flex-1 rounded-lg px-2 text-[11px]"
+            className={inputClass}
+            data-stop-hotkeys="true"
             aria-label="Dachneigung in Grad"
           />
           <span>°</span>
-        </label>
-      </div>
+        </span>
+      </label>
 
-      <div>
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Gefällerichtung
-          </h3>
-          <strong className="text-[11px] text-primary">
-            {currentAzimuth == null ? "Nicht festgelegt" : formatRoofAzimuth(currentAzimuth)}
-          </strong>
-        </div>
-        <div className="mt-2 grid grid-cols-4 gap-1" role="group" aria-label="Gefällerichtung wählen">
-          {ROOF_DIRECTION_CHOICES.map((choice) => {
-            const selected =
-              currentAzimuth != null &&
-              Math.abs(currentAzimuth - choice.azimuthDeg) < 0.5;
-            return (
-              <button
-                key={choice.azimuthDeg}
-                type="button"
-                onClick={() => {
-                  setAzimuthInput(String(choice.azimuthDeg));
-                  commitAzimuth(choice.azimuthDeg);
-                }}
-                aria-pressed={selected}
-                title={`${choice.azimuthDeg}° ${choice.label}`}
-                className={`flex h-8 items-center justify-center gap-1 rounded-lg border text-[10px] font-semibold transition ${
-                  selected
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border/70 bg-muted/15 text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                }`}
-              >
-                <span
-                  aria-hidden="true"
-                  className="inline-block text-sm leading-none"
-                  style={{ transform: `rotate(${choice.azimuthDeg}deg)` }}
-                >
-                  ↑
-                </span>
-                {choice.label}
-              </button>
-            );
-          })}
-        </div>
-        <label className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
-          Exakt
+      <label className="block space-y-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Randabstand
+        <span className="mt-1 flex items-center gap-2 font-normal normal-case">
           <input
-            type="number"
-            min={0}
-            max={359.9}
-            step={1}
-            value={azimuthInput}
-            placeholder="0–359"
-            onChange={(event) => setAzimuthInput(event.target.value)}
-            onBlur={() => commitAzimuth()}
+            type="text"
+            inputMode="decimal"
+            value={marginInput}
+            onChange={(event) => setMarginInput(event.target.value)}
+            onBlur={commitMargin}
             onKeyDown={(event) => {
               event.stopPropagation();
-              if (event.key === "Enter") commitAzimuth();
+              if (event.key === "Enter") event.currentTarget.blur();
               if (event.key === "Escape") {
-                setAzimuthInput(
-                  currentAzimuth == null ? "" : String(Math.round(currentAzimuth)),
-                );
+                setMarginInput(String(marginM));
+                event.currentTarget.blur();
               }
             }}
-            className="glass-input h-8 min-w-0 flex-1 rounded-lg px-2 text-[11px]"
-            aria-label="Exakte Gefällerichtung in Grad"
+            className={inputClass}
+            data-stop-hotkeys="true"
+            aria-label="Randabstand in Meter"
           />
-          <span>°</span>
-        </label>
-        <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">
-          Die Pfeile auf der Dachfläche zeigen die Fallrichtung: 0° Nord, 90° Ost, 180° Süd, 270° West.
-        </p>
-      </div>
+          <span>m</span>
+        </span>
+      </label>
+
+      {showFallDirection && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <label
+              htmlFor={`fall-direction-${roof.id}`}
+              className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              Gefällerichtung
+            </label>
+            <strong className="text-[11px] text-primary">
+              {resolvedAzimuth == null ? "Nicht festgelegt" : formatRoofAzimuth(resolvedAzimuth)}
+            </strong>
+          </div>
+          <select
+            id={`fall-direction-${roof.id}`}
+            className={`${inputClass} w-full`}
+            value={selectedPreset ? String(selectedPreset.azimuthDeg) : "custom"}
+            onChange={(event) => {
+              if (event.target.value !== "custom") commitAzimuth(Number(event.target.value));
+            }}
+          >
+            {ROOF_DIRECTION_CHOICES.map((choice) => (
+              <option key={choice.azimuthDeg} value={choice.azimuthDeg}>
+                {choice.label} · {choice.azimuthDeg}°
+              </option>
+            ))}
+            {!selectedPreset && <option value="custom">Benutzerdefiniert</option>}
+          </select>
+          {!selectedPreset && (
+            <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
+              Exakt
+              <input
+                type="text"
+                inputMode="decimal"
+                value={azimuthInput}
+                onChange={(event) => setAzimuthInput(event.target.value)}
+                onBlur={() => commitAzimuth()}
+                onKeyDown={(event) => {
+                  event.stopPropagation();
+                  if (event.key === "Enter") event.currentTarget.blur();
+                  if (event.key === "Escape") {
+                    setAzimuthInput(resolvedAzimuth == null ? "" : String(resolvedAzimuth));
+                    event.currentTarget.blur();
+                  }
+                }}
+                className={inputClass}
+                data-stop-hotkeys="true"
+                aria-label="Exakte Gefällerichtung in Grad"
+              />
+              <span>°</span>
+            </label>
+          )}
+        </div>
+      )}
     </section>
   );
 }

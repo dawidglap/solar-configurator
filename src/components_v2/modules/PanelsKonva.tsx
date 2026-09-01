@@ -15,6 +15,7 @@ import { isInReservedZone } from '../zones/utils';
 import { legacyPointInPolygon } from '@/lib/planning-core/legacy-standard/collision';
 import { plannerTheme } from '../theme/plannerTheme';
 import { createLatestFrameScheduler, type FrameScheduler } from '../canvas/performance/latestFrameScheduler';
+import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
 
 const SNAP_STAGE_PX = 6;            // snap forza (px schermo)
 const HANDLE_STAGE_PX = 24;         // lato handle (px schermo)
@@ -67,7 +68,10 @@ export default function PanelsKonva(props: {
   const snapPxImg = React.useMemo(() => SNAP_STAGE_PX * invScale, [invScale]);
 
   // margine progetto → px immagine
-  const marginM = usePlannerV2Store((s) => s.modules.marginM) ?? 0;
+  const marginM = usePlannerV2Store((s) => {
+    const roof = s.layers.find((item) => item.id === roofId);
+    return roof ? resolveRoofEdgeMarginM(roof, s.modules.marginM) : s.modules.marginM;
+  }) ?? 0;
   const mpp = usePlannerV2Store((s) => s.snapshot.mppImage) ?? 1;
   const edgeMarginPx = React.useMemo(() => (mpp ? marginM / mpp : 0), [marginM, mpp]);
   const spacingM = usePlannerV2Store((s) => s.modules.spacingM) ?? 0;

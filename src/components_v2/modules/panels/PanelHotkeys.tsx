@@ -6,6 +6,7 @@ import { usePlannerV2Store } from '../../state/plannerV2Store';
 // ⬇️ NUOVO: helpers per orientamento falda + zone riservate
 import { longestEdgeAngle, angleDiffDeg } from './math';
 import { isInReservedZone } from '../../zones/utils';
+import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
 
 type Pt = { x: number; y: number };
 
@@ -81,7 +82,7 @@ function buildRoofGeom(roofId: string, st: any): RoofGeom | null {
   }
 
   const mpp = st.snapshot?.mppImage ?? 1;
-  const marginM = st.modules?.marginM ?? 0;
+  const marginM = resolveRoofEdgeMarginM(roof, st.modules?.marginM ?? 0);
   const spacingM = st.modules?.spacingM ?? 0;
   const spacingXM = st.modules?.spacingXM ?? spacingM;
   const spacingYM = st.modules?.spacingYM ?? spacingM;

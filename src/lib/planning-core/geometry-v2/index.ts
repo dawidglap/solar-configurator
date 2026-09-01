@@ -5,3 +5,4 @@ export * from "./usableRoof";
 export * from "./collision";
 export * from "./grid";
 export * from "./roofDimensions";
+export * from "./roofEdges";

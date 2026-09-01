@@ -1,11 +1,11 @@
-import { analyzeRectangularRoof } from "../geometry-v2";
+import { analyzeRectangularRoof, getCanonicalRoofEdges } from "../geometry-v2";
 import type { MetricPoint } from "../geometry-v2";
 import { normalizeGeographicAzimuth } from "./moduleGeometry";
 
 export type RoofEdgeAlignment = {
   /** K2 block-local X axis follows this canvas edge direction. */
   faceAzimuthDeg: number;
-  source: "rectangle-main-axis" | "longest-edge";
+  source: "explicit-reference-edge" | "rectangle-main-axis" | "longest-edge";
   edgeIndex: number;
 };
 
@@ -24,12 +24,26 @@ function canvasAngleDeg(start: MetricPoint, end: MetricPoint): number {
 export function resolveK2ParallelRoofEdgeAlignment(input: {
   roofPointsPx: readonly MetricPoint[];
   mppImage: number;
+  referenceEdgeIndex?: number;
 }): RoofEdgeAlignment | null {
   if (
     input.roofPointsPx.length < 2 ||
     !(input.mppImage > 0) ||
     !Number.isFinite(input.mppImage)
   ) return null;
+  const canonicalEdges = getCanonicalRoofEdges(input.roofPointsPx);
+  if (
+    Number.isInteger(input.referenceEdgeIndex) &&
+    (input.referenceEdgeIndex as number) >= 0 &&
+    (input.referenceEdgeIndex as number) < canonicalEdges.length
+  ) {
+    const edge = canonicalEdges[input.referenceEdgeIndex as number];
+    return {
+      faceAzimuthDeg: canvasAngleDeg(edge.start, edge.end),
+      source: "explicit-reference-edge",
+      edgeIndex: edge.edgeIndex,
+    };
+  }
   const rectangle = analyzeRectangularRoof(input.roofPointsPx, input.mppImage);
   if (rectangle.supported) {
     return {
@@ -43,20 +57,17 @@ export function resolveK2ParallelRoofEdgeAlignment(input: {
 
   let longestIndex = -1;
   let longestLength = 0;
-  for (let index = 0; index < input.roofPointsPx.length; index += 1) {
-    const start = input.roofPointsPx[index];
-    const end = input.roofPointsPx[(index + 1) % input.roofPointsPx.length];
-    const length = Math.hypot(end.x - start.x, end.y - start.y);
-    if (length > longestLength) {
-      longestLength = length;
-      longestIndex = index;
+  for (const edge of canonicalEdges) {
+    if (edge.lengthPx > longestLength) {
+      longestLength = edge.lengthPx;
+      longestIndex = edge.edgeIndex;
     }
   }
   if (!(longestLength > 0) || longestIndex < 0) return null;
   return {
     faceAzimuthDeg: canvasAngleDeg(
-      input.roofPointsPx[longestIndex],
-      input.roofPointsPx[(longestIndex + 1) % input.roofPointsPx.length],
+      canonicalEdges[longestIndex].start,
+      canonicalEdges[longestIndex].end,
     ),
     source: "longest-edge",
     edgeIndex: longestIndex,

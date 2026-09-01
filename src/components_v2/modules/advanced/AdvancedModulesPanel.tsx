@@ -485,13 +485,6 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
             <span>°</span>
           </span>
         </div>
-        <label className="block space-y-1 text-[10px] text-muted-foreground">
-          Randabstand
-          <span className="flex items-center gap-2">
-            <input className={inputClass} type="number" min={0} step={0.05} value={config.advanced.layout.marginM} onChange={(event) => patchLayout({ marginM: Math.max(0, Number(event.target.value)) })} />
-            <span>m</span>
-          </span>
-        </label>
       </section>
 
       <section className="rounded-xl border border-border/60 text-[10px]">

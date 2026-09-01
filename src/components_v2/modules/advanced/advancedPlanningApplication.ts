@@ -45,13 +45,16 @@ import type {
   Pt,
   RoofArea,
 } from "@/types/planner";
+import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import { computeLegacyStandardLayout } from "@/lib/planning-core/legacy-standard";
 import {
   resolveStandardAutoLayoutCanvasAngle,
+  orderStandardAutoLayoutPlacements,
   resolveStandardAutoLayoutSpacingAxes,
   selectLegacyStandardObstacles,
   STANDARD_AUTO_LAYOUT_POLICY,
 } from "../legacyStandardApplicationPolicy";
+import { resolveRoofFallAzimuth } from "../../roof/roofOrientation";
 
 export type AdvancedMountingOrientation = "south" | "east-west";
 
@@ -676,12 +679,13 @@ export function setAdvancedFixedQuantity(input: {
 
 export function alignAdvancedLayoutParallelToRoofEdge(input: {
   config: AdvancedSurfacePlanningV1;
-  roof: Pick<RoofArea, "points">;
+  roof: Pick<RoofArea, "points" | "referenceEdgeIndex">;
   mppImage: number;
 }): AdvancedSurfacePlanningV1 {
   const alignment = resolveK2ParallelRoofEdgeAlignment({
     roofPointsPx: input.roof.points,
     mppImage: input.mppImage,
+    referenceEdgeIndex: input.roof.referenceEdgeIndex,
   });
   if (!alignment) return input.config;
   const system = input.config.advanced.system;
@@ -1302,13 +1306,14 @@ export function computeStandardDraftPanels(input: {
         legacyRoofAzimuthDeg: input.roof.azimuthDeg,
         gridAngleDeg: input.modules.gridAngleDeg,
         perRoofAngles: input.modules.perRoofAngles,
+        referenceEdgeIndex: input.roof.referenceEdgeIndex,
       }),
       orientation: input.modules.orientation,
       panelSizeM: { widthM: input.panel.widthM, heightM: input.panel.heightM },
       spacingM: spacing.x,
       spacingXM: spacing.x,
       spacingYM: spacing.y,
-      marginM: input.modules.marginM,
+      marginM: resolveRoofEdgeMarginM(input.roof, input.modules.marginM),
       phaseX: input.modules.gridPhaseX ?? 0,
       phaseY: input.modules.gridPhaseY ?? 0,
       anchorX: input.modules.gridAnchorX ?? "start",
@@ -1319,7 +1324,15 @@ export function computeStandardDraftPanels(input: {
     snowGuards: obstacles.snowGuards,
     filterPolicy: STANDARD_AUTO_LAYOUT_POLICY.filterPolicy,
   });
-  return layout.placements.map((placement, index) => ({
+  const orderedPlacements = orderStandardAutoLayoutPlacements(
+    layout.placements,
+    {
+      roofPolygon: input.roof.points,
+      referenceEdgeIndex: input.roof.referenceEdgeIndex,
+      fallAzimuthDeg: resolveRoofFallAzimuth(input.roof),
+    },
+  );
+  return orderedPlacements.map((placement, index) => ({
     id: input.createPanelId(index),
     roofId: input.roof.id,
     cx: placement.cx,

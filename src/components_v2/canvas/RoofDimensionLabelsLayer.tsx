@@ -3,7 +3,7 @@
 import React from "react";
 import { Group, Line, Text } from "react-konva";
 
-import { analyzeRectangularRoof } from "@/lib/planning-core/geometry-v2";
+import { analyzeRectangularRoof, getCanonicalRoofVertices } from "@/lib/planning-core/geometry-v2";
 import type { Pt, RoofArea } from "@/types/planner";
 import { plannerTheme } from "../theme/plannerTheme";
 import { usePlannerV2Store } from "../state/plannerV2Store";
@@ -104,17 +104,21 @@ export default function RoofDimensionLabelsLayer() {
     [mppImage, selectedRoof?.points],
   );
   if (!selectedRoof || !analysis.supported) return null;
+  const canonicalRoof = {
+    ...selectedRoof,
+    points: getCanonicalRoofVertices(selectedRoof.points).map(({ x, y }) => ({ x, y })),
+  };
   return (
     <Group listening={false}>
       <Dimension
-        roof={selectedRoof}
+        roof={canonicalRoof}
         edgeIndex={analysis.dimensions.lengthEdgeIndex}
         center={analysis.dimensions.centerPx}
         label={`${analysis.dimensions.lengthM.toFixed(2)} m`}
         scale={scale}
       />
       <Dimension
-        roof={selectedRoof}
+        roof={canonicalRoof}
         edgeIndex={analysis.dimensions.widthEdgeIndex}
         center={analysis.dimensions.centerPx}
         label={`${analysis.dimensions.widthM.toFixed(2)} m`}

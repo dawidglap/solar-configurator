@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useCallback, useMemo } from 'react';
-import { roofSegmentLengthM } from '@/lib/planning-core/geometry-v2';
+import { getCanonicalRoofEdges, roofSegmentLengthM } from '@/lib/planning-core/geometry-v2';
 
 type Pt = { x: number; y: number };
 type View = { scale?: number; offsetX?: number; offsetY?: number };
@@ -66,9 +66,10 @@ export default function EdgeLengthBadges({
     if (!points || points.length < 2 || !mpp || !imgW || !imgH) return [];
     const out: { key: string; left: number; top: number; text: string; deg: number }[] = [];
 
-    for (let i = 0; i < points.length; i++) {
-      const a = points[i];
-      const b = points[(i + 1) % points.length];
+    for (const edge of getCanonicalRoofEdges(points)) {
+      const i = edge.edgeIndex;
+      const a = edge.start;
+      const b = edge.end;
 
       const dx = b.x - a.x;
       const dy = b.y - a.y;

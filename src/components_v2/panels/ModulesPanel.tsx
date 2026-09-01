@@ -16,6 +16,7 @@ import { computeLegacyStandardLayout } from "@/lib/planning-core/legacy-standard
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutCommitAction,
+  orderStandardAutoLayoutPlacements,
   resolveStandardAutoLayoutSpacingAxes,
   selectLegacyStandardObstacles,
   STANDARD_AUTO_LAYOUT_POLICY,
@@ -30,6 +31,8 @@ import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
 import PitchedRoofSlopeControl from "./PitchedRoofSlopeControl";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
+import { modulesWithRoofEdgeMargin, resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
+import { resolveRoofReferenceEdgeIndex } from "@/lib/planning-core/geometry-v2";
 import {
   COMPANY_MODULE_SPACING_LIMITS_MM,
   isValidModuleSpacingMm,
@@ -158,6 +161,11 @@ export default function ModulesPanel() {
       : advancedConfig?.surface.kind === "flat"
         ? "flat"
         : "preserved-green";
+  const selectedRoofKind = customerRoofType === "pitched"
+    ? "pitched"
+    : customerRoofType === "flat"
+      ? "flat"
+      : "green";
   const patchDisplayedModules = React.useCallback(
     (patch: Partial<typeof modules>) => {
       if (selectedRoof && standardDraft) {
@@ -226,12 +234,18 @@ export default function ModulesPanel() {
       if (!selSpec) return;
       const nextConfig = createInitialAdvancedPlanning({
         panel: selSpec,
-        standardModules: modules,
+        standardModules: modulesWithRoofEdgeMargin(selectedRoof, modules),
       });
       commitRoofLayout({
         roofId: selectedRoof.id,
         panels: [],
         surfacePlanning: nextConfig,
+      });
+      updateRoof(selectedRoof.id, {
+        referenceEdgeIndex: resolveRoofReferenceEdgeIndex({
+          points: selectedRoof.points,
+          roofKind: "flat",
+        }),
       });
     } else {
       commitRoofLayout({
@@ -239,12 +253,13 @@ export default function ModulesPanel() {
         panels: [],
         surfacePlanning: undefined,
       });
+      updateRoof(selectedRoof.id, { referenceEdgeIndex: 0 });
     }
 
     setPendingRoofType(null);
     setConfirmStandardReplace(false);
     toast.success("Dachtyp geändert. Die Dachfläche kann neu geplant werden.");
-  }, [commitRoofLayout, modules, pendingRoofType, selSpec, selectedRoof]);
+  }, [commitRoofLayout, modules, pendingRoofType, selSpec, selectedRoof, updateRoof]);
 
   React.useEffect(() => {
     setPendingRoofType(null);
@@ -272,7 +287,7 @@ export default function ModulesPanel() {
       } else {
         const display = Math.round(raw); // valore inserito in UI (0° = N)
         const stored = ((display % 360) + 360) % 360;
-        updateRoof(roofId, { azimuthDeg: stored, source: "manual" });
+        updateRoof(roofId, { fallAzimuthDeg: stored });
       }
 
       setEditing(null);
@@ -295,6 +310,7 @@ export default function ModulesPanel() {
         legacyRoofAzimuthDeg: roof.azimuthDeg,
         gridAngleDeg: modules.gridAngleDeg,
         perRoofAngles: modules.perRoofAngles,
+        referenceEdgeIndex: roof.referenceEdgeIndex,
       });
 
       const spacing = resolveStandardAutoLayoutSpacingAxes({
@@ -321,7 +337,7 @@ export default function ModulesPanel() {
           spacingM: spacing.x,
           spacingXM: spacing.x,
           spacingYM: spacing.y,
-          marginM: modules.marginM,
+          marginM: resolveRoofEdgeMarginM(roof, modules.marginM),
           phaseX: modules.gridPhaseX ?? 0,
           phaseY: modules.gridPhaseY ?? 0,
           anchorX: modules.gridAnchorX ?? "start",
@@ -339,7 +355,15 @@ export default function ModulesPanel() {
       // sostituisci i pannelli esistenti con i nuovi
       clearPanelsForRoof(selectedId);
       const now = Date.now().toString(36);
-      const instances = layout.placements.map((r, idx) => ({
+      const orderedPlacements = orderStandardAutoLayoutPlacements(
+        layout.placements,
+        {
+          roofPolygon: roof.points,
+          referenceEdgeIndex: roof.referenceEdgeIndex,
+          fallAzimuthDeg: resolveRoofFallAzimuth(roof),
+        },
+      );
+      const instances = orderedPlacements.map((r, idx) => ({
         id: `${selectedId}_p_${now}_${idx}`,
         roofId: selectedId,
         cx: r.cx,
@@ -761,11 +785,11 @@ export default function ModulesPanel() {
       )}
 
       {step === "building" && selectedRoof && (
-        <RoofDimensionsControl roof={selectedRoof} />
+        <PitchedRoofSlopeControl roof={selectedRoof} roofKind={selectedRoofKind} />
       )}
 
-      {step === "building" && selectedRoof && customerRoofType === "pitched" && (
-        <PitchedRoofSlopeControl roof={selectedRoof} />
+      {step === "building" && selectedRoof && (
+        <RoofDimensionsControl roof={selectedRoof} roofKind={selectedRoofKind} />
       )}
 
       {step === "modules" &&
@@ -898,25 +922,6 @@ export default function ModulesPanel() {
               </span>
             </label>
             </div>
-            <label className="block space-y-1 text-[10px] text-muted-foreground">
-              Randabstand
-              <span className="flex items-center gap-1">
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0"
-                  value={displayedModules.marginM}
-                  onChange={(event) =>
-                    patchDisplayedModules({
-                      marginM: Number(event.target.value),
-                    })
-                  }
-                  className={inputBase}
-                  aria-label="Randabstand (m)"
-                />
-                <span>m</span>
-              </span>
-            </label>
           </section>
 
           <details className="rounded-xl border border-border/60 text-[10px]">

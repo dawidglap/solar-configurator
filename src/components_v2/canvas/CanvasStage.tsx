@@ -21,6 +21,8 @@ import OrientationHUD from "./OrientationHUD";
 import ModulesPreview from "../modules/ModulesPreview";
 import AdvancedPreviewLayer from "../modules/advanced/AdvancedPreviewLayer";
 import RoofDimensionLabelsLayer from "./RoofDimensionLabelsLayer";
+import RoofReferenceEdgeLayer from "./RoofReferenceEdgeLayer";
+import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutSpacingAxes,
@@ -291,12 +293,17 @@ export default function CanvasStage() {
     () => layers.find((l) => l.id === selectedId) ?? null,
     [layers, selectedId],
   );
-  const selectedRoofIsPitched = selectedRoof
-    ? resolveSurfacePlanning(selectedRoof.surfacePlanning).status === "legacy-standard"
-    : false;
-  const selectedRoofFallAzimuth = selectedRoof
-    ? resolveRoofFallAzimuth(selectedRoof)
+  const selectedRoofPlanning = selectedRoof
+    ? resolveSurfacePlanning(selectedRoof.surfacePlanning)
     : undefined;
+  const selectedRoofSlopeDeg = selectedRoofPlanning?.status === "supported-advanced"
+    ? selectedRoofPlanning.config.surface.slopeDeg ?? selectedRoof?.tiltDeg ?? 0
+    : selectedRoof?.tiltDeg ?? 0;
+  const selectedRoofFallAzimuth = selectedRoofPlanning?.status === "supported-advanced"
+    ? selectedRoofPlanning.config.surface.fallAzimuthDeg ?? (selectedRoof ? resolveRoofFallAzimuth(selectedRoof) : undefined)
+    : selectedRoof
+      ? resolveRoofFallAzimuth(selectedRoof)
+      : undefined;
   const showPanelsInBuilding = usePlannerV2Store(
     (state) => state.ui.showPanelsInBuilding,
   );
@@ -313,6 +320,7 @@ export default function CanvasStage() {
       roofId: selectedRoof.id,
       roofPolygon: selectedRoof.points,
       legacyRoofAzimuthDeg: selectedRoof.azimuthDeg,
+      referenceEdgeIndex: selectedRoof.referenceEdgeIndex,
     })
     : 0;
 
@@ -324,6 +332,7 @@ export default function CanvasStage() {
       legacyRoofAzimuthDeg: selectedRoof.azimuthDeg,
       gridAngleDeg: standardPreviewModules.gridAngleDeg,
       perRoofAngles: standardPreviewModules.perRoofAngles,
+      referenceEdgeIndex: selectedRoof.referenceEdgeIndex,
     })
     : 0;
 
@@ -993,7 +1002,7 @@ export default function CanvasStage() {
                       spacingM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).x}
                       spacingXM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).x}
                       spacingYM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).y}
-                      marginM={standardPreviewModules.marginM}
+                      marginM={resolveRoofEdgeMarginM(selectedRoof, standardPreviewModules.marginM)}
                       textureUrl="/images/panel.webp"
                       phaseX={standardPreviewModules.gridPhaseX || 0}
                       phaseY={standardPreviewModules.gridPhaseY || 0}
@@ -1005,6 +1014,7 @@ export default function CanvasStage() {
 
                 {step === "modules" && <AdvancedPreviewLayer />}
                 <RoofDimensionLabelsLayer />
+                <RoofReferenceEdgeLayer />
 
                 <Group listening={!drawingCapturesPointer}>
                   <SonnendachOverlayKonva />
@@ -1031,17 +1041,15 @@ export default function CanvasStage() {
                     areaLabel={areaLabel}
                   />
 
-                  {step === "building" &&
-                    selectedRoofIsPitched &&
+                  {(step === "building" || step === "modules") &&
                     selectedRoof &&
-                    typeof selectedRoof.tiltDeg === "number" &&
-                    selectedRoof.tiltDeg > 0 &&
+                    selectedRoofSlopeDeg > 0.05 &&
                     typeof selectedRoofFallAzimuth === "number" && (
                       <RoofAzimuthArrows
                         points={selectedRoof.points}
                         view={view}
                         azimuthDeg={selectedRoofFallAzimuth}
-                        tiltDeg={selectedRoof.tiltDeg}
+                        tiltDeg={selectedRoofSlopeDeg}
                         color="#39d0bc"
                         opacity={0.9}
                         stepPx={72}

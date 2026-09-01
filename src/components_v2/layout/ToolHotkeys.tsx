@@ -10,6 +10,7 @@ import { history } from '../state/history';
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutCommitAction,
+  orderStandardAutoLayoutPlacements,
   resolveStandardAutoLayoutSpacingAxes,
   selectLegacyStandardObstacles,
   STANDARD_AUTO_LAYOUT_POLICY,
@@ -17,6 +18,8 @@ import {
 import { shouldIgnorePlannerHotkeyTarget } from '../canvas/interactionPolicy';
 import { resolvePlannerStepForTool, resolvePlannerToolHotkey } from './toolHotkeyPolicy';
 import type { Tool } from '@/types/planner';
+import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
+import { resolveRoofFallAzimuth } from '../roof/roofOrientation';
 
 
 
@@ -58,6 +61,7 @@ export default function ToolHotkeys() {
       legacyRoofAzimuthDeg: roof.azimuthDeg,
       gridAngleDeg: modules.gridAngleDeg,
       perRoofAngles: modules.perRoofAngles,
+      referenceEdgeIndex: roof.referenceEdgeIndex,
     });
     const currentState = usePlannerV2Store.getState();
     const obstacles = selectLegacyStandardObstacles(
@@ -76,7 +80,7 @@ export default function ToolHotkeys() {
         spacingM: spacing.x,
         spacingXM: spacing.x,
         spacingYM: spacing.y,
-        marginM: modules.marginM,
+        marginM: resolveRoofEdgeMarginM(roof, modules.marginM),
         phaseX: modules.gridPhaseX ?? 0,
         phaseY: modules.gridPhaseY ?? 0,
         anchorX: modules.gridAnchorX ?? 'start',
@@ -90,7 +94,15 @@ export default function ToolHotkeys() {
     if (commitAction === 'preserve') return;
 
     const now = Date.now().toString(36);
-    const instances = result.placements.map((r, idx) => ({
+    const orderedPlacements = orderStandardAutoLayoutPlacements(
+      result.placements,
+      {
+        roofPolygon: roof.points,
+        referenceEdgeIndex: roof.referenceEdgeIndex,
+        fallAzimuthDeg: resolveRoofFallAzimuth(roof),
+      },
+    );
+    const instances = orderedPlacements.map((r, idx) => ({
       id: `${selectedId}_p_${now}_${idx}`,
       roofId: selectedId,
       cx: r.cx, cy: r.cy,

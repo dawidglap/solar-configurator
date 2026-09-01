@@ -1,5 +1,6 @@
 import { isSimpleMetricPolygon, polygonArea } from "./polygon";
 import type { MetricPoint } from "./types";
+import { getCanonicalRoofEdges, getCanonicalRoofVertices } from "./roofEdges";
 
 export const MIN_EDITABLE_ROOF_DIMENSION_M = 0.1;
 export const MAX_EDITABLE_ROOF_DIMENSION_M = 500;
@@ -51,11 +52,12 @@ export function analyzeRectangularRoof(
   if (!(mppImage > 0) || !Number.isFinite(mppImage)) {
     return { supported: false, reason: "invalid-scale" };
   }
-  if (pointsPx.length !== 4) {
+  const canonicalPoints = getCanonicalRoofVertices(pointsPx).map(({ x, y }) => ({ x, y }));
+  if (canonicalPoints.length !== 4) {
     return { supported: false, reason: "not-four-points" };
   }
-  const edges = pointsPx.map((point, index) =>
-    vector(point, pointsPx[(index + 1) % pointsPx.length]),
+  const edges = canonicalPoints.map((point, index) =>
+    vector(point, canonicalPoints[(index + 1) % canonicalPoints.length]),
   );
   const lengths = edges.map(magnitude);
   if (lengths.some((length) => !Number.isFinite(length) || length <= 1e-6)) {
@@ -72,8 +74,8 @@ export function analyzeRectangularRoof(
     relativeDifference(lengths[0], lengths[2]) <= 0.01 &&
     relativeDifference(lengths[1], lengths[3]) <= 0.01;
   const diagonalMidpointDistance = Math.hypot(
-    (pointsPx[0].x + pointsPx[2].x - pointsPx[1].x - pointsPx[3].x) / 2,
-    (pointsPx[0].y + pointsPx[2].y - pointsPx[1].y - pointsPx[3].y) / 2,
+    (canonicalPoints[0].x + canonicalPoints[2].x - canonicalPoints[1].x - canonicalPoints[3].x) / 2,
+    (canonicalPoints[0].y + canonicalPoints[2].y - canonicalPoints[1].y - canonicalPoints[3].y) / 2,
   );
   const midpointTolerance = Math.max(...lengths) * 0.01;
   if (
@@ -89,7 +91,7 @@ export function analyzeRectangularRoof(
   const widthEdgeIndex = lengthEdgeIndex === 0 ? 1 : 0;
   const lengthAxis = unit(edges[lengthEdgeIndex]);
   const widthAxis = unit(edges[widthEdgeIndex]);
-  const centerPx = pointsPx.reduce(
+  const centerPx = canonicalPoints.reduce(
     (sum, point) => ({ x: sum.x + point.x / 4, y: sum.y + point.y / 4 }),
     { x: 0, y: 0 },
   );
@@ -163,16 +165,14 @@ export function analyzeRoofSegments(
   mppImage: number,
   options: RoofSegmentMeasurementOptions = {},
 ): RoofSegmentDimension[] {
-  if (!(mppImage > 0) || !Number.isFinite(mppImage) || pointsPx.length < 3) return [];
-  return pointsPx.map((point, segmentIndex) => {
-    const endPointIndex = (segmentIndex + 1) % pointsPx.length;
-    const end = pointsPx[endPointIndex];
+  if (!(mppImage > 0) || !Number.isFinite(mppImage)) return [];
+  return getCanonicalRoofEdges(pointsPx).map((edge) => {
     return {
-      segmentIndex,
-      startPointIndex: segmentIndex,
-      endPointIndex,
+      segmentIndex: edge.edgeIndex,
+      startPointIndex: edge.startPointIndex,
+      endPointIndex: edge.endPointIndex,
       lengthM: roofSegmentLengthM(
-        { x: end.x - point.x, y: end.y - point.y },
+        { x: edge.end.x - edge.start.x, y: edge.end.y - edge.start.y },
         mppImage,
         options,
       ),
@@ -208,19 +208,22 @@ export function resizeRoofSegment(input: {
     return { valid: false, reason: "invalid-scale" };
   }
   if (!validDimension(input.lengthM)) return { valid: false, reason: "invalid-length" };
+  const canonicalVertices = getCanonicalRoofVertices(input.pointsPx);
+  const canonicalEdges = getCanonicalRoofEdges(input.pointsPx);
   if (
-    input.pointsPx.length < 3 ||
+    canonicalVertices.length < 3 ||
     !Number.isInteger(input.segmentIndex) ||
     input.segmentIndex < 0 ||
-    input.segmentIndex >= input.pointsPx.length
+    input.segmentIndex >= canonicalEdges.length
   ) {
     return { valid: false, reason: "invalid-segment" };
   }
 
-  const startIndex = input.segmentIndex;
-  const endIndex = (startIndex + 1) % input.pointsPx.length;
-  const start = input.pointsPx[startIndex];
-  const end = input.pointsPx[endIndex];
+  const selectedEdge = canonicalEdges[input.segmentIndex];
+  const startIndex = selectedEdge.edgeIndex;
+  const endIndex = (startIndex + 1) % canonicalVertices.length;
+  const start = selectedEdge.start;
+  const end = selectedEdge.end;
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const currentLengthPx = Math.hypot(dx, dy);
@@ -235,7 +238,7 @@ export function resizeRoofSegment(input: {
   const ux = dx / currentLengthPx;
   const uy = dy / currentLengthPx;
   const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-  const points = input.pointsPx.map((point) => ({ ...point }));
+  const points = canonicalVertices.map(({ x, y }) => ({ x, y }));
   points[startIndex] = {
     x: midpoint.x - ux * halfLengthPx,
     y: midpoint.y - uy * halfLengthPx,
@@ -275,7 +278,8 @@ export function resizeRectangularRoof(input: {
   const current = analysis.dimensions;
   const lengthScale = input.lengthM / current.lengthM;
   const widthScale = input.widthM / current.widthM;
-  const points = input.pointsPx.map((point) => {
+  const canonicalPoints = getCanonicalRoofVertices(input.pointsPx).map(({ x, y }) => ({ x, y }));
+  const points = canonicalPoints.map((point) => {
     const relative = {
       x: point.x - current.centerPx.x,
       y: point.y - current.centerPx.y,

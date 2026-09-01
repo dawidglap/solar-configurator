@@ -7,10 +7,14 @@ import {
   MIN_EDITABLE_ROOF_DIMENSION_M,
   analyzeRectangularRoof,
   analyzeRoofSegments,
+  getCanonicalRoofEdges,
+  getPitchedRoofEdgeRoles,
+  resolveRoofReferenceEdgeIndex,
   resizeRectangularRoof,
   resizeRoofSegment,
 } from "@/lib/planning-core/geometry-v2";
 import type { RoofArea } from "@/types/planner";
+import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 
@@ -19,11 +23,33 @@ const inputClass =
 const labelClass =
   "block text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
 
-export default function RoofDimensionsControl({ roof }: { roof: RoofArea }) {
+type RoofKind = "pitched" | "flat" | "green";
+
+const EDGE_ROLE_LABELS = {
+  first: "First",
+  eaves: "Traufe",
+  "gable-left": "Ortgang links",
+  "gable-right": "Ortgang rechts",
+  edge: undefined,
+} as const;
+
+export default function RoofDimensionsControl({
+  roof,
+  roofKind,
+}: {
+  roof: RoofArea;
+  roofKind: RoofKind;
+}) {
   const mppImage = usePlannerV2Store((state) => state.snapshot.mppImage);
   const panels = usePlannerV2Store((state) => state.panels);
   const updateRoof = usePlannerV2Store((state) => state.updateRoof);
-  const fallAzimuthDeg = resolveRoofFallAzimuth(roof);
+  const planning = resolveSurfacePlanning(roof.surfacePlanning);
+  const measurementTiltDeg = planning.status === "supported-advanced"
+    ? planning.config.surface.slopeDeg ?? roof.tiltDeg
+    : roof.tiltDeg;
+  const fallAzimuthDeg = planning.status === "supported-advanced"
+    ? planning.config.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(roof)
+    : resolveRoofFallAzimuth(roof);
   const analysis = React.useMemo(
     () => analyzeRectangularRoof(roof.points, mppImage ?? 0),
     [mppImage, roof.points],
@@ -31,10 +57,10 @@ export default function RoofDimensionsControl({ roof }: { roof: RoofArea }) {
   const segments = React.useMemo(
     () =>
       analyzeRoofSegments(roof.points, mppImage ?? 0, {
-        tiltDeg: roof.tiltDeg,
+        tiltDeg: measurementTiltDeg,
         fallAzimuthDeg,
       }),
-    [fallAzimuthDeg, mppImage, roof.points, roof.tiltDeg],
+    [fallAzimuthDeg, measurementTiltDeg, mppImage, roof.points],
   );
   const lengthValue = analysis.supported ? analysis.dimensions.lengthM.toFixed(2) : "";
   const widthValue = analysis.supported ? analysis.dimensions.widthM.toFixed(2) : "";
@@ -47,6 +73,27 @@ export default function RoofDimensionsControl({ roof }: { roof: RoofArea }) {
   );
   const cancelBlur = React.useRef<"length" | "width" | undefined>(undefined);
   const cancelSegmentBlur = React.useRef<number | undefined>(undefined);
+  const referenceEdgeIndex = resolveRoofReferenceEdgeIndex({
+    points: roof.points,
+    requestedIndex: roof.referenceEdgeIndex,
+    roofKind,
+  });
+  const pitchedRoles = React.useMemo(
+    () => getPitchedRoofEdgeRoles({
+      points: roof.points,
+      referenceEdgeIndex,
+    }),
+    [referenceEdgeIndex, roof.points],
+  );
+  const canonicalEdges = React.useMemo(
+    () => getCanonicalRoofEdges(roof.points),
+    [roof.points],
+  );
+  const edgeLabel = (edgeIndex: number) => {
+    if (roofKind !== "pitched") return `Kante ${edgeIndex + 1}`;
+    const role = pitchedRoles.get(edgeIndex) ?? "edge";
+    return EDGE_ROLE_LABELS[role] ?? `Kante ${edgeIndex + 1}`;
+  };
 
   React.useEffect(() => {
     setLengthInput(lengthValue);
@@ -74,7 +121,7 @@ export default function RoofDimensionsControl({ roof }: { roof: RoofArea }) {
       mppImage: mppImage ?? 0,
       segmentIndex,
       lengthM,
-      tiltDeg: roof.tiltDeg,
+      tiltDeg: measurementTiltDeg,
       fallAzimuthDeg,
     });
     if (!resized.valid) {
@@ -92,6 +139,35 @@ export default function RoofDimensionsControl({ roof }: { roof: RoofArea }) {
     setGeometryChanged(true);
   };
 
+  const referenceSelector = roofKind === "flat" && segments.length > 0 ? (
+    <div className="space-y-1">
+      <label className={labelClass} htmlFor={`reference-edge-${roof.id}`}>
+        Referenzkante
+      </label>
+      <select
+        id={`reference-edge-${roof.id}`}
+        className={inputClass}
+        value={referenceEdgeIndex ?? 0}
+        onChange={(event) =>
+          updateRoof(roof.id, { referenceEdgeIndex: Number(event.target.value) })
+        }
+      >
+        {segments.map((segment) => (
+          <option key={segment.segmentIndex} value={segment.segmentIndex}>
+            Kante {segment.segmentIndex + 1}
+          </option>
+        ))}
+      </select>
+      {referenceEdgeIndex != null && (
+        <p className="text-[10px] text-muted-foreground">
+          Ausrichtung Referenzkante: {Math.round(
+            canonicalEdges[referenceEdgeIndex]?.geographicAzimuthDeg ?? 0,
+          )}°
+        </p>
+      )}
+    </div>
+  ) : null;
+
   if (!analysis.supported) {
     return (
       <section className="space-y-2">
@@ -99,16 +175,17 @@ export default function RoofDimensionsControl({ roof }: { roof: RoofArea }) {
         <p className="text-[10px] leading-relaxed text-muted-foreground">
           Jede Kante wird in Metern aus der aktuellen Dachgeometrie berechnet.
         </p>
+        {referenceSelector}
         <div className="grid grid-cols-2 gap-2">
           {segments.map((segment) => (
             <label
               key={segment.segmentIndex}
               className="space-y-1 text-[10px] text-muted-foreground"
             >
-              Kante {segment.segmentIndex + 1}
+              {edgeLabel(segment.segmentIndex)}
               <div className="flex items-center gap-1">
                 <input
-                  aria-label={`Kante ${segment.segmentIndex + 1} (m)`}
+                  aria-label={`${edgeLabel(segment.segmentIndex)} (m)`}
                   className={inputClass}
                   data-stop-hotkeys="true"
                   inputMode="decimal"
@@ -238,6 +315,14 @@ export default function RoofDimensionsControl({ roof }: { roof: RoofArea }) {
       <p className="text-[10px] text-muted-foreground">
         Ausrichtung: {analysis.dimensions.canvasAngleDeg.toFixed(1)}°
       </p>
+      {referenceSelector}
+      <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/50 p-2 text-[10px] text-muted-foreground">
+        {segments.map((segment) => (
+          <span key={segment.segmentIndex}>
+            {edgeLabel(segment.segmentIndex)} · {segment.lengthM.toFixed(2)} m
+          </span>
+        ))}
+      </div>
       {error && <p className="text-[10px] text-destructive">{error}</p>}
       {geometryChanged && panels.some((panel) => panel.roofId === roof.id) && (
         <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-[10px] text-amber-700 dark:text-amber-300">

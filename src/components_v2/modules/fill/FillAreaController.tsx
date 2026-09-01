@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { nanoid } from 'nanoid';
 import { usePlannerV2Store } from '@/components_v2/state/plannerV2Store';
 import type { Pt, PanelInstance } from '@/types/planner';
+import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
 
 import { overlapsReservedRect, overlapsSnowGuard } from '../../zones/utils';
 import { isPrimaryPointerButton } from '../../canvas/interactionPolicy';
@@ -95,7 +96,7 @@ function gridBasics(angleDeg: number) {
   const O = centroid(roof.points);
 
   // bounding in locale della falda, insettata dal Randabstand
-  const marginPx = px(s.modules.marginM);
+  const marginPx = px(resolveRoofEdgeMarginM(roof, s.modules.marginM));
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of roof.points.map((p) => worldToLocal(p, O, theta))) {
     if (p.x < minX) minX = p.x;

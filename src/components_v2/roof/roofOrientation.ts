@@ -19,8 +19,12 @@ export function sonnendachAzimuthToRoofFallDirection(value: number): number {
 
 export function resolveRoofFallAzimuth(input: {
   azimuthDeg?: number;
+  fallAzimuthDeg?: number;
   source?: "manual" | "sonnendach";
 }): number | undefined {
+  if (typeof input.fallAzimuthDeg === "number") {
+    return normalizeRoofAzimuthDeg(input.fallAzimuthDeg);
+  }
   if (typeof input.azimuthDeg !== "number") return undefined;
   return input.source === "sonnendach"
     ? sonnendachAzimuthToRoofFallDirection(input.azimuthDeg)
@@ -28,12 +32,12 @@ export function resolveRoofFallAzimuth(input: {
 }
 
 export const ROOF_DIRECTION_CHOICES = [
-  { azimuthDeg: 0, label: "N" },
-  { azimuthDeg: 45, label: "NE" },
-  { azimuthDeg: 90, label: "E" },
-  { azimuthDeg: 135, label: "SE" },
-  { azimuthDeg: 180, label: "S" },
-  { azimuthDeg: 225, label: "SW" },
-  { azimuthDeg: 270, label: "W" },
-  { azimuthDeg: 315, label: "NW" },
+  { azimuthDeg: 0, label: "Nord" },
+  { azimuthDeg: 45, label: "Nordost" },
+  { azimuthDeg: 90, label: "Ost" },
+  { azimuthDeg: 135, label: "Südost" },
+  { azimuthDeg: 180, label: "Süd" },
+  { azimuthDeg: 225, label: "Südwest" },
+  { azimuthDeg: 270, label: "West" },
+  { azimuthDeg: 315, label: "Nordwest" },
 ] as const;

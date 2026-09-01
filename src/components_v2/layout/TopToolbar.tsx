@@ -26,6 +26,7 @@ import {
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutCommitAction,
+  orderStandardAutoLayoutPlacements,
   resolveStandardAutoLayoutSpacingAxes,
   selectLegacyStandardObstacles,
   STANDARD_AUTO_LAYOUT_POLICY,
@@ -34,6 +35,8 @@ import {
 import ProjectStatsBar from "../ui/ProjectStatsBar";
 import TopbarAddressSearch from "./TopbarAddressSearch";
 import PlannerHelpDialog from "./PlannerHelpDialog";
+import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
+import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
@@ -447,6 +450,7 @@ export default function TopToolbar() {
       legacyRoofAzimuthDeg: roof.azimuthDeg,
       gridAngleDeg: modules.gridAngleDeg,
       perRoofAngles: modules.perRoofAngles,
+      referenceEdgeIndex: roof.referenceEdgeIndex,
     });
     const currentState = usePlannerV2Store.getState();
     const obstacles = selectLegacyStandardObstacles(
@@ -465,7 +469,7 @@ export default function TopToolbar() {
         spacingM: spacing.x,
         spacingXM: spacing.x,
         spacingYM: spacing.y,
-        marginM: modules.marginM,
+        marginM: resolveRoofEdgeMarginM(roof, modules.marginM),
         phaseX: modules.gridPhaseX ?? 0,
         phaseY: modules.gridPhaseY ?? 0,
         anchorX: modules.gridAnchorX ?? "start",
@@ -482,7 +486,15 @@ export default function TopToolbar() {
 
     // === crea pannelli reali
     const now = Date.now().toString(36);
-    const instances = layout.placements.map((r, idx) => ({
+    const orderedPlacements = orderStandardAutoLayoutPlacements(
+      layout.placements,
+      {
+        roofPolygon: roof.points,
+        referenceEdgeIndex: roof.referenceEdgeIndex,
+        fallAzimuthDeg: resolveRoofFallAzimuth(roof),
+      },
+    );
+    const instances = orderedPlacements.map((r, idx) => ({
       id: `${selectedId}_p_${now}_${idx}`,
       roofId: selectedId,
       cx: r.cx,

@@ -8,6 +8,7 @@ import {
     type SurfacePlanningResolution,
     type SurfacePlanningV1,
 } from '@/lib/planning-core/advanced/surfacePlanning';
+import { resolveRoofReferenceEdgeIndex } from '@/lib/planning-core/geometry-v2';
 
 export type LayersSlice = {
     layers: RoofArea[];
@@ -33,7 +34,23 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
 
     updateRoof: (id, patch) =>
         set((st) => ({
-            layers: st.layers.map((l) => (l.id === id ? { ...l, ...patch } : l)),
+            layers: st.layers.map((l) => {
+                if (l.id !== id) return l;
+                const next = { ...l, ...patch };
+                if (!patch.points) return next;
+                const planning = getRoofSurfacePlanning([next], next.id);
+                const roofKind = planning.status === 'supported-advanced'
+                    ? planning.config.surface.kind
+                    : 'pitched';
+                const referenceEdgeIndex = resolveRoofReferenceEdgeIndex({
+                    points: next.points,
+                    requestedIndex: next.referenceEdgeIndex,
+                    roofKind,
+                });
+                return referenceEdgeIndex == null
+                    ? next
+                    : { ...next, referenceEdgeIndex };
+            }),
         })),
 
     getSurfacePlanning: (roofId) => getRoofSurfacePlanning(get().layers, roofId),

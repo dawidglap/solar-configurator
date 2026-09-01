@@ -54,7 +54,14 @@ export type RoofArea = {
     // orientamento/inclinazione “fisici”
     tiltDeg?: number;        // Neigung (°)
     azimuthDeg?: number;     // Ausrichtung (°, 0=N, 90=E, 180=S, 270=W)
+    /** Canonical geographic downhill direction. Absent legacy Sonnendach roofs resolve azimuthDeg. */
+    fallAzimuthDeg?: number;
     source?: 'manual' | 'sonnendach';
+
+    /** Canonical physical edge used as First (pitched) or Referenzkante (flat). */
+    referenceEdgeIndex?: number;
+    /** Explicit per-roof module clearance from the roof edge, in metres. */
+    edgeMarginM?: number;
 
     // pronto per “zone vietate” (buchi) — opzionale
     exclusions?: Pt[][];

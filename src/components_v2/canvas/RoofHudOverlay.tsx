@@ -11,6 +11,7 @@ type Roof = {
   id: string;
   points: Pt[];
   azimuthDeg?: number;
+  fallAzimuthDeg?: number;
   tiltDeg?: number;
   source?: "manual" | "sonnendach";
 } | null;
