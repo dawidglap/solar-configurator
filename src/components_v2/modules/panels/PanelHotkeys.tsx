@@ -39,6 +39,8 @@ type RoofGeom = {
   uvBounds: { minU: number; maxU: number; minV: number; maxV: number };
   edgeMarginPx: number;
   gapPx: number;
+  gapXPx: number;
+  gapYPx: number;
 };
 
 function buildRoofGeom(roofId: string, st: any): RoofGeom | null {
@@ -81,9 +83,13 @@ function buildRoofGeom(roofId: string, st: any): RoofGeom | null {
   const mpp = st.snapshot?.mppImage ?? 1;
   const marginM = st.modules?.marginM ?? 0;
   const spacingM = st.modules?.spacingM ?? 0;
+  const spacingXM = st.modules?.spacingXM ?? spacingM;
+  const spacingYM = st.modules?.spacingYM ?? spacingM;
 
   const edgeMarginPx = mpp ? marginM / mpp : 0;
   const gapPx = mpp ? spacingM / mpp : 0;
+  const gapXPx = mpp ? spacingXM / mpp : 0;
+  const gapYPx = mpp ? spacingYM / mpp : 0;
 
   return {
     roofId,
@@ -93,6 +99,8 @@ function buildRoofGeom(roofId: string, st: any): RoofGeom | null {
     uvBounds: { minU, maxU, minV, maxV },
     edgeMarginPx,
     gapPx,
+    gapXPx,
+    gapYPx,
   };
 }
 
@@ -148,8 +156,8 @@ function overlapsOtherPanels(
     const thw = t.wPx / 2;
     const thh = t.hPx / 2;
 
-    const minUdist = meHW + thw + geom.gapPx;
-    const minVdist = meHH + thh + geom.gapPx;
+    const minUdist = meHW + thw + geom.gapXPx;
+    const minVdist = meHH + thh + geom.gapYPx;
 
     const du = Math.abs(meUV.u - tUV.u);
     const dv = Math.abs(meUV.v - tUV.v);

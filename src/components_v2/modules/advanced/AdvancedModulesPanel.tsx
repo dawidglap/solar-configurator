@@ -14,6 +14,10 @@ import {
 import type { RoofArea } from "@/types/planner";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
 import {
+  COMPANY_MODULE_SPACING_LIMITS_MM,
+  isValidModuleSpacingMm,
+} from "@/lib/planning/companyPlannerDefaults";
+import {
   alignAdvancedLayoutParallelToRoofEdge,
   computeAdvancedPlanningPreview,
   DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG,
@@ -74,6 +78,9 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
   const panels = usePlannerV2Store((state) => state.panels);
   const catalogPanels = usePlannerV2Store((state) => state.catalogPanels);
   const setDraft = usePlannerV2Store((state) => state.setRoofPlanningDraft);
+  const companyPlannerDefaults = usePlannerV2Store(
+    (state) => state.companyPlannerDefaults,
+  );
   const clearDraft = usePlannerV2Store((state) => state.clearRoofPlanningDraft);
   const commitRoofLayout = usePlannerV2Store((state) => state.commitRoofLayout);
   const [confirmReplace, setConfirmReplace] = React.useState(false);
@@ -426,16 +433,40 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
                 ? preview.derived.serviceCorridorM
                 : 0)} m
           </span>
-          <label htmlFor={`advanced-module-gap-${roof.id}`} className="self-center">Modulabstand</label>
+          <label htmlFor={`advanced-module-gap-${roof.id}`} className="self-center">
+            Modulabstand
+            {!isK2System && (
+              <button
+                type="button"
+                className="ml-1 text-[9px] text-primary hover:underline"
+                title={`Firmenstandard: ${companyPlannerDefaults.moduleSpacing.horizontalMm} mm`}
+                onClick={() =>
+                  patchDefaultSystemNumber(
+                    "moduleGapM",
+                    companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
+                  )
+                }
+              >
+                Standard
+              </button>
+            )}
+          </label>
           <span className="flex items-center justify-end gap-1">
             <input
               id={`advanced-module-gap-${roof.id}`}
               className={`${inputClass} max-w-20 text-right`}
               type="number"
               min={0}
+              max={COMPANY_MODULE_SPACING_LIMITS_MM.max}
               step={1}
               value={Math.round(moduleGapM * 1000)}
-              onChange={(event) => patchDefaultSystemNumber("moduleGapM", Number(event.target.value) / 1000)}
+              disabled={isK2System}
+              title={isK2System ? "Vom Montagesystem vorgegeben" : undefined}
+              onChange={(event) => {
+                const mm = Number(event.target.value);
+                if (!isValidModuleSpacingMm(mm)) return;
+                patchDefaultSystemNumber("moduleGapM", mm / 1000);
+              }}
             />
             <span>mm</span>
           </span>

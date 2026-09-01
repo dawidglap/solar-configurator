@@ -30,6 +30,8 @@ export type Company = {
     invoiceText?: string;
   };
 
+  plannerDefaults?: import("@/lib/planning/companyPlannerDefaults").CompanyPlannerDefaultsV1;
+
   createdAt: Date;
   updatedAt: Date;
 };

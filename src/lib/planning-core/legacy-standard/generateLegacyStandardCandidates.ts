@@ -119,6 +119,8 @@ export function computeLegacyStandardCandidates(
     orientation,
     panelSizeM,
     spacingM,
+    spacingXM,
+    spacingYM,
     marginM,
     phaseX = 0,
     anchorX = "start",
@@ -136,7 +138,16 @@ export function computeLegacyStandardCandidates(
   const panelHeight = pixels(
     orientation === "portrait" ? panelSizeM.heightM : panelSizeM.widthM,
   );
-  const gap = pixels(spacingM);
+  const gapX = pixels(
+    typeof spacingXM === "number" && Number.isFinite(spacingXM)
+      ? spacingXM
+      : spacingM,
+  );
+  const gapY = pixels(
+    typeof spacingYM === "number" && Number.isFinite(spacingYM)
+      ? spacingYM
+      : spacingM,
+  );
   const marginPx = Math.max(0, pixels(marginM));
 
   let theta: number;
@@ -199,8 +210,8 @@ export function computeLegacyStandardCandidates(
   }
   if (!isFinite(minY)) return [];
 
-  const cellWidth = panelWidth + gap;
-  const cellHeight = panelHeight + gap;
+  const cellWidth = panelWidth + gapX;
+  const cellHeight = panelHeight + gapY;
   const rowStarts: number[] = [];
   for (
     let y = minY + marginPx;
@@ -255,7 +266,7 @@ export function computeLegacyStandardCandidates(
     );
     const usedWidth =
       maximumColumns > 0
-        ? maximumColumns * panelWidth + (maximumColumns - 1) * gap
+        ? maximumColumns * panelWidth + (maximumColumns - 1) * gapX
         : 0;
     const remainingX = Math.max(0, spanX - usedWidth);
     const anchorOffsetX =

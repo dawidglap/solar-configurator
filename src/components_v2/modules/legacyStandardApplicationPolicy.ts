@@ -48,6 +48,24 @@ export function resolveStandardAutoLayoutSpacingM(value: unknown): number {
     : STANDARD_AUTO_LAYOUT_SPACING_M;
 }
 
+export function resolveStandardAutoLayoutSpacingAxes(input: {
+  spacingM: unknown;
+  spacingXM?: unknown;
+  spacingYM?: unknown;
+}): { x: number; y: number } {
+  const fallback = resolveStandardAutoLayoutSpacingM(input.spacingM);
+  return {
+    x:
+      typeof input.spacingXM === "number" && Number.isFinite(input.spacingXM)
+        ? input.spacingXM
+        : fallback,
+    y:
+      typeof input.spacingYM === "number" && Number.isFinite(input.spacingYM)
+        ? input.spacingYM
+        : fallback,
+  };
+}
+
 export function resolveStandardAutoLayoutCanvasAngle(input: {
   roofId: string;
   roofPolygon: LegacyPoint[];

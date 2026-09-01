@@ -19,6 +19,8 @@ export function computeAutoLayoutRects(args: {
   orientation: "portrait" | "landscape";
   panelSizeM: { w: number; h: number };
   spacingM: number;
+  spacingXM?: number;
+  spacingYM?: number;
   marginM: number;
   phaseX?: number;
   phaseY?: number;
@@ -36,6 +38,8 @@ export function computeAutoLayoutRects(args: {
       heightM: args.panelSizeM.h,
     },
     spacingM: args.spacingM,
+    spacingXM: args.spacingXM,
+    spacingYM: args.spacingYM,
     marginM: args.marginM,
     phaseX: args.phaseX,
     phaseY: args.phaseY,

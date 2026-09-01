@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { usePlannerV2Store } from "./plannerV2Store";
+import { fetchCompanyPlannerDefaults } from "@/hooks/useCompanyPlannerDefaults";
 import { normalizePlannerStep } from "./normalizePlannerStep";
 import { defaultIst } from "./slices/istSlice";
 import {
@@ -210,6 +211,9 @@ export function usePlanningLoad() {
   const setSnapshot = usePlannerV2Store((s) => s.setSnapshot);
   const setAddress = usePlannerV2Store((s) => s.setAddress);
   const setHydrationReady = usePlannerV2Store((s) => s.setHydrationReady);
+  const setCompanyPlannerDefaults = usePlannerV2Store(
+    (s) => s.setCompanyPlannerDefaults,
+  );
 
   useEffect(() => {
     const requestedStepFromUrl = resolvePlannerUrlStep({
@@ -221,10 +225,27 @@ export function usePlanningLoad() {
 
     if (!planningId) {
       setHydrationReady(false);
-      setStep(requestedStepFromUrl ?? "building");
-      setHydrationReady(true);
-      setLoadState({ routeKey, status: "ready" });
-      return;
+      let cancelled = false;
+      setLoadState({ routeKey, status: "loading" });
+      void fetchCompanyPlannerDefaults()
+        .then((defaults) => {
+          if (cancelled) return;
+          setCompanyPlannerDefaults(defaults.plannerDefaults, {
+            initializePlanning: true,
+          });
+        })
+        .catch((error) => {
+          console.warn("Company planner defaults unavailable; using SOLA fallback.", error);
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setStep(requestedStepFromUrl ?? "building");
+          setHydrationReady(true);
+          setLoadState({ routeKey, status: "ready" });
+        });
+      return () => {
+        cancelled = true;
+      };
     }
 
     let cancelled = false;
@@ -233,9 +254,10 @@ export function usePlanningLoad() {
 
     (async () => {
       try {
-        const res = await fetch(`/api/plannings/${planningId}`, {
-          credentials: "include",
-        });
+        const [res, companyDefaults] = await Promise.all([
+          fetch(`/api/plannings/${planningId}`, { credentials: "include" }),
+          fetchCompanyPlannerDefaults().catch(() => null),
+        ]);
 
         if (res.status === 401) {
           router.push("/login");
@@ -247,6 +269,10 @@ export function usePlanningLoad() {
           throw new Error("Planning response is invalid.");
         }
         if (cancelled) return;
+
+        if (companyDefaults) {
+          setCompanyPlannerDefaults(companyDefaults.plannerDefaults);
+        }
 
         const planning = json.planning;
         const data = planning?.data ?? {};
@@ -344,6 +370,7 @@ export function usePlanningLoad() {
     setSnapshot,
     setAddress,
     setHydrationReady,
+    setCompanyPlannerDefaults,
     routeKey,
   ]);
 

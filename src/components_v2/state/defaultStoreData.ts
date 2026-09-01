@@ -24,7 +24,9 @@ export function defaultStoreData() {
 
     modules: {
       orientation: "portrait",
-      spacingM: 0.02,
+      spacingM: 0.019,
+      spacingXM: 0.019,
+      spacingYM: 0.019,
       marginM: 0.0,
       showGrid: true,
       placingSingle: false,

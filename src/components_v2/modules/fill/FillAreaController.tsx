@@ -78,16 +78,18 @@ function gridBasics(angleDeg: number) {
   // dimensioni modulo in px (portrait/landscape) + gap in px
   let panelW = px(orientation === 'portrait' ? panel.widthM : panel.heightM);
   let panelH = px(orientation === 'portrait' ? panel.heightM : panel.widthM);
-  let gap    = px(s.modules.spacingM);
+  let gapX   = px(s.modules.spacingXM ?? s.modules.spacingM);
+  let gapY   = px(s.modules.spacingYM ?? s.modules.spacingM);
 
   // (opzionale) micro-snap per stabilità numerica
   const snap = (v: number) => Math.round(v * 10) / 10; // 0.1px
   panelW = snap(panelW);
   panelH = snap(panelH);
-  gap    = snap(gap);
+  gapX   = snap(gapX);
+  gapY   = snap(gapY);
 
-  const cellW = panelW + gap;
-  const cellH = panelH + gap;
+  const cellW = panelW + gapX;
+  const cellH = panelH + gapY;
 
   const theta = deg2rad(angleDeg);
   const O = centroid(roof.points);
@@ -110,7 +112,7 @@ function gridBasics(angleDeg: number) {
 
   return {
     s, roof, panel,
-    panelW, panelH, gap, cellW, cellH,
+    panelW, panelH, gapX, gapY, cellW, cellH,
     theta, O, minX, minY, maxX, maxY, startX, startY,
     angleDeg,
   };
@@ -157,7 +159,7 @@ function rectPolyFromAB(aW: Pt, bW: Pt, basics: ReturnType<typeof gridBasics>) {
 function rectsForSelection(poly: Pt[], basics: ReturnType<typeof gridBasics>): ModRect[] {
   if (!basics) return [];
   const {
-    roof, panelW, panelH, gap, cellW, cellH,
+    roof, panelW, panelH, gapX, gapY, cellW, cellH,
     theta, O, minX, minY, maxX, maxY, startX, startY, angleDeg
   } = basics;
 
@@ -172,8 +174,8 @@ function rectsForSelection(poly: Pt[], basics: ReturnType<typeof gridBasics>): M
   const selH = y1 - y0;
 
   // ✅ conteggio che non “mangia” un gap dopo l’ultimo modulo
-  const nCols = fitCount(selW, panelW, gap);
-  const nRows = fitCount(selH, panelH, gap);
+  const nCols = fitCount(selW, panelW, gapX);
+  const nRows = fitCount(selH, panelH, gapY);
   if (nCols <= 0 || nRows <= 0) return [];
 
   // primo indice rail (centri) allineato al lato min, rispetto ai rail globali

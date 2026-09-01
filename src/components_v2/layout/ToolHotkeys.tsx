@@ -10,7 +10,7 @@ import { history } from '../state/history';
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutCommitAction,
-  resolveStandardAutoLayoutSpacingM,
+  resolveStandardAutoLayoutSpacingAxes,
   selectLegacyStandardObstacles,
   STANDARD_AUTO_LAYOUT_POLICY,
 } from '../modules/legacyStandardApplicationPolicy';
@@ -65,6 +65,7 @@ export default function ToolHotkeys() {
       currentState.snowGuards,
       selectedId,
     );
+    const spacing = resolveStandardAutoLayoutSpacingAxes(modules);
     const result = computeLegacyStandardLayout({
       generation: {
         roofPolygon: roof.points,
@@ -72,7 +73,9 @@ export default function ToolHotkeys() {
         canvasAngleDeg,
         orientation: modules.orientation,
         panelSizeM: { widthM: selSpec.widthM, heightM: selSpec.heightM },
-        spacingM: resolveStandardAutoLayoutSpacingM(modules.spacingM),
+        spacingM: spacing.x,
+        spacingXM: spacing.x,
+        spacingYM: spacing.y,
         marginM: modules.marginM,
         phaseX: modules.gridPhaseX ?? 0,
         phaseY: modules.gridPhaseY ?? 0,

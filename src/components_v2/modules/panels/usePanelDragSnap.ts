@@ -50,6 +50,8 @@ type Args = {
 
     // anti-overlap
     gapPx?: number;         // distanza minima fra moduli (px immagine) — es. spacingM/mpp
+    gapXPx?: number;
+    gapYPx?: number;
 
     // ⛔️ guardia zone: true = posizione consentita, false = vietata
     reservedGuard?: (cx: number, cy: number) => boolean;
@@ -96,14 +98,16 @@ export function resolveNoOverlapCached(input: {
     hw: number;
     hh: number;
     gapPx: number;
+    gapXPx?: number;
+    gapYPx?: number;
     panels: StaticPanelUV[];
 }): UV {
     let { u, v } = input;
     for (let pass = 0; pass < 4; pass++) {
         let changed = false;
         for (const panel of input.panels) {
-            const minU = input.hw + panel.hw + input.gapPx;
-            const minV = input.hh + panel.hh + input.gapPx;
+            const minU = input.hw + panel.hw + (input.gapXPx ?? input.gapPx);
+            const minV = input.hh + panel.hh + (input.gapYPx ?? input.gapPx);
             const du = u - panel.u;
             const dv = v - panel.v;
             const penU = minU - Math.abs(du);
@@ -134,6 +138,8 @@ export function usePanelDragSnap({
     snapPxImg,
     edgeMarginPx = 0,
     gapPx = 0,
+    gapXPx,
+    gapYPx,
     reservedGuard,
     normalizeCandidate,
 }: Args) {
@@ -218,10 +224,12 @@ export function usePanelDragSnap({
                 hw,
                 hh,
                 gapPx,
+                gapXPx,
+                gapYPx,
                 panels: staticPanelsRef.current,
             });
         },
-        [gapPx]
+        [gapPx, gapXPx, gapYPx]
     );
 
     const endDrag = React.useCallback((commit = true) => {

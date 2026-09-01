@@ -84,4 +84,6 @@ test("autosave ignores intermediate store mutations until hydration is complete"
     "utf8",
   );
   assert.ok(autoSaveSource.includes("if (!state.hydrationReady) return;"));
+  assert.ok(autoSaveSource.includes("Hydration establishes the persisted baseline"));
+  assert.ok(autoSaveSource.includes("lastSavedRef.current = fingerprint"));
 });

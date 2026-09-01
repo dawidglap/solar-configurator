@@ -48,7 +48,7 @@ import type {
 import { computeLegacyStandardLayout } from "@/lib/planning-core/legacy-standard";
 import {
   resolveStandardAutoLayoutCanvasAngle,
-  resolveStandardAutoLayoutSpacingM,
+  resolveStandardAutoLayoutSpacingAxes,
   selectLegacyStandardObstacles,
   STANDARD_AUTO_LAYOUT_POLICY,
 } from "../legacyStandardApplicationPolicy";
@@ -1291,6 +1291,7 @@ export function computeStandardDraftPanels(input: {
     input.snowGuards,
     input.roof.id,
   );
+  const spacing = resolveStandardAutoLayoutSpacingAxes(input.modules);
   const layout = computeLegacyStandardLayout({
     generation: {
       roofPolygon: input.roof.points,
@@ -1304,7 +1305,9 @@ export function computeStandardDraftPanels(input: {
       }),
       orientation: input.modules.orientation,
       panelSizeM: { widthM: input.panel.widthM, heightM: input.panel.heightM },
-      spacingM: resolveStandardAutoLayoutSpacingM(input.modules.spacingM),
+      spacingM: spacing.x,
+      spacingXM: spacing.x,
+      spacingYM: spacing.y,
       marginM: input.modules.marginM,
       phaseX: input.modules.gridPhaseX ?? 0,
       phaseY: input.modules.gridPhaseY ?? 0,

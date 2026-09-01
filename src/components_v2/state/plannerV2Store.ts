@@ -16,6 +16,12 @@ import type { IstSlice } from './slices/istSlice';
 import { createIstSlice, defaultIst } from './slices/istSlice';
 
 import { history } from './history';
+import {
+  BUILT_IN_COMPANY_PLANNER_DEFAULTS,
+  companySpacingMmToMetres,
+  resolveCompanyPlannerDefaults,
+  type CompanyPlannerDefaultsV1,
+} from '@/lib/planning/companyPlannerDefaults';
 
 import type {
   PlannerStep,
@@ -96,10 +102,22 @@ const DEFAULT_UI = {
   showPanelsInBuilding: true,
 };
 
-function createDefaultModules(): ModulesConfig {
+function createDefaultModules(
+  plannerDefaults: CompanyPlannerDefaultsV1 = resolveCompanyPlannerDefaults(
+    BUILT_IN_COMPANY_PLANNER_DEFAULTS,
+  ),
+): ModulesConfig {
+  const horizontalM = companySpacingMmToMetres(
+    plannerDefaults.moduleSpacing.horizontalMm,
+  );
+  const verticalM = companySpacingMmToMetres(
+    plannerDefaults.moduleSpacing.verticalMm,
+  );
   return {
     orientation: 'portrait',
-    spacingM: 0.02,
+    spacingM: horizontalM,
+    spacingXM: horizontalM,
+    spacingYM: verticalM,
     marginM: 0.0,
     showGrid: true,
     placingSingle: false,
@@ -129,6 +147,9 @@ function createDefaultAddress(): PlannerAddress {
 }
 
 function createInitialPlannerState() {
+  const companyPlannerDefaults = resolveCompanyPlannerDefaults(
+    BUILT_IN_COMPANY_PLANNER_DEFAULTS,
+  );
   return {
     step: 'profile' as PlannerStep,
     snapshot: {} as Snapshot,
@@ -140,7 +161,8 @@ function createInitialPlannerState() {
 
     catalogPanels: [] as PanelSpec[],
     selectedPanelId: '',
-    modules: createDefaultModules(),
+    companyPlannerDefaults,
+    modules: createDefaultModules(companyPlannerDefaults),
     roofPlanningDrafts: {} as Record<string, RoofPlanningDraft>,
 
     detectedRoofs: [] as DetectedRoof[],
@@ -221,6 +243,11 @@ type PlannerV2State = {
   getSelectedPanel: () => PanelSpec | undefined;
   modules: ModulesConfig;
   setModules: (patch: Partial<ModulesConfig>) => void;
+  companyPlannerDefaults: CompanyPlannerDefaultsV1;
+  setCompanyPlannerDefaults: (
+    defaults: CompanyPlannerDefaultsV1,
+    options?: { initializePlanning?: boolean },
+  ) => void;
   roofPlanningDrafts: Record<string, RoofPlanningDraft>;
   setRoofPlanningDraft: (roofId: string, draft: RoofPlanningDraft) => void;
   clearRoofPlanningDraft: (roofId: string) => void;
@@ -335,7 +362,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           selectedSnowGuardId: undefined,
 
           modules: {
-            ...s.modules,
+            ...createDefaultModules(s.companyPlannerDefaults),
             gridAngleDeg: 0,
             gridPhaseX: 0,
             gridPhaseY: 0,
@@ -358,6 +385,8 @@ export const usePlannerV2Store = create<PlannerV2State>()(
 
           return {
             ...nextState,
+            companyPlannerDefaults: state.companyPlannerDefaults,
+            modules: createDefaultModules(state.companyPlannerDefaults),
             catalogPanels: state.catalogPanels,
             selectedPanelId,
           };
@@ -460,7 +489,8 @@ export const usePlannerV2Store = create<PlannerV2State>()(
               ? saved.detectedRoofs
               : [],
 
-            modules: saved.modules ?? defaults.modules,
+            modules:
+              saved.modules ?? createDefaultModules(s.companyPlannerDefaults),
             roofPlanningDrafts: {},
             roofAlign: saved.roofAlign ?? defaults.roofAlign,
 
@@ -544,6 +574,20 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                 ? { perRoofAngles: nextPerRoof }
                 : {}),
             },
+          };
+        }),
+
+      companyPlannerDefaults: resolveCompanyPlannerDefaults(
+        BUILT_IN_COMPANY_PLANNER_DEFAULTS,
+      ),
+      setCompanyPlannerDefaults: (defaults, options) =>
+        set((state) => {
+          const resolved = resolveCompanyPlannerDefaults(defaults);
+          return {
+            companyPlannerDefaults: resolved,
+            ...(options?.initializePlanning
+              ? { modules: createDefaultModules(resolved) }
+              : { modules: state.modules }),
           };
         }),
 

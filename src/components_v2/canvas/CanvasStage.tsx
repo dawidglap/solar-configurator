@@ -23,7 +23,7 @@ import AdvancedPreviewLayer from "../modules/advanced/AdvancedPreviewLayer";
 import RoofDimensionLabelsLayer from "./RoofDimensionLabelsLayer";
 import {
   resolveStandardAutoLayoutCanvasAngle,
-  resolveStandardAutoLayoutSpacingM,
+  resolveStandardAutoLayoutSpacingAxes,
 } from "../modules/legacyStandardApplicationPolicy";
 import OverlayTopToolbar from "../layout/OverlayTopToolbar";
 import OverlayProgressStepper from "../layout/OverlayProgressStepper";
@@ -990,7 +990,9 @@ export default function CanvasStage() {
                       azimuthDeg={gridDeg}
                       orientation={standardPreviewModules.orientation}
                       panelSizeM={{ w: standardPreviewPanel.widthM, h: standardPreviewPanel.heightM }}
-                      spacingM={resolveStandardAutoLayoutSpacingM(standardPreviewModules.spacingM)}
+                      spacingM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).x}
+                      spacingXM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).x}
+                      spacingYM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).y}
                       marginM={standardPreviewModules.marginM}
                       textureUrl="/images/panel.webp"
                       phaseX={standardPreviewModules.gridPhaseX || 0}

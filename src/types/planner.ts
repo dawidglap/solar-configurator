@@ -98,6 +98,9 @@ export type ModulesConfig = {
     gridAngleDeg: number;
     orientation: 'portrait' | 'landscape';
     spacingM: number;      // distanza fra moduli (m)
+    /** Optional axis-specific clear gaps. Absent legacy documents use spacingM. */
+    spacingXM?: number;
+    spacingYM?: number;
     marginM: number;       // bordo falda (m)
     showGrid: boolean;
     placingSingle: boolean;

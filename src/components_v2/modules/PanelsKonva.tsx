@@ -71,7 +71,11 @@ export default function PanelsKonva(props: {
   const mpp = usePlannerV2Store((s) => s.snapshot.mppImage) ?? 1;
   const edgeMarginPx = React.useMemo(() => (mpp ? marginM / mpp : 0), [marginM, mpp]);
   const spacingM = usePlannerV2Store((s) => s.modules.spacingM) ?? 0;
+  const spacingXM = usePlannerV2Store((s) => s.modules.spacingXM) ?? spacingM;
+  const spacingYM = usePlannerV2Store((s) => s.modules.spacingYM) ?? spacingM;
   const gapPx = React.useMemo(() => (mpp ? spacingM / mpp : 0), [spacingM, mpp]);
+  const gapXPx = React.useMemo(() => (mpp ? spacingXM / mpp : 0), [spacingXM, mpp]);
+  const gapYPx = React.useMemo(() => (mpp ? spacingYM / mpp : 0), [spacingYM, mpp]);
   const reservedPolygons = React.useMemo(
     () => allZones
       .filter((zone) => zone.roofId === roofId && zone.type === 'riservata')
@@ -225,6 +229,8 @@ export default function PanelsKonva(props: {
     snapPxImg,
     edgeMarginPx,
     gapPx,
+    gapXPx,
+    gapYPx,
     reservedGuard: (cx, cy) => !isReservedCenter(cx, cy),
     normalizeCandidate: normalizePanelCandidate,
   });
@@ -299,8 +305,8 @@ export default function PanelsKonva(props: {
         const tUV = project({ x: t.cx, y: t.cy });
         const thw = t.wPx / 2, thh = t.hPx / 2;
 
-        const minU = meHW + thw + gapPx;
-        const minV = meHH + thh + gapPx;
+        const minU = meHW + thw + gapXPx;
+        const minV = meHH + thh + gapYPx;
 
         const du = Math.abs(meUV.u - tUV.u);
         const dv = Math.abs(meUV.v - tUV.v);
@@ -308,7 +314,7 @@ export default function PanelsKonva(props: {
       }
     }
     return false;
-  }, [panels, selectedSet, project, defaultAngleDeg, gapPx]);
+  }, [panels, selectedSet, project, defaultAngleDeg, gapXPx, gapYPx]);
 
   // hint lines per il drag di gruppo
   const [groupHintU, setGroupHintU] = React.useState<number[] | null>(null);

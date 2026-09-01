@@ -35,6 +35,9 @@ export type LegacyStandardGenerationInput = {
     heightM: number;
   };
   spacingM: number;
+  /** Backward-compatible axis overrides; absent keeps legacy uniform spacing. */
+  spacingXM?: number;
+  spacingYM?: number;
   marginM: number;
   phaseX?: number;
   phaseY?: number;

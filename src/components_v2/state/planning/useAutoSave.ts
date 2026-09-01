@@ -14,6 +14,8 @@ export function useAutoSave() {
 
   useEffect(() => {
     if (!planningId) return;
+    let initialized = false;
+    lastSavedRef.current = "";
 
     const unsubscribe = usePlannerV2Store.subscribe((state) => {
       if (!state.hydrationReady) return;
@@ -28,6 +30,14 @@ export function useAutoSave() {
         roofAlign: payload.roofAlign,
         step: payload.step,
       });
+
+      // Hydration establishes the persisted baseline. Merely opening a legacy
+      // planning must not write newly available optional defaults back to it.
+      if (!initialized) {
+        initialized = true;
+        lastSavedRef.current = fingerprint;
+        return;
+      }
 
       if (fingerprint === lastSavedRef.current) return;
 

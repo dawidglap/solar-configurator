@@ -18,6 +18,8 @@ type Props = {
   orientation: 'portrait' | 'landscape';
   panelSizeM: { w: number; h: number };    // metri (w=lato corto, h=lato lungo)
   spacingM: number;                        // metri fra moduli
+  spacingXM?: number;
+  spacingYM?: number;
   marginM: number;                         // metri bordo falda
   showGrid?: boolean;
   textureUrl?: string;
@@ -106,6 +108,8 @@ export default function ModulesPreview({
   orientation,
   panelSizeM,
   spacingM,
+  spacingXM,
+  spacingYM,
   marginM,
   showGrid = true,
   textureUrl = '/images/panel.webp',
@@ -125,6 +129,8 @@ export default function ModulesPreview({
       orientation,
       panelSizeM,
       spacingM,
+      spacingXM,
+      spacingYM,
       marginM,
       phaseX,
       phaseY,
@@ -134,7 +140,7 @@ export default function ModulesPreview({
     });
   }, [
     polygon, mppImage, azimuthDeg, orientation, panelSizeM,
-    spacingM, marginM, phaseX, phaseY, anchorX, anchorY, coverageRatio,
+    spacingM, spacingXM, spacingYM, marginM, phaseX, phaseY, anchorX, anchorY, coverageRatio,
   ]);
 
   // 2) Filtro zone riservate + schneefang (coerente con FillAreaController + U)
@@ -179,7 +185,8 @@ export default function ModulesPreview({
     const px = (m: number) => m / mppImage;
     const panelW = px(orientation === 'portrait' ? panelSizeM.w : panelSizeM.h);
     const panelH = px(orientation === 'portrait' ? panelSizeM.h : panelSizeM.w);
-    const gap    = px(spacingM);
+    const gapX = px(spacingXM ?? spacingM);
+    const gapY = px(spacingYM ?? spacingM);
     const marginPx = Math.max(0, px(marginM));
 
     // poligono locale + margine
@@ -196,8 +203,8 @@ export default function ModulesPreview({
     }
     if (!isFinite(minX)) return [];
 
-    const cellW = panelW + gap;
-    const cellH = panelH + gap;
+    const cellW = panelW + gapX;
+    const cellH = panelH + gapY;
     const spanX = maxX - minX;
     const spanY = maxY - minY;
 
@@ -205,8 +212,8 @@ export default function ModulesPreview({
     const maxCols = Math.max(0, Math.floor((spanX - panelW + 1e-6) / cellW) + 1);
     const maxRows = Math.max(0, Math.floor((spanY - panelH + 1e-6) / cellH) + 1);
 
-    const usedW = maxCols > 0 ? (maxCols * panelW + (maxCols - 1) * gap) : 0;
-    const usedH = maxRows > 0 ? (maxRows * panelH + (maxRows - 1) * gap) : 0;
+    const usedW = maxCols > 0 ? (maxCols * panelW + (maxCols - 1) * gapX) : 0;
+    const usedH = maxRows > 0 ? (maxRows * panelH + (maxRows - 1) * gapY) : 0;
     const remX  = Math.max(0, spanX - usedW);
     const remY  = Math.max(0, spanY - usedH);
 
@@ -249,7 +256,7 @@ export default function ModulesPreview({
     return lines;
   }, [
     showGrid, polygon, mppImage, azimuthDeg, orientation,
-    panelSizeM, spacingM, marginM, phaseX, phaseY, anchorX, anchorY,
+    panelSizeM, spacingM, spacingXM, spacingYM, marginM, phaseX, phaseY, anchorX, anchorY,
   ]);
 
   // 4) texture opzionale

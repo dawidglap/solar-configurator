@@ -16,7 +16,7 @@ import { computeLegacyStandardLayout } from "@/lib/planning-core/legacy-standard
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutCommitAction,
-  resolveStandardAutoLayoutSpacingM,
+  resolveStandardAutoLayoutSpacingAxes,
   selectLegacyStandardObstacles,
   STANDARD_AUTO_LAYOUT_POLICY,
 } from "../modules/legacyStandardApplicationPolicy";
@@ -30,6 +30,10 @@ import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
 import PitchedRoofSlopeControl from "./PitchedRoofSlopeControl";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
+import {
+  COMPANY_MODULE_SPACING_LIMITS_MM,
+  isValidModuleSpacingMm,
+} from "@/lib/planning/companyPlannerDefaults";
 import {
   createInitialAdvancedPlanning,
   computeStandardDraftPanels,
@@ -87,6 +91,9 @@ export default function ModulesPanel() {
   const panels = usePlannerV2Store((s) => s.panels);
   const modules = usePlannerV2Store((s) => s.modules);
   const setModules = usePlannerV2Store((s) => s.setModules);
+  const companyPlannerDefaults = usePlannerV2Store(
+    (s) => s.companyPlannerDefaults,
+  );
   const selSpec = usePlannerV2Store((s) => s.getSelectedPanel());
   const snapshot = usePlannerV2Store((s) => s.snapshot);
   const addPanelsForRoof = usePlannerV2Store((s) => s.addPanelsForRoof);
@@ -140,6 +147,10 @@ export default function ModulesPanel() {
   const standardDraft =
     selectedDraft?.targetMode === "standard" ? selectedDraft : undefined;
   const displayedModules = standardDraft?.modules ?? modules;
+  const displayedSpacingXM =
+    displayedModules.spacingXM ?? displayedModules.spacingM;
+  const displayedSpacingYM =
+    displayedModules.spacingYM ?? displayedModules.spacingM;
   const displayedPanelId = standardDraft?.panelSpecId ?? selectedPanelId;
   const customerRoofType =
     displayMode === "standard"
@@ -286,7 +297,11 @@ export default function ModulesPanel() {
         perRoofAngles: modules.perRoofAngles,
       });
 
-      const spacingM = resolveStandardAutoLayoutSpacingM(modules.spacingM);
+      const spacing = resolveStandardAutoLayoutSpacingAxes({
+        spacingM: modules.spacingM,
+        spacingXM: modules.spacingXM,
+        spacingYM: modules.spacingYM,
+      });
       const orientation = (nextOrientation ?? modules.orientation) as
         "portrait" | "landscape";
 
@@ -303,7 +318,9 @@ export default function ModulesPanel() {
           canvasAngleDeg,
           orientation,
           panelSizeM: { widthM: selSpec.widthM, heightM: selSpec.heightM },
-          spacingM,
+          spacingM: spacing.x,
+          spacingXM: spacing.x,
+          spacingYM: spacing.y,
           marginM: modules.marginM,
           phaseX: modules.gridPhaseX ?? 0,
           phaseY: modules.gridPhaseY ?? 0,
@@ -349,6 +366,8 @@ export default function ModulesPanel() {
       modules.gridAnchorY,
       modules.coverageRatio,
       modules.spacingM,
+      modules.spacingXM,
+      modules.spacingYM,
       modules.orientation,
       addPanelsForRoof,
       clearPanelsForRoof,
@@ -813,27 +832,73 @@ export default function ModulesPanel() {
             )}
           </section>
 
-          <section className="grid grid-cols-2 gap-2">
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className={labelSm}>Modulabstand</span>
+              <button
+                type="button"
+                onClick={() =>
+                  patchDisplayedModules({
+                    spacingM:
+                      companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
+                    spacingXM:
+                      companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
+                    spacingYM:
+                      companyPlannerDefaults.moduleSpacing.verticalMm / 1000,
+                  })
+                }
+                className="text-[9px] text-primary hover:underline"
+                title={`Firmenstandard: ${companyPlannerDefaults.moduleSpacing.horizontalMm} / ${companyPlannerDefaults.moduleSpacing.verticalMm} mm`}
+              >
+                Firmenstandard
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
             <label className="space-y-1 text-[10px] text-muted-foreground">
-              Modulabstand
+              Horizontal
               <span className="flex items-center gap-1">
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.1"
                   min="0"
-                  value={displayedModules.spacingM}
-                  onChange={(event) =>
+                  max={COMPANY_MODULE_SPACING_LIMITS_MM.max}
+                  value={displayedSpacingXM * 1000}
+                  onChange={(event) => {
+                    const mm = Number(event.target.value);
+                    if (!isValidModuleSpacingMm(mm)) return;
                     patchDisplayedModules({
-                      spacingM: Number(event.target.value),
-                    })
-                  }
+                      spacingM: mm / 1000,
+                      spacingXM: mm / 1000,
+                    });
+                  }}
                   className={inputBase}
-                  aria-label="Modulabstand (m)"
+                  aria-label="Modulabstand horizontal (mm)"
                 />
-                <span>m</span>
+                <span>mm</span>
               </span>
             </label>
             <label className="space-y-1 text-[10px] text-muted-foreground">
+              Vertikal
+              <span className="flex items-center gap-1">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max={COMPANY_MODULE_SPACING_LIMITS_MM.max}
+                  value={displayedSpacingYM * 1000}
+                  onChange={(event) => {
+                    const mm = Number(event.target.value);
+                    if (!isValidModuleSpacingMm(mm)) return;
+                    patchDisplayedModules({ spacingYM: mm / 1000 });
+                  }}
+                  className={inputBase}
+                  aria-label="Modulabstand vertikal (mm)"
+                />
+                <span>mm</span>
+              </span>
+            </label>
+            </div>
+            <label className="block space-y-1 text-[10px] text-muted-foreground">
               Randabstand
               <span className="flex items-center gap-1">
                 <input
