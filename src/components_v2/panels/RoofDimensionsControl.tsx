@@ -139,10 +139,11 @@ export default function RoofDimensionsControl({
     setGeometryChanged(true);
   };
 
-  const referenceSelector = roofKind === "flat" && segments.length > 0 ? (
+  const referenceSelector =
+    (roofKind === "flat" || roofKind === "pitched") && segments.length > 0 ? (
     <div className="space-y-1">
       <label className={labelClass} htmlFor={`reference-edge-${roof.id}`}>
-        Referenzkante
+        {roofKind === "pitched" ? "First" : "Referenzkante"}
       </label>
       <select
         id={`reference-edge-${roof.id}`}
@@ -154,13 +155,13 @@ export default function RoofDimensionsControl({
       >
         {segments.map((segment) => (
           <option key={segment.segmentIndex} value={segment.segmentIndex}>
-            Kante {segment.segmentIndex + 1}
+            Kante {segment.segmentIndex + 1} · {segment.lengthM.toFixed(2)} m
           </option>
         ))}
       </select>
       {referenceEdgeIndex != null && (
         <p className="text-[10px] text-muted-foreground">
-          Ausrichtung Referenzkante: {Math.round(
+          Ausrichtung {roofKind === "pitched" ? "First" : "Referenzkante"}: {Math.round(
             canonicalEdges[referenceEdgeIndex]?.geographicAzimuthDeg ?? 0,
           )}°
         </p>

@@ -997,6 +997,7 @@ export default function CanvasStage() {
                       polygon={selectedRoof.points}
                       mppImage={snap.mppImage}
                       azimuthDeg={gridDeg}
+                      moduleFallAzimuthDeg={selectedRoofFallAzimuth}
                       orientation={standardPreviewModules.orientation}
                       panelSizeM={{ w: standardPreviewPanel.widthM, h: standardPreviewPanel.heightM }}
                       spacingM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).x}

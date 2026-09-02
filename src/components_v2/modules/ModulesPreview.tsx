@@ -6,6 +6,7 @@ import { Group, Rect, Line, Image as KonvaImage } from 'react-konva';
 import { computeAutoLayoutRects } from './layout';      // ← stessa cartella
 import { overlapsReservedRect, overlapsSnowGuard } from '../zones/utils';
 import { plannerTheme } from '../theme/plannerTheme';
+import ModuleSlopeArrow from './panels/ModuleSlopeArrow';
 
 type Pt = { x: number; y: number };
 type Anchor = 'start' | 'center' | 'end';
@@ -15,6 +16,7 @@ type Props = {
   polygon: Pt[];                           // px immagine
   mppImage: number;                        // metri/px
   azimuthDeg?: number;                     // 0=N(↑), 90=E(→)
+  moduleFallAzimuthDeg?: number;           // geographic downhill direction
   orientation: 'portrait' | 'landscape';
   panelSizeM: { w: number; h: number };    // metri (w=lato corto, h=lato lungo)
   spacingM: number;                        // metri fra moduli
@@ -105,6 +107,7 @@ export default function ModulesPreview({
   polygon,
   mppImage,
   azimuthDeg,
+  moduleFallAzimuthDeg,
   orientation,
   panelSizeM,
   spacingM,
@@ -295,37 +298,45 @@ export default function ModulesPreview({
       ))}
 
       {/* moduli (preview = commit, ma filtrati da hindernis + snow-guard) */}
-      {rects.map((r, i) =>
-        img ? (
-          <KonvaImage
-            key={i}
-            image={img}
-            x={r.cx}
-            y={r.cy}
-            width={r.wPx}
-            height={r.hPx}
-            offsetX={r.wPx / 2}
-            offsetY={r.hPx / 2}
-            rotation={r.angleDeg}
-            listening={false}
-            opacity={0.85}
+      {rects.map((r, i) => (
+        <Group key={i} listening={false}>
+          {img ? (
+            <KonvaImage
+              image={img}
+              x={r.cx}
+              y={r.cy}
+              width={r.wPx}
+              height={r.hPx}
+              offsetX={r.wPx / 2}
+              offsetY={r.hPx / 2}
+              rotation={r.angleDeg}
+              listening={false}
+              opacity={0.85}
+            />
+          ) : (
+            <Rect
+              x={r.cx}
+              y={r.cy}
+              width={r.wPx}
+              height={r.hPx}
+              offsetX={r.wPx / 2}
+              offsetY={r.hPx / 2}
+              rotation={r.angleDeg}
+              fill={plannerTheme.panelFill}
+              opacity={0.85}
+              listening={false}
+            />
+          )}
+          <ModuleSlopeArrow
+            cx={r.cx}
+            cy={r.cy}
+            wPx={r.wPx}
+            hPx={r.hPx}
+            azimuthDeg={moduleFallAzimuthDeg}
+            opacity={0.82}
           />
-        ) : (
-          <Rect
-            key={i}
-            x={r.cx}
-            y={r.cy}
-            width={r.wPx}
-            height={r.hPx}
-            offsetX={r.wPx / 2}
-            offsetY={r.hPx / 2}
-            rotation={r.angleDeg}
-            fill={plannerTheme.panelFill}
-            opacity={0.85}
-            listening={false}
-          />
-        )
-      )}
+        </Group>
+      ))}
     </Group>
   );
 }

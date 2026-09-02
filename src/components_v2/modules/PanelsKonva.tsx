@@ -16,12 +16,14 @@ import { legacyPointInPolygon } from '@/lib/planning-core/legacy-standard/collis
 import { plannerTheme } from '../theme/plannerTheme';
 import { createLatestFrameScheduler, type FrameScheduler } from '../canvas/performance/latestFrameScheduler';
 import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
+import { resolveRoofFallAzimuth } from '../roof/roofOrientation';
+import type { PanelInstance } from '@/types/planner';
 
 const SNAP_STAGE_PX = 6;            // snap forza (px schermo)
 const HANDLE_STAGE_PX = 24;         // lato handle (px schermo)
 const HANDLE_GAP_STAGE_PX = 12;     // distanza sotto al gruppo (px schermo)
 
-type PanelInst = HookPanel & { panelId: string };
+type PanelInst = HookPanel & Pick<PanelInstance, 'panelId' | 'advanced'>;
 
 
 
@@ -114,7 +116,9 @@ export default function PanelsKonva(props: {
   }, [roofPolygon]);
 
   // angolo falda => defaultAngleDeg
-  const roofAzimuthDeg = usePlannerV2Store((s) => s.layers.find((l) => l.id === roofId)?.azimuthDeg);
+  const roof = usePlannerV2Store((s) => s.layers.find((l) => l.id === roofId));
+  const roofAzimuthDeg = roof?.azimuthDeg;
+  const roofFallAzimuthDeg = roof ? resolveRoofFallAzimuth(roof) : undefined;
   const polyAngleDeg = React.useMemo(() => (longestEdgeAngle(roofPolygon) * 180) / Math.PI, [roofPolygon]);
   const defaultAngleDeg = React.useMemo(() => {
     if (typeof roofAzimuthDeg === 'number') {
@@ -335,6 +339,7 @@ export default function PanelsKonva(props: {
     guides: { uCenters: number[]; uEdges: number[]; vCenters: number[]; vEdges: number[] };
     nodes: Map<string, any>;
     selectionNodes: Map<string, any>;
+    slopeArrowNodes: Map<string, any>;
     final: { id: string; cx: number; cy: number }[] | null;
     frame: FrameScheduler<Pt>;
   } | null>(null);
@@ -347,6 +352,7 @@ export default function PanelsKonva(props: {
     state.init.forEach((initial) => {
       state.nodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
       state.selectionNodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
+      state.slopeArrowNodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
     });
     state.nodes.values().next().value?.getLayer?.()?.batchDraw?.();
     dragStateRef.current = null;
@@ -398,11 +404,14 @@ export default function PanelsKonva(props: {
 
     const nodes = new Map<string, any>();
     const selectionNodes = new Map<string, any>();
+    const slopeArrowNodes = new Map<string, any>();
     selectedPanels.forEach((panel) => {
       const node = stage.findOne(`#panel-node-${panel.id}`);
       if (node) nodes.set(panel.id, node);
       const selectionNode = stage.findOne(`#panel-selection-${panel.id}`);
       if (selectionNode) selectionNodes.set(panel.id, selectionNode);
+      const slopeArrowNode = stage.findOne(`#panel-slope-arrow-${panel.id}`);
+      if (slopeArrowNode) slopeArrowNodes.set(panel.id, slopeArrowNode);
     });
 
     const onFrame = (curImg: Pt) => {
@@ -449,6 +458,7 @@ export default function PanelsKonva(props: {
       proposed.forEach((position) => {
         st.nodes.get(position.id)?.position({ x: position.cx, y: position.cy });
         st.selectionNodes.get(position.id)?.position({ x: position.cx, y: position.cy });
+        st.slopeArrowNodes.get(position.id)?.position({ x: position.cx, y: position.cy });
       });
       st.nodes.values().next().value?.getLayer?.()?.batchDraw?.();
     };
@@ -467,6 +477,7 @@ export default function PanelsKonva(props: {
       guides,
       nodes,
       selectionNodes,
+      slopeArrowNodes,
       final: null,
       frame,
     };
@@ -544,6 +555,9 @@ const startMultiDrag = React.useCallback((e: any) => {
 
         const rotationDeg =
           typeof p.angleDeg === 'number' ? p.angleDeg : defaultAngleDeg;
+        const moduleFallAzimuthDeg = p.advanced?.moduleFaceAzimuthDeg ?? (
+          (roof?.tiltDeg ?? 0) > 0.05 ? roofFallAzimuthDeg : undefined
+        );
 
         return (
           <PanelItem
@@ -554,6 +568,7 @@ const startMultiDrag = React.useCallback((e: any) => {
             wPx={p.wPx}
             hPx={p.hPx}
             rotationDeg={rotationDeg}
+            moduleFallAzimuthDeg={moduleFallAzimuthDeg}
             selected={sel}
             image={img}
             onStartDrag={startDrag}

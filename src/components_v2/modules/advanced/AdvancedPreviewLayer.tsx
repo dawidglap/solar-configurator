@@ -16,6 +16,7 @@ import { geographicAzimuthToCartesianDeg } from "@/lib/planning-core/geometry-v2
 import { plannerTheme } from "../../theme/plannerTheme";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
 import { computeAdvancedPlanningPreview } from "./advancedPlanningApplication";
+import ModuleSlopeArrow from "../panels/ModuleSlopeArrow";
 
 function centroid(points: Pt[]): Pt {
   const count = Math.max(1, points.length);
@@ -132,14 +133,23 @@ export default function AdvancedPreviewLayer() {
             );
           })}
           {preview.modules.map((module) => (
-            <Line
-              key={`${module.blockKey}:${module.slotIndex}`}
-              points={module.footprintPx.flatMap((point) => [point.x, point.y])}
-              closed
-              stroke={plannerTheme.panelStroke}
-              strokeWidth={0.7}
-              fill="rgba(30, 64, 175, 0.45)"
-            />
+            <Group key={`${module.blockKey}:${module.slotIndex}`} listening={false}>
+              <Line
+                points={module.footprintPx.flatMap((point) => [point.x, point.y])}
+                closed
+                stroke={plannerTheme.panelStroke}
+                strokeWidth={0.7}
+                fill="rgba(30, 64, 175, 0.45)"
+              />
+              <ModuleSlopeArrow
+                cx={module.cx}
+                cy={module.cy}
+                wPx={module.wPx}
+                hPx={module.hPx}
+                azimuthDeg={module.faceAzimuthDeg}
+                opacity={0.88}
+              />
+            </Group>
           ))}
           {preview.montageFields.map((field, fieldIndex) => {
             const labelPoint = centroid(field.outlinePx);

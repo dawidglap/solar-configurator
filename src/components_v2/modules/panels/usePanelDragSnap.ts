@@ -150,6 +150,7 @@ export function usePanelDragSnap({
     const dragSizeHalfRef = React.useRef<{ hw: number; hh: number } | null>(null);
     const draggedNodeRef = React.useRef<Konva.Node | null>(null);
     const draggedSelectionNodeRef = React.useRef<Konva.Node | null>(null);
+    const draggedSlopeArrowNodeRef = React.useRef<Konva.Node | null>(null);
     const dragStartPanelRef = React.useRef<PanelInst | null>(null);
     const finalPositionRef = React.useRef<Pt | null>(null);
     const frameRef = React.useRef<FrameScheduler<Pt> | null>(null);
@@ -251,6 +252,10 @@ export function usePanelDragSnap({
                 x: dragStartPanelRef.current.cx,
                 y: dragStartPanelRef.current.cy,
             });
+            draggedSlopeArrowNodeRef.current?.position({
+                x: dragStartPanelRef.current.cx,
+                y: dragStartPanelRef.current.cy,
+            });
         }
         frameRef.current?.cancel();
         draggingIdRef.current = null;
@@ -258,6 +263,7 @@ export function usePanelDragSnap({
         dragSizeHalfRef.current = null;
         draggedNodeRef.current = null;
         draggedSelectionNodeRef.current = null;
+        draggedSlopeArrowNodeRef.current = null;
         dragStartPanelRef.current = null;
         finalPositionRef.current = null;
         clearHints();
@@ -286,6 +292,7 @@ export function usePanelDragSnap({
             dragSizeHalfRef.current = { hw: p.wPx / 2, hh: p.hPx / 2 };
             draggedNodeRef.current = e.target;
             draggedSelectionNodeRef.current = st.findOne(`#panel-selection-${panelId}`) ?? null;
+            draggedSlopeArrowNodeRef.current = st.findOne(`#panel-slope-arrow-${panelId}`) ?? null;
             dragStartPanelRef.current = { ...p };
             finalPositionRef.current = { x: p.cx, y: p.cy };
 
@@ -379,6 +386,7 @@ export function usePanelDragSnap({
                 if (node) {
                     node.position({ x: normalized.x, y: normalized.y });
                     draggedSelectionNodeRef.current?.position({ x: normalized.x, y: normalized.y });
+                    draggedSlopeArrowNodeRef.current?.position({ x: normalized.x, y: normalized.y });
                     node.getLayer()?.batchDraw();
                 }
             };

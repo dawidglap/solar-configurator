@@ -1,6 +1,8 @@
 import type { MetricPoint } from "./types";
 
-const DEFAULT_POINT_EPSILON = 1e-6;
+// Sub-pixel closing noise is not a physical roof edge. Sonnendach rings can
+// end a fraction of a pixel away from their first point after conversion.
+const DEFAULT_POINT_EPSILON = 0.5;
 
 export type CanonicalRoofVertex = MetricPoint & {
   originalPointIndex: number;

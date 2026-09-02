@@ -21,6 +21,7 @@ import {
 } from "../../src/lib/planning/roofProperties";
 import { resolveRoofFallAzimuth } from "../../src/components_v2/roof/roofOrientation";
 import type { RoofArea } from "../../src/types/planner";
+import { imageVectorFromGeographicAzimuth } from "../../src/components_v2/modules/panels/moduleSlope";
 
 const rectangle = [
   { x: 10, y: 10 },
@@ -33,6 +34,8 @@ test("canonical roof edges remove an explicit closing point and the phantom Kant
   const edges = getCanonicalRoofEdges([...rectangle, rectangle[0]]);
   assert.equal(edges.length, 4);
   assert.deepEqual(edges.map((edge) => edge.lengthPx), [100, 60, 100, 60]);
+  const almostClosed = [...rectangle, { x: 10.2, y: 10.1 }];
+  assert.equal(getCanonicalRoofEdges(almostClosed).length, 4);
 });
 
 test("canonical roof edges preserve pentagons and remove duplicate-adjacent vertices", () => {
@@ -169,4 +172,17 @@ test("fall direction is contextual and an explicit canonical value wins over leg
     azimuthDeg: 76,
     fallAzimuthDeg: 90,
   }), 90);
+});
+
+test("module downhill arrows use geographic azimuth in image coordinates", () => {
+  assert.deepEqual(imageVectorFromGeographicAzimuth(0), { x: 0, y: -1 });
+  const east = imageVectorFromGeographicAzimuth(90);
+  assert.ok(Math.abs(east.x - 1) < 1e-12);
+  assert.ok(Math.abs(east.y) < 1e-12);
+  const south = imageVectorFromGeographicAzimuth(180);
+  assert.ok(Math.abs(south.x) < 1e-12);
+  assert.ok(Math.abs(south.y - 1) < 1e-12);
+  const west = imageVectorFromGeographicAzimuth(270);
+  assert.ok(Math.abs(west.x + 1) < 1e-12);
+  assert.ok(Math.abs(west.y) < 1e-12);
 });
