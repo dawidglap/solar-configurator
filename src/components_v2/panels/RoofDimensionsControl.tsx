@@ -15,6 +15,7 @@ import {
 } from "@/lib/planning-core/geometry-v2";
 import type { RoofArea } from "@/types/planner";
 import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
+import { resolveRoofSlopeForKind } from "@/lib/planning/roofProperties";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 
@@ -44,9 +45,12 @@ export default function RoofDimensionsControl({
   const panels = usePlannerV2Store((state) => state.panels);
   const updateRoof = usePlannerV2Store((state) => state.updateRoof);
   const planning = resolveSurfacePlanning(roof.surfacePlanning);
-  const measurementTiltDeg = planning.status === "supported-advanced"
-    ? planning.config.surface.slopeDeg ?? roof.tiltDeg
-    : roof.tiltDeg;
+  const measurementTiltDeg = resolveRoofSlopeForKind(
+    roofKind,
+    planning.status === "supported-advanced"
+      ? planning.config.surface.slopeDeg ?? roof.tiltDeg
+      : roof.tiltDeg,
+  );
   const fallAzimuthDeg = planning.status === "supported-advanced"
     ? planning.config.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(roof)
     : resolveRoofFallAzimuth(roof);

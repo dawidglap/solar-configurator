@@ -23,7 +23,7 @@ import ModulesPreview from "../modules/ModulesPreview";
 import AdvancedPreviewLayer from "../modules/advanced/AdvancedPreviewLayer";
 import RoofDimensionLabelsLayer from "./RoofDimensionLabelsLayer";
 import RoofReferenceEdgeLayer from "./RoofReferenceEdgeLayer";
-import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
+import { resolveRoofEdgeMarginM, resolveRoofSlopeForKind } from "@/lib/planning/roofProperties";
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutSpacingAxes,
@@ -297,9 +297,14 @@ export default function CanvasStage() {
   const selectedRoofPlanning = selectedRoof
     ? resolveSurfacePlanning(selectedRoof.surfacePlanning)
     : undefined;
-  const selectedRoofSlopeDeg = selectedRoofPlanning?.status === "supported-advanced"
-    ? selectedRoofPlanning.config.surface.slopeDeg ?? selectedRoof?.tiltDeg ?? 0
-    : selectedRoof?.tiltDeg ?? 0;
+  const selectedRoofSlopeDeg = resolveRoofSlopeForKind(
+    selectedRoofPlanning?.status === "supported-advanced"
+      ? selectedRoofPlanning.config.surface.kind
+      : "pitched",
+    selectedRoofPlanning?.status === "supported-advanced"
+      ? selectedRoofPlanning.config.surface.slopeDeg ?? selectedRoof?.tiltDeg
+      : selectedRoof?.tiltDeg,
+  );
   const selectedRoofFallAzimuth = selectedRoofPlanning?.status === "supported-advanced"
     ? selectedRoofPlanning.config.surface.fallAzimuthDeg ?? (selectedRoof ? resolveRoofFallAzimuth(selectedRoof) : undefined)
     : selectedRoof

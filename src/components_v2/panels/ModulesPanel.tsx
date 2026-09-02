@@ -243,6 +243,7 @@ export default function ModulesPanel() {
         surfacePlanning: nextConfig,
       });
       updateRoof(selectedRoof.id, {
+        tiltDeg: 0,
         referenceEdgeIndex: resolveRoofReferenceEdgeIndex({
           points: selectedRoof.points,
           roofKind: "flat",

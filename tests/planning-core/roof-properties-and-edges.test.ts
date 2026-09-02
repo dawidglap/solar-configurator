@@ -17,6 +17,7 @@ import {
 import {
   isRoofBuildingPlanningComplete,
   resolveRoofEdgeMarginM,
+  resolveRoofSlopeForKind,
   shouldShowRoofFallDirection,
 } from "../../src/lib/planning/roofProperties";
 import { resolveRoofFallAzimuth } from "../../src/components_v2/roof/roofOrientation";
@@ -162,10 +163,13 @@ test("per-roof edge margin overrides layout/global fallback and survives JSON ro
 });
 
 test("fall direction is contextual and an explicit canonical value wins over legacy Sonnendach conversion", () => {
+  assert.equal(resolveRoofSlopeForKind("pitched", 0), 0);
+  assert.equal(resolveRoofSlopeForKind("pitched", 20), 20);
+  assert.equal(resolveRoofSlopeForKind("flat", 20), 0);
   assert.equal(shouldShowRoofFallDirection("pitched", 0), true);
   assert.equal(shouldShowRoofFallDirection("flat", 0), false);
   assert.equal(shouldShowRoofFallDirection("flat", 0.01), false);
-  assert.equal(shouldShowRoofFallDirection("flat", 2), true);
+  assert.equal(shouldShowRoofFallDirection("flat", 2), false);
   assert.equal(resolveRoofFallAzimuth({ source: "sonnendach", azimuthDeg: 76 }), 256);
   assert.equal(resolveRoofFallAzimuth({
     source: "sonnendach",

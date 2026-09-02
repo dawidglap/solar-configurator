@@ -7,11 +7,21 @@ import type { ModulesConfig, RoofArea } from "@/types/planner";
 
 export const FLAT_SLOPE_DIRECTION_TOLERANCE_DEG = 0.05;
 
+export function resolveRoofSlopeForKind(
+  roofKind: "pitched" | "flat" | "green",
+  slopeDeg: number | undefined,
+): number {
+  if (roofKind === "flat") return 0;
+  return Number.isFinite(slopeDeg) ? slopeDeg as number : 0;
+}
+
 export function shouldShowRoofFallDirection(
   roofKind: "pitched" | "flat" | "green",
   slopeDeg: number,
 ): boolean {
-  return roofKind === "pitched" || slopeDeg > FLAT_SLOPE_DIRECTION_TOLERANCE_DEG;
+  return roofKind === "pitched" || (
+    roofKind === "green" && slopeDeg > FLAT_SLOPE_DIRECTION_TOLERANCE_DEG
+  );
 }
 
 export function resolveRoofEdgeMarginM(
@@ -48,12 +58,15 @@ export function isRoofBuildingPlanningComplete(input: {
   const missing: RoofBuildingPlanningCompleteness["missing"] = [];
   if (getCanonicalRoofEdges(input.roof.points).length < 3) missing.push("polygon");
   const planning = resolveSurfacePlanning(input.roof.surfacePlanning);
-  const slope = planning.status === "supported-advanced"
-    ? planning.config.surface.slopeDeg ?? input.roof.tiltDeg
-    : input.roof.tiltDeg;
+  const slope = resolveRoofSlopeForKind(
+    input.roofKind,
+    planning.status === "supported-advanced"
+      ? planning.config.surface.slopeDeg ?? input.roof.tiltDeg
+      : input.roof.tiltDeg,
+  );
   if (!Number.isFinite(slope) || (slope as number) < 0) missing.push("slope");
   if (
-    (input.roofKind === "pitched" || (slope ?? 0) > FLAT_SLOPE_DIRECTION_TOLERANCE_DEG) &&
+    shouldShowRoofFallDirection(input.roofKind, slope) &&
     !(planning.status === "supported-advanced" &&
       Number.isFinite(planning.config.surface.fallAzimuthDeg)) &&
     !Number.isFinite(input.roof.fallAzimuthDeg) &&

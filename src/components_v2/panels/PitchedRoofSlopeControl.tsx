@@ -4,6 +4,7 @@ import React from "react";
 import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
 import {
   resolveRoofEdgeMarginM,
+  resolveRoofSlopeForKind,
   shouldShowRoofFallDirection,
 } from "@/lib/planning/roofProperties";
 import type { RoofArea } from "@/types/planner";
@@ -31,7 +32,10 @@ export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
   const advancedConfig = resolvedPlanning.status === "supported-advanced"
     ? resolvedPlanning.config
     : undefined;
-  const slopeDeg = advancedConfig?.surface.slopeDeg ?? roof.tiltDeg ?? 0;
+  const slopeDeg = resolveRoofSlopeForKind(
+    roofKind,
+    advancedConfig?.surface.slopeDeg ?? roof.tiltDeg,
+  );
   const resolvedAzimuth = advancedConfig?.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(roof);
   const marginM = resolveRoofEdgeMarginM(roof, standardMarginM);
   const [tiltInput, setTiltInput] = React.useState(String(slopeDeg));
@@ -111,9 +115,12 @@ export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
   };
 
   const commitTilt = () => {
+    if (roofKind === "flat") {
+      setTiltInput("0");
+      return;
+    }
     const value = Number(tiltInput.replace(",", "."));
-    const minimum = roofKind === "pitched" ? 0.1 : 0;
-    if (!Number.isFinite(value) || value < minimum || value > 80) {
+    if (!Number.isFinite(value) || value < 0 || value > 80) {
       setTiltInput(String(slopeDeg));
       return;
     }
@@ -166,6 +173,7 @@ export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
             type="text"
             inputMode="decimal"
             value={tiltInput}
+            disabled={roofKind === "flat"}
             onChange={(event) => setTiltInput(event.target.value)}
             onBlur={commitTilt}
             onKeyDown={(event) => {
@@ -176,12 +184,17 @@ export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
                 event.currentTarget.blur();
               }
             }}
-            className={inputClass}
+            className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-60`}
             data-stop-hotkeys="true"
             aria-label="Dachneigung in Grad"
           />
           <span>°</span>
         </span>
+        {roofKind === "flat" && (
+          <span className="mt-1 block text-[10px] font-normal normal-case text-muted-foreground">
+            Flachdach · Dachneigung fest auf 0°
+          </span>
+        )}
       </label>
 
       <label className="block space-y-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
