@@ -191,16 +191,6 @@ export default function AdvancedPreviewLayer() {
         </Group>
       )}
 
-      {config.surface.kind !== "flat" &&
-        typeof config.surface.fallAzimuthDeg === "number" && (
-        <DirectionArrow
-          origin={center}
-          azimuthDeg={config.surface.fallAzimuthDeg}
-          color="#f59e0b"
-          label="Dachgefälle"
-          offset={-8}
-        />
-      )}
       {typeof primaryAzimuth === "number" && (
         <>
           <DirectionArrow origin={center} azimuthDeg={primaryAzimuth} color="#22c55e" label="Modul" offset={8} />

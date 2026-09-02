@@ -20,12 +20,25 @@ import {
   resolveRoofSlopeForKind,
   shouldShowRoofFallDirection,
 } from "../../src/lib/planning/roofProperties";
-import { resolveRoofFallAzimuth } from "../../src/components_v2/roof/roofOrientation";
+import {
+  formatRoofSlopeDirection,
+  resolveRoofFallAzimuth,
+} from "../../src/components_v2/roof/roofOrientation";
 import type { RoofArea } from "../../src/types/planner";
 import {
   imageVectorFromGeographicAzimuth,
   selectModuleSlopeArrowIds,
 } from "../../src/components_v2/modules/panels/moduleSlope";
+import {
+  buildRoofAnnotationModel,
+  normalizeReadableAnnotationAngle,
+} from "../../src/components_v2/canvas/roofAnnotationModel";
+import {
+  clearTransientRoofAnnotationPoints,
+  getTransientRoofAnnotationPoints,
+  publishTransientRoofAnnotationPoints,
+  subscribeTransientRoofAnnotationPoints,
+} from "../../src/components_v2/canvas/performance/transientRoofAnnotations";
 
 const rectangle = [
   { x: 10, y: 10 },
@@ -218,4 +231,54 @@ test("module downhill arrows are limited to the first three modules of every rot
     "r0c0", "r0c1", "r0c2",
     "r1c0", "r1c1", "r1c2",
   ]);
+});
+
+test("roof annotation model derives four semantic pitched edges without a phantom closing edge", () => {
+  const model = buildRoofAnnotationModel({
+    points: [...rectangle, rectangle[0]],
+    mppImage: 0.1,
+    roofKind: "pitched",
+    tiltDeg: 20,
+    fallAzimuthDeg: 180,
+    referenceEdgeIndex: 0,
+  });
+  assert.equal(model.edges.length, 4);
+  assert.deepEqual(model.edges.map((edge) => edge.label.split(" · ")[0]), [
+    "FIRST", "ORTGANG RECHTS", "TRAUFE", "ORTGANG LINKS",
+  ]);
+  assert.equal(model.edges.filter((edge) => edge.isReference).length, 1);
+});
+
+test("roof annotation model keeps every real pentagon edge and readable label rotations", () => {
+  const pentagon = [
+    { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 12, y: 7 },
+    { x: 5, y: 12 }, { x: 0, y: 7 },
+  ];
+  const model = buildRoofAnnotationModel({
+    points: pentagon,
+    mppImage: 0.1,
+    roofKind: "flat",
+    referenceEdgeIndex: 0,
+  });
+  assert.equal(model.edges.length, 5);
+  assert.equal(model.edges[0].label.startsWith("REFERENZKANTE"), true);
+  assert.equal(model.edges.every((edge) => Math.abs(edge.readableAngleDeg) <= 90), true);
+  assert.equal(normalizeReadableAnnotationAngle(190), 10);
+});
+
+test("compact pitched-roof info uses canonical German fall direction", () => {
+  assert.equal(formatRoofSlopeDirection(25, 180), "25° · Süd");
+  assert.equal(formatRoofSlopeDirection(18, 90), "18° · Ost");
+});
+
+test("transient roof annotations update independently from persisted roof state", () => {
+  let notifications = 0;
+  const unsubscribe = subscribeTransientRoofAnnotationPoints("roof", () => notifications += 1);
+  const points = rectangle.map((point) => ({ x: point.x + 7, y: point.y - 3 }));
+  publishTransientRoofAnnotationPoints("roof", points);
+  assert.deepEqual(getTransientRoofAnnotationPoints("roof"), points);
+  clearTransientRoofAnnotationPoints("roof");
+  assert.equal(getTransientRoofAnnotationPoints("roof"), null);
+  assert.equal(notifications, 2);
+  unsubscribe();
 });

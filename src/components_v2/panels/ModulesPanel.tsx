@@ -30,7 +30,7 @@ import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
 import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
 import PitchedRoofSlopeControl from "./PitchedRoofSlopeControl";
-import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
+import { formatRoofSlopeDirection, resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import { modulesWithRoofEdgeMargin, resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import { resolveRoofReferenceEdgeIndex } from "@/lib/planning-core/geometry-v2";
 import {
@@ -477,9 +477,21 @@ export default function ModulesPanel() {
                   maximumFractionDigits: 2,
                 });
 
-                const az =
-                  resolveRoofFallAzimuth(l);
-                const tilt = typeof l.tiltDeg === "number" ? l.tiltDeg : undefined;
+                const rowPlanning = resolveSurfacePlanning(l.surfacePlanning);
+                const rowKind = rowPlanning.status === "supported-advanced"
+                  ? rowPlanning.config.surface.kind
+                  : "pitched";
+                const az = rowPlanning.status === "supported-advanced"
+                  ? rowPlanning.config.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(l)
+                  : resolveRoofFallAzimuth(l);
+                const tilt = rowKind === "flat"
+                  ? 0
+                  : rowPlanning.status === "supported-advanced"
+                    ? rowPlanning.config.surface.slopeDeg ?? l.tiltDeg
+                    : l.tiltDeg;
+                const pitchedInfo = rowKind === "pitched" && typeof tilt === "number" && typeof az === "number"
+                  ? formatRoofSlopeDirection(tilt, az)
+                  : undefined;
 
                 const tiltShort = tilt != null ? Math.round(tilt) : undefined;
 
@@ -495,7 +507,7 @@ export default function ModulesPanel() {
                       className={[
                         step === "building"
                           ? "grid h-8 grid-cols-[28px_52px_38px_58px_32px] items-center px-1"
-                          : "grid h-8 grid-cols-[1fr_58px_70px] items-center px-1",
+                          : "grid min-h-10 grid-cols-[1fr_58px_70px] items-center px-1 py-1",
                         active
                           ? "bg-primary/15 text-primary ring-1 ring-primary/30"
                           : "glass-row text-foreground",
@@ -506,9 +518,14 @@ export default function ModulesPanel() {
                         onClick={() => select(roofId)}
                         title={l.name ?? `D${i + 1}`}
                         aria-label={`Ebene auswählen: ${l.name ?? `D${i + 1}`}`}
-                        className="text-left font-semibold cursor-pointer"
+                        className="min-w-0 text-left font-semibold cursor-pointer"
                       >
-                        {`D${i + 1}`}
+                        <span className="block">{`D${i + 1}`}</span>
+                        {step === "modules" && pitchedInfo && (
+                          <span className="block truncate text-[8px] font-normal text-muted-foreground">
+                            {pitchedInfo}
+                          </span>
+                        )}
                       </button>
 
                       {step === "modules" ? (

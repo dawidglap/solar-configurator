@@ -10,7 +10,6 @@ import { longestEdgeAngle, angleDiffDeg } from './panels/math';
 import { usePanelDragSnap, buildGuidesCommon, snapUVToGuides, type PanelInst as HookPanel } from '../modules/panels/usePanelDragSnap';
 import { PanelItem } from './panels/PanelItem';
 import { Guides } from './panels/Guides';
-import { RoofMarginBand } from './panels/RoofMarginBand';
 import { isInReservedZone } from '../zones/utils';
 import { legacyPointInPolygon } from '@/lib/planning-core/legacy-standard/collision';
 import { plannerTheme } from '../theme/plannerTheme';
@@ -559,8 +558,6 @@ const startMultiDrag = React.useCallback((e: any) => {
       onMouseDown={(e) => { e.cancelBubble = true; }}
       onTouchStart={(e) => { e.cancelBubble = true; }}
     >
-      <RoofMarginBand polygon={roofPolygon} marginPx={edgeMarginPx} />
-
       {panels.map((p) => {
         const sel =
           (selectedIds && selectedIds.length > 0 && selectedIds.includes(p.id)) ||

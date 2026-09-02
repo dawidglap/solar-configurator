@@ -7,6 +7,15 @@ export function roofAzimuthCardinal(value: number): string {
   return labels[Math.round(normalizeRoofAzimuthDeg(value) / 45) % labels.length];
 }
 
+export function roofAzimuthCardinalLong(value: number): string {
+  const labels = ["Nord", "Nordost", "Ost", "Südost", "Süd", "Südwest", "West", "Nordwest"];
+  return labels[Math.round(normalizeRoofAzimuthDeg(value) / 45) % labels.length];
+}
+
+export function formatRoofSlopeDirection(slopeDeg: number, fallAzimuthDeg: number): string {
+  return `${Math.round(slopeDeg)}° · ${roofAzimuthCardinalLong(fallAzimuthDeg)}`;
+}
+
 export function formatRoofAzimuth(value: number): string {
   const normalized = normalizeRoofAzimuthDeg(value);
   return `${Math.round(normalized)}° ${roofAzimuthCardinal(normalized)}`;

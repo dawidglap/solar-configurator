@@ -2,9 +2,6 @@
 "use client";
 
 import React from "react";
-import EdgeLengthBadges from "./EdgeLengthBadges";
-import { analyzeRectangularRoof } from "@/lib/planning-core/geometry-v2";
-import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 
 type Pt = { x: number; y: number };
 type Roof = {
@@ -21,12 +18,6 @@ export default function RoofHudOverlay({
   view,
   shapeMode,
   onToggleShape,
-  mpp,
-  edgeColor,
-  // ⬇️ dimensioni immagine e rotazione del contenuto Konva
-  imgW,
-  imgH,
-  rotateDeg = 0,
   canToggleShape = true,
 }: {
   selectedRoof: Roof;
@@ -38,11 +29,6 @@ export default function RoofHudOverlay({
   };
   shapeMode: "normal" | "trapezio";
   onToggleShape: () => void;
-  mpp?: number | null;
-  edgeColor: string;
-  imgW: number;
-  imgH: number;
-  rotateDeg?: number;
   canToggleShape?: boolean;
 }) {
   if (!selectedRoof) return null;
@@ -65,8 +51,6 @@ export default function RoofHudOverlay({
   // posizione sullo Stage (HUD fisso in screen-space)
   const left = ox + midXImg * s;
   const top = Math.max(8, oy + minY * s - 36);
-  const rectangle = analyzeRectangularRoof(selectedRoof.points, mpp ?? 0);
-
   return (
     <>
       {/* Toggle modalità forma */}
@@ -79,21 +63,6 @@ export default function RoofHudOverlay({
         >
           {shapeMode === "normal" ? "Normal" : "Trapez"}
         </button>
-      )}
-
-      {/* Etichette lunghezze lati (corrette per inclinazione e allineate alla rotazione) */}
-      {mpp && imgW > 0 && imgH > 0 && !rectangle.supported && (
-        <EdgeLengthBadges
-          points={selectedRoof.points}
-          mpp={mpp}
-          view={view}
-          imgW={imgW}
-          imgH={imgH}
-          rotateDeg={rotateDeg}
-          color={edgeColor}
-          tiltDeg={selectedRoof.tiltDeg}
-          fallAzimuthDeg={resolveRoofFallAzimuth(selectedRoof)}
-        />
       )}
     </>
   );

@@ -79,6 +79,8 @@ test("contextual help and pitched-roof slope controls remain visible in source",
   assert.ok(canvas.includes("showPanelsInBuilding"));
   assert.ok(canvas.includes('interactive={step === "building"'));
   assert.ok(panel.includes("Vorschau als Module platzieren"));
+  assert.ok(canvas.includes("RoofAnnotationsLayer"));
+  assert.ok(panel.includes("formatRoofSlopeDirection"));
   assert.ok(dimensions.includes("Dachfläche · Kantenlängen"));
   assert.equal(compass.includes("+ rotateDeg"), false);
 });

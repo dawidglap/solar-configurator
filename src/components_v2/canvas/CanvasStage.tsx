@@ -21,9 +21,8 @@ import SonnendachOverlayKonva from "./SonnendachOverlayKonva";
 import OrientationHUD from "./OrientationHUD";
 import ModulesPreview from "../modules/ModulesPreview";
 import AdvancedPreviewLayer from "../modules/advanced/AdvancedPreviewLayer";
-import RoofDimensionLabelsLayer from "./RoofDimensionLabelsLayer";
-import RoofReferenceEdgeLayer from "./RoofReferenceEdgeLayer";
-import { resolveRoofEdgeMarginM, resolveRoofSlopeForKind } from "@/lib/planning/roofProperties";
+import RoofAnnotationsLayer from "./RoofAnnotationsLayer";
+import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutSpacingAxes,
@@ -38,7 +37,6 @@ import OverlayLeftToggle from "../layout/OverlayLeftToggle";
 import LeftLayersOverlay from "../layout/LeftLayersOverlay";
 import PanelsLayer from "../modules/panels/PanelsLayer";
 import RoofShapesLayer from "./RoofShapesLayer";
-import RoofAzimuthArrows from "./RoofAzimuthArrows";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import RoofHudOverlay from "./RoofHudOverlay";
 import { useContainerSize } from "../canvas/hooks/useContainerSize";
@@ -302,14 +300,6 @@ export default function CanvasStage() {
   const selectedRoofPlanning = selectedRoof
     ? resolveSurfacePlanning(selectedRoof.surfacePlanning)
     : undefined;
-  const selectedRoofSlopeDeg = resolveRoofSlopeForKind(
-    selectedRoofPlanning?.status === "supported-advanced"
-      ? selectedRoofPlanning.config.surface.kind
-      : "pitched",
-    selectedRoofPlanning?.status === "supported-advanced"
-      ? selectedRoofPlanning.config.surface.slopeDeg ?? selectedRoof?.tiltDeg
-      : selectedRoof?.tiltDeg,
-  );
   const selectedRoofFallAzimuth = selectedRoofPlanning?.status === "supported-advanced"
     ? selectedRoofPlanning.config.surface.fallAzimuthDeg ?? (selectedRoof ? resolveRoofFallAzimuth(selectedRoof) : undefined)
     : selectedRoof
@@ -1043,9 +1033,6 @@ export default function CanvasStage() {
                   )}
 
                 {step === "modules" && <AdvancedPreviewLayer />}
-                <RoofDimensionLabelsLayer />
-                <RoofReferenceEdgeLayer />
-
                 <Group listening={!drawingCapturesPointer}>
                   <SonnendachOverlayKonva />
                 </Group>
@@ -1070,22 +1057,6 @@ export default function CanvasStage() {
                     onHandlesDragEnd={() => setDraggingVertex(false)}
                     areaLabel={areaLabel}
                   />
-
-                  {(step === "building" || step === "modules") &&
-                    selectedRoof &&
-                    selectedRoofSlopeDeg > 0.05 &&
-                    typeof selectedRoofFallAzimuth === "number" && (
-                      <RoofAzimuthArrows
-                        points={selectedRoof.points}
-                        view={view}
-                        azimuthDeg={selectedRoofFallAzimuth}
-                        tiltDeg={selectedRoofSlopeDeg}
-                        color="#39d0bc"
-                        opacity={0.9}
-                        stepPx={72}
-                        lenPx={30}
-                      />
-                    )}
 
                   {layers.map((l) => (
                     <ZonesLayer
@@ -1192,6 +1163,8 @@ export default function CanvasStage() {
                   </Group>
                 )}
 
+                <RoofAnnotationsLayer />
+
               </Group>
             </Layer>
             <Layer scaleX={layerScale} scaleY={layerScale} listening={false} perfectDrawEnabled={false}>
@@ -1289,11 +1262,6 @@ export default function CanvasStage() {
         onToggleShape={() =>
           setShapeMode((prev) => (prev === "normal" ? "trapezio" : "normal"))
         }
-        mpp={snap.mppImage}
-        edgeColor={strokeSelected}
-        imgW={img?.naturalWidth ?? 0}
-        imgH={img?.naturalHeight ?? 0}
-        rotateDeg={rotateDeg}
         canToggleShape={step !== "modules"}
       />
       {/* ORIENTATION HUD — STEALTH (improved) */}

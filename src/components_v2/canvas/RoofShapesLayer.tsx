@@ -17,9 +17,18 @@ import { history as plannerHistory } from "../state/history";
 import Konva from "konva";
 import { plannerTheme } from "../theme/plannerTheme";
 import { translateInteractionPoints } from "./performance/transientGeometry";
+import {
+  clearTransientRoofAnnotationPoints,
+  publishTransientRoofAnnotationPoints,
+} from "./performance/transientRoofAnnotations";
 
 type Pt = { x: number; y: number };
-type LayerRoof = { id: string; points: Pt[]; azimuthDeg?: number };
+type LayerRoof = {
+  id: string;
+  points: Pt[];
+  azimuthDeg?: number;
+  fallAzimuthDeg?: number;
+};
 
 function toFlat(pts: Pt[]) {
   return pts.flatMap((p) => [p.x, p.y]);
@@ -288,6 +297,7 @@ export default function RoofShapesLayer({
   const startPtsRef = useRef<Pt[] | null>(null);
   const startPivotRef = useRef<Pt | null>(null);
   const startAzimuthRef = useRef<number>(0);
+  const startFallAzimuthRef = useRef<number | undefined>(undefined);
   const lastNextDegRef = useRef<number>(0);
 
   // refs per move
@@ -329,6 +339,7 @@ export default function RoofShapesLayer({
   // Snapshot punti per drag di gruppo (UNA sola dichiarazione)
   const groupStartPtsRef = useRef<Record<string, Pt[]>>({});
   const moveGroupsRef = useRef<Record<string, Konva.Group>>({});
+  const moveAnnotationGroupsRef = useRef<Record<string, Konva.Group>>({});
   const moveDeltaRef = useRef<Pt>({ x: 0, y: 0 });
 
   // La selezione di gruppo segue la selezione primaria; ESC è gestito una sola
@@ -582,6 +593,7 @@ export default function RoofShapesLayer({
                             : p,
                         );
                         finalRoofPointsRef.current[r.id] = next;
+                        publishTransientRoofAnnotationPoints(r.id, next);
                         const shape = st.findOne(`#roof-shape-${r.id}`) as Konva.Line | undefined;
                         shape?.points(toFlat(next));
                         shape?.getLayer()?.batchDraw();
@@ -597,6 +609,7 @@ export default function RoofShapesLayer({
                           shape?.getLayer()?.batchDraw();
                         }
                         delete finalRoofPointsRef.current[r.id];
+                        clearTransientRoofAnnotationPoints(r.id);
                         moveStartPtrImgRef.current = null;
                         moveStartPtsRef.current = null;
                         setIsTransformingRoof(false);
@@ -710,9 +723,12 @@ export default function RoofShapesLayer({
                       ...p,
                     }));
                   moveGroupsRef.current = {};
+                  moveAnnotationGroupsRef.current = {};
                   idsToMove.forEach((id) => {
                     const group = st.findOne(`#roof-group-${id}`) as Konva.Group | undefined;
                     if (group) moveGroupsRef.current[id] = group;
+                    const annotations = st.findOne(`#roof-annotation-transform-${id}`) as Konva.Group | undefined;
+                    if (annotations) moveAnnotationGroupsRef.current[id] = annotations;
                   });
                   moveDeltaRef.current = { x: 0, y: 0 };
 
@@ -734,6 +750,7 @@ export default function RoofShapesLayer({
 
                     idsToMove.forEach((id) => {
                       moveGroupsRef.current[id]?.position({ x: dx, y: dy });
+                      moveAnnotationGroupsRef.current[id]?.position({ x: dx, y: dy });
                     });
                     moveDeltaRef.current = { x: dx, y: dy };
                     e.target.getLayer()?.batchDraw();
@@ -747,6 +764,7 @@ export default function RoofShapesLayer({
                       const startPts = groupStartPtsRef.current[id];
                       if (!startPts) return;
                       moveGroupsRef.current[id]?.position({ x: 0, y: 0 });
+                      moveAnnotationGroupsRef.current[id]?.position({ x: 0, y: 0 });
                       if (commit) update(id, {
                         points: translateInteractionPoints(startPts, delta),
                       });
@@ -754,6 +772,7 @@ export default function RoofShapesLayer({
                     moveStartPtrImgRef.current = null;
                     groupStartPtsRef.current = {};
                     moveGroupsRef.current = {};
+                    moveAnnotationGroupsRef.current = {};
                     moveDeltaRef.current = { x: 0, y: 0 };
                     setHoverAll(false);
                     setIsTransformingRoof(false);
@@ -792,9 +811,12 @@ export default function RoofShapesLayer({
                     }));
                 });
                 moveGroupsRef.current = {};
+                moveAnnotationGroupsRef.current = {};
                 idsToMove.forEach((id) => {
                   const group = st.findOne(`#roof-group-${id}`) as Konva.Group | undefined;
                   if (group) moveGroupsRef.current[id] = group;
+                  const annotations = st.findOne(`#roof-annotation-transform-${id}`) as Konva.Group | undefined;
+                  if (annotations) moveAnnotationGroupsRef.current[id] = annotations;
                 });
                 moveDeltaRef.current = { x: 0, y: 0 };
 
@@ -816,6 +838,7 @@ export default function RoofShapesLayer({
 
                   idsToMove.forEach((id) => {
                     moveGroupsRef.current[id]?.position({ x: dx, y: dy });
+                    moveAnnotationGroupsRef.current[id]?.position({ x: dx, y: dy });
                   });
                   moveDeltaRef.current = { x: dx, y: dy };
                   e.target.getLayer()?.batchDraw();
@@ -828,6 +851,7 @@ export default function RoofShapesLayer({
                     const startPts = groupStartPtsRef.current[id];
                     if (!startPts) return;
                     moveGroupsRef.current[id]?.position({ x: 0, y: 0 });
+                    moveAnnotationGroupsRef.current[id]?.position({ x: 0, y: 0 });
                     if (commit) updateRoof(id, {
                       points: translateInteractionPoints(startPts, delta),
                     });
@@ -835,6 +859,7 @@ export default function RoofShapesLayer({
                   moveStartPtrImgRef.current = null;
                   groupStartPtsRef.current = {};
                   moveGroupsRef.current = {};
+                  moveAnnotationGroupsRef.current = {};
                   moveDeltaRef.current = { x: 0, y: 0 };
                   setIsTransformingRoof(false);
                   cancelRoofGestureRef.current = null;
@@ -977,6 +1002,7 @@ export default function RoofShapesLayer({
                       startPtsRef.current = r.points.map((p) => ({ ...p }));
                       startPivotRef.current = rotPivot!;
                       startAzimuthRef.current = r.azimuthDeg ?? 0;
+                      startFallAzimuthRef.current = r.fallAzimuthDeg;
 
                       const pos = st.getPointerPosition();
                       if (!pos) return;
@@ -988,6 +1014,7 @@ export default function RoofShapesLayer({
                       dragStartDegRef.current = rotDeg || 0;
                       lastNextDegRef.current = dragStartDegRef.current;
                       const roofGroup = st.findOne(`#roof-group-${r.id}`) as Konva.Group | undefined;
+                      const annotationGroup = st.findOne(`#roof-annotation-transform-${r.id}`) as Konva.Group | undefined;
 
                       st.on("mousemove" + ns + " touchmove" + ns, (ev: any) => {
                         const cur = st.getPointerPosition();
@@ -1025,8 +1052,13 @@ export default function RoofShapesLayer({
                           roofGroup.position(startPivotRef.current);
                           roofGroup.offset(startPivotRef.current);
                           roofGroup.rotation(nextDeg);
-                          roofGroup.getLayer()?.batchDraw();
                         }
+                        if (annotationGroup && startPivotRef.current) {
+                          annotationGroup.position(startPivotRef.current);
+                          annotationGroup.offset(startPivotRef.current);
+                          annotationGroup.rotation(nextDeg);
+                        }
+                        roofGroup?.getLayer()?.batchDraw();
                       });
 
                       const end = (commit = true) => {
@@ -1036,15 +1068,29 @@ export default function RoofShapesLayer({
                           (dragStartDegRef.current || 0);
                         const rawAz = startAzimuthRef.current + delta;
                         const newAz = ((rawAz % 360) + 360) % 360;
+                        const rawFallAzimuth = typeof startFallAzimuthRef.current === "number"
+                          ? startFallAzimuthRef.current + delta
+                          : undefined;
+                        const newFallAzimuth = typeof rawFallAzimuth === "number"
+                          ? ((rawFallAzimuth % 360) + 360) % 360
+                          : undefined;
                         if (roofGroup) {
                           roofGroup.position({ x: 0, y: 0 });
                           roofGroup.offset({ x: 0, y: 0 });
                           roofGroup.rotation(0);
                         }
+                        if (annotationGroup) {
+                          annotationGroup.position({ x: 0, y: 0 });
+                          annotationGroup.offset({ x: 0, y: 0 });
+                          annotationGroup.rotation(0);
+                        }
                         if (commit) {
                           updateRoof(r.id, {
                             points: finalRoofPointsRef.current[r.id] ?? r.points,
                             azimuthDeg: newAz,
+                            ...(newFallAzimuth !== undefined
+                              ? { fallAzimuthDeg: newFallAzimuth }
+                              : {}),
                           });
                         }
                         delete finalRoofPointsRef.current[r.id];
