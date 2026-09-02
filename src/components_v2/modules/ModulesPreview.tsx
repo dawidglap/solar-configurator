@@ -7,6 +7,7 @@ import { computeAutoLayoutRects } from './layout';      // ← stessa cartella
 import { overlapsReservedRect, overlapsSnowGuard } from '../zones/utils';
 import { plannerTheme } from '../theme/plannerTheme';
 import ModuleSlopeArrow from './panels/ModuleSlopeArrow';
+import { selectModuleSlopeArrowIds } from './panels/moduleSlope';
 
 type Pt = { x: number; y: number };
 type Anchor = 'start' | 'center' | 'end';
@@ -177,6 +178,19 @@ export default function ModulesPreview({
     [rectsAll, roofId]
   );
 
+  const slopeArrowIds = useMemo(
+    () => selectModuleSlopeArrowIds({
+      modules: rects.map((rect, index) => ({
+        id: String(index),
+        cx: rect.cx,
+        cy: rect.cy,
+        hPx: rect.hPx,
+      })),
+      rowAxisCanvasDeg: rects[0]?.angleDeg ?? azimuthDeg ?? 0,
+    }),
+    [azimuthDeg, rects],
+  );
+
   // 3) Griglia visiva (linee) — calcolata con la stessa logica di anchor/phase
   const gridLinesWorld = useMemo(() => {
     if (!showGrid || !polygon?.length || !mppImage) return [];
@@ -327,14 +341,15 @@ export default function ModulesPreview({
               listening={false}
             />
           )}
-          <ModuleSlopeArrow
-            cx={r.cx}
-            cy={r.cy}
-            wPx={r.wPx}
-            hPx={r.hPx}
-            azimuthDeg={moduleFallAzimuthDeg}
-            opacity={0.82}
-          />
+          {slopeArrowIds.has(String(i)) && (
+            <ModuleSlopeArrow
+              cx={r.cx}
+              cy={r.cy}
+              wPx={r.wPx}
+              hPx={r.hPx}
+              azimuthDeg={moduleFallAzimuthDeg}
+            />
+          )}
         </Group>
       ))}
     </Group>

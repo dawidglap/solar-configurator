@@ -22,7 +22,10 @@ import {
 } from "../../src/lib/planning/roofProperties";
 import { resolveRoofFallAzimuth } from "../../src/components_v2/roof/roofOrientation";
 import type { RoofArea } from "../../src/types/planner";
-import { imageVectorFromGeographicAzimuth } from "../../src/components_v2/modules/panels/moduleSlope";
+import {
+  imageVectorFromGeographicAzimuth,
+  selectModuleSlopeArrowIds,
+} from "../../src/components_v2/modules/panels/moduleSlope";
 
 const rectangle = [
   { x: 10, y: 10 },
@@ -189,4 +192,30 @@ test("module downhill arrows use geographic azimuth in image coordinates", () =>
   const west = imageVectorFromGeographicAzimuth(270);
   assert.ok(Math.abs(west.x + 1) < 1e-12);
   assert.ok(Math.abs(west.y) < 1e-12);
+});
+
+test("module downhill arrows are limited to the first three modules of every rotated row", () => {
+  const angleDeg = 37;
+  const radians = angleDeg * Math.PI / 180;
+  const world = (u: number, v: number) => ({
+    x: u * Math.cos(radians) - v * Math.sin(radians),
+    y: u * Math.sin(radians) + v * Math.cos(radians),
+  });
+  const modules = [0, 1].flatMap((row) =>
+    [0, 1, 2, 3, 4].map((column) => ({
+      id: `r${row}c${column}`,
+      ...world(column * 12, row * 20),
+      hPx: 10,
+    })),
+  ).map(({ id, x, y, hPx }) => ({ id, cx: x, cy: y, hPx }));
+
+  const selected = selectModuleSlopeArrowIds({
+    modules: [...modules].reverse(),
+    rowAxisCanvasDeg: angleDeg,
+  });
+
+  assert.deepEqual([...selected].sort(), [
+    "r0c0", "r0c1", "r0c2",
+    "r1c0", "r1c1", "r1c2",
+  ]);
 });

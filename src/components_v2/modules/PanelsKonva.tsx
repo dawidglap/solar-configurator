@@ -18,6 +18,7 @@ import { createLatestFrameScheduler, type FrameScheduler } from '../canvas/perfo
 import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
 import { resolveRoofFallAzimuth } from '../roof/roofOrientation';
 import type { PanelInstance } from '@/types/planner';
+import { selectModuleSlopeArrowIds } from './panels/moduleSlope';
 
 const SNAP_STAGE_PX = 6;            // snap forza (px schermo)
 const HANDLE_STAGE_PX = 24;         // lato handle (px schermo)
@@ -127,6 +128,18 @@ export default function PanelsKonva(props: {
     }
     return polyAngleDeg;
   }, [roofAzimuthDeg, polyAngleDeg]);
+  const slopeArrowPanelIds = React.useMemo(
+    () => selectModuleSlopeArrowIds({
+      modules: panels.map((panel) => ({
+        id: panel.id,
+        cx: panel.cx,
+        cy: panel.cy,
+        hPx: panel.hPx,
+      })),
+      rowAxisCanvasDeg: panels[0]?.angleDeg ?? defaultAngleDeg,
+    }),
+    [defaultAngleDeg, panels],
+  );
 
   // assi locali falda
   const theta = (defaultAngleDeg * Math.PI) / 180;
@@ -569,6 +582,7 @@ const startMultiDrag = React.useCallback((e: any) => {
             hPx={p.hPx}
             rotationDeg={rotationDeg}
             moduleFallAzimuthDeg={moduleFallAzimuthDeg}
+            showSlopeArrow={slopeArrowPanelIds.has(p.id)}
             selected={sel}
             image={img}
             onStartDrag={startDrag}

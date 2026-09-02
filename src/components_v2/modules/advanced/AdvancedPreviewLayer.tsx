@@ -17,6 +17,7 @@ import { plannerTheme } from "../../theme/plannerTheme";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
 import { computeAdvancedPlanningPreview } from "./advancedPlanningApplication";
 import ModuleSlopeArrow from "../panels/ModuleSlopeArrow";
+import { selectModuleSlopeArrowIds } from "../panels/moduleSlope";
 
 function centroid(points: Pt[]): Pt {
   const count = Math.max(1, points.length);
@@ -82,6 +83,18 @@ export default function AdvancedPreviewLayer() {
         : null,
     [config, draft?.targetMode, mppImage, roof, snowGuards, zones],
   );
+  const slopeArrowIds = React.useMemo(
+    () => selectModuleSlopeArrowIds({
+      modules: (preview?.modules ?? []).map((module) => ({
+        id: `${module.blockKey}:${module.slotIndex}`,
+        cx: module.cx,
+        cy: module.cy,
+        hPx: module.hPx,
+      })),
+      rowAxisCanvasDeg: preview?.modules[0]?.angleDeg ?? 0,
+    }),
+    [preview],
+  );
 
   if (!selectedId || !roof || !config) return null;
   const center = centroid(roof.points);
@@ -141,14 +154,15 @@ export default function AdvancedPreviewLayer() {
                 strokeWidth={0.7}
                 fill="rgba(30, 64, 175, 0.45)"
               />
-              <ModuleSlopeArrow
-                cx={module.cx}
-                cy={module.cy}
-                wPx={module.wPx}
-                hPx={module.hPx}
-                azimuthDeg={module.faceAzimuthDeg}
-                opacity={0.88}
-              />
+              {slopeArrowIds.has(`${module.blockKey}:${module.slotIndex}`) && (
+                <ModuleSlopeArrow
+                  cx={module.cx}
+                  cy={module.cy}
+                  wPx={module.wPx}
+                  hPx={module.hPx}
+                  azimuthDeg={module.faceAzimuthDeg}
+                />
+              )}
             </Group>
           ))}
           {preview.montageFields.map((field, fieldIndex) => {

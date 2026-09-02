@@ -14,6 +14,7 @@ export type PanelItemProps = {
   hPx: number;
   rotationDeg: number;
   moduleFallAzimuthDeg?: number;
+  showSlopeArrow?: boolean;
   selected: boolean;
   image?: HTMLImageElement | null;
   onStartDrag: (panelId: string, e: any) => void;
@@ -24,7 +25,7 @@ const DRAG_THRESHOLD_PX = 3; // piccola soglia per distinguere click vs drag
 const INTERACTIVE_NAME = 'interactive-panel';
 
 export const PanelItem: React.FC<PanelItemProps> = React.memo(
-  ({ id, cx, cy, wPx, hPx, rotationDeg, moduleFallAzimuthDeg, selected, image, onStartDrag, onSelect }) => {
+  ({ id, cx, cy, wPx, hPx, rotationDeg, moduleFallAzimuthDeg, showSlopeArrow = true, selected, image, onStartDrag, onSelect }) => {
     const downRef = React.useRef<{ x: number; y: number; active: boolean } | null>(null);
     const didDragRef = React.useRef(false);
 
@@ -134,14 +135,16 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
           <Rect fill={plannerTheme.panelFill} opacity={0.95} {...(base as any)} />
         )}
 
-        <ModuleSlopeArrow
-          id={`panel-slope-arrow-${id}`}
-          cx={cx}
-          cy={cy}
-          wPx={wPx}
-          hPx={hPx}
-          azimuthDeg={moduleFallAzimuthDeg}
-        />
+        {showSlopeArrow && (
+          <ModuleSlopeArrow
+            id={`panel-slope-arrow-${id}`}
+            cx={cx}
+            cy={cy}
+            wPx={wPx}
+            hPx={hPx}
+            azimuthDeg={moduleFallAzimuthDeg}
+          />
+        )}
 
         {selected && (
           <Rect

@@ -298,13 +298,13 @@ export default function ModulesPanel() {
     [tempVal, updateRoof, selectedId],
   ); // ← rimosso relayoutSelectedRoof
 
-  /** Re-layout immediato della falda selezionata (usato dal toggle orientamento) */
+  /** Materializza la preview Standard corrente sulla falda selezionata. */
   const relayoutSelectedRoof = useCallback(
     (nextOrientation?: "portrait" | "landscape") => {
-      if (!selectedId || !selSpec || !snapshot?.mppImage) return;
+      if (!selectedId || !selSpec || !snapshot?.mppImage) return false;
 
       const roof = layers.find((l) => l.id === selectedId);
-      if (!roof?.points?.length) return;
+      if (!roof?.points?.length) return false;
 
       const canvasAngleDeg = resolveStandardAutoLayoutCanvasAngle({
         roofId: selectedId,
@@ -352,7 +352,7 @@ export default function ModulesPanel() {
       });
 
       const commitAction = resolveStandardAutoLayoutCommitAction(layout.count);
-      if (commitAction === "preserve") return;
+      if (commitAction === "preserve") return false;
 
       // sostituisci i pannelli esistenti con i nuovi
       clearPanelsForRoof(selectedId);
@@ -377,6 +377,7 @@ export default function ModulesPanel() {
         panelId: selSpec.id,
       }));
       addPanelsForRoof(selectedId, instances);
+      return true;
     },
     [
       selectedId,
@@ -856,11 +857,22 @@ export default function ModulesPanel() {
                 ))}
               </div>
             ) : (
-              <OrientationToggle
-                onChange={(next) => relayoutSelectedRoof(next)}
-              />
+              <OrientationToggle />
             )}
           </section>
+
+          {!standardDraft && (
+            <button
+              type="button"
+              className="h-9 w-full rounded-lg bg-primary text-[11px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-45"
+              disabled={!selectedRoof || !selSpec || !snapshot.mppImage}
+              onClick={() => {
+                if (relayoutSelectedRoof()) toast.success("Module platziert");
+              }}
+            >
+              Vorschau als Module platzieren
+            </button>
+          )}
 
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-2">

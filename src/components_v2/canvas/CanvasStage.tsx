@@ -149,6 +149,11 @@ export default function CanvasStage() {
   }, []);
 
   const step = usePlannerV2Store((s) => s.step);
+  useEffect(() => {
+    if (step === "modules") {
+      usePlannerV2Store.getState().setSelectedZone?.(undefined);
+    }
+  }, [step]);
   // store
   const isFormStep = step === "profile" || step === "ist";
   const isPartsStep = step === "parts";
@@ -1086,7 +1091,7 @@ export default function CanvasStage() {
                     <ZonesLayer
                       key={l.id}
                       roofId={l.id}
-                      interactive={l.id === selectedId && !drawingCapturesPointer}
+                      interactive={step === "building" && l.id === selectedId && !drawingCapturesPointer}
                       shapeMode={shapeMode}
                       toImg={toImgCoords}
                       imgW={snap.width ?? img?.naturalWidth ?? 0}

@@ -12,7 +12,8 @@ export default function ModuleSlopeArrow({
   wPx,
   hPx,
   azimuthDeg,
-  opacity = 0.9,
+  opacity = 0.58,
+  color = plannerTheme.textMuted,
 }: {
   id?: string;
   cx: number;
@@ -21,6 +22,7 @@ export default function ModuleSlopeArrow({
   hPx: number;
   azimuthDeg?: number;
   opacity?: number;
+  color?: string;
 }) {
   if (typeof azimuthDeg !== "number" || !Number.isFinite(azimuthDeg)) return null;
   const direction = imageVectorFromGeographicAzimuth(azimuthDeg);
@@ -38,8 +40,8 @@ export default function ModuleSlopeArrow({
         direction.x * half,
         direction.y * half,
       ]}
-      stroke={plannerTheme.primary}
-      fill={plannerTheme.primary}
+      stroke={color}
+      fill={color}
       strokeWidth={Math.max(0.65, Math.min(1.15, length * 0.08))}
       pointerLength={pointer}
       pointerWidth={pointer}
