@@ -5,7 +5,7 @@ import type { PlannerStep, Tool } from "@/types/planner";
  *  (solo per gli step che usano davvero i tools)
  */
 export const ALLOWED_TOOLS: Partial<Record<PlannerStep, Readonly<Tool[]>>> = {
-  building: ["select", "draw-roof", "draw-rect", "draw-reserved", "draw-snow-guard"],
+  building: ["select", "draw-roof", "draw-rect", "draw-reserved", "draw-reserved-rect", "draw-snow-guard"],
   modules: ["select", "fill-area"],
   strings: ["select"],
   parts: ["select"],

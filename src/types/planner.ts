@@ -30,6 +30,7 @@ export type Tool =
     | 'select'
     | 'draw-roof'
     | 'draw-reserved'
+    | 'draw-reserved-rect'
     | 'draw-rect'
     | 'fill-area' // ⬅️ NEW
     | 'draw-snow-guard';

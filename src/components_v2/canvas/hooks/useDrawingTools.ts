@@ -2,6 +2,7 @@
 'use client';
 
 import * as React from 'react';
+import type Konva from 'konva';
 import type { Pt } from '../../canvas/geom';
 import { rectFrom3WithAz } from '../../canvas/geom';
 import { snapParallelPerp, isNear } from '../utils/snap';
@@ -15,8 +16,26 @@ import {
 // undo/redo globale (resta per le azioni “committed”)
 import { history } from '../../state/history';
 import { createRafPointChannel } from '../performance/rafPointChannel';
+import { resolveSurfacePlanning } from '@/lib/planning-core/advanced';
+import {
+    createRoofRelativeRectangle,
+    resolveRoofReferenceEdgeIndex,
+    type RoofKind,
+} from '@/lib/planning-core/geometry-v2';
+import { snapPointToOwnerRoof } from '../../zones/zoneVertexEditing';
 
 type Layer = { id: string; name: string; points: Pt[] };
+type ZoneCommitMetadata = {
+    edgeReference?: { edgeIndex: number };
+    shapeKind?: 'polygon' | 'rectangle';
+};
+export type ReservedRectangleDraft = {
+    start: Pt;
+    roofId: string;
+    roofPoints: Pt[];
+    roofKind: RoofKind;
+    referenceEdgeIndex: number;
+};
 
 // Tipo minimo per aggiungere un tetto
 type RoofAreaLike = {
@@ -25,6 +44,8 @@ type RoofAreaLike = {
     points: Pt[];
     azimuthDeg?: number;
     source?: string;
+    referenceEdgeIndex?: number;
+    surfacePlanning?: unknown;
 };
 
 type SnapOptions = {
@@ -43,7 +64,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     addRoof: (r: T) => void;
     select: (id?: string) => void;
     toImgCoords: (stageX: number, stageY: number) => Pt;
-    onZoneCommit?: (poly4: Pt[], roofId: string) => void; // per Hindernis
+    onZoneCommit?: (poly4: Pt[], roofId: string, metadata?: ZoneCommitMetadata) => void; // per Hindernis
     onSnowGuardCommit?: (p1: Pt, p2: Pt, roofId: string) => void; // Schneefang
     snap?: SnapOptions;
     setTool: (t: Tool) => void;
@@ -61,8 +82,10 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     const [drawingPoly, setDrawingPoly] = React.useState<Pt[] | null>(null);
     const [rectDraft, setRectDraft] = React.useState<Pt[] | null>(null); // [A,B] poi C al commit
     const [snowDraft, setSnowDraft] = React.useState<Pt[] | null>(null);
+    const [reservedRectDraft, setReservedRectDraft] = React.useState<ReservedRectangleDraft | null>(null);
     const pointerChannel = React.useMemo(() => createRafPointChannel(), []);
     const reservedTargetRoofIdRef = React.useRef<string | undefined>(undefined);
+    const reservedRectDraftRef = React.useRef<ReservedRectangleDraft | null>(null);
     const snowTargetRoofIdRef = React.useRef<string | undefined>(undefined);
 
     // ——— stack redo locali (solo durante il disegno) ———
@@ -82,9 +105,11 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         setDrawingPoly(null);
         setRectDraft(null);
         setSnowDraft(null);
+        setReservedRectDraft(null);
         polyRedoRef.current = [];
         rectRedoRef.current = [];
         reservedTargetRoofIdRef.current = undefined;
+        reservedRectDraftRef.current = null;
         snowTargetRoofIdRef.current = undefined;
     }, [pointerChannel]);
 
@@ -98,13 +123,16 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         toolRef.current = tool;
     }, [tool, clearDraftState]);
 
-    const hasDraft = Boolean(drawingPoly?.length || rectDraft?.length || snowDraft?.length);
+    const hasDraft = Boolean(
+        drawingPoly?.length || rectDraft?.length || snowDraft?.length || reservedRectDraft,
+    );
     const cancelDraft = React.useCallback(() => {
         const didCancel = Boolean(
             polyRef.current?.length ||
             rectRef.current?.length ||
             snowTargetRoofIdRef.current ||
-            reservedTargetRoofIdRef.current,
+            reservedTargetRoofIdRef.current ||
+            reservedRectDraftRef.current,
         );
         clearDraftState();
         return didCancel;
@@ -207,14 +235,102 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         if (!targetRoofId) return;
 
         history.push('add reserved zone'); // snapshot PRIMA
-        onZoneCommit?.(pts, targetRoofId);
+        const targetRoof = layers.find((roof) => roof.id === targetRoofId) as T | undefined;
+        const planning = resolveSurfacePlanning(targetRoof?.surfacePlanning);
+        const roofKind: RoofKind = planning.status === 'supported-advanced'
+            ? planning.config.surface.kind
+            : 'pitched';
+        const edgeIndex = targetRoof
+            ? resolveRoofReferenceEdgeIndex({
+                points: targetRoof.points,
+                requestedIndex: targetRoof.referenceEdgeIndex,
+                roofKind,
+            })
+            : undefined;
+        onZoneCommit?.(pts, targetRoofId, {
+            edgeReference: edgeIndex == null ? undefined : { edgeIndex },
+            shapeKind: 'polygon',
+        });
         setDrawingPoly(null);
         polyRedoRef.current = [];
         reservedTargetRoofIdRef.current = undefined;
         // 🔵 NON deselezioniamo la falda: lasciamo intatta la selezione corrente
         // (CanvasStage si occupa già di NON selezionare la zona)
         setTool('select');  // torna alla selezione
-    }, [onZoneCommit, setTool]);
+    }, [layers, onZoneCommit, setTool]);
+
+    const onStagePointerDown = React.useCallback((e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+        const button = 'button' in e.evt ? e.evt.button : undefined;
+        if (tool !== 'draw-reserved-rect' || !isPrimaryPointerButton(button)) return;
+        const stage = e.target.getStage();
+        const pos = stage?.getPointerPosition();
+        if (!pos) return;
+        const start = toImgCoords(pos.x, pos.y);
+        const target = resolveDraftRoofTarget({ point: start, roofs: layers });
+        if (!target.accepted || !target.targetRoofId) return;
+        const roof = layers.find((candidate) => candidate.id === target.targetRoofId) as T | undefined;
+        if (!roof) return;
+        const planning = resolveSurfacePlanning(roof.surfacePlanning);
+        const roofKind: RoofKind = planning.status === 'supported-advanced'
+            ? planning.config.surface.kind
+            : 'pitched';
+        const referenceEdgeIndex = resolveRoofReferenceEdgeIndex({
+            points: roof.points,
+            requestedIndex: roof.referenceEdgeIndex,
+            roofKind,
+        });
+        if (referenceEdgeIndex == null) return;
+        const draft: ReservedRectangleDraft = {
+            start,
+            roofId: roof.id,
+            roofPoints: roof.points.map((point) => ({ ...point })),
+            roofKind,
+            referenceEdgeIndex,
+        };
+        reservedRectDraftRef.current = draft;
+        setReservedRectDraft(draft);
+        pointerChannel.publish(start);
+        e.cancelBubble = true;
+    }, [layers, pointerChannel, toImgCoords, tool]);
+
+    const onStagePointerUp = React.useCallback((e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+        const draft = reservedRectDraftRef.current;
+        const button = 'button' in e.evt ? e.evt.button : undefined;
+        if (tool !== 'draw-reserved-rect' || !draft || !isPrimaryPointerButton(button)) return;
+        const stage = e?.target?.getStage?.();
+        const pos = stage?.getPointerPosition();
+        const rawEnd = pos
+            ? toImgCoords(pos.x, pos.y)
+            : pointerChannel.getSnapshot();
+        if (!rawEnd) {
+            reservedRectDraftRef.current = null;
+            setReservedRectDraft(null);
+            pointerChannel.clear();
+            return;
+        }
+        const snapped = e?.evt?.shiftKey
+            ? rawEnd
+            : snapPointToOwnerRoof(rawEnd, draft.roofPoints, 6).point;
+        const result = createRoofRelativeRectangle({
+            dragStart: draft.start,
+            dragEnd: snapped,
+            ownerRoofPoints: draft.roofPoints,
+            roofKind: draft.roofKind,
+            referenceEdgeIndex: draft.referenceEdgeIndex,
+            minimumSidePx: 1,
+        });
+        reservedRectDraftRef.current = null;
+        setReservedRectDraft(null);
+        pointerChannel.clear();
+        if (!result.valid) return;
+        history.push('add reserved rectangle');
+        onZoneCommit?.(result.points, draft.roofId, {
+            edgeReference: { edgeIndex: draft.referenceEdgeIndex },
+            shapeKind: 'rectangle',
+        });
+        setTool('select');
+        e.cancelBubble = true;
+    }, [onZoneCommit, pointerChannel, setTool, toImgCoords, tool]);
 
     // —— CLICK handler unico
     const onStageClick = React.useCallback((e: any) => {
@@ -222,6 +338,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         const pos = e.target.getStage().getPointerPosition();
         if (!pos) return;
         const p = toImgCoords(pos.x, pos.y);
+        if (tool === 'draw-reserved-rect') return;
 
         // Il primo punto fissa la falda owner; i successivi non possono cambiarla.
         if (tool === 'draw-reserved' || tool === 'draw-snow-guard') {
@@ -430,6 +547,9 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         onStageClick,
         onStageDblClick,
         snowDraft,
+        reservedRectDraft,
+        onStagePointerDown,
+        onStagePointerUp,
         hasDraft,
         cancelDraft,
     };

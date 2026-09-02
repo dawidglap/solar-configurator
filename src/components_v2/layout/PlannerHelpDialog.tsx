@@ -44,11 +44,17 @@ const BUILDING_ITEMS: HelpItem[] = [
     Icon: Square,
   },
   {
-    title: "Hindernis zeichnen",
+    title: "Hindernis zeichnen · Freie Form",
     shortcut: "H",
     description: "Innerhalb einer Dachfläche beginnen, Eckpunkte setzen und mit Enter oder Doppelklick schließen.",
     tool: "draw-reserved",
     Icon: Ban,
+  },
+  {
+    title: "Hindernis · Rechteck",
+    description: "Auf der Dachfläche klicken, ziehen und loslassen. Das Rechteck richtet sich automatisch an First oder Referenzkante aus.",
+    tool: "draw-reserved-rect",
+    Icon: Square,
   },
   {
     title: "Karte bewegen und zoomen",

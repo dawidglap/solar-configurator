@@ -14,7 +14,7 @@ export function resolvePlannerToolHotkey(key: string): Tool | undefined {
 
 export function resolvePlannerStepForTool(tool: Tool, currentStep: PlannerStep): PlannerStep {
   if (tool === "fill-area") return "modules";
-  if (tool === "draw-roof" || tool === "draw-rect" || tool === "draw-reserved" || tool === "draw-snow-guard") {
+  if (tool === "draw-roof" || tool === "draw-rect" || tool === "draw-reserved" || tool === "draw-reserved-rect" || tool === "draw-snow-guard") {
     return "building";
   }
   return currentStep;

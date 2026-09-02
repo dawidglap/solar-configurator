@@ -43,6 +43,7 @@ import {
   hasCommittedPanelsForRoof,
   resolveRoofPlanningMode,
 } from "../modules/advanced/advancedPlanningApplication";
+import ZonePropertiesControl from "../zones/ZonePropertiesControl";
 
 type Pt = { x: number; y: number };
 
@@ -790,6 +791,10 @@ export default function ModulesPanel() {
 
       {step === "building" && selectedRoof && (
         <RoofDimensionsControl roof={selectedRoof} roofKind={selectedRoofKind} />
+      )}
+
+      {step === "building" && selectedRoof && (
+        <ZonePropertiesControl roof={selectedRoof} roofKind={selectedRoofKind} />
       )}
 
       {step === "modules" &&

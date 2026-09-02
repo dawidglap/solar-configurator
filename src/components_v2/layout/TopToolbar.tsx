@@ -10,7 +10,7 @@ import { SnowGuardCostDialog, SnowSegment } from "../SnowGuardCostDialog";
 import { useSearchParams, useRouter } from "next/navigation";
 import { savePlannerToDb } from "../state/planning/savePlanning";
 
-import { CircleHelp, MousePointer, RotateCcw, RotateCw } from "lucide-react";
+import { CircleHelp, MousePointer, RotateCcw, RotateCw, Square } from "lucide-react";
 
 // NUOVE icone topbar (1–10) da react-icons
 import { TbShape3, TbDropletHalf2Filled } from "react-icons/tb";
@@ -561,8 +561,18 @@ export default function TopToolbar() {
           Icon={MdOutlineTexture}
           label=""
           disabled={!canUseBuildingTools}
-          tooltipLabel="Hindernis / Reservierte Zone"
+          tooltipLabel="Hindernis · Freie Form"
           tooltipKeys={["H"]}
+        />
+
+        <ActionBtn
+          active={tool === "draw-reserved-rect"}
+          onClick={() => go("draw-reserved-rect")}
+          Icon={Square}
+          label=""
+          disabled={!canUseBuildingTools}
+          tooltipLabel="Hindernis · Rechteck"
+          tooltipKeys={["Ziehen"]}
         />
 
         {/* Module-only */}

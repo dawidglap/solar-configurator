@@ -73,6 +73,7 @@ test("all drawing tools capture left-pointer intent from selectable objects", ()
     "draw-roof",
     "draw-rect",
     "draw-reserved",
+    "draw-reserved-rect",
     "draw-snow-guard",
     "fill-area",
   ];
@@ -92,6 +93,7 @@ for (const draft of [
   "roof",
   "rectangle",
   "reserved",
+  "reserved rectangle",
   "snow guard",
   "fill area",
 ]) {
@@ -183,6 +185,7 @@ test("changing away from a drawing tool cancels its old draft", () => {
     true,
   );
   assert.equal(shouldCancelDraftOnToolChange("draw-roof", "select"), true);
+  assert.equal(shouldCancelDraftOnToolChange("draw-reserved-rect", "select"), true);
   assert.equal(shouldCancelDraftOnToolChange("select", "draw-roof"), false);
   assert.equal(
     shouldCancelDraftOnToolChange("draw-reserved", "draw-reserved"),

@@ -6,3 +6,4 @@ export * from "./collision";
 export * from "./grid";
 export * from "./roofDimensions";
 export * from "./roofEdges";
+export * from "./roofRelativeObstacle";

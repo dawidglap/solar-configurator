@@ -8,6 +8,10 @@ export type Zone = {
     roofId: string;
     type: 'riservata' | 'walkway';
     points: Pt[]; // poligono (tipicamente 4 pt)
+    /** Canonical owner-roof edge index; labels are always derived. */
+    edgeReference?: { edgeIndex: number };
+    /** Optional authoring intent; legacy zones remain valid without it. */
+    shapeKind?: 'polygon' | 'rectangle';
 };
 
 export type ZonesSlice = {

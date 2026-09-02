@@ -1,21 +1,9 @@
 // src/components_v2/zones/ZonesLayer.tsx
 'use client';
 import React, { useMemo } from 'react';
-import { Group as KonvaGroup, Line as KonvaLine } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import type { Pt } from '@/types/planner';
-import ZoneHandlesKonva from './ZoneHandlesKonva';
-import { plannerTheme } from '../theme/plannerTheme';
-
-function toFlatSafe(pts: Pt[]): number[] | null {
-  if (!Array.isArray(pts) || pts.length < 3) return null;
-  const out: number[] = [];
-  for (const p of pts) {
-    if (!Number.isFinite(p?.x) || !Number.isFinite(p?.y)) return null;
-    out.push(p.x, p.y);
-  }
-  return out;
-}
+import MovableZone from './MovableZone';
 
 export default function ZonesLayer({
   roofId,
@@ -47,70 +35,25 @@ export default function ZonesLayer({
 
   if (!zonesForRoof.length) return null;
 
-  // --- Palette rosso pieno ---
-  const RED      = plannerTheme.danger;
-  const RED_SEL  = plannerTheme.danger;
-  const FILL     = plannerTheme.dangerSoft;
-  const FILL_SEL = 'rgba(255, 95, 86, 0.24)';
-  const W        = 0.25;                   // spessore bordo default
-  const W_SEL    = 1;                      // spessore bordo selezionato
-
   return (
-    <KonvaGroup listening>
+    <>
       {zonesForRoof.map((z) => {
-        const flat = toFlatSafe(z.points);
-        if (!flat) return null;
-
-        const isSel = z.id === selectedZoneId;
-
         return (
-          <KonvaGroup key={z.id}>
-            {/* shape visiva: rosso pieno, niente tratteggio */}
-            <KonvaLine
-              points={flat}
-              closed
-              fill={isSel ? FILL_SEL : FILL}
-              stroke={isSel ? RED_SEL : RED}
-              strokeWidth={isSel ? W_SEL : W}
-              lineJoin="round"
-              lineCap="round"
-              listening={false}
-              perfectDrawEnabled={false}
-            />
-
-            {/* hit-area per selezione (trasparente) — solo quando interactive */}
-            {interactive && (
-              <KonvaLine
-                points={flat}
-                closed
-                stroke="transparent"
-                strokeWidth={14}
-                hitStrokeWidth={14}
-                listening
-                name="zone-hit"
-                onMouseDown={(e) => { e.cancelBubble = true; setSelectedZone(z.id); }}
-                onClick={(e) => { e.cancelBubble = true; setSelectedZone(z.id); }}
-                onTap={(e) => { e.cancelBubble = true; setSelectedZone(z.id); }}
-              />
-            )}
-
-            {/* Precision editing: selected zones always expose their vertices. */}
-            {interactive && isSel && (
-              <ZoneHandlesKonva
-                points={z.points}
-                ownerRoofPoints={ownerRoofPoints}
-                imgW={imgW}
-                imgH={imgH}
-                toImg={toImg}
-                snapRadiusImg={10 / Math.max(stageScale, 0.01)}
-                onDragStart={() => {}}
-                onDragEnd={() => {}}
-                onChange={(next) => updateZone(z.id, { points: next })}
-              />
-            )}
-          </KonvaGroup>
+          <MovableZone
+            key={z.id}
+            zone={z}
+            selected={z.id === selectedZoneId}
+            interactive={interactive}
+            ownerRoofPoints={ownerRoofPoints}
+            imgW={imgW}
+            imgH={imgH}
+            toImg={toImg}
+            snapRadiusImg={10 / Math.max(stageScale, 0.01)}
+            onSelect={() => setSelectedZone(z.id)}
+            onChange={(patch) => updateZone(z.id, patch)}
+          />
         );
       })}
-    </KonvaGroup>
+    </>
   );
 }

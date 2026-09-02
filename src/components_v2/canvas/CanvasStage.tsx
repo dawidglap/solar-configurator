@@ -1,4 +1,5 @@
 "use client";
+import type Konva from "konva";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Stage,
@@ -350,7 +351,7 @@ export default function CanvasStage() {
 
   // subito sotto gli altri useEffect
   useEffect(() => {
-    if (tool === "draw-reserved") {
+    if (tool === "draw-reserved" || tool === "draw-reserved-rect") {
       setSelectedPanelInstId(undefined);
     }
   }, [tool]);
@@ -569,6 +570,7 @@ export default function CanvasStage() {
     (tool === "draw-roof" ||
       tool === "draw-rect" ||
       tool === "draw-reserved" ||
+      tool === "draw-reserved-rect" ||
       tool === "draw-snow-guard");
 
   // hook disegno tetto/zone (solo building)
@@ -580,6 +582,9 @@ export default function CanvasStage() {
     onStageClick,
     onStageDblClick,
     snowDraft,
+    reservedRectDraft,
+    onStagePointerDown,
+    onStagePointerUp,
     hasDraft: hasDrawingDraft,
     cancelDraft: cancelDrawingDraft,
   } = useDrawingTools({
@@ -588,15 +593,17 @@ export default function CanvasStage() {
     addRoof,
     select,
     toImgCoords,
-    onZoneCommit: (poly4: Pt[], targetRoofId: string) => {
-      plannerHistory.push("add reserved zone");
+    onZoneCommit: (poly4: Pt[], targetRoofId: string, metadata) => {
       addZone({
         id: nanoid(),
         roofId: targetRoofId,
         type: "riservata",
         points: poly4,
+        ...metadata,
       });
-      selectZone(undefined);
+      // The quick rectangle is immediately ready for whole-object movement and
+      // reference-edge controls. Preserve the classic free-form selection flow.
+      if (metadata?.shapeKind !== "rectangle") selectZone(undefined);
     },
     onSnowGuardCommit: (p1: Pt, p2: Pt, targetRoofId: string) => {
       const mpp = snap.mppImage;
@@ -617,7 +624,7 @@ export default function CanvasStage() {
       });
     },
     snap:
-      tool === "draw-reserved"
+      tool === "draw-reserved" || tool === "draw-reserved-rect"
         ? { tolDeg: 3, closeRadius: 4 }
         : { tolDeg: 5, closeRadius: 5 },
     setTool: setToolForHook,
@@ -877,6 +884,18 @@ export default function CanvasStage() {
             onDragMove={onDragMove}
             onDragEnd={onStageDragEnd}
             onWheel={onWheel}
+            onMouseDown={(evt: Konva.KonvaEventObject<MouseEvent>) => {
+              if (drawingEnabled) onStagePointerDown?.(evt);
+            }}
+            onTouchStart={(evt: Konva.KonvaEventObject<TouchEvent>) => {
+              if (drawingEnabled) onStagePointerDown?.(evt);
+            }}
+            onMouseUp={(evt: Konva.KonvaEventObject<MouseEvent>) => {
+              if (drawingEnabled) onStagePointerUp?.(evt);
+            }}
+            onTouchEnd={(evt: Konva.KonvaEventObject<TouchEvent>) => {
+              if (drawingEnabled) onStagePointerUp?.(evt);
+            }}
             // handler di disegno SOLO in building
             onMouseMove={(evt: any) => {
               if (tool === "fill-area") {
@@ -1191,7 +1210,9 @@ export default function CanvasStage() {
                       tool={tool}
                       snowDraft={snowDraft}
                       rectDraft={rectDraft}
+                      reservedRectDraft={reservedRectDraft}
                       pointer={pointerChannel}
+                      mppImage={snap.mppImage}
                     />
                   </>
                 )}

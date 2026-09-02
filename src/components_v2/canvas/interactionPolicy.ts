@@ -6,6 +6,7 @@ export type PlannerInteractionMode =
   | "drawing-roof"
   | "drawing-rectangle"
   | "drawing-reserved-zone"
+  | "drawing-reserved-rectangle"
   | "drawing-snow-guard"
   | "fill-area"
   | "editing";
@@ -26,6 +27,7 @@ const DRAWING_TOOLS = new Set<Tool>([
   "draw-roof",
   "draw-rect",
   "draw-reserved",
+  "draw-reserved-rect",
   "draw-snow-guard",
   "fill-area",
 ]);
@@ -48,6 +50,8 @@ export function resolvePlannerInteractionMode(input: {
       return "drawing-rectangle";
     case "draw-reserved":
       return "drawing-reserved-zone";
+    case "draw-reserved-rect":
+      return "drawing-reserved-rectangle";
     case "draw-snow-guard":
       return "drawing-snow-guard";
     case "fill-area":

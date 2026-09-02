@@ -8,8 +8,11 @@ import { usePlannerV2Store } from "../state/plannerV2Store";
 import { plannerTheme } from "../theme/plannerTheme";
 
 export default function RoofReferenceEdgeLayer() {
-  const roof = usePlannerV2Store((state) =>
-    state.layers.find((item) => item.id === state.selectedId),
+  const selectedZone = usePlannerV2Store((state) =>
+    state.zones.find((item) => item.id === state.selectedZoneId),
+  );
+  const roof = usePlannerV2Store((state) => state.layers.find((item) =>
+    item.id === (selectedZone?.roofId ?? state.selectedId)),
   );
   const scale = usePlannerV2Store((state) => state.view.scale || state.view.fitScale || 1);
   const step = usePlannerV2Store((state) => state.step);
@@ -20,13 +23,15 @@ export default function RoofReferenceEdgeLayer() {
     : "pitched";
   const edgeIndex = resolveRoofReferenceEdgeIndex({
     points: roof.points,
-    requestedIndex: roof.referenceEdgeIndex,
+    requestedIndex: selectedZone?.edgeReference?.edgeIndex ?? roof.referenceEdgeIndex,
     roofKind,
   });
   const edge = edgeIndex == null ? undefined : getCanonicalRoofEdges(roof.points)[edgeIndex];
   if (!edge) return null;
   const inverseScale = 1 / Math.max(scale, 0.01);
-  const label = roofKind === "pitched" ? "First" : "Referenzkante";
+  const label = selectedZone
+    ? "Bezugskante"
+    : roofKind === "pitched" ? "First" : "Referenzkante";
   return (
     <Group listening={false}>
       <Line
