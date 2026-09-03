@@ -1,6 +1,12 @@
 'use client';
 
 import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+    clampViewportOffset,
+    clampViewportScale,
+    getViewportScaleBounds,
+    zoomViewportAroundPoint,
+} from '../viewportZoom';
 
 type Size = { w: number; h: number };
 type View = { scale?: number; fitScale?: number; offsetX?: number; offsetY?: number };
@@ -31,32 +37,38 @@ export function useStagePanZoom({
     const clampOffset = useCallback(
         (scale: number, ox: number, oy: number) => {
             if (!img) return { x: 0, y: 0 };
-            const sw = img.naturalWidth * scale;
-            const sh = img.naturalHeight * scale;
-
-            if (sw <= size.w) ox = (size.w - sw) / 2;
-            if (sh <= size.h) oy = (size.h - sh) / 2;
-
-            const minX = Math.min(0, size.w - sw);
-            const maxX = 0;
-            const minY = Math.min(0, size.h - sh);
-            const maxY = 0;
-
-            ox = Math.max(minX, Math.min(maxX, ox));
-            oy = Math.max(minY, Math.min(maxY, oy));
-            return { x: ox, y: oy };
+            return clampViewportOffset({
+                scale,
+                offsetX: ox,
+                offsetY: oy,
+                viewport: { w: size.w, h: size.h },
+                image: { width: img.naturalWidth, height: img.naturalHeight },
+            });
         },
         [img, size.w, size.h]
     );
 
     const clampScale = useCallback(
-        (s: number) => {
-            const min = view.fitScale || 1;
-            const max = (view.fitScale || 1) * 8;
-            return Math.max(min, Math.min(max, s));
-        },
+        (s: number) => clampViewportScale(s, view.fitScale),
         [view.fitScale]
     );
+
+    const scaleBounds = useMemo(
+        () => getViewportScaleBounds(view.fitScale),
+        [view.fitScale],
+    );
+
+    const setScaleAroundViewportCenter = useCallback((targetScale: number) => {
+        if (!img) return;
+        const next = zoomViewportAroundPoint({
+            view: viewRef.current,
+            targetScale,
+            point: { x: size.w / 2, y: size.h / 2 },
+            viewport: { w: size.w, h: size.h },
+            image: { width: img.naturalWidth, height: img.naturalHeight },
+        });
+        setView(next);
+    }, [img, setView, size.w, size.h]);
 
     const canDrag = useMemo(() => {
         const s = view.scale || view.fitScale || 1;
@@ -166,5 +178,8 @@ export function useStagePanZoom({
         beginRightPan,
         moveRightPan,
         endRightPan,
+        minScale: scaleBounds.minScale,
+        maxScale: scaleBounds.maxScale,
+        setScaleAroundViewportCenter,
     };
 }

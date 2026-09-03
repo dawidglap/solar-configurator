@@ -17,6 +17,10 @@ import {
 import axios from "axios";
 import { history as plannerHistory } from "../state/history";
 import { savePlannerToDb } from "../state/planning/savePlanning";
+import {
+  canBootstrapPlanningFromAddress,
+  resolvePlannerSessionMode,
+} from "../planner/plannerSessionPolicy";
 
 function stripHtml(input: string) {
   return input.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -162,7 +166,30 @@ export default function TopbarAddressSearch() {
   const address = usePlannerV2Store((s) => s.address);
   const setAddress = usePlannerV2Store((s) => s.setAddress);
   const snapshot = usePlannerV2Store((s) => s.snapshot);
+  const roofCount = usePlannerV2Store((s) => s.layers.length);
+  const panelCount = usePlannerV2Store((s) => s.panels.length);
+  const zoneCount = usePlannerV2Store((s) => s.zones.length);
+  const snowGuardCount = usePlannerV2Store((s) => s.snowGuards.length);
   const hydrationReady = usePlannerV2Store((s) => s.hydrationReady);
+  const hasEstablishedSite = Boolean(
+    snapshot?.url ||
+    (typeof snapshot?.center?.lat === "number" &&
+      typeof snapshot?.center?.lon === "number") ||
+    (typeof snapshot?.width === "number" &&
+      snapshot.width > 0 &&
+      typeof snapshot?.height === "number" &&
+      snapshot.height > 0 &&
+      typeof snapshot?.mppImage === "number" &&
+      snapshot.mppImage > 0) ||
+    roofCount ||
+    panelCount ||
+    zoneCount ||
+    snowGuardCount
+  );
+  const sessionMode = resolvePlannerSessionMode({
+    planningId,
+    hasEstablishedSite,
+  });
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -179,6 +206,7 @@ export default function TopbarAddressSearch() {
 
   const startFromAddress = useCallback(
     async (lat: number, lon: number, label: string) => {
+      if (!canBootstrapPlanningFromAddress(sessionMode)) return;
       setErr(null);
       setLoading(true);
 
@@ -252,10 +280,11 @@ export default function TopbarAddressSearch() {
         setLoading(false);
       }
     },
-    [addRoof, planningId, resetForNewAddress, setStep, setUI],
+    [addRoof, planningId, resetForNewAddress, sessionMode, setStep, setUI],
   );
 
   useEffect(() => {
+    if (sessionMode === "existing") return;
     if (!requestedAddress) return;
     if (address.label) return;
 
@@ -264,10 +293,18 @@ export default function TopbarAddressSearch() {
       lat: address.lat ?? null,
       lon: address.lon ?? null,
     });
-  }, [address.label, address.lat, address.lon, requestedAddress, setAddress]);
+  }, [
+    address.label,
+    address.lat,
+    address.lon,
+    requestedAddress,
+    sessionMode,
+    setAddress,
+  ]);
 
   useEffect(() => {
     if (!hydrationReady) return;
+    if (!canBootstrapPlanningFromAddress(sessionMode)) return;
     if (!shouldAutoSearch || !requestedAddress) return;
     if (autoSearchTriggeredRef.current) return;
     if (loading) return;
@@ -307,6 +344,7 @@ export default function TopbarAddressSearch() {
     requestedAddress,
     setAddress,
     shouldAutoSearch,
+    sessionMode,
     snapshot?.center?.lat,
     snapshot?.center?.lon,
     snapshot?.url,
@@ -336,8 +374,15 @@ export default function TopbarAddressSearch() {
             <AddressSearchOSM
               placeholder="Adresse suchen…"
               value={addressText}
-              onChangeText={(v: string) => setAddressText(v)}
+              readOnly={sessionMode === "existing"}
+              title={sessionMode === "existing"
+                ? "Adresse der bestehenden Planung"
+                : "Adresse suchen"}
+              onChangeText={(v: string) => {
+                if (sessionMode === "new") setAddressText(v);
+              }}
               onPick={(r: any) => {
+                if (!canBootstrapPlanningFromAddress(sessionMode)) return;
                 const label =
                   r?.label ?? r?.display_name ?? addressText ?? "Adresse";
 

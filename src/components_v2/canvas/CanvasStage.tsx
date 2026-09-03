@@ -20,6 +20,8 @@ import ScaleIndicator from "./ScaleIndicator";
 import SonnendachOverlayKonva from "./SonnendachOverlayKonva";
 import OrientationHUD from "./OrientationHUD";
 import ModulesPreview from "../modules/ModulesPreview";
+import ManualPlacementLayer from "../modules/ManualPlacementLayer";
+import { endManualPlacement, useManualPlacementSession } from "../modules/manualPlacementSession";
 import AdvancedPreviewLayer from "../modules/advanced/AdvancedPreviewLayer";
 import RoofAnnotationsLayer from "./RoofAnnotationsLayer";
 import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
@@ -42,6 +44,7 @@ import RoofHudOverlay from "./RoofHudOverlay";
 import { useContainerSize } from "../canvas/hooks/useContainerSize";
 import { useBaseImage } from "../canvas/hooks/useBaseImage";
 import { useStagePanZoom } from "../canvas/hooks/useStagePanZoom";
+import MapZoomControl from "./MapZoomControl";
 import { useDrawingTools } from "../canvas/hooks/useDrawingTools";
 import DrawingOverlays from "./DrawingOverlays";
 import TransientDrawingPreviews from "./TransientDrawingPreviews";
@@ -315,6 +318,15 @@ export default function CanvasStage() {
   const standardPreviewPanel = selectedPlanningDraft?.targetMode === "standard"
     ? catalogPanels.find((panel) => panel.id === selectedPlanningDraft.panelSpecId)
     : selPanel;
+  const manualPlacementSession = useManualPlacementSession();
+  useEffect(() => {
+    if (
+      manualPlacementSession &&
+      (step !== "modules" || selectedId !== manualPlacementSession.roofId)
+    ) {
+      endManualPlacement();
+    }
+  }, [manualPlacementSession, selectedId, step]);
 
   const baseGridDeg = selectedRoof
     ? resolveStandardAutoLayoutCanvasAngle({
@@ -537,6 +549,9 @@ export default function CanvasStage() {
     beginRightPan,
     moveRightPan,
     endRightPan,
+    minScale,
+    maxScale,
+    setScaleAroundViewportCenter,
   } = useStagePanZoom({
     img,
     size,
@@ -1005,6 +1020,7 @@ export default function CanvasStage() {
 
                 {/* --- TUTTO IL RESTO (ModulesPreview, SonnendachOverlayKonva, RoofShapesLayer, ZonesLayer, pannelli, anteprime, ecc.) RIMANE QUI DENTRO --- */}
                 {step === "modules" &&
+                  !manualPlacementSession &&
                   selectedRoof &&
                   standardPreviewPanel &&
                   snap.mppImage &&
@@ -1032,7 +1048,7 @@ export default function CanvasStage() {
                     />
                   )}
 
-                {step === "modules" && <AdvancedPreviewLayer />}
+                {step === "modules" && !manualPlacementSession && <AdvancedPreviewLayer />}
                 <Group listening={!drawingCapturesPointer}>
                   <SonnendachOverlayKonva />
                 </Group>
@@ -1163,6 +1179,14 @@ export default function CanvasStage() {
                   </Group>
                 )}
 
+                {step === "modules" && manualPlacementSession && (
+                  <ManualPlacementLayer
+                    imageWidth={img.naturalWidth}
+                    imageHeight={img.naturalHeight}
+                    toImgCoords={toImgCoords}
+                  />
+                )}
+
                 <RoofAnnotationsLayer />
 
               </Group>
@@ -1252,6 +1276,16 @@ export default function CanvasStage() {
       <RoofHotkeys />
 
       <CompassHUD />
+
+      {img && (
+        <MapZoomControl
+          scale={view.scale || view.fitScale || 1}
+          fitScale={view.fitScale || 1}
+          minScale={minScale}
+          maxScale={maxScale}
+          onScaleChange={setScaleAroundViewportCenter}
+        />
+      )}
 
       <CanvasHotkeys />
 

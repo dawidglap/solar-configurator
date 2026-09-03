@@ -9,6 +9,8 @@ export type GuidedPlanningResultInput = {
   rowCount?: number;
   powerW?: number;
   montageFieldCount?: number;
+  /** Committed layout contains manual additions/removals beyond its generator inputs. */
+  manuallyAdjusted?: boolean;
 };
 
 export type GuidedPlanningResult = {
@@ -31,9 +33,12 @@ export function buildGuidedPlanningResult(
   input: GuidedPlanningResultInput,
 ): GuidedPlanningResult {
   const fixed = input.quantityMode === "fixed";
-  const arrangementLabel = fixed && input.blocksPerRow && input.rowCount
+  const baseArrangementLabel = fixed && input.blocksPerRow && input.rowCount
     ? `${input.blocksPerRow} × ${input.rowCount}`
     : "Automatisch";
+  const arrangementLabel = input.manuallyAdjusted
+    ? `${baseArrangementLabel} · manuell angepasst`
+    : baseArrangementLabel;
 
   if (!input.valid) {
     return {

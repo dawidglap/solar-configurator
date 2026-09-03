@@ -4,6 +4,7 @@
 import React from 'react';
 import PanelsKonva from '../PanelsKonva';
 import { usePlannerV2Store } from '../../state/plannerV2Store';
+import { resolvePanelSelectionIds } from './panelSelection';
 
 type Pt = { x: number; y: number };
 type LayerRoof = { id: string; points: Pt[] };
@@ -12,7 +13,6 @@ export default function PanelsLayer({
   layers,
   textureUrl,
   selectedPanelId,   // compat legacy
-  onSelect,          // compat legacy (non usato)
   stageToImg,
   onAnyDragStart,
   onAnyDragEnd,
@@ -27,7 +27,6 @@ export default function PanelsLayer({
 }) {
   const selectedIds = usePlannerV2Store((s) => s.selectedPanelIds);
   const setSelectedPanels = usePlannerV2Store((s) => s.setSelectedPanels);
-  const togglePanelSelection = usePlannerV2Store((s) => s.togglePanelSelection);
   const clearPanelSelection = usePlannerV2Store((s) => s.clearPanelSelection);
 
 // Supporta selezione additiva (shift/ctrl/cmd)
@@ -40,10 +39,15 @@ const handleSelect = (id?: string, opts?: { additive?: boolean }) => {
     st.select?.(undefined);            // ⬅️ deseleziona falda
     st.setSelectedZone?.(undefined);   // ⬅️ deseleziona eventuale zona
 
+    const blockIds = resolvePanelSelectionIds(st.panels, id);
+
     if (additive) {
-      togglePanelSelection(id);
+      const next = new Set(st.selectedPanelIds);
+      const removeBlock = blockIds.every((panelId) => next.has(panelId));
+      blockIds.forEach((panelId) => removeBlock ? next.delete(panelId) : next.add(panelId));
+      setSelectedPanels([...next]);
     } else {
-      setSelectedPanels([id]);
+      setSelectedPanels(blockIds);
     }
     return;
   }

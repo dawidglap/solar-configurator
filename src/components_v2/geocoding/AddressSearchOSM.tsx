@@ -18,6 +18,8 @@ type Props = {
   value?: string;
   onChangeText?: (v: string) => void;
   onPick: (r: any) => void;
+  readOnly?: boolean;
+  title?: string;
 };
 
 function escapeRegExp(s: string) {
@@ -76,6 +78,8 @@ export default function AddressSearchOSM({
   placeholder = "Adresse suchen…",
   value,
   onChangeText,
+  readOnly = false,
+  title,
 }: Props) {
   const [q, setQ] = useState(value ?? "");
   const [open, setOpen] = useState(false);
@@ -125,6 +129,12 @@ export default function AddressSearchOSM({
   }, [portalNode]);
 
   useEffect(() => {
+    if (readOnly) {
+      setResults([]);
+      setOpen(false);
+      setActive(-1);
+      return;
+    }
     setErr(null);
     const qTrim = q.trim();
 
@@ -245,7 +255,7 @@ export default function AddressSearchOSM({
     }, 250);
 
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, readOnly]);
 
   const positionDropdown = useCallback(() => {
     if (!anchorRef.current || !dropdownRef.current) return;
@@ -372,15 +382,21 @@ export default function AddressSearchOSM({
         <input
           type="text"
           value={q}
+          readOnly={readOnly}
+          title={title}
           onChange={(e) => {
+            if (readOnly) return;
             const next = e.target.value;
             setQ(next);
             onChangeText?.(next);
           }}
           placeholder={placeholder}
-          onFocus={() => setOpen(results.length > 0)}
+          onFocus={() => {
+            if (!readOnly) setOpen(results.length > 0);
+          }}
           onKeyDown={onKeyDown}
-          className="h-5 w-full bg-transparent border-0 outline-none placeholder:text-neutral-400 text-xs"
+          className="h-5 w-full bg-transparent border-0 outline-none placeholder:text-neutral-400 text-xs read-only:cursor-default"
+          aria-readonly={readOnly}
           aria-autocomplete="list"
           aria-controls="osm-suggestions"
         />

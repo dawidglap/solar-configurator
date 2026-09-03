@@ -31,6 +31,7 @@ import {
   updateDefaultFlatSystem,
 } from "./advancedPlanningApplication";
 import { buildGuidedPlanningResult } from "./guidedPlanningPresentation";
+import { beginManualPlacement } from "../manualPlacementSession";
 
 const inputClass =
   "glass-input h-8 w-full rounded-lg px-2 text-[11px] focus:ring-1 focus:ring-primary/40";
@@ -164,17 +165,30 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
   const requestedModules = requestedBlocks * (isOpposingSystem ? 2 : 1);
   const selectedCatalogPanel = catalogPanels.find((panel) => panel.id === moduleId);
   const previewQuantity = preview.quantity;
+  const committedRoofPanels = panels.filter((panel) => panel.roofId === roof.id);
+  const committedBlockKeys = new Set(
+    committedRoofPanels.flatMap((panel) => panel.advanced?.blockKey ? [panel.advanced.blockKey] : []),
+  );
+  const committedFieldKeys = new Set(
+    committedRoofPanels.flatMap((panel) => panel.advanced?.montageFieldKey ? [panel.advanced.montageFieldKey] : []),
+  );
+  const manuallyAdjusted = committedRoofPanels.some((panel) =>
+    panel.advanced?.layoutRunId?.startsWith("manual-") ||
+    panel.advanced?.blockKey?.includes(":manual-"),
+  );
+  const useCommittedResult = !isDraft && committedRoofPanels.length > 0;
   const result = buildGuidedPlanningResult({
     valid: preview.valid,
     quantityMode,
-    requestedBlockCount: previewQuantity?.requestedBlockCount ?? preview.blockCount,
-    validBlockCount: previewQuantity?.validBlockCount ?? preview.blockCount,
-    requestedModuleCount: previewQuantity?.requestedModuleCount ?? preview.moduleCount,
-    validModuleCount: previewQuantity?.validModuleCount ?? preview.moduleCount,
+    requestedBlockCount: useCommittedResult ? committedBlockKeys.size : previewQuantity?.requestedBlockCount ?? preview.blockCount,
+    validBlockCount: useCommittedResult ? committedBlockKeys.size : previewQuantity?.validBlockCount ?? preview.blockCount,
+    requestedModuleCount: useCommittedResult ? committedRoofPanels.length : previewQuantity?.requestedModuleCount ?? preview.moduleCount,
+    validModuleCount: useCommittedResult ? committedRoofPanels.length : previewQuantity?.validModuleCount ?? preview.moduleCount,
     blocksPerRow,
     rowCount,
     powerW: config.advanced.module.powerW,
-    montageFieldCount: preview.montageFieldCount,
+    montageFieldCount: useCommittedResult ? committedFieldKeys.size : preview.montageFieldCount,
+    manuallyAdjusted: useCommittedResult && manuallyAdjusted,
   });
 
   const apply = React.useCallback(() => {
@@ -563,7 +577,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
           <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
             <span className="text-muted-foreground">Module</span><strong className="text-right">{result.moduleCount}</strong>
             <span className="text-muted-foreground">Blöcke</span><strong className="text-right">{result.blockCount}</strong>
-            {preview.montageFieldCount > 0 && <><span className="text-muted-foreground">Montagefelder</span><strong className="text-right">{result.montageFieldCount ?? 0}</strong></>}
+            {(result.montageFieldCount ?? 0) > 0 && <><span className="text-muted-foreground">Montagefelder</span><strong className="text-right">{result.montageFieldCount ?? 0}</strong></>}
             {result.powerKWp != null && <><span className="text-muted-foreground">Leistung</span><strong className="text-right">{fmt(result.powerKWp)} kWp</strong></>}
             <span className="text-muted-foreground">System</span><span className="text-right">{isSouthSystem ? "Süd · Standardsystem" : "Ost-West · Standardsystem"}</span>
             <span className="text-muted-foreground">Anordnung</span><span className="text-right">{result.arrangementLabel}</span>
@@ -574,6 +588,17 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
       <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">
         Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.
       </p>
+
+      {!isDraft && isSupportedSystem && (
+        <button
+          type="button"
+          className="h-9 w-full rounded-lg border border-primary/45 bg-primary/5 text-[11px] font-semibold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-45"
+          disabled={!mppImage || !moduleId}
+          onClick={() => beginManualPlacement({ roofId: roof.id, kind: "advanced-block" })}
+        >
+          {isDDome ? "+ K2 Block hinzufügen" : "+ Modul hinzufügen"}
+        </button>
+      )}
 
       {confirmReplace && (
         <div className="space-y-2 rounded-lg border border-amber-500/35 bg-amber-500/5 p-2 text-[10px]">
