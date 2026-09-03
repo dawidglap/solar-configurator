@@ -12,6 +12,7 @@ import {
   createK2DDomeBlock,
   createK2SDomeBlock,
   expandBlockToModules,
+  groupEffectiveMontageFields,
   groupK2MontageFields,
   instantiateAdvancedBlock,
   type AdvancedBlockDefinition,
@@ -450,7 +451,7 @@ export function materializeManualAdvancedPanels(input: {
 }
 
 /**
- * Rebuilds K2 Montagefeld membership once after a successful manual commit.
+ * Rebuilds flat-roof Montagefeld membership once after a successful manual commit.
  * It reconstructs only logical grid topology; panel/block coordinates are never changed.
  */
 export function regroupK2PanelsAfterManualAdd(input: {
@@ -460,7 +461,12 @@ export function regroupK2PanelsAfterManualAdd(input: {
   mppImage: number;
 }): PanelInstance[] {
   const system = input.config.advanced.system;
-  if (system.systemId !== K2_D_DOME_SYSTEM_ID && system.systemId !== K2_S_DOME_SYSTEM_ID) {
+  const isK2 = system.systemId === K2_D_DOME_SYSTEM_ID || system.systemId === K2_S_DOME_SYSTEM_ID;
+  const isGenericFlat = input.config.surface.kind === "flat" && (
+    system.systemId === GENERIC_SOUTH_SYSTEM_ID ||
+    system.systemId === GENERIC_EAST_WEST_SYSTEM_ID
+  );
+  if (!isK2 && !isGenericFlat) {
     return [...input.panels];
   }
   const definition = resolveManualAdvancedBlockDefinition(input.config);
@@ -523,24 +529,31 @@ export function regroupK2PanelsAfterManualAdd(input: {
         blockKey: block.blockKey,
       };
     });
-  const commonGroupingInput = {
-    blocks: placed,
-    moduleWidthM: input.config.advanced.module.widthM,
-    moduleLengthM: input.config.advanced.module.heightM,
-    rowSpaceM: system.rowSpaceM,
-  };
   const result = system.systemId === K2_D_DOME_SYSTEM_ID
     ? groupK2MontageFields({
-        ...commonGroupingInput,
+        blocks: placed,
+        moduleWidthM: input.config.advanced.module.widthM,
+        moduleLengthM: input.config.advanced.module.heightM,
+        rowSpaceM: system.rowSpaceM,
+        pitchM: definition.pitchM,
         systemId: K2_D_DOME_SYSTEM_ID,
         adapterVersion: K2_D_DOME_ADAPTER_VERSION,
       })
-    : groupK2MontageFields({
-        ...commonGroupingInput,
+    : system.systemId === K2_S_DOME_SYSTEM_ID
+      ? groupK2MontageFields({
+        blocks: placed,
+        moduleWidthM: input.config.advanced.module.widthM,
+        moduleLengthM: input.config.advanced.module.heightM,
+        rowSpaceM: system.rowSpaceM,
+        pitchM: definition.pitchM,
         systemId: K2_S_DOME_SYSTEM_ID,
         adapterVersion: K2_S_DOME_ADAPTER_VERSION,
-      });
-  const fieldByBlock = result.blockToFieldKey;
+      })
+      : null;
+  const fieldByBlock = result?.blockToFieldKey ?? Object.fromEntries(
+    groupEffectiveMontageFields({ blocks: placed, pitchM: definition.pitchM })
+      .flatMap((field) => field.blockKeys.map((blockKey) => [blockKey, field.fieldKey])),
+  );
   return input.panels.map((panel) => {
     const blockKey = panel.advanced?.blockKey;
     const field = blockKey ? fieldByBlock[blockKey] : undefined;

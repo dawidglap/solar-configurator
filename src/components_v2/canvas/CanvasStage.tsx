@@ -23,6 +23,7 @@ import ModulesPreview from "../modules/ModulesPreview";
 import ManualPlacementLayer from "../modules/ManualPlacementLayer";
 import { endManualPlacement, useManualPlacementSession } from "../modules/manualPlacementSession";
 import AdvancedPreviewLayer from "../modules/advanced/AdvancedPreviewLayer";
+import CommittedMontageFieldDimensionsLayer from "../modules/advanced/CommittedMontageFieldDimensionsLayer";
 import RoofAnnotationsLayer from "./RoofAnnotationsLayer";
 import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import {
@@ -1177,6 +1178,10 @@ export default function CanvasStage() {
                       stageToImg={toImgCoords}
                     />
                   </Group>
+                )}
+
+                {step === "modules" && !manualPlacementSession && (
+                  <CommittedMontageFieldDimensionsLayer />
                 )}
 
                 {step === "modules" && manualPlacementSession && (

@@ -3,19 +3,11 @@ import {
   K2_D_DOME_ADAPTER_VERSION,
   K2_D_DOME_CONSTANTS_MM,
   K2_D_DOME_SYSTEM_ID,
-  calculateK2DDomeLongSideBlockSizeMm,
-  calculateK2DDomeRailDirectionBlockSizeMm,
-  k2DDomeMetresToMillimetres,
-  k2DDomeMillimetresToMetres,
 } from "./k2-d-dome";
 import {
   K2_S_DOME_ADAPTER_VERSION,
   K2_S_DOME_CONSTANTS_MM,
   K2_S_DOME_SYSTEM_ID,
-  calculateK2SDomeLongSideBlockSizeMm,
-  calculateK2SDomeRailDirectionBlockSizeMm,
-  metresToMillimetres,
-  millimetresToMetres,
 } from "./k2-s-dome";
 import type { PlacedAdvancedBlock } from "./types";
 
@@ -58,6 +50,29 @@ export type GroupK2MontageFieldsInput = K2MontageFieldSystem & {
   moduleWidthM: number;
   moduleLengthM: number;
   rowSpaceM: number;
+  /** Effective pitch from the same adapter definition used for placement. */
+  pitchM?: { x: number; y: number };
+};
+
+export type EffectiveMontageField = {
+  fieldKey: string;
+  blockKeys: string[];
+  rowStart: number;
+  rowEnd: number;
+  columnStart: number;
+  columnEnd: number;
+  blockCount: number;
+  moduleCount: number;
+  railSizeM: number;
+  longSideSizeM: number;
+  outline: MetricPolygon;
+};
+
+export type GroupEffectiveMontageFieldsInput = {
+  blocks: readonly PlacedAdvancedBlock[];
+  pitchM: { x: number; y: number };
+  maxRailSizeM?: number;
+  maxLongSideSizeM?: number;
 };
 
 const EPSILON_M = 1e-9;
@@ -72,65 +87,18 @@ function compareBlocks(first: PlacedAdvancedBlock, second: PlacedAdvancedBlock):
     first.blockKey.localeCompare(second.blockKey);
 }
 
-function fieldDimensions(input: {
-  systemId: GroupK2MontageFieldsInput["systemId"];
-  moduleWidthM: number;
-  moduleLengthM: number;
-  rowSpaceM: number;
-  rows: number;
-  columns: number;
-}): { railSizeM: number; longSideSizeM: number } {
-  if (input.systemId === K2_D_DOME_SYSTEM_ID) {
-    return {
-      railSizeM: k2DDomeMillimetresToMetres(
-        calculateK2DDomeRailDirectionBlockSizeMm({
-          moduleWidthMm: k2DDomeMetresToMillimetres(input.moduleWidthM),
-          rowSpaceMm: k2DDomeMetresToMillimetres(input.rowSpaceM),
-          quantityRows: input.rows,
-        }),
-      ),
-      longSideSizeM: k2DDomeMillimetresToMetres(
-        calculateK2DDomeLongSideBlockSizeMm({
-          moduleLengthMm: k2DDomeMetresToMillimetres(input.moduleLengthM),
-          numberOfColumns: input.columns,
-        }),
-      ),
-    };
-  }
-  return {
-    railSizeM: millimetresToMetres(
-      calculateK2SDomeRailDirectionBlockSizeMm({
-        moduleWidthMm: metresToMillimetres(input.moduleWidthM),
-        rowSpaceMm: metresToMillimetres(input.rowSpaceM),
-        quantityRows: input.rows,
-      }),
-    ),
-    longSideSizeM: millimetresToMetres(
-      calculateK2SDomeLongSideBlockSizeMm({
-        moduleLengthMm: metresToMillimetres(input.moduleLengthM),
-        numberOfColumns: input.columns,
-      }),
-    ),
-  };
-}
-
 function largestCompliantCount(
   axis: "rows" | "columns",
-  input: GroupK2MontageFieldsInput,
+  input: GroupEffectiveMontageFieldsInput,
+  single: { railSizeM: number; longSideSizeM: number },
   limitM: number,
 ): number {
   let count = 1;
   while (count < 10_000) {
     const next = count + 1;
-    const dimensions = fieldDimensions({
-      systemId: input.systemId,
-      moduleWidthM: input.moduleWidthM,
-      moduleLengthM: input.moduleLengthM,
-      rowSpaceM: input.rowSpaceM,
-      rows: axis === "rows" ? next : 1,
-      columns: axis === "columns" ? next : 1,
-    });
-    const size = axis === "rows" ? dimensions.railSizeM : dimensions.longSideSizeM;
+    const size = axis === "rows"
+      ? single.railSizeM + (next - 1) * input.pitchM.y
+      : single.longSideSizeM + (next - 1) * input.pitchM.x;
     if (size > limitM + EPSILON_M) break;
     count = next;
   }
@@ -153,6 +121,89 @@ function fieldOutline(blocks: readonly PlacedAdvancedBlock[]): MetricPolygon {
   ].map((point) => rotateMetricPoint(point, rotation));
 }
 
+/** Measures the outer edges of the block footprints in their real local axes. */
+export function measureMontageFieldBlocks(
+  blocks: readonly PlacedAdvancedBlock[],
+): { railSizeM: number; longSideSizeM: number; outline: MetricPolygon } {
+  if (!blocks.length) {
+    throw new RangeError("A Montagefeld must contain at least one block.");
+  }
+  const rotation = blocks[0].rotationCartesianDeg;
+  const local = blocks
+    .flatMap((block) => block.footprint)
+    .map((point) => rotateMetricPoint(point, -rotation));
+  const minX = Math.min(...local.map((point) => point.x));
+  const maxX = Math.max(...local.map((point) => point.x));
+  const minY = Math.min(...local.map((point) => point.y));
+  const maxY = Math.max(...local.map((point) => point.y));
+  return {
+    longSideSizeM: maxX - minX,
+    railSizeM: maxY - minY,
+    outline: fieldOutline(blocks),
+  };
+}
+
+/**
+ * Groups the already-generated effective blocks. No system formula is repeated:
+ * field extents come from the exact collision footprints used by placement.
+ */
+export function groupEffectiveMontageFields(
+  input: GroupEffectiveMontageFieldsInput,
+): EffectiveMontageField[] {
+  if (!input.blocks.length) return [];
+  const ordered = [...input.blocks].sort(compareBlocks);
+  const single = measureMontageFieldBlocks([ordered[0]]);
+  const maxRows = input.maxRailSizeM === undefined
+    ? ordered.length
+    : largestCompliantCount("rows", input, single, input.maxRailSizeM);
+  const maxColumns = input.maxLongSideSizeM === undefined
+    ? ordered.length
+    : largestCompliantCount("columns", input, single, input.maxLongSideSizeM);
+  const byCoordinate = new Map<string, PlacedAdvancedBlock>();
+  for (const block of ordered) {
+    const key = coordinateKey(block.rowIndex, block.columnIndex);
+    if (byCoordinate.has(key)) throw new RangeError(`Duplicate grid position ${key}.`);
+    byCoordinate.set(key, block);
+  }
+
+  const unassigned = new Set(byCoordinate.keys());
+  const fields: EffectiveMontageField[] = [];
+  while (unassigned.size > 0) {
+    const seed = ordered.find((block) => unassigned.has(coordinateKey(block.rowIndex, block.columnIndex)));
+    if (!seed) throw new Error("Montagefeld grouping lost an unassigned block.");
+    const columns: number[] = [];
+    for (let column = seed.columnIndex; columns.length < maxColumns; column += 1) {
+      if (!unassigned.has(coordinateKey(seed.rowIndex, column))) break;
+      columns.push(column);
+    }
+    const rows = [seed.rowIndex];
+    for (let row = seed.rowIndex + 1; rows.length < maxRows; row += 1) {
+      if (!columns.every((column) => unassigned.has(coordinateKey(row, column)))) break;
+      rows.push(row);
+    }
+    const fieldBlocks = rows.flatMap((row) =>
+      columns.map((column) => byCoordinate.get(coordinateKey(row, column))!),
+    ).sort(compareBlocks);
+    const measurement = measureMontageFieldBlocks(fieldBlocks);
+    const fieldKey = `f:r${rows[0]}-${rows[rows.length - 1]}:c${columns[0]}-${columns[columns.length - 1]}`;
+    fields.push({
+      fieldKey,
+      blockKeys: fieldBlocks.map((block) => block.blockKey),
+      rowStart: rows[0],
+      rowEnd: rows[rows.length - 1],
+      columnStart: columns[0],
+      columnEnd: columns[columns.length - 1],
+      blockCount: fieldBlocks.length,
+      moduleCount: fieldBlocks.reduce((sum, block) => sum + block.moduleSlots.length, 0),
+      railSizeM: measurement.railSizeM,
+      longSideSizeM: measurement.longSideSizeM,
+      outline: measurement.outline,
+    });
+    fieldBlocks.forEach((block) => unassigned.delete(coordinateKey(block.rowIndex, block.columnIndex)));
+  }
+  return fields;
+}
+
 /**
  * Groups already-placed K2 blocks. It never moves or removes a placement.
  * Holes split continuity; each emitted field is a deterministic rectangle of
@@ -167,73 +218,31 @@ export function groupK2MontageFields(
   const maxLongSideSizeM = (input.systemId === K2_D_DOME_SYSTEM_ID
     ? K2_D_DOME_CONSTANTS_MM.maxBlockLongSide
     : K2_S_DOME_CONSTANTS_MM.maxBlockLongSide) / 1000;
-  const maxRows = largestCompliantCount("rows", input, maxRailSizeM);
-  const maxColumns = largestCompliantCount("columns", input, maxLongSideSizeM);
-  const ordered = [...input.blocks].sort(compareBlocks);
-  const byCoordinate = new Map<string, PlacedAdvancedBlock>();
-  for (const block of ordered) {
-    const key = coordinateKey(block.rowIndex, block.columnIndex);
-    if (byCoordinate.has(key)) {
-      throw new RangeError(`Duplicate K2 grid position ${key}.`);
-    }
-    byCoordinate.set(key, block);
-  }
-
-  const unassigned = new Set(byCoordinate.keys());
+  const pitchM = input.pitchM ?? {
+    x: input.moduleLengthM + (
+      input.systemId === K2_D_DOME_SYSTEM_ID
+        ? K2_D_DOME_CONSTANTS_MM.moduleLongSideSpacing
+        : K2_S_DOME_CONSTANTS_MM.moduleLongSideSpacing
+    ) / 1000,
+    y: input.rowSpaceM,
+  };
+  const effectiveFields = groupEffectiveMontageFields({
+    blocks: input.blocks,
+    pitchM,
+    maxRailSizeM,
+    maxLongSideSizeM,
+  });
   const fields: K2MontageField[] = [];
   const blockToFieldKey: Record<string, string> = {};
-  while (unassigned.size > 0) {
-    const seed = ordered.find((block) => unassigned.has(coordinateKey(block.rowIndex, block.columnIndex)));
-    if (!seed) throw new Error("K2 Montagefeld grouping lost an unassigned block.");
-
-    const columns: number[] = [];
-    for (let column = seed.columnIndex; columns.length < maxColumns; column += 1) {
-      if (!unassigned.has(coordinateKey(seed.rowIndex, column))) break;
-      columns.push(column);
-    }
-    const rows = [seed.rowIndex];
-    for (let row = seed.rowIndex + 1; rows.length < maxRows; row += 1) {
-      if (!columns.every((column) => unassigned.has(coordinateKey(row, column)))) break;
-      rows.push(row);
-    }
-    const fieldBlocks = rows.flatMap((row) =>
-      columns.map((column) => byCoordinate.get(coordinateKey(row, column))!),
-    ).sort(compareBlocks);
-    const rowStart = rows[0];
-    const rowEnd = rows[rows.length - 1];
-    const columnStart = columns[0];
-    const columnEnd = columns[columns.length - 1];
-    const fieldKey = `f:r${rowStart}-${rowEnd}:c${columnStart}-${columnEnd}`;
-    const dimensions = fieldDimensions({
-      systemId: input.systemId,
-      moduleWidthM: input.moduleWidthM,
-      moduleLengthM: input.moduleLengthM,
-      rowSpaceM: input.rowSpaceM,
-      rows: rows.length,
-      columns: columns.length,
-    });
-    const moduleCount = fieldBlocks.reduce((sum, block) => sum + block.moduleSlots.length, 0);
+  for (const field of effectiveFields) {
     const identity = input.systemId === K2_D_DOME_SYSTEM_ID
       ? { systemId: K2_D_DOME_SYSTEM_ID, adapterVersion: K2_D_DOME_ADAPTER_VERSION }
       : { systemId: K2_S_DOME_SYSTEM_ID, adapterVersion: K2_S_DOME_ADAPTER_VERSION };
     fields.push({
       ...identity,
-      fieldKey,
-      blockKeys: fieldBlocks.map((block) => block.blockKey),
-      rowStart,
-      rowEnd,
-      columnStart,
-      columnEnd,
-      blockCount: fieldBlocks.length,
-      moduleCount,
-      railSizeM: dimensions.railSizeM,
-      longSideSizeM: dimensions.longSideSizeM,
-      outline: fieldOutline(fieldBlocks),
+      ...field,
     });
-    for (const block of fieldBlocks) {
-      unassigned.delete(coordinateKey(block.rowIndex, block.columnIndex));
-      blockToFieldKey[block.blockKey] = fieldKey;
-    }
+    field.blockKeys.forEach((blockKey) => { blockToFieldKey[blockKey] = field.fieldKey; });
   }
 
   return {

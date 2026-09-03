@@ -8,6 +8,7 @@ import {
 import {
   createInitialAdvancedPlanning,
   setAdvancedMountingOrientation,
+  updateDefaultFlatSystem,
 } from "../../src/components_v2/modules/advanced/advancedPlanningApplication";
 import {
   buildAdvancedManualCandidate,
@@ -199,6 +200,40 @@ test("S-Dome manual add creates exactly one advanced module", () => {
   });
   assert.equal(candidate.valid, true);
   assert.equal(candidate.modules.length, 1);
+});
+
+test("custom flat-system manual add rebuilds effective Montagefeld membership", () => {
+  const config = updateDefaultFlatSystem({
+    config: createInitialAdvancedPlanning({ panel: PANEL, standardModules: MODULES }),
+    rowSpaceM: 2.7,
+    moduleGapM: 0.03,
+    nominalTiltDeg: 15,
+  });
+  const candidate = buildAdvancedManualCandidate({
+    ...BASE,
+    centerPx: { x: 80, y: 60 },
+    config,
+  });
+  assert.equal(candidate.valid, true);
+  const panels = materializeManualAdvancedPanels({
+    candidate,
+    roofId: ROOF.id,
+    config,
+    layoutRunId: "custom-run",
+    blockKey: "roof-manual:custom-run:block:0",
+    montageFieldKey: "roof-manual:custom-run:field:0",
+    createPanelId: (slot) => `custom-panel-${slot}`,
+  });
+  const regrouped = regroupK2PanelsAfterManualAdd({
+    panels,
+    roof: ROOF,
+    config,
+    mppImage: 0.1,
+  });
+
+  assert.equal(regrouped.length, 2);
+  assert.equal(regrouped[0].advanced?.montageFieldKey, regrouped[1].advanced?.montageFieldKey);
+  assert.match(regrouped[0].advanced?.montageFieldKey ?? "", /manual-regroup/);
 });
 
 test("D-Dome rejects the entire pair when one side collides", () => {

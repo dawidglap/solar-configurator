@@ -68,6 +68,7 @@ export default function AdvancedPreviewLayer() {
   const mppImage = usePlannerV2Store((state) => state.snapshot.mppImage);
   const zones = usePlannerV2Store((state) => state.zones);
   const snowGuards = usePlannerV2Store((state) => state.snowGuards);
+  const showFieldDimensions = usePlannerV2Store((state) => state.ui.showFieldDimensions);
 
   const persisted = resolveSurfacePlanning(roof?.surfacePlanning);
   const config: AdvancedSurfacePlanningV1 | undefined =
@@ -167,6 +168,11 @@ export default function AdvancedPreviewLayer() {
           ))}
           {preview.montageFields.map((field, fieldIndex) => {
             const labelPoint = centroid(field.outlinePx);
+            const first = field.outlinePx[0];
+            const second = field.outlinePx[1];
+            const labelRotationDeg = first && second
+              ? (Math.atan2(second.y - first.y, second.x - first.x) * 180) / Math.PI
+              : 0;
             return (
               <Group key={field.fieldKey} listening={false}>
                 <Line
@@ -178,11 +184,16 @@ export default function AdvancedPreviewLayer() {
                   opacity={0.72}
                 />
                 <Text
-                  x={labelPoint.x + 4}
-                  y={labelPoint.y + 4}
-                  text={`F${fieldIndex + 1}`}
+                  x={labelPoint.x}
+                  y={labelPoint.y}
+                  offsetX={showFieldDimensions ? 38 : 4}
+                  offsetY={showFieldDimensions ? 7 : 4}
+                  rotation={showFieldDimensions ? labelRotationDeg : 0}
+                  text={showFieldDimensions
+                    ? `F${fieldIndex + 1} · ${field.longSideSizeM.toFixed(2)} × ${field.railSizeM.toFixed(2)} m`
+                    : `F${fieldIndex + 1}`}
                   fill={plannerTheme.primary}
-                  fontSize={9}
+                  fontSize={showFieldDimensions ? 8 : 9}
                   fontStyle="bold"
                 />
               </Group>

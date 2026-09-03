@@ -25,6 +25,8 @@ export type UIState = {
     leftPanelOpen: boolean;
     searchOpen: boolean;
     showPanelsInBuilding: boolean;
+    /** View-only toolbar toggle; intentionally excluded from planning persistence. */
+    showFieldDimensions: boolean;
 };
 
 export type Tool =

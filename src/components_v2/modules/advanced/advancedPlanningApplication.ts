@@ -20,6 +20,7 @@ import {
   createGenericSouthBlock,
   createK2DDomeBlock,
   createK2SDomeBlock,
+  groupEffectiveMontageFields,
   groupK2MontageFields,
   resolveSurfacePlanning,
   resolveStandardModuleTilt,
@@ -1074,6 +1075,7 @@ export function computeAdvancedPlanningPreview(input: {
         moduleWidthM: moduleSpec.widthM,
         moduleLengthM: moduleSpec.heightM,
         rowSpaceM: system.rowSpaceM,
+        pitchM: blockDefinition.pitchM,
       })
     : system.systemId === K2_S_DOME_SYSTEM_ID
       ? groupK2MontageFields({
@@ -1083,8 +1085,24 @@ export function computeAdvancedPlanningPreview(input: {
           moduleWidthM: moduleSpec.widthM,
           moduleLengthM: moduleSpec.heightM,
           rowSpaceM: system.rowSpaceM,
+          pitchM: blockDefinition.pitchM,
         })
-      : null;
+      : isGenericSystem && config.surface.kind === "flat"
+        ? (() => {
+            const fields = groupEffectiveMontageFields({
+              blocks: placedBlocks,
+              pitchM: blockDefinition.pitchM,
+            });
+            return {
+              fields,
+              blockToFieldKey: Object.fromEntries(
+                fields.flatMap((field) =>
+                  field.blockKeys.map((blockKey) => [blockKey, field.fieldKey]),
+                ),
+              ),
+            };
+          })()
+        : null;
   const montageFieldKeyByBlock = montageFieldGrouping?.blockToFieldKey ?? {};
   const montageFields: AdvancedPreviewMontageField[] =
     montageFieldGrouping?.fields.map((field) => ({
@@ -1187,8 +1205,8 @@ export function computeAdvancedPlanningPreview(input: {
       warnings,
       blocks,
       modules,
-      montageFields: [],
-      montageFieldCount: 0,
+      montageFields,
+      montageFieldCount: montageFields.length,
       blockCount: placedBlocks.length,
       moduleCount: placedModules.length,
       quantity,

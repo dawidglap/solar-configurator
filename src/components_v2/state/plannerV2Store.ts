@@ -100,6 +100,7 @@ const DEFAULT_UI = {
   leftPanelOpen: false,
   searchOpen: false,
   showPanelsInBuilding: true,
+  showFieldDimensions: false,
 };
 
 function createDefaultModules(

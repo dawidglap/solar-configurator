@@ -10,7 +10,7 @@ import { SnowGuardCostDialog, SnowSegment } from "../SnowGuardCostDialog";
 import { useSearchParams, useRouter } from "next/navigation";
 import { savePlannerToDb } from "../state/planning/savePlanning";
 
-import { CircleHelp, MousePointer, RotateCcw, RotateCw, Square } from "lucide-react";
+import { CircleHelp, MousePointer, RotateCcw, RotateCw, Ruler, Square } from "lucide-react";
 
 // NUOVE icone topbar (1–10) da react-icons
 import { TbShape3, TbDropletHalf2Filled } from "react-icons/tb";
@@ -161,6 +161,8 @@ export default function TopToolbar() {
     s.selectedId ? s.roofPlanningDrafts[s.selectedId] : undefined,
   );
   const manualPlacementSession = useManualPlacementSession();
+  const showFieldDimensions = usePlannerV2Store((s) => s.ui.showFieldDimensions);
+  const setUI = usePlannerV2Store((s) => s.setUI);
 
   const selectedRoof = useMemo(
     () => layers.find((roof) => roof.id === selectedId),
@@ -778,6 +780,23 @@ export default function TopToolbar() {
 
       {/* DESTRA: 7–10 compatti + Undo/Redo */}
       <div className="flex items-center ms-auto gap-1">
+        {canUseModulesTools && (
+          <button
+            type="button"
+            onClick={() => setUI({ showFieldDimensions: !showFieldDimensions })}
+            className={[
+              "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition",
+              showFieldDimensions
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground",
+            ].join(" ")}
+            aria-pressed={showFieldDimensions}
+            title="Montagefeld-Maße anzeigen"
+          >
+            <Ruler className="h-3.5 w-3.5" aria-hidden="true" />
+            Feldmaße
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setIsHelpOpen(true)}

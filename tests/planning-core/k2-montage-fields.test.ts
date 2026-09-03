@@ -13,18 +13,26 @@ import {
   type AdvancedBlockDefinition,
   type PlacedAdvancedBlock,
 } from "../../src/lib/planning-core/advanced";
+import { rotateMetricPoint } from "../../src/lib/planning-core/geometry-v2";
 
 const moduleSpec = { widthM: 1.134, heightM: 1.722, orientation: "landscape" as const };
 
 function matrix(definition: AdvancedBlockDefinition, columns: number, rows: number): PlacedAdvancedBlock[] {
+  const rotation = instantiateAdvancedBlock({
+    definition,
+    centerM: { x: 0, y: 0 },
+    blockIndex: 0,
+    rowIndex: 0,
+    columnIndex: 0,
+  }).rotationCartesianDeg;
   return Array.from({ length: rows }, (_, rowIndex) =>
     Array.from({ length: columns }, (_, columnIndex) =>
       instantiateAdvancedBlock({
         definition,
-        centerM: {
+        centerM: rotateMetricPoint({
           x: columnIndex * definition.pitchM.x,
           y: rowIndex * definition.pitchM.y,
-        },
+        }, rotation),
         blockIndex: rowIndex * columns + columnIndex,
         rowIndex,
         columnIndex,
