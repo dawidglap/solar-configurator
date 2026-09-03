@@ -22,6 +22,10 @@ export type CommittedMontageFieldMeasurement = {
   outlinePx: Pt[];
 };
 
+export type CommittedThermalFieldMeasurement = Omit<CommittedMontageFieldMeasurement, "fieldKey"> & {
+  thermalFieldKey: string;
+};
+
 function imageAdapter(roof: RoofArea, mppImage: number): ImageMetricAdapter {
   const count = Math.max(1, roof.points.length);
   const center = roof.points.reduce(
@@ -35,12 +39,12 @@ function imageAdapter(roof: RoofArea, mppImage: number): ImageMetricAdapter {
  * Reconstructs only the committed block envelopes from materialized panels.
  * It never runs placement and therefore cannot move, add or remove modules.
  */
-export function buildCommittedMontageFieldMeasurements(input: {
+function buildCommittedAdvancedFieldMeasurements(input: {
   roof: RoofArea;
   config: AdvancedSurfacePlanningV1;
   panels: readonly PanelInstance[];
   mppImage: number;
-}): CommittedMontageFieldMeasurement[] {
+}, identity: "montage" | "thermal"): CommittedMontageFieldMeasurement[] {
   if (!(input.mppImage > 0)) return [];
   const definition = resolveManualAdvancedBlockDefinition(input.config);
   if (!definition) return [];
@@ -54,7 +58,10 @@ export function buildCommittedMontageFieldMeasurements(input: {
   });
   const panelsByBlock = new Map<string, PanelInstance[]>();
   input.panels.forEach((panel) => {
-    if (panel.roofId !== input.roof.id || !panel.advanced?.blockKey || !panel.advanced.montageFieldKey) return;
+    const fieldKey = identity === "montage"
+      ? panel.advanced?.montageFieldKey
+      : panel.advanced?.thermalFieldKey;
+    if (panel.roofId !== input.roof.id || !panel.advanced?.blockKey || !fieldKey) return;
     panelsByBlock.set(panel.advanced.blockKey, [
       ...(panelsByBlock.get(panel.advanced.blockKey) ?? []),
       panel,
@@ -70,7 +77,9 @@ export function buildCommittedMontageFieldMeasurements(input: {
       const slot = definition.moduleSlots.find(
         (candidate) => candidate.slotIndex === sourcePanel.advanced?.slotIndex,
       );
-      const fieldKey = sourcePanel.advanced?.montageFieldKey;
+      const fieldKey = identity === "montage"
+        ? sourcePanel.advanced?.montageFieldKey
+        : sourcePanel.advanced?.thermalFieldKey;
       if (!slot || !fieldKey) return;
       const moduleCenterM = imagePointToMetric(
         { x: sourcePanel.cx, y: sourcePanel.cy },
@@ -108,6 +117,93 @@ export function buildCommittedMontageFieldMeasurements(input: {
         longSideSizeM: measurement.longSideSizeM,
         railSizeM: measurement.railSizeM,
         outlinePx: metricPolygonToImage(measurement.outline, adapter),
+      };
+    });
+}
+
+export function buildCommittedMontageFieldMeasurements(input: {
+  roof: RoofArea;
+  config: AdvancedSurfacePlanningV1;
+  panels: readonly PanelInstance[];
+  mppImage: number;
+}): CommittedMontageFieldMeasurement[] {
+  return buildCommittedAdvancedFieldMeasurements(input, "montage");
+}
+
+export function buildCommittedThermalFieldMeasurements(input: {
+  roof: RoofArea;
+  config: AdvancedSurfacePlanningV1;
+  panels: readonly PanelInstance[];
+  mppImage: number;
+}): CommittedThermalFieldMeasurement[] {
+  return buildCommittedAdvancedFieldMeasurements(input, "thermal").map((field) => ({
+    thermalFieldKey: field.fieldKey,
+    blockCount: field.blockCount,
+    moduleCount: field.moduleCount,
+    longSideSizeM: field.longSideSizeM,
+    railSizeM: field.railSizeM,
+    outlinePx: field.outlinePx,
+  }));
+}
+
+/** Measures already-materialized Standard fields; it never regenerates placement. */
+export function buildCommittedStandardThermalFieldMeasurements(input: {
+  roof: RoofArea;
+  panels: readonly PanelInstance[];
+  mppImage: number;
+}): CommittedThermalFieldMeasurement[] {
+  if (!(input.mppImage > 0)) return [];
+  const groups = new Map<string, PanelInstance[]>();
+  input.panels.forEach((panel) => {
+    const fieldKey = panel.standard?.thermalFieldKey;
+    if (panel.roofId !== input.roof.id || !fieldKey) return;
+    groups.set(fieldKey, [...(groups.get(fieldKey) ?? []), panel]);
+  });
+  return [...groups.entries()]
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([thermalFieldKey, panels]) => {
+      const blocks: PlacedAdvancedBlock[] = panels.map((panel, blockIndex) => {
+        const rotationCartesianDeg = -(panel.angleDeg ?? 0);
+        const centerM = { x: panel.cx * input.mppImage, y: -panel.cy * input.mppImage };
+        const halfWidthM = panel.wPx * input.mppImage / 2;
+        const halfHeightM = panel.hPx * input.mppImage / 2;
+        const local = [
+          { x: -halfWidthM, y: -halfHeightM },
+          { x: halfWidthM, y: -halfHeightM },
+          { x: halfWidthM, y: halfHeightM },
+          { x: -halfWidthM, y: halfHeightM },
+        ];
+        return {
+          engineVersion: "advanced-block-v1",
+          blockIndex,
+          blockKey: panel.id,
+          mountingSystemId: "legacy-standard-thermal-unit",
+          definitionVersion: "thermal-fields-v1",
+          centerM,
+          planarOrientationDeg: panel.angleDeg ?? 0,
+          rotationCartesianDeg,
+          footprint: local.map((point) => {
+            const rotated = rotateMetricPoint(point, rotationCartesianDeg);
+            return { x: centerM.x + rotated.x, y: centerM.y + rotated.y };
+          }),
+          moduleSlots: [],
+          derivedDimensionsM: {},
+          warnings: [],
+          columnIndex: blockIndex,
+          rowIndex: 0,
+        };
+      });
+      const measurement = measureMontageFieldBlocks(blocks);
+      return {
+        thermalFieldKey,
+        blockCount: panels.length,
+        moduleCount: panels.length,
+        longSideSizeM: measurement.longSideSizeM,
+        railSizeM: measurement.railSizeM,
+        outlinePx: measurement.outline.map((point) => ({
+          x: point.x / input.mppImage,
+          y: -point.y / input.mppImage,
+        })),
       };
     });
 }

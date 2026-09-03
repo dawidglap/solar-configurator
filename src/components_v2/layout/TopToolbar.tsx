@@ -597,6 +597,9 @@ export default function TopToolbar() {
       },
     );
     const moduleTilt = standardDraft?.moduleTilt ?? resolveStandardTiltInput(roof.surfacePlanning);
+    const persistedStandard = resolveSurfacePlanning(roof.surfacePlanning);
+    const thermalFieldLimits = standardDraft?.thermalFieldLimits ??
+      (persistedStandard.status === "supported-standard" ? persistedStandard.config.thermalFieldLimits : undefined);
     const standardMetadata = buildStandardPanelMetadata({ roofSlopeDeg: roof.tiltDeg, moduleTilt });
     const instances = orderedPlacements.map((r, idx) => ({
       id: `${selectedId}_p_${now}_${idx}`,
@@ -614,7 +617,7 @@ export default function TopToolbar() {
     commitRoofLayout({
       roofId: selectedId,
       panels: instances,
-      surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt }),
+      surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt, thermalFieldLimits }),
     });
     setSelectedPanel(standardPanel.id);
     setModules({ ...standardModules, showGrid: false });

@@ -20,6 +20,7 @@ import { resolvePlannerStepForTool, resolvePlannerToolHotkey } from './toolHotke
 import type { Tool } from '@/types/planner';
 import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
 import { resolveRoofFallAzimuth } from '../roof/roofOrientation';
+import { resolveSurfacePlanning } from '@/lib/planning-core/advanced';
 import {
   buildStandardPanelMetadata,
   buildStandardSurfacePlanning,
@@ -118,6 +119,9 @@ export default function ToolHotkeys() {
       },
     );
     const moduleTilt = standardDraft?.moduleTilt ?? resolveStandardTiltInput(roof.surfacePlanning);
+    const persistedStandard = resolveSurfacePlanning(roof.surfacePlanning);
+    const thermalFieldLimits = standardDraft?.thermalFieldLimits ??
+      (persistedStandard.status === 'supported-standard' ? persistedStandard.config.thermalFieldLimits : undefined);
     const standardMetadata = buildStandardPanelMetadata({ roofSlopeDeg: roof.tiltDeg, moduleTilt });
     const instances = orderedPlacements.map((r, idx) => ({
       id: `${selectedId}_p_${now}_${idx}`,
@@ -130,7 +134,7 @@ export default function ToolHotkeys() {
       ...(standardMetadata ? { standard: standardMetadata } : {}),
     }));
 
-    commitRoofLayout({ roofId: selectedId, panels: instances, surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt }) });
+    commitRoofLayout({ roofId: selectedId, panels: instances, surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt, thermalFieldLimits }) });
     setSelectedPanel(standardPanel.id);
     setModules({ ...standardModules, showGrid: false });
     setTool('select');

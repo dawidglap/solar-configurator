@@ -198,6 +198,34 @@ export default function AdvancedPreviewLayer({
               </Group>
             );
           })}
+          {preview.thermalFields.map((field, fieldIndex) => {
+            const labelPoint = centroid(field.outlinePx);
+            return (
+              <Group key={field.thermalFieldKey} listening={false}>
+                <Line
+                  points={field.outlinePx.flatMap((point) => [point.x, point.y])}
+                  closed
+                  stroke="#f59e0b"
+                  strokeWidth={1.1}
+                  dash={[3, 4]}
+                  opacity={0.72}
+                />
+                <Text
+                  x={labelPoint.x}
+                  y={labelPoint.y}
+                  offsetX={showFieldDimensions ? 42 : 5}
+                  offsetY={showFieldDimensions ? -8 : -7}
+                  rotation={-canvasRotationDeg}
+                  text={showFieldDimensions
+                    ? `T${fieldIndex + 1} · ${field.rowDirectionSizeM.toFixed(2)} × ${field.columnDirectionSizeM.toFixed(2)} m`
+                    : `T${fieldIndex + 1}`}
+                  fill="#f59e0b"
+                  fontSize={showFieldDimensions ? 8 : 9}
+                  fontStyle="bold"
+                />
+              </Group>
+            );
+          })}
         </Group>
       )}
 

@@ -168,7 +168,14 @@ test("customer-editable flat defaults replace vendor claims and drive geometry",
 });
 
 test("H: D-Dome preview and materialized output preserve block-to-two-module parity", () => {
-  const config = advancedConfig();
+  const config = {
+    ...advancedConfig(),
+    thermalFieldLimits: {
+      kind: "flat-block" as const,
+      maxRailDirectionM: 12.3,
+      maxModuleLongSideDirectionM: 16,
+    },
+  };
   const result = preview(config);
   assert.equal(result.valid, true);
   if (!result.valid) return;
@@ -182,6 +189,13 @@ test("H: D-Dome preview and materialized output preserve block-to-two-module par
     createPanelId: (index) => `panel-${index}`,
   });
   assert.equal(panels.length, result.modules.length);
+  assert.ok(result.thermalFieldCount > 0);
+  assert.ok(result.modules.every((module) => module.thermalFieldKey));
+  assert.ok(panels.every((panel) => panel.advanced?.thermalFieldKey));
+  assert.equal(
+    panels[0].advanced?.thermalFieldKey,
+    panels.find((panel) => panel.advanced?.blockKey === panels[0].advanced?.blockKey && panel.id !== panels[0].id)?.advanced?.thermalFieldKey,
+  );
   assert.deepEqual(
     panels.map((panel) => [panel.cx, panel.cy, panel.wPx, panel.hPx, panel.angleDeg]),
     result.modules.map((module) => [module.cx, module.cy, module.wPx, module.hPx, module.angleDeg]),

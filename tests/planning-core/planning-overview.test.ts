@@ -109,6 +109,7 @@ function advancedPanels(input: {
   blockCount: number;
   modulesPerBlock: number;
   montageFieldCount?: number;
+  thermalFieldCount?: number;
 }): PlanningOverviewPanelInput[] {
   return Array.from(
     { length: input.blockCount * input.modulesPerBlock },
@@ -122,6 +123,14 @@ function advancedPanels(input: {
               montageFieldKey: `${input.roofId}:field:${Math.floor(
                 Math.floor(panelIndex / input.modulesPerBlock) /
                   Math.ceil(input.blockCount / input.montageFieldCount),
+              )}`,
+            }
+          : {}),
+        ...(input.thermalFieldCount
+          ? {
+              thermalFieldKey: `${input.roofId}:thermal:${Math.floor(
+                Math.floor(panelIndex / input.modulesPerBlock) /
+                  Math.ceil(input.blockCount / input.thermalFieldCount),
               )}`,
             }
           : {}),
@@ -167,6 +176,7 @@ test("K2 overview derives Montagefelder only from committed panel metadata", () 
     blockCount: 15,
     modulesPerBlock: 2,
     montageFieldCount: 2,
+    thermalFieldCount: 3,
   });
   const overview = buildPlanningOverview({
     roofs: [roof],
@@ -175,6 +185,7 @@ test("K2 overview derives Montagefelder only from committed panel metadata", () 
   });
   assert.equal(overview.roofs[0].blockCount, 15);
   assert.equal(overview.roofs[0].montageFieldCount, 2);
+  assert.equal(overview.roofs[0].thermalFieldCount, 3);
   assert.equal(overview.roofs[0].moduleCount, 30);
 
   const legacyMaterialization = buildPlanningOverview({

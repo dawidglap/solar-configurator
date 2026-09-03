@@ -70,6 +70,7 @@ import { plannerTheme } from "../theme/plannerTheme";
 import PlannerEmptyState from "../layout/PlannerEmptyState";
 import type { Tool } from "@/types/planner";
 import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
+import { resolveCompanyThermalFieldLimits } from "@/lib/planning/companyPlannerDefaults";
 import {
   findRoofAtPoint,
   isDrawingInteractionTool,
@@ -319,6 +320,20 @@ export default function CanvasStage() {
   const standardPreviewPanel = selectedPlanningDraft?.targetMode === "standard"
     ? catalogPanels.find((panel) => panel.id === selectedPlanningDraft.panelSpecId)
     : selPanel;
+  const companyPlannerDefaults = usePlannerV2Store((state) => state.companyPlannerDefaults);
+  const standardThermalCompanyLimits = resolveCompanyThermalFieldLimits({
+    company: companyPlannerDefaults,
+    roofKind: "pitched",
+  });
+  const standardThermalFieldLimits = selectedPlanningDraft?.targetMode === "standard"
+    ? selectedPlanningDraft.thermalFieldLimits ??
+      (standardThermalCompanyLimits.kind === "pitched-grid" ? standardThermalCompanyLimits : undefined)
+    : selectedRoofPlanning?.status === "supported-standard"
+      ? selectedRoofPlanning.config.thermalFieldLimits ??
+        (standardThermalCompanyLimits.kind === "pitched-grid" ? standardThermalCompanyLimits : undefined)
+      : standardThermalCompanyLimits.kind === "pitched-grid"
+        ? standardThermalCompanyLimits
+        : undefined;
   const manualPlacementSession = useManualPlacementSession();
   useEffect(() => {
     if (
@@ -1046,6 +1061,8 @@ export default function CanvasStage() {
                       anchorX={(standardPreviewModules.gridAnchorX as any) || "start"}
                       anchorY={(standardPreviewModules.gridAnchorY as any) || "start"}
                       coverageRatio={standardPreviewModules.coverageRatio ?? 1}
+                      thermalFieldLimits={standardThermalFieldLimits}
+                      canvasRotationDeg={rotateDeg}
                     />
                   )}
 

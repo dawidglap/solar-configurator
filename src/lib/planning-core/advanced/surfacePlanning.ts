@@ -33,6 +33,23 @@ export type SurfacePhysicalProperties = {
   fallAzimuthDeg?: number;
 };
 
+/** Local physical axes; never viewport X/Y. */
+export type ThermalFieldLimits =
+  | {
+      kind: "pitched-grid";
+      /** Module-grid row direction, parallel to the canonical First. */
+      maxRowDirectionM: number;
+      /** Module-grid column/downhill direction. */
+      maxColumnDirectionM: number;
+    }
+  | {
+      kind: "flat-block";
+      /** Mounting-system rail/row direction. */
+      maxRailDirectionM: number;
+      /** Module-long-side direction; absent when no secondary rule applies. */
+      maxModuleLongSideDirectionM?: number;
+    };
+
 export type AdvancedModuleSnapshot = {
   panelSpecId?: string;
   /** Physical short side, sufficient for deterministic recomputation. */
@@ -121,6 +138,8 @@ export type StandardPanelMetadata = {
   moduleTiltMode: StandardModuleTiltInput["mode"];
   /** Applied physical module inclination; it does not alter legacy-v1 plan geometry. */
   effectiveTiltDeg: number;
+  /** Thermal grouping identity; independent from any K2 Montagefeld. */
+  thermalFieldKey?: string;
 };
 
 export type StandardSurfacePlanningV1 = {
@@ -129,6 +148,8 @@ export type StandardSurfacePlanningV1 = {
   surface: SurfacePhysicalProperties;
   /** Missing on legacy documents and resolves to inherit-roof without migration. */
   moduleTilt?: StandardModuleTiltInput;
+  /** Applied roof-local thermal limits. Missing on legacy documents. */
+  thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
 };
 
 export type AdvancedSurfacePlanningV1 = {
@@ -136,6 +157,8 @@ export type AdvancedSurfacePlanningV1 = {
   mode: "advanced";
   surface: SurfacePhysicalProperties;
   advanced: AdvancedPlanningInputsV1;
+  /** Applied mounting-system-local thermal limits. Missing on legacy documents. */
+  thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "flat-block" }>;
 };
 
 export type SurfacePlanningV1 =
@@ -171,6 +194,8 @@ export type AdvancedPanelMetadata = AdvancedPanelSystemIdentity & {
   blockKey: string;
   /** Deterministic K2 continuous-field identity; absent on legacy materializations. */
   montageFieldKey?: string;
+  /** Thermal grouping identity; distinct from montageFieldKey. */
+  thermalFieldKey?: string;
   slotIndex: number;
   nominalTiltDeg: number;
   effectiveTiltDeg: number;
@@ -298,6 +323,42 @@ function readStandardModuleTilt(
   }
   issues.push(issue("moduleTilt.mode", "invalid-module-tilt-mode", "Module tilt mode is invalid."));
   return undefined;
+}
+
+function readThermalFieldLimits(
+  value: unknown,
+  expectedKind: ThermalFieldLimits["kind"],
+  issues: SurfacePlanningIssue[],
+): ThermalFieldLimits | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || value.kind !== expectedKind) {
+    issues.push(issue("thermalFieldLimits", "invalid-thermal-field-limits", "Thermal field limits do not match the roof type."));
+    return undefined;
+  }
+  const validLimit = (current: unknown) => finite(current) && current > 0 && current <= 100;
+  if (expectedKind === "pitched-grid") {
+    if (!validLimit(value.maxRowDirectionM) || !validLimit(value.maxColumnDirectionM)) {
+      issues.push(issue("thermalFieldLimits", "invalid-thermal-field-limits", "Pitched thermal limits must be within (0, 100] m."));
+      return undefined;
+    }
+    return {
+      kind: "pitched-grid",
+      maxRowDirectionM: value.maxRowDirectionM as number,
+      maxColumnDirectionM: value.maxColumnDirectionM as number,
+    };
+  }
+  if (!validLimit(value.maxRailDirectionM) ||
+      (value.maxModuleLongSideDirectionM !== undefined && !validLimit(value.maxModuleLongSideDirectionM))) {
+    issues.push(issue("thermalFieldLimits", "invalid-thermal-field-limits", "Flat thermal limits must be within (0, 100] m."));
+    return undefined;
+  }
+  return {
+    kind: "flat-block",
+    maxRailDirectionM: value.maxRailDirectionM as number,
+    ...(value.maxModuleLongSideDirectionM !== undefined
+      ? { maxModuleLongSideDirectionM: value.maxModuleLongSideDirectionM as number }
+      : {}),
+  };
 }
 
 export function resolveStandardModuleTilt(input: {
@@ -503,6 +564,7 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
   if (!advancedMode) {
     const moduleTiltIssues: SurfacePlanningIssue[] = [];
     const moduleTilt = readStandardModuleTilt(value.moduleTilt, moduleTiltIssues);
+    const thermalFieldLimits = readThermalFieldLimits(value.thermalFieldLimits, "pitched-grid", moduleTiltIssues);
     if (moduleTiltIssues.length) {
       return { status: "invalid-document", effectiveMode: undefined, raw: value, issues: moduleTiltIssues };
     }
@@ -514,6 +576,7 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
         mode: "standard",
         surface,
         ...(moduleTilt ? { moduleTilt } : {}),
+        ...(thermalFieldLimits ? { thermalFieldLimits: thermalFieldLimits as Extract<ThermalFieldLimits, { kind: "pitched-grid" }> } : {}),
       },
       issues: [],
     };
@@ -538,6 +601,7 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
     return { status: "unsupported-advanced", effectiveMode: "advanced", raw: value, issues: systemResult.issues };
   }
   const advancedIssues: SurfacePlanningIssue[] = [];
+  const thermalFieldLimits = readThermalFieldLimits(value.thermalFieldLimits, "flat-block", advancedIssues);
   const undersideClearanceM = value.advanced.undersideClearanceM;
   if (
     undersideClearanceM !== undefined &&
@@ -567,6 +631,7 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
       schemaVersion: SURFACE_PLANNING_SCHEMA_VERSION,
       mode: "advanced",
       surface,
+      ...(thermalFieldLimits ? { thermalFieldLimits: thermalFieldLimits as Extract<ThermalFieldLimits, { kind: "flat-block" }> } : {}),
       advanced: {
         inputSchemaVersion: ADVANCED_INPUT_SCHEMA_VERSION,
         advancedEngineVersion: ADVANCED_BLOCK_ENGINE_VERSION,

@@ -7,7 +7,11 @@ import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
 import type { Pt } from "@/types/planner";
 import { plannerTheme } from "../../theme/plannerTheme";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
-import { buildCommittedMontageFieldMeasurements } from "./committedMontageFieldMeasurements";
+import {
+  buildCommittedMontageFieldMeasurements,
+  buildCommittedStandardThermalFieldMeasurements,
+  buildCommittedThermalFieldMeasurements,
+} from "./committedMontageFieldMeasurements";
 
 function centroid(points: Pt[]): Pt {
   const count = Math.max(1, points.length);
@@ -50,8 +54,24 @@ export default function CommittedMontageFieldDimensionsLayer({
         : [],
     [draft, mppImage, panels, persisted, roof, selectedId, show, step],
   );
+  const thermalFields = React.useMemo(
+    () =>
+      show && step === "modules" && selectedId && roof && !draft && mppImage
+        ? persisted.status === "supported-advanced"
+          ? buildCommittedThermalFieldMeasurements({
+              roof,
+              config: persisted.config,
+              panels,
+              mppImage,
+            })
+          : persisted.status === "supported-standard"
+            ? buildCommittedStandardThermalFieldMeasurements({ roof, panels, mppImage })
+            : []
+        : [],
+    [draft, mppImage, panels, persisted, roof, selectedId, show, step],
+  );
 
-  if (!show || !fields.length) return null;
+  if (!show || (!fields.length && !thermalFields.length)) return null;
   return (
     <Group listening={false}>
       {fields.map((field, index) => {
@@ -75,6 +95,34 @@ export default function CommittedMontageFieldDimensionsLayer({
               rotation={-canvasRotationDeg}
               text={`F${index + 1} · ${field.longSideSizeM.toFixed(2)} × ${field.railSizeM.toFixed(2)} m`}
               fill={plannerTheme.primary}
+              fontSize={8}
+              fontStyle="bold"
+              listening={false}
+            />
+          </Group>
+        );
+      })}
+      {thermalFields.map((field, index) => {
+        const center = centroid(field.outlinePx);
+        return (
+          <Group key={field.thermalFieldKey} listening={false}>
+            <Line
+              points={field.outlinePx.flatMap((point) => [point.x, point.y])}
+              closed
+              stroke="#f59e0b"
+              strokeWidth={1.1}
+              dash={[3, 4]}
+              opacity={0.72}
+              listening={false}
+            />
+            <Text
+              x={center.x}
+              y={center.y}
+              offsetX={42}
+              offsetY={-8}
+              rotation={-canvasRotationDeg}
+              text={`T${index + 1} · ${field.longSideSizeM.toFixed(2)} × ${field.railSizeM.toFixed(2)} m`}
+              fill="#f59e0b"
               fontSize={8}
               fontStyle="bold"
               listening={false}

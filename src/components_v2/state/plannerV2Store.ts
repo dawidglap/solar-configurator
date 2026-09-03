@@ -9,7 +9,11 @@ import {
   applyRoofLayoutTransaction,
   type RoofPlanningDraft,
 } from '@/components_v2/modules/advanced/advancedPlanningApplication';
-import type { SurfacePlanningV1 } from '@/lib/planning-core/advanced';
+import { resolveSurfacePlanning, type SurfacePlanningV1 } from '@/lib/planning-core/advanced';
+import {
+  regroupK2PanelsAfterManualAdd,
+  regroupStandardPanelsAfterManualCommit,
+} from '@/components_v2/modules/manualPlacement';
 import type { ProfileSlice } from './slices/profileSlice';
 import { createProfileSlice, defaultProfile } from './slices/profileSlice';
 import type { IstSlice } from './slices/istSlice';
@@ -246,7 +250,7 @@ type PlannerV2State = {
   setModules: (patch: Partial<ModulesConfig>) => void;
   companyPlannerDefaults: CompanyPlannerDefaultsV1;
   setCompanyPlannerDefaults: (
-    defaults: CompanyPlannerDefaultsV1,
+    defaults: unknown,
     options?: { initializePlanning?: boolean },
   ) => void;
   roofPlanningDrafts: Record<string, RoofPlanningDraft>;
@@ -257,6 +261,7 @@ type PlannerV2State = {
     panels: PanelInstance[];
     surfacePlanning?: SurfacePlanningV1;
   }) => void;
+  regroupThermalFieldsForRoofs: (roofIds: string[]) => void;
 
   detectedRoofs: DetectedRoof[];
   setDetectedRoofs: (
@@ -726,6 +731,37 @@ export const usePlannerV2Store = create<PlannerV2State>()(
       ...createUiSlice(set, get, api),
       ...createLayersSlice(set, get, api),
       ...createPanelsSlice(set, get, api),
+      regroupThermalFieldsForRoofs: (roofIds) =>
+        set((state) => {
+          if (!(state.snapshot.mppImage && state.snapshot.mppImage > 0)) return state;
+          let panels = state.panels;
+          let changed = false;
+          for (const roofId of new Set(roofIds)) {
+            if (state.roofPlanningDrafts[roofId]) continue;
+            const roof = state.layers.find((candidate) => candidate.id === roofId);
+            if (!roof) continue;
+            const planning = resolveSurfacePlanning(roof.surfacePlanning);
+            if (planning.status === 'supported-advanced' && planning.config.thermalFieldLimits) {
+              panels = regroupK2PanelsAfterManualAdd({
+                panels,
+                roof,
+                config: planning.config,
+                mppImage: state.snapshot.mppImage,
+              });
+              changed = true;
+            } else if (planning.status === 'supported-standard' && planning.config.thermalFieldLimits) {
+              panels = regroupStandardPanelsAfterManualCommit({
+                panels,
+                roof,
+                modules: state.modules,
+                mppImage: state.snapshot.mppImage,
+                limits: planning.config.thermalFieldLimits,
+              });
+              changed = true;
+            }
+          }
+          return changed ? { panels } : state;
+        }),
       ...createZonesSlice(set, get, api),
       ...createProfileSlice(set, get, api),
       ...createIstSlice(set, get, api),

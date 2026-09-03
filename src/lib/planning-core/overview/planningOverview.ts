@@ -35,7 +35,9 @@ export type PlanningOverviewPanelInput = {
   advanced?: {
     blockKey?: string;
     montageFieldKey?: string;
+    thermalFieldKey?: string;
   };
+  standard?: { thermalFieldKey?: string };
 };
 
 export type PlanningOverviewCatalogModule = {
@@ -81,6 +83,7 @@ export type PlanningOverviewRoof = {
   moduleCount: number;
   blockCount?: number;
   montageFieldCount?: number;
+  thermalFieldCount?: number;
   power: PlanningOverviewPower;
   moduleLabel?: string;
   marginM?: number;
@@ -238,6 +241,16 @@ function uniqueMontageFieldCount(
   return new Set(panels.map((panel) => panel.advanced!.montageFieldKey)).size;
 }
 
+function uniqueThermalFieldCount(
+  panels: readonly PlanningOverviewPanelInput[],
+): number | undefined {
+  if (panels.length === 0) return 0;
+  const keys = panels.map((panel) =>
+    panel.advanced?.thermalFieldKey ?? panel.standard?.thermalFieldKey);
+  if (keys.some((key) => typeof key !== "string" || key.length === 0)) return undefined;
+  return new Set(keys as string[]).size;
+}
+
 function systemModuleCount(systemId: string): number | undefined {
   if (
     systemId === K2_D_DOME_SYSTEM_ID ||
@@ -279,6 +292,7 @@ export function buildPlanningOverview(
     };
     let blockCount: number | undefined;
     let montageFieldCount: number | undefined;
+    const thermalFieldCount = uniqueThermalFieldCount(committedPanels);
     let marginM: number | undefined;
     let rowSpaceM: number | undefined;
     let serviceCorridorM: number | undefined;
@@ -450,6 +464,7 @@ export function buildPlanningOverview(
       moduleCount: committedPanels.length,
       ...(blockCount !== undefined ? { blockCount } : {}),
       ...(montageFieldCount !== undefined ? { montageFieldCount } : {}),
+      ...(thermalFieldCount !== undefined ? { thermalFieldCount } : {}),
       power,
       ...(labels.length === 1
         ? { moduleLabel: labels[0] }

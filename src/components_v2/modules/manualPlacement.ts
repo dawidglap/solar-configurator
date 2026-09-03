@@ -14,9 +14,12 @@ import {
   expandBlockToModules,
   groupEffectiveMontageFields,
   groupK2MontageFields,
+  groupThermalFields,
+  groupRectangularThermalUnits,
   instantiateAdvancedBlock,
   type AdvancedBlockDefinition,
   type AdvancedSurfacePlanningV1,
+  type ThermalFieldLimits,
 } from "@/lib/planning-core/advanced";
 import {
   GEOMETRY_V2_ENGINE_VERSION,
@@ -31,7 +34,7 @@ import {
   type ImageMetricAdapter,
   type MetricPolygon,
 } from "@/lib/planning-core/geometry-v2";
-import type { PanelInstance, PanelSpec, Pt, RoofArea } from "@/types/planner";
+import type { ModulesConfig, PanelInstance, PanelSpec, Pt, RoofArea } from "@/types/planner";
 
 export type ManualPlacementReason =
   | "outside-usable-roof"
@@ -412,6 +415,7 @@ export function materializeManualAdvancedPanels(input: {
   layoutRunId: string;
   blockKey: string;
   montageFieldKey: string;
+  thermalFieldKey?: string;
   createPanelId: (slotIndex: number) => string;
 }): PanelInstance[] {
   if (!input.candidate.valid || !input.config.advanced.module.panelSpecId) return [];
@@ -441,6 +445,7 @@ export function materializeManualAdvancedPanels(input: {
       geometryEngineVersion: GEOMETRY_V2_ENGINE_VERSION,
       blockKey: input.blockKey,
       montageFieldKey: input.montageFieldKey,
+      ...(input.thermalFieldKey ? { thermalFieldKey: input.thermalFieldKey } : {}),
       slotIndex: module.slotIndex,
       nominalTiltDeg: module.nominalTiltDeg!,
       effectiveTiltDeg: module.effectiveTiltDeg!,
@@ -554,6 +559,13 @@ export function regroupK2PanelsAfterManualAdd(input: {
     groupEffectiveMontageFields({ blocks: placed, pitchM: definition.pitchM })
       .flatMap((field) => field.blockKeys.map((blockKey) => [blockKey, field.fieldKey])),
   );
+  const thermalFieldByBlock = input.config.thermalFieldLimits
+    ? groupThermalFields({
+        units: placed,
+        pitchM: definition.pitchM,
+        limits: input.config.thermalFieldLimits,
+      }).unitToThermalFieldKey
+    : {};
   return input.panels.map((panel) => {
     const blockKey = panel.advanced?.blockKey;
     const field = blockKey ? fieldByBlock[blockKey] : undefined;
@@ -563,7 +575,44 @@ export function regroupK2PanelsAfterManualAdd(input: {
       advanced: {
         ...panel.advanced,
         montageFieldKey: `${input.roof.id}:manual-regroup:${field}`,
+        ...(blockKey && thermalFieldByBlock[blockKey]
+          ? { thermalFieldKey: `${input.roof.id}:manual-regroup:${thermalFieldByBlock[blockKey]}` }
+          : {}),
       },
     };
+  });
+}
+
+/** Reassigns Standard thermal membership after a completed manual edit only. */
+export function regroupStandardPanelsAfterManualCommit(input: {
+  panels: readonly PanelInstance[];
+  roof: RoofArea;
+  modules: ModulesConfig;
+  mppImage: number;
+  limits: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
+}): PanelInstance[] {
+  const roofPanels = input.panels.filter((panel) => panel.roofId === input.roof.id);
+  if (!roofPanels.length || !(input.mppImage > 0)) return [...input.panels];
+  const spacingX = input.modules.spacingXM ?? input.modules.spacingM;
+  const spacingY = input.modules.spacingYM ?? input.modules.spacingM;
+  const first = roofPanels[0];
+  const grouping = groupRectangularThermalUnits({
+    units: roofPanels.map((panel) => ({
+      unitKey: panel.id,
+      centerM: { x: panel.cx * input.mppImage, y: -panel.cy * input.mppImage },
+      widthM: panel.wPx * input.mppImage,
+      heightM: panel.hPx * input.mppImage,
+      rotationCartesianDeg: -(panel.angleDeg ?? 0),
+    })),
+    pitchM: {
+      x: first.wPx * input.mppImage + spacingX,
+      y: first.hPx * input.mppImage + spacingY,
+    },
+    limits: input.limits,
+  });
+  return input.panels.map((panel) => {
+    const thermalFieldKey = grouping.unitToThermalFieldKey[panel.id];
+    if (!thermalFieldKey || !panel.standard) return panel;
+    return { ...panel, standard: { ...panel.standard, thermalFieldKey } };
   });
 }

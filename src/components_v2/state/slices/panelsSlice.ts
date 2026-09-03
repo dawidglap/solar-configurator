@@ -27,6 +27,8 @@ export type PanelsSlice = {
     /** ─ Operazioni batch (Step 1) ─ */
     updatePanelsBulk: (patch: PatchMap | PatchFn) => void;
     deletePanelsBulk: (ids: string[]) => void;
+    /** Optional root-store hook; invoked only after a canonical panel mutation. */
+    regroupThermalFieldsForRoofs?: (roofIds: string[]) => void;
 };
 
 export const createPanelsSlice: StateCreator<PanelsSlice, [], [], PanelsSlice> = (set, get) => ({
@@ -65,15 +67,21 @@ export const createPanelsSlice: StateCreator<PanelsSlice, [], [], PanelsSlice> =
         return panels.filter((p) => p.roofId === roofId);
     },
 
-    updatePanel: (id, patch) =>
-        set((s) => ({ panels: s.panels.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
+    updatePanel: (id, patch) => {
+        const roofId = get().panels.find((panel) => panel.id === id)?.roofId;
+        set((s) => ({ panels: s.panels.map((p) => (p.id === id ? { ...p, ...patch } : p)) }));
+        if (roofId) get().regroupThermalFieldsForRoofs?.([roofId]);
+    },
 
-    deletePanel: (id) =>
+    deletePanel: (id) => {
+        const roofId = get().panels.find((panel) => panel.id === id)?.roofId;
         set((s) => {
             const panels = s.panels.filter((p) => p.id !== id);
             const selectedPanelIds = s.selectedPanelIds.filter((pid) => pid !== id);
             return { panels, selectedPanelIds };
-        }),
+        });
+        if (roofId) get().regroupThermalFieldsForRoofs?.([roofId]);
+    },
 
     duplicatePanel: (id, offsetPx = 18) => {
         const { panels } = get();
@@ -95,24 +103,33 @@ export const createPanelsSlice: StateCreator<PanelsSlice, [], [], PanelsSlice> =
         };
 
         set((s) => ({ panels: [...s.panels, clone] }));
+        get().regroupThermalFieldsForRoofs?.([src.roofId]);
         return newId;
     },
 
     /** ─ Operazioni batch ─ */
-    updatePanelsBulk: (patch) =>
+    updatePanelsBulk: (patch) => {
+        const affectedRoofIds = new Set<string>();
         set((s) => ({
             panels: s.panels.map((p) => {
                 const delta = typeof patch === 'function' ? (patch as PatchFn)(p) : (patch as PatchMap)[p.id];
+                if (delta) affectedRoofIds.add(p.roofId);
                 return delta ? { ...p, ...delta } : p;
             }),
-        })),
+        }));
+        const roofIds = [...affectedRoofIds];
+        if (roofIds.length) get().regroupThermalFieldsForRoofs?.(roofIds);
+    },
 
-    deletePanelsBulk: (ids) =>
+    deletePanelsBulk: (ids) => {
+        const idSet = new Set(ids);
+        const roofIds = Array.from(new Set(get().panels.filter((panel) => idSet.has(panel.id)).map((panel) => panel.roofId)));
         set((s) => {
-            const idSet = new Set(ids);
             return {
                 panels: s.panels.filter((p) => !idSet.has(p.id)),
                 selectedPanelIds: s.selectedPanelIds.filter((id) => !idSet.has(id)),
             };
-        }),
+        });
+        if (roofIds.length) get().regroupThermalFieldsForRoofs?.(roofIds);
+    },
 });

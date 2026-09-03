@@ -162,6 +162,9 @@ function RoofCard({
                   value={roof.montageFieldCount === undefined ? "Nicht verfügbar" : roof.montageFieldCount}
                 />
               )}
+              {roof.thermalFieldCount !== undefined && (
+                <RoofValue label="Thermische Felder" value={roof.thermalFieldCount} />
+              )}
               {roof.arrangement.mode === "fixed" && (
                 <RoofValue label="Reihen" value={roof.arrangement.rowCount} />
               )}

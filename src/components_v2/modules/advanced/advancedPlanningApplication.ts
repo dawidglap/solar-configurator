@@ -22,6 +22,8 @@ import {
   createK2SDomeBlock,
   groupEffectiveMontageFields,
   groupK2MontageFields,
+  groupThermalFields,
+  groupRectangularThermalUnits,
   resolveSurfacePlanning,
   resolveStandardModuleTilt,
   resolveK2ParallelRoofEdgeAlignment,
@@ -33,6 +35,7 @@ import {
   type StandardPanelMetadata,
   type StandardSurfacePlanningV1,
   type SurfacePlanningV1,
+  type ThermalFieldLimits,
 } from "@/lib/planning-core/advanced";
 import {
   GEOMETRY_V2_ENGINE_VERSION,
@@ -73,6 +76,7 @@ export type StandardPlanningDraft = {
   panelSpecId: string;
   modules: ModulesConfig;
   moduleTilt: StandardModuleTiltInput;
+  thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
 };
 
 export type AdvancedPlanningDraft = {
@@ -93,6 +97,7 @@ export type AdvancedPreviewError = {
 export type AdvancedPreviewModule = {
   blockKey: string;
   montageFieldKey?: string;
+  thermalFieldKey?: string;
   slotIndex: number;
   cx: number;
   cy: number;
@@ -108,6 +113,7 @@ export type AdvancedPreviewModule = {
 export type AdvancedPreviewBlock = {
   blockKey: string;
   montageFieldKey?: string;
+  thermalFieldKey?: string;
   centerPx: Pt;
   footprintPx: Pt[];
   rotationCanvasDeg: number;
@@ -121,6 +127,16 @@ export type AdvancedPreviewMontageField = {
   moduleCount: number;
   railSizeM: number;
   longSideSizeM: number;
+  outlinePx: Pt[];
+};
+
+export type AdvancedPreviewThermalField = {
+  thermalFieldKey: string;
+  unitCount: number;
+  moduleCount: number;
+  rowDirectionSizeM: number;
+  columnDirectionSizeM: number;
+  compliant: boolean;
   outlinePx: Pt[];
 };
 
@@ -180,6 +196,8 @@ export type AdvancedPlanningPreview =
       modules: AdvancedPreviewModule[];
       montageFields: AdvancedPreviewMontageField[];
       montageFieldCount: number;
+      thermalFields: AdvancedPreviewThermalField[];
+      thermalFieldCount: number;
       blockCount: number;
       moduleCount: number;
       derived: null;
@@ -193,6 +211,8 @@ export type AdvancedPlanningPreview =
       modules: AdvancedPreviewModule[];
       montageFields: AdvancedPreviewMontageField[];
       montageFieldCount: number;
+      thermalFields: AdvancedPreviewThermalField[];
+      thermalFieldCount: number;
       blockCount: number;
       moduleCount: number;
       derived: AdvancedDerivedSummary;
@@ -263,12 +283,14 @@ function getSafeDefaultK2DDomeRowSpaceM(moduleWidthM: number): number {
 export function createInitialAdvancedPlanning(input: {
   panel: PanelSpec;
   standardModules: ModulesConfig;
+  thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "flat-block" }>;
 }): AdvancedSurfacePlanningV1 {
   const rowSpaceM = getSafeDefaultK2DDomeRowSpaceM(input.panel.widthM);
   return {
     schemaVersion: SURFACE_PLANNING_SCHEMA_VERSION,
     mode: "advanced",
     surface: { kind: "flat", slopeDeg: 0, fallAzimuthDeg: 180 },
+    ...(input.thermalFieldLimits ? { thermalFieldLimits: input.thermalFieldLimits } : {}),
     advanced: {
       inputSchemaVersion: ADVANCED_INPUT_SCHEMA_VERSION,
       advancedEngineVersion: ADVANCED_BLOCK_ENGINE_VERSION,
@@ -295,12 +317,14 @@ export function createStandardPlanningDraft(input: {
   panelSpecId: string;
   modules: ModulesConfig;
   moduleTilt?: StandardModuleTiltInput;
+  thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
 }): StandardPlanningDraft {
   return {
     targetMode: "standard",
     panelSpecId: input.panelSpecId,
     modules: cloneModules(input.modules),
     moduleTilt: input.moduleTilt ?? { mode: "inherit-roof" },
+    ...(input.thermalFieldLimits ? { thermalFieldLimits: input.thermalFieldLimits } : {}),
   };
 }
 
@@ -316,6 +340,7 @@ export function resolveStandardTiltInput(
 export function buildStandardSurfacePlanning(input: {
   roof: RoofArea;
   moduleTilt: StandardModuleTiltInput;
+  thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
 }): StandardSurfacePlanningV1 {
   return {
     schemaVersion: SURFACE_PLANNING_SCHEMA_VERSION,
@@ -328,6 +353,7 @@ export function buildStandardSurfacePlanning(input: {
         : {}),
     },
     moduleTilt: input.moduleTilt,
+    ...(input.thermalFieldLimits ? { thermalFieldLimits: input.thermalFieldLimits } : {}),
   };
 }
 
@@ -834,6 +860,7 @@ function invalidPreview(
     blocks: AdvancedPreviewBlock[];
     modules: AdvancedPreviewModule[];
     montageFields?: AdvancedPreviewMontageField[];
+    thermalFields?: AdvancedPreviewThermalField[];
     blockCount: number;
     moduleCount: number;
     quantity: AdvancedQuantitySummary;
@@ -847,6 +874,8 @@ function invalidPreview(
     modules: partial?.modules ?? [],
     montageFields: partial?.montageFields ?? [],
     montageFieldCount: partial?.montageFields?.length ?? 0,
+    thermalFields: partial?.thermalFields ?? [],
+    thermalFieldCount: partial?.thermalFields?.length ?? 0,
     blockCount: partial?.blockCount ?? 0,
     moduleCount: partial?.moduleCount ?? 0,
     derived: null,
@@ -1113,10 +1142,36 @@ export function computeAdvancedPlanningPreview(input: {
       longSideSizeM: field.longSideSizeM,
       outlinePx: metricPolygonToImage(field.outline, imageAdapter),
     })) ?? [];
+  const thermalFieldGrouping = config.thermalFieldLimits
+    ? groupThermalFields({
+        units: placedBlocks,
+        pitchM: blockDefinition.pitchM,
+        limits: system.systemId === K2_S_DOME_SYSTEM_ID || system.systemId === GENERIC_SOUTH_SYSTEM_ID
+          ? {
+              kind: "flat-block",
+              maxRailDirectionM: config.thermalFieldLimits.maxRailDirectionM,
+            }
+          : config.thermalFieldLimits,
+      })
+    : null;
+  const thermalFieldKeyByBlock = thermalFieldGrouping?.unitToThermalFieldKey ?? {};
+  const thermalFields: AdvancedPreviewThermalField[] =
+    thermalFieldGrouping?.fields.map((field) => ({
+      thermalFieldKey: field.thermalFieldKey,
+      unitCount: field.unitCount,
+      moduleCount: field.moduleCount,
+      rowDirectionSizeM: field.rowDirectionSizeM,
+      columnDirectionSizeM: field.columnDirectionSizeM,
+      compliant: field.compliant,
+      outlinePx: metricPolygonToImage(field.outline, imageAdapter),
+    })) ?? [];
   const modules = placedModules.map((module) => ({
     blockKey: module.blockKey,
     ...(montageFieldKeyByBlock[module.blockKey]
       ? { montageFieldKey: montageFieldKeyByBlock[module.blockKey] }
+      : {}),
+    ...(thermalFieldKeyByBlock[module.blockKey]
+      ? { thermalFieldKey: thermalFieldKeyByBlock[module.blockKey] }
       : {}),
     slotIndex: module.slotIndex,
     cx: metricPointToImage(module.centerM, imageAdapter).x,
@@ -1135,6 +1190,9 @@ export function computeAdvancedPlanningPreview(input: {
         ...(montageFieldKeyByBlock[candidate.block.blockKey]
           ? { montageFieldKey: montageFieldKeyByBlock[candidate.block.blockKey] }
           : {}),
+        ...(thermalFieldKeyByBlock[candidate.block.blockKey]
+          ? { thermalFieldKey: thermalFieldKeyByBlock[candidate.block.blockKey] }
+          : {}),
         centerPx: metricPointToImage(candidate.block.centerM, imageAdapter),
         footprintPx: metricPolygonToImage(candidate.block.footprint, imageAdapter),
         rotationCanvasDeg: cartesianAngleToCanvasDeg(candidate.block.rotationCartesianDeg),
@@ -1145,6 +1203,9 @@ export function computeAdvancedPlanningPreview(input: {
         blockKey: block.blockKey,
         ...(montageFieldKeyByBlock[block.blockKey]
           ? { montageFieldKey: montageFieldKeyByBlock[block.blockKey] }
+          : {}),
+        ...(thermalFieldKeyByBlock[block.blockKey]
+          ? { thermalFieldKey: thermalFieldKeyByBlock[block.blockKey] }
           : {}),
         centerPx: metricPointToImage(block.centerM, imageAdapter),
         footprintPx: metricPolygonToImage(block.footprint, imageAdapter),
@@ -1182,6 +1243,7 @@ export function computeAdvancedPlanningPreview(input: {
         blocks,
         modules,
         montageFields,
+        thermalFields,
         blockCount: fixedLayout.validBlockCount,
         moduleCount: fixedLayout.validModuleCount,
         quantity,
@@ -1207,6 +1269,8 @@ export function computeAdvancedPlanningPreview(input: {
       modules,
       montageFields,
       montageFieldCount: montageFields.length,
+      thermalFields,
+      thermalFieldCount: thermalFields.length,
       blockCount: placedBlocks.length,
       moduleCount: placedModules.length,
       quantity,
@@ -1253,6 +1317,8 @@ export function computeAdvancedPlanningPreview(input: {
     modules,
     montageFields,
     montageFieldCount: montageFields.length,
+    thermalFields,
+    thermalFieldCount: thermalFields.length,
     blockCount: placedBlocks.length,
     moduleCount: placedModules.length,
     quantity,
@@ -1322,6 +1388,9 @@ export function materializeAdvancedPanels(input: {
       ...(module.montageFieldKey
         ? { montageFieldKey: `${input.roofId}:${input.layoutRunId}:${module.montageFieldKey}` }
         : {}),
+      ...(module.thermalFieldKey
+        ? { thermalFieldKey: `${input.roofId}:${input.layoutRunId}:${module.thermalFieldKey}` }
+        : {}),
       slotIndex: module.slotIndex,
       nominalTiltDeg: module.nominalTiltDeg,
       effectiveTiltDeg: module.effectiveTiltDeg,
@@ -1369,6 +1438,7 @@ export function computeStandardDraftPanels(input: {
   snowGuards: Parameters<typeof selectLegacyStandardObstacles>[1];
   createPanelId: (index: number) => string;
   panelMetadata?: StandardPanelMetadata;
+  thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
 }): PanelInstance[] {
   const obstacles = selectLegacyStandardObstacles(
     input.zones,
@@ -1412,6 +1482,31 @@ export function computeStandardDraftPanels(input: {
       fallAzimuthDeg: resolveRoofFallAzimuth(input.roof),
     },
   );
+  const panelWidthM = input.modules.orientation === "portrait"
+    ? input.panel.widthM
+    : input.panel.heightM;
+  const panelHeightM = input.modules.orientation === "portrait"
+    ? input.panel.heightM
+    : input.panel.widthM;
+  const thermalGrouping = input.thermalFieldLimits
+    ? groupRectangularThermalUnits({
+        units: orderedPlacements.map((placement, index) => ({
+          unitKey: `standard:${index}`,
+          centerM: {
+            x: placement.cx * input.mppImage,
+            y: -placement.cy * input.mppImage,
+          },
+          widthM: placement.wPx * input.mppImage,
+          heightM: placement.hPx * input.mppImage,
+          rotationCartesianDeg: -placement.angleDeg,
+        })),
+        pitchM: {
+          x: panelWidthM + spacing.x,
+          y: panelHeightM + spacing.y,
+        },
+        limits: input.thermalFieldLimits,
+      })
+    : null;
   return orderedPlacements.map((placement, index) => ({
     id: input.createPanelId(index),
     roofId: input.roof.id,
@@ -1422,6 +1517,15 @@ export function computeStandardDraftPanels(input: {
     angleDeg: placement.angleDeg,
     orientation: input.modules.orientation,
     panelId: input.panel.id,
-    ...(input.panelMetadata ? { standard: input.panelMetadata } : {}),
+    ...(input.panelMetadata
+      ? {
+          standard: {
+            ...input.panelMetadata,
+            ...(thermalGrouping?.unitToThermalFieldKey[`standard:${index}`]
+              ? { thermalFieldKey: thermalGrouping.unitToThermalFieldKey[`standard:${index}`] }
+              : {}),
+          },
+        }
+      : {}),
   }));
 }

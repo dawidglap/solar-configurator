@@ -16,6 +16,8 @@ import { usePlannerV2Store } from "../../state/plannerV2Store";
 import {
   COMPANY_MODULE_SPACING_LIMITS_MM,
   isValidModuleSpacingMm,
+  isValidThermalFieldLimitM,
+  resolveCompanyThermalFieldLimits,
 } from "@/lib/planning/companyPlannerDefaults";
 import {
   alignAdvancedLayoutParallelToRoofEdge,
@@ -146,6 +148,15 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
       ? system.primaryFaceAzimuthDeg
       : 90;
   const rowSpaceM = getAdvancedRowSpaceM(config);
+  const companyThermalLimitsResolved = resolveCompanyThermalFieldLimits({
+    company: companyPlannerDefaults,
+    roofKind: "flat",
+    mountingOrientation: isOpposingSystem ? "east-west" : "south",
+  });
+  const companyThermalLimits = companyThermalLimitsResolved.kind === "flat-block"
+    ? companyThermalLimitsResolved
+    : { kind: "flat-block" as const, maxRailDirectionM: 12.3 };
+  const thermalLimits = config.thermalFieldLimits ?? companyThermalLimits;
   const nominalTiltDeg = "nominalTiltDeg" in system ? system.nominalTiltDeg : 10;
   const moduleGapM = "moduleGapX" in system ? system.moduleGapX ?? 0.018 : 0.018;
   const moduleId = config.advanced.module.panelSpecId ?? "";
@@ -170,6 +181,9 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
   );
   const committedFieldKeys = new Set(
     committedRoofPanels.flatMap((panel) => panel.advanced?.montageFieldKey ? [panel.advanced.montageFieldKey] : []),
+  );
+  const committedThermalFieldKeys = new Set(
+    committedRoofPanels.flatMap((panel) => panel.advanced?.thermalFieldKey ? [panel.advanced.thermalFieldKey] : []),
   );
   const manuallyAdjusted = committedRoofPanels.some((panel) =>
     panel.advanced?.layoutRunId?.startsWith("manual-") ||
@@ -241,6 +255,11 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
       },
     });
 
+  const patchThermalLimits = (patch: Partial<typeof thermalLimits>) => {
+    const next = { ...thermalLimits, ...patch, kind: "flat-block" as const };
+    update({ ...config, thermalFieldLimits: next });
+  };
+
   const patchDefaultSystemNumber = (
     field: "rowSpaceM" | "azimuth" | "nominalTiltDeg" | "moduleGapM",
     value: number,
@@ -282,7 +301,16 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
             type="button"
             aria-pressed={orientation === "south"}
             className={`flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] font-semibold transition ${orientation === "south" ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/25" : "border-border/70 bg-muted/10 text-muted-foreground hover:border-primary/40"}`}
-            onClick={() => update(setAdvancedMountingOrientation({ config, orientation: "south" }))}
+            onClick={() => {
+              const next = setAdvancedMountingOrientation({ config, orientation: "south" });
+              update({
+                ...next,
+                thermalFieldLimits: {
+                  kind: "flat-block",
+                  maxRailDirectionM: thermalLimits.maxRailDirectionM,
+                },
+              });
+            }}
           >
             <MountingChoiceGraphic opposing={false} />
             <span>Süd</span>
@@ -292,7 +320,19 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
             type="button"
             aria-pressed={orientation === "east-west"}
             className={`flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] font-semibold transition ${orientation === "east-west" ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/25" : "border-border/70 bg-muted/10 text-muted-foreground hover:border-primary/40"}`}
-            onClick={() => update(setAdvancedMountingOrientation({ config, orientation: "east-west" }))}
+            onClick={() => {
+              const next = setAdvancedMountingOrientation({ config, orientation: "east-west" });
+              update({
+                ...next,
+                thermalFieldLimits: {
+                  kind: "flat-block",
+                  maxRailDirectionM: thermalLimits.maxRailDirectionM,
+                  maxModuleLongSideDirectionM:
+                    thermalLimits.maxModuleLongSideDirectionM ??
+                    companyPlannerDefaults.thermalSeparations.flatEastWest.maxSecondaryFieldLengthM,
+                },
+              });
+            }}
           >
             <MountingChoiceGraphic opposing />
             <span>Ost-West</span>
@@ -543,6 +583,61 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
         </div>
       </section>
 
+      <section className="space-y-2 border-b border-border/60 pb-4">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className={labelClass}>Thermische Feldgrenzen</h3>
+          <button
+            type="button"
+            className="text-[9px] text-primary hover:underline"
+            title={`Firmenstandard: ${companyThermalLimits.maxRailDirectionM.toFixed(2)} m`}
+            onClick={() => update({ ...config, thermalFieldLimits: companyThermalLimits })}
+          >
+            Firmenstandard
+          </button>
+        </div>
+        <label className="block space-y-1 text-[10px] text-muted-foreground">
+          Max. Feldlänge · Reihenrichtung
+          <span className="flex items-center gap-2">
+            <input
+              className={inputClass}
+              type="number"
+              min={0.1}
+              max={100}
+              step={0.1}
+              value={thermalLimits.maxRailDirectionM}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                if (isValidThermalFieldLimitM(value)) patchThermalLimits({ maxRailDirectionM: value });
+              }}
+            />
+            <span>m</span>
+          </span>
+        </label>
+        {isOpposingSystem && (
+          <label className="block space-y-1 text-[10px] text-muted-foreground">
+            Max. Feldlänge · Modullängsrichtung
+            <span className="flex items-center gap-2">
+              <input
+                className={inputClass}
+                type="number"
+                min={0.1}
+                max={100}
+                step={0.1}
+                value={thermalLimits.maxModuleLongSideDirectionM ?? companyThermalLimits.maxModuleLongSideDirectionM ?? 16}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (isValidThermalFieldLimitM(value)) patchThermalLimits({ maxModuleLongSideDirectionM: value });
+                }}
+              />
+              <span>m</span>
+            </span>
+          </label>
+        )}
+        <p className="text-[9px] text-muted-foreground">
+          {config.thermalFieldLimits ? "Dachflächenspezifischer Wert" : "Firmenstandard"}
+        </p>
+      </section>
+
       <section className={`rounded-xl border p-3 ${result.status === "valid" ? "border-primary/30 bg-primary/5" : "border-destructive/40 bg-destructive/5"}`} aria-live="polite">
         <p className={`text-[12px] font-semibold ${result.status === "valid" ? "text-primary" : "text-destructive"}`}>
           {result.status === "valid" ? "✓ " : ""}{result.title}
@@ -554,6 +649,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
             <span className="text-muted-foreground">Module</span><strong className="text-right">{result.moduleCount}</strong>
             <span className="text-muted-foreground">Blöcke</span><strong className="text-right">{result.blockCount}</strong>
             {(result.montageFieldCount ?? 0) > 0 && <><span className="text-muted-foreground">Montagefelder</span><strong className="text-right">{result.montageFieldCount ?? 0}</strong></>}
+            {(useCommittedResult ? committedThermalFieldKeys.size : preview.thermalFieldCount) > 0 && <><span className="text-muted-foreground">Thermische Felder</span><strong className="text-right">{useCommittedResult ? committedThermalFieldKeys.size : preview.thermalFieldCount}</strong></>}
             {result.powerKWp != null && <><span className="text-muted-foreground">Leistung</span><strong className="text-right">{fmt(result.powerKWp)} kWp</strong></>}
             <span className="text-muted-foreground">System</span><span className="text-right">{isSouthSystem ? "Süd · Standardsystem" : "Ost-West · Standardsystem"}</span>
             <span className="text-muted-foreground">Anordnung</span><span className="text-right">{result.arrangementLabel}</span>

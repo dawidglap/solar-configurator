@@ -198,8 +198,14 @@ export default function ManualPlacementLayer({
         roofSlopeDeg: roof.tiltDeg,
         moduleTilt,
       });
+      const persistedStandardPlanning = resolveSurfacePlanning(roof.surfacePlanning);
+      const standardThermalFieldLimits = standardDraft?.thermalFieldLimits ??
+        (persistedStandardPlanning.status === "supported-standard"
+          ? persistedStandardPlanning.config.thermalFieldLimits
+          : undefined);
+      const panelId = nanoid();
       const panel = {
-        id: nanoid(),
+        id: panelId,
         roofId: roof.id,
         cx: placedModule.cx,
         cy: placedModule.cy,
@@ -208,7 +214,14 @@ export default function ManualPlacementLayer({
         angleDeg: placedModule.angleDeg,
         orientation: standardModules.orientation,
         panelId: standardPanel.id,
-        ...(standardMetadata ? { standard: standardMetadata } : {}),
+        ...(standardMetadata ? {
+          standard: {
+            ...standardMetadata,
+            ...(standardThermalFieldLimits
+              ? { thermalFieldKey: `${roof.id}:manual:${panelId}` }
+              : {}),
+          },
+        } : {}),
       } as const;
       if (standardDraft) {
         const existing = usePlannerV2Store
@@ -217,7 +230,11 @@ export default function ManualPlacementLayer({
         commitRoofLayout({
           roofId: roof.id,
           panels: [...existing, panel],
-          surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt }),
+          surfacePlanning: buildStandardSurfacePlanning({
+            roof,
+            moduleTilt,
+            thermalFieldLimits: standardThermalFieldLimits,
+          }),
         });
         setSelectedPanel(standardPanel.id);
         setModules(standardModules);
@@ -234,6 +251,9 @@ export default function ManualPlacementLayer({
     // A freely positioned block is a deterministic standalone field in V1.
     // Existing field membership and all physical coordinates remain untouched.
     const montageFieldKey = `${roof.id}:${runId}:field:0`;
+    const thermalFieldKey = advancedConfig.thermalFieldLimits
+      ? `${roof.id}:${runId}:thermal:0`
+      : undefined;
     const added = materializeManualAdvancedPanels({
       candidate: placement,
       roofId: roof.id,
@@ -241,6 +261,7 @@ export default function ManualPlacementLayer({
       layoutRunId: runId,
       blockKey,
       montageFieldKey,
+      thermalFieldKey,
       createPanelId: (slotIndex) => `${roof.id}_${runId}_${slotIndex}`,
     });
     if (!added.length) return;

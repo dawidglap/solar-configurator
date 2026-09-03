@@ -36,7 +36,10 @@ import { resolveRoofReferenceEdgeIndex } from "@/lib/planning-core/geometry-v2";
 import {
   COMPANY_MODULE_SPACING_LIMITS_MM,
   isValidModuleSpacingMm,
+  resolveCompanyThermalFieldLimits,
+  isValidThermalFieldLimitM,
 } from "@/lib/planning/companyPlannerDefaults";
+import { groupRectangularThermalUnits } from "@/lib/planning-core/advanced";
 import {
   createInitialAdvancedPlanning,
   createStandardPlanningDraft,
@@ -163,6 +166,14 @@ export default function ModulesPanel() {
     moduleTilt: displayedTiltInput,
     roofSlopeDeg: selectedRoof?.tiltDeg,
   });
+  const companyPitchedThermalLimits = resolveCompanyThermalFieldLimits({
+    company: companyPlannerDefaults,
+    roofKind: "pitched",
+  });
+  const displayedThermalLimits = standardDraft?.thermalFieldLimits ??
+    (persistedPlanning.status === "supported-standard"
+      ? persistedPlanning.config.thermalFieldLimits
+      : undefined) ?? companyPitchedThermalLimits;
   const customerRoofType =
     displayMode === "standard"
       ? "pitched"
@@ -189,6 +200,7 @@ export default function ModulesPanel() {
             panelSpecId: displayedPanelId,
             modules,
             moduleTilt: displayedTiltInput,
+            thermalFieldLimits: displayedThermalLimits.kind === "pitched-grid" ? displayedThermalLimits : undefined,
           })),
           modules: { ...displayedModules, ...patch },
         });
@@ -197,7 +209,7 @@ export default function ModulesPanel() {
       }
       setModules(patch);
     },
-    [displayedModules, displayedPanelId, displayedTiltInput, modules, selectedRoof, setModules, setRoofPlanningDraft, standardDraft],
+    [displayedModules, displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selectedRoof, setModules, setRoofPlanningDraft, standardDraft],
   );
 
   const patchStandardTilt = React.useCallback((moduleTilt: StandardModuleTiltInput) => {
@@ -207,11 +219,29 @@ export default function ModulesPanel() {
         panelSpecId: displayedPanelId,
         modules,
         moduleTilt: displayedTiltInput,
+        thermalFieldLimits: displayedThermalLimits.kind === "pitched-grid" ? displayedThermalLimits : undefined,
       })),
       moduleTilt,
     });
     setConfirmStandardReplace(false);
-  }, [displayedPanelId, displayedTiltInput, modules, selectedRoof, setRoofPlanningDraft, standardDraft]);
+  }, [displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selectedRoof, setRoofPlanningDraft, standardDraft]);
+
+  const patchStandardThermalLimits = React.useCallback((patch: {
+    maxRowDirectionM?: number;
+    maxColumnDirectionM?: number;
+  }) => {
+    if (!selectedRoof || displayedThermalLimits.kind !== "pitched-grid") return;
+    setRoofPlanningDraft(selectedRoof.id, {
+      ...(standardDraft ?? createStandardPlanningDraft({
+        panelSpecId: displayedPanelId,
+        modules,
+        moduleTilt: displayedTiltInput,
+        thermalFieldLimits: displayedThermalLimits,
+      })),
+      thermalFieldLimits: { ...displayedThermalLimits, ...patch },
+    });
+    setConfirmStandardReplace(false);
+  }, [displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selectedRoof, setRoofPlanningDraft, standardDraft]);
 
   const commitModuleTiltText = React.useCallback(() => {
     const value = Number(moduleTiltText);
@@ -265,6 +295,7 @@ export default function ModulesPanel() {
         roofSlopeDeg: selectedRoof.tiltDeg,
         moduleTilt: standardDraft.moduleTilt,
       }),
+      thermalFieldLimits: standardDraft.thermalFieldLimits,
     });
     if (!nextPanels.length) return;
     commitRoofLayout({
@@ -273,6 +304,7 @@ export default function ModulesPanel() {
       surfacePlanning: buildStandardSurfacePlanning({
         roof: selectedRoof,
         moduleTilt: standardDraft.moduleTilt,
+        thermalFieldLimits: standardDraft.thermalFieldLimits,
       }),
     });
     setSelectedPanel(panel.id);
@@ -306,6 +338,14 @@ export default function ModulesPanel() {
       const nextConfig = createInitialAdvancedPlanning({
         panel: selSpec,
         standardModules: modulesWithRoofEdgeMargin(selectedRoof, modules),
+        thermalFieldLimits: (() => {
+          const limits = resolveCompanyThermalFieldLimits({
+            company: companyPlannerDefaults,
+            roofKind: "flat",
+            mountingOrientation: "east-west",
+          });
+          return limits.kind === "flat-block" ? limits : undefined;
+        })(),
       });
       commitRoofLayout({
         roofId: selectedRoof.id,
@@ -331,7 +371,7 @@ export default function ModulesPanel() {
     setPendingRoofType(null);
     setConfirmStandardReplace(false);
     toast.success("Dachtyp geändert. Die Dachfläche kann neu geplant werden.");
-  }, [commitRoofLayout, modules, pendingRoofType, selSpec, selectedRoof, updateRoof]);
+  }, [commitRoofLayout, companyPlannerDefaults, modules, pendingRoofType, selSpec, selectedRoof, updateRoof]);
 
   React.useEffect(() => {
     setPendingRoofType(null);
@@ -437,6 +477,24 @@ export default function ModulesPanel() {
         roofSlopeDeg: roof.tiltDeg,
         moduleTilt,
       });
+      const thermalLimits = displayedThermalLimits.kind === "pitched-grid"
+        ? displayedThermalLimits
+        : undefined;
+      const panelWidthM = orientation === "portrait" ? selSpec.widthM : selSpec.heightM;
+      const panelHeightM = orientation === "portrait" ? selSpec.heightM : selSpec.widthM;
+      const thermalGrouping = thermalLimits
+        ? groupRectangularThermalUnits({
+            units: orderedPlacements.map((placement, index) => ({
+              unitKey: `standard:${index}`,
+              centerM: { x: placement.cx * snapshot.mppImage!, y: -placement.cy * snapshot.mppImage! },
+              widthM: placement.wPx * snapshot.mppImage!,
+              heightM: placement.hPx * snapshot.mppImage!,
+              rotationCartesianDeg: -placement.angleDeg,
+            })),
+            pitchM: { x: panelWidthM + spacing.x, y: panelHeightM + spacing.y },
+            limits: thermalLimits,
+          })
+        : null;
       const instances = orderedPlacements.map((r, idx) => ({
         id: `${selectedId}_p_${now}_${idx}`,
         roofId: selectedId,
@@ -447,12 +505,19 @@ export default function ModulesPanel() {
         angleDeg: r.angleDeg,
         orientation,
         panelId: selSpec.id,
-        ...(standardMetadata ? { standard: standardMetadata } : {}),
+        ...(standardMetadata ? {
+          standard: {
+            ...standardMetadata,
+            ...(thermalGrouping?.unitToThermalFieldKey[`standard:${idx}`]
+              ? { thermalFieldKey: thermalGrouping.unitToThermalFieldKey[`standard:${idx}`] }
+              : {}),
+          },
+        } : {}),
       }));
       commitRoofLayout({
         roofId: selectedId,
         panels: instances,
-        surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt }),
+        surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt, thermalFieldLimits: thermalLimits }),
       });
       return true;
     },
@@ -473,6 +538,7 @@ export default function ModulesPanel() {
       modules.spacingXM,
       modules.spacingYM,
       modules.orientation,
+      displayedThermalLimits,
       commitRoofLayout,
     ],
   );
@@ -915,6 +981,7 @@ export default function ModulesPanel() {
                     panelSpecId: displayedPanelId,
                     modules,
                     moduleTilt: displayedTiltInput,
+                    thermalFieldLimits: displayedThermalLimits.kind === "pitched-grid" ? displayedThermalLimits : undefined,
                   })),
                   panelSpecId: event.target.value,
                 });
@@ -1167,6 +1234,63 @@ export default function ModulesPanel() {
             </label>
             </div>
           </section>
+
+          {displayedThermalLimits.kind === "pitched-grid" && (
+            <section className="space-y-2 border-t border-border/60 pt-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className={labelSm}>Thermische Feldgrenzen</span>
+                <button
+                  type="button"
+                  className="text-[9px] text-primary hover:underline"
+                  title={`Firmenstandard: ${companyPlannerDefaults.thermalSeparations.pitched.maxFieldLengthM.toFixed(2)} × ${companyPlannerDefaults.thermalSeparations.pitched.maxFieldWidthM.toFixed(2)} m`}
+                  onClick={() => patchStandardThermalLimits({
+                    maxRowDirectionM: companyPlannerDefaults.thermalSeparations.pitched.maxFieldLengthM,
+                    maxColumnDirectionM: companyPlannerDefaults.thermalSeparations.pitched.maxFieldWidthM,
+                  })}
+                >
+                  Firmenstandard
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="space-y-1 text-[10px] text-muted-foreground">
+                  Max. Feldlänge · First
+                  <span className="flex items-center gap-1">
+                    <input
+                      className={inputBase}
+                      type="number"
+                      min={0.1}
+                      max={100}
+                      step={0.1}
+                      value={displayedThermalLimits.maxRowDirectionM}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (isValidThermalFieldLimitM(value)) patchStandardThermalLimits({ maxRowDirectionM: value });
+                      }}
+                    />
+                    <span>m</span>
+                  </span>
+                </label>
+                <label className="space-y-1 text-[10px] text-muted-foreground">
+                  Max. Feldbreite · Gefälle
+                  <span className="flex items-center gap-1">
+                    <input
+                      className={inputBase}
+                      type="number"
+                      min={0.1}
+                      max={100}
+                      step={0.1}
+                      value={displayedThermalLimits.maxColumnDirectionM}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (isValidThermalFieldLimitM(value)) patchStandardThermalLimits({ maxColumnDirectionM: value });
+                      }}
+                    />
+                    <span>m</span>
+                  </span>
+                </label>
+              </div>
+            </section>
+          )}
 
           {!standardDraft && (
             <button
