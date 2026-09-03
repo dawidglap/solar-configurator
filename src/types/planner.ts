@@ -2,6 +2,7 @@
 
 import type {
     AdvancedPanelMetadata,
+    StandardPanelMetadata,
     SurfacePlanningDocument,
 } from '@/lib/planning-core/advanced/surfacePlanning';
 
@@ -138,6 +139,8 @@ export type PanelInstance = {
 
     /** Absent for every legacy Standard panel. */
     advanced?: AdvancedPanelMetadata;
+    /** Optional applied physical metadata; absent on legacy Standard panels. */
+    standard?: StandardPanelMetadata;
 };
 
 // src/types/planner.ts

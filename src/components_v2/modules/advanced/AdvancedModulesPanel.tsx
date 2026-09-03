@@ -419,6 +419,49 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
           <span className="text-muted-foreground">Modulausrichtung</span>
           <strong>{isOpposingSystem ? `${fmt(azimuth, 0)}° / ${fmt(normalizeAzimuth(azimuth + 180), 0)}°` : `${fmt(azimuth, 0)}°`}</strong>
         </div>
+        <div className="rounded-xl border border-border/60 text-[10px]">
+          <button type="button" className="flex w-full items-center justify-between px-3 py-2.5 text-left font-medium text-muted-foreground" onClick={() => setFineTuningOpen((open) => !open)} aria-expanded={fineTuningOpen}>
+            <span>Feinjustierung</span><span aria-hidden="true">{fineTuningOpen ? "▴" : "▾"}</span>
+          </button>
+          {fineTuningOpen && <div className="space-y-3 border-t border-border/60 p-3">
+            <label className="block space-y-1 text-muted-foreground">
+              Ausrichtung manuell
+              <span className="flex items-center gap-2">
+                <input
+                  ref={manualOrientationInputRef}
+                  className={inputClass}
+                  type="number"
+                  min={0}
+                  max={359.99}
+                  step={0.01}
+                  value={Number(azimuth.toFixed(2))}
+                  onChange={(event) => patchDefaultSystemNumber("azimuth", Math.round(Number(event.target.value) * 100) / 100)}
+                />
+                <span>°</span>
+              </span>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {(["phaseX", "phaseY"] as const).map((field) => (
+                <label key={field} className="space-y-1 text-muted-foreground">
+                  {field === "phaseX" ? "Horizontal verschieben" : "Vertikal verschieben"}
+                  <input className={inputClass} type="number" min={0} max={0.999} step={0.05} value={config.advanced.layout[field]} onChange={(event) => patchLayout({ [field]: Number(event.target.value) })} />
+                </label>
+              ))}
+              {(["anchorX", "anchorY"] as const).map((field) => (
+                <label key={field} className="space-y-1 text-muted-foreground">
+                  {field === "anchorX" ? "Horizontal ausrichten" : "Vertikal ausrichten"}
+                  <select className={inputClass} value={config.advanced.layout[field]} onChange={(event) => patchLayout({ [field]: event.target.value as "start" | "center" | "end" })}>
+                    <option value="start">Start</option><option value="center">Mitte</option><option value="end">Ende</option>
+                  </select>
+                </label>
+              ))}
+            </div>
+            <div className="border-t border-border/60 pt-2 text-muted-foreground"><p>System: Standardsystem</p></div>
+            {preview.warnings.some((warning) => warning.code.includes("block-size")) && (
+              <p className="text-amber-700 dark:text-amber-300">Die K2 Blockgrösse überschreitet die dokumentierte Systemgrenze.</p>
+            )}
+          </div>}
+        </div>
       </section>
 
       <section className="space-y-2 border-b border-border/60 pb-4">
@@ -498,72 +541,6 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
             <span>°</span>
           </span>
         </div>
-      </section>
-
-      <section className="rounded-xl border border-border/60 text-[10px]">
-        <button type="button" className="flex w-full items-center justify-between px-3 py-2.5 text-left font-medium text-muted-foreground" onClick={() => setFineTuningOpen((open) => !open)} aria-expanded={fineTuningOpen}>
-          <span>Feinjustierung</span><span aria-hidden="true">{fineTuningOpen ? "▴" : "▾"}</span>
-        </button>
-        {fineTuningOpen && <div className="space-y-3 border-t border-border/60 p-3">
-          <label className="block space-y-1 text-muted-foreground">
-            Ausrichtung manuell
-            <span className="flex items-center gap-2">
-              <input
-                ref={manualOrientationInputRef}
-                className={inputClass}
-                type="number"
-                min={0}
-                max={359.99}
-                step={0.01}
-                value={Number(azimuth.toFixed(2))}
-                onChange={(event) =>
-                  patchDefaultSystemNumber(
-                    "azimuth",
-                    Math.round(Number(event.target.value) * 100) / 100,
-                  )
-                }
-              />
-              <span>°</span>
-            </span>
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-          {(["phaseX", "phaseY"] as const).map((field) => (
-            <label key={field} className="space-y-1 text-muted-foreground">
-              {field}
-              <input
-                className={inputClass}
-                type="number"
-                min={0}
-                max={0.999}
-                step={0.05}
-                value={config.advanced.layout[field]}
-                onChange={(event) => patchLayout({ [field]: Number(event.target.value) })}
-              />
-            </label>
-          ))}
-          {(["anchorX", "anchorY"] as const).map((field) => (
-            <label key={field} className="space-y-1 text-muted-foreground">
-              {field}
-              <select
-                className={inputClass}
-                value={config.advanced.layout[field]}
-                onChange={(event) => patchLayout({ [field]: event.target.value as "start" | "center" | "end" })}
-              >
-                <option value="start">Start</option>
-                <option value="center">Mitte</option>
-                <option value="end">Ende</option>
-              </select>
-            </label>
-          ))}
-          </div>
-          <div className="border-t border-border/60 pt-2 text-muted-foreground">
-            <p>System: Standardsystem</p>
-          </div>
-          {preview.warnings.some((warning) => warning.code.includes("block-size")) && (
-            <p className="text-amber-700 dark:text-amber-300">Die K2 Blockgrösse überschreitet die dokumentierte Systemgrenze.</p>
-          )}
-        </div>
-        }
       </section>
 
       <section className={`rounded-xl border p-3 ${result.status === "valid" ? "border-primary/30 bg-primary/5" : "border-destructive/40 bg-destructive/5"}`} aria-live="polite">

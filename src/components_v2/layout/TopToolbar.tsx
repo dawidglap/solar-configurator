@@ -46,6 +46,11 @@ import {
   endManualPlacement,
   useManualPlacementSession,
 } from "../modules/manualPlacementSession";
+import {
+  buildStandardPanelMetadata,
+  buildStandardSurfacePlanning,
+  resolveStandardTiltInput,
+} from "../modules/advanced/advancedPlanningApplication";
 
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
@@ -143,15 +148,13 @@ export default function TopToolbar() {
   const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
   const selectedPanelId = usePlannerV2Store((s) => s.selectedPanelId);
   const setSelectedPanel = usePlannerV2Store((s) => s.setSelectedPanel);
-  const clearPanelsForRoof = usePlannerV2Store((s) => s.clearPanelsForRoof);
 
   // dati necessari per "In Module umwandeln"
   const layers = usePlannerV2Store((s) => s.layers);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
   const modules = usePlannerV2Store((s) => s.modules);
   const setModules = usePlannerV2Store((s) => s.setModules);
-  const panels = usePlannerV2Store((s) => s.panels);
-  const addPanelsForRoof = usePlannerV2Store((s) => s.addPanelsForRoof);
+  const commitRoofLayout = usePlannerV2Store((s) => s.commitRoofLayout);
   const snapshot = usePlannerV2Store((s) => s.snapshot);
   const selSpec = usePlannerV2Store((s) => s.getSelectedPanel());
   const selectedPlanningDraft = usePlannerV2Store((s) =>
@@ -528,17 +531,25 @@ export default function TopToolbar() {
     if (step !== "modules") setStep("modules" as any);
 
     // prerequisiti base
-    if (!selectedId || !selSpec || !snapshot?.mppImage) return;
+    if (!selectedId || !snapshot?.mppImage) return;
 
     const roof = layers.find((l) => l.id === selectedId);
     if (!roof?.points?.length) return;
+    const standardDraft = selectedPlanningDraft?.targetMode === "standard"
+      ? selectedPlanningDraft
+      : undefined;
+    const standardModules = standardDraft?.modules ?? modules;
+    const standardPanel = standardDraft
+      ? catalogPanels.find((panel) => panel.id === standardDraft.panelSpecId)
+      : selSpec;
+    if (!standardPanel) return;
 
     const canvasAngleDeg = resolveStandardAutoLayoutCanvasAngle({
       roofId: selectedId,
       roofPolygon: roof.points,
       legacyRoofAzimuthDeg: roof.azimuthDeg,
-      gridAngleDeg: modules.gridAngleDeg,
-      perRoofAngles: modules.perRoofAngles,
+      gridAngleDeg: standardModules.gridAngleDeg,
+      perRoofAngles: standardModules.perRoofAngles,
       referenceEdgeIndex: roof.referenceEdgeIndex,
     });
     const currentState = usePlannerV2Store.getState();
@@ -547,23 +558,23 @@ export default function TopToolbar() {
       currentState.snowGuards,
       selectedId,
     );
-    const spacing = resolveStandardAutoLayoutSpacingAxes(modules);
+    const spacing = resolveStandardAutoLayoutSpacingAxes(standardModules);
     const layout = computeLegacyStandardLayout({
       generation: {
         roofPolygon: roof.points,
         mppImage: snapshot.mppImage,
         canvasAngleDeg,
-        orientation: modules.orientation,
-        panelSizeM: { widthM: selSpec.widthM, heightM: selSpec.heightM },
+        orientation: standardModules.orientation,
+        panelSizeM: { widthM: standardPanel.widthM, heightM: standardPanel.heightM },
         spacingM: spacing.x,
         spacingXM: spacing.x,
         spacingYM: spacing.y,
-        marginM: resolveRoofEdgeMarginM(roof, modules.marginM),
-        phaseX: modules.gridPhaseX ?? 0,
-        phaseY: modules.gridPhaseY ?? 0,
-        anchorX: modules.gridAnchorX ?? "start",
-        anchorY: modules.gridAnchorY ?? "start",
-        coverageRatio: modules.coverageRatio ?? 1,
+        marginM: resolveRoofEdgeMarginM(roof, standardModules.marginM),
+        phaseX: standardModules.gridPhaseX ?? 0,
+        phaseY: standardModules.gridPhaseY ?? 0,
+        anchorX: standardModules.gridAnchorX ?? "start",
+        anchorY: standardModules.gridAnchorY ?? "start",
+        coverageRatio: standardModules.coverageRatio ?? 1,
       },
       reservedZones: obstacles.reservedZones,
       snowGuards: obstacles.snowGuards,
@@ -583,6 +594,8 @@ export default function TopToolbar() {
         fallAzimuthDeg: resolveRoofFallAzimuth(roof),
       },
     );
+    const moduleTilt = standardDraft?.moduleTilt ?? resolveStandardTiltInput(roof.surfacePlanning);
+    const standardMetadata = buildStandardPanelMetadata({ roofSlopeDeg: roof.tiltDeg, moduleTilt });
     const instances = orderedPlacements.map((r, idx) => ({
       id: `${selectedId}_p_${now}_${idx}`,
       roofId: selectedId,
@@ -591,18 +604,18 @@ export default function TopToolbar() {
       wPx: r.wPx,
       hPx: r.hPx,
       angleDeg: r.angleDeg,
-      orientation: modules.orientation,
-      panelId: selSpec.id,
+      orientation: standardModules.orientation,
+      panelId: standardPanel.id,
+      ...(standardMetadata ? { standard: standardMetadata } : {}),
     }));
 
-    // 💣 PASSO CHIAVE:
-    // prima puliamo TUTTI i pannelli esistenti di questa falda,
-    // poi aggiungiamo solo gli autolayout → impossibile avere duplicati
-    clearPanelsForRoof(selectedId);
-    addPanelsForRoof(selectedId, instances);
-
-    // spegni il raster dopo la conversione (come da brief)
-    if (modules.showGrid) setModules({ showGrid: false });
+    commitRoofLayout({
+      roofId: selectedId,
+      panels: instances,
+      surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt }),
+    });
+    setSelectedPanel(standardPanel.id);
+    setModules({ ...standardModules, showGrid: false });
 
     // torna allo strumento selezione
     setTool("select" as any);

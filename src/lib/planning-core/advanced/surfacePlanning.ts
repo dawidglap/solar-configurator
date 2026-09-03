@@ -112,10 +112,23 @@ export type AdvancedPlanningInputsV1 = {
   layout: AdvancedLayoutInputs;
 };
 
+export type StandardModuleTiltInput =
+  | { mode: "inherit-roof" }
+  | { mode: "custom"; customTiltDeg: number };
+
+export type StandardPanelMetadata = {
+  layoutMode: "standard";
+  moduleTiltMode: StandardModuleTiltInput["mode"];
+  /** Applied physical module inclination; it does not alter legacy-v1 plan geometry. */
+  effectiveTiltDeg: number;
+};
+
 export type StandardSurfacePlanningV1 = {
   schemaVersion: typeof SURFACE_PLANNING_SCHEMA_VERSION;
   mode: "standard";
   surface: SurfacePhysicalProperties;
+  /** Missing on legacy documents and resolves to inherit-roof without migration. */
+  moduleTilt?: StandardModuleTiltInput;
 };
 
 export type AdvancedSurfacePlanningV1 = {
@@ -262,6 +275,42 @@ function readSurface(
     ...(value.slopeDeg !== undefined ? { slopeDeg: value.slopeDeg as number } : {}),
     ...(value.fallAzimuthDeg !== undefined
       ? { fallAzimuthDeg: normalizeAzimuth(value.fallAzimuthDeg as number) }
+      : {}),
+  };
+}
+
+function readStandardModuleTilt(
+  value: unknown,
+  issues: SurfacePlanningIssue[],
+): StandardModuleTiltInput | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    issues.push(issue("moduleTilt", "invalid-module-tilt", "Module tilt must be an object."));
+    return undefined;
+  }
+  if (value.mode === "inherit-roof") return { mode: "inherit-roof" };
+  if (value.mode === "custom") {
+    if (!finite(value.customTiltDeg) || value.customTiltDeg < 0 || value.customTiltDeg > 90) {
+      issues.push(issue("moduleTilt.customTiltDeg", "invalid-module-tilt", "Custom module tilt must be between 0 and 90 degrees."));
+      return undefined;
+    }
+    return { mode: "custom", customTiltDeg: value.customTiltDeg };
+  }
+  issues.push(issue("moduleTilt.mode", "invalid-module-tilt-mode", "Module tilt mode is invalid."));
+  return undefined;
+}
+
+export function resolveStandardModuleTilt(input: {
+  moduleTilt?: StandardModuleTiltInput;
+  roofSlopeDeg?: number;
+}): { mode: StandardModuleTiltInput["mode"]; effectiveTiltDeg?: number } {
+  if (input.moduleTilt?.mode === "custom") {
+    return { mode: "custom", effectiveTiltDeg: input.moduleTilt.customTiltDeg };
+  }
+  return {
+    mode: "inherit-roof",
+    ...(finite(input.roofSlopeDeg) && input.roofSlopeDeg >= 0 && input.roofSlopeDeg <= 90
+      ? { effectiveTiltDeg: input.roofSlopeDeg }
       : {}),
   };
 }
@@ -452,7 +501,22 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
       : { status: "invalid-document", effectiveMode: undefined, raw: value, issues: surfaceIssues };
   }
   if (!advancedMode) {
-    return { status: "supported-standard", effectiveMode: "standard", config: { schemaVersion: 1, mode: "standard", surface }, issues: [] };
+    const moduleTiltIssues: SurfacePlanningIssue[] = [];
+    const moduleTilt = readStandardModuleTilt(value.moduleTilt, moduleTiltIssues);
+    if (moduleTiltIssues.length) {
+      return { status: "invalid-document", effectiveMode: undefined, raw: value, issues: moduleTiltIssues };
+    }
+    return {
+      status: "supported-standard",
+      effectiveMode: "standard",
+      config: {
+        schemaVersion: 1,
+        mode: "standard",
+        surface,
+        ...(moduleTilt ? { moduleTilt } : {}),
+      },
+      issues: [],
+    };
   }
 
   if (!isRecord(value.advanced)) {

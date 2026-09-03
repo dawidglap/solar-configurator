@@ -25,6 +25,11 @@ import {
   type ManualPlacementCandidate,
 } from "./manualPlacement";
 import {
+  buildStandardPanelMetadata,
+  buildStandardSurfacePlanning,
+  resolveStandardTiltInput,
+} from "./advanced/advancedPlanningApplication";
+import {
   endManualPlacement,
   useManualPlacementSession,
 } from "./manualPlacementSession";
@@ -188,6 +193,11 @@ export default function ManualPlacementLayer({
     if (session.kind === "standard-module") {
       if (!standardPanel || placement.modules.length !== 1) return;
       const placedModule = placement.modules[0];
+      const moduleTilt = standardDraft?.moduleTilt ?? resolveStandardTiltInput(roof.surfacePlanning);
+      const standardMetadata = buildStandardPanelMetadata({
+        roofSlopeDeg: roof.tiltDeg,
+        moduleTilt,
+      });
       const panel = {
         id: nanoid(),
         roofId: roof.id,
@@ -198,6 +208,7 @@ export default function ManualPlacementLayer({
         angleDeg: placedModule.angleDeg,
         orientation: standardModules.orientation,
         panelId: standardPanel.id,
+        ...(standardMetadata ? { standard: standardMetadata } : {}),
       } as const;
       if (standardDraft) {
         const existing = usePlannerV2Store
@@ -206,7 +217,7 @@ export default function ManualPlacementLayer({
         commitRoofLayout({
           roofId: roof.id,
           panels: [...existing, panel],
-          surfacePlanning: undefined,
+          surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt }),
         });
         setSelectedPanel(standardPanel.id);
         setModules(standardModules);

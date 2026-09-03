@@ -6,7 +6,6 @@ import { usePlannerV2Store } from "../state/plannerV2Store";
 import RoofAreaInfo from "../ui/RoofAreaInfo";
 import DetectedRoofsImport from "../panels/DetectedRoofsImport";
 import { MdViewModule } from "react-icons/md";
-import OrientationToggle from "../layout/TopToolbar/OrientationToggle";
 import { LuCompass } from "react-icons/lu";
 import { Eye, EyeOff } from "lucide-react";
 import { nanoid } from "nanoid";
@@ -21,10 +20,11 @@ import {
   selectLegacyStandardObstacles,
   STANDARD_AUTO_LAYOUT_POLICY,
 } from "../modules/legacyStandardApplicationPolicy";
-import GridRotationControl from "../modules/GridRotationControl";
 import {
   resolveSurfacePlanning,
+  resolveStandardModuleTilt,
   type AdvancedSurfacePlanningV1,
+  type StandardModuleTiltInput,
 } from "@/lib/planning-core/advanced";
 import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
 import RoofDimensionsControl from "./RoofDimensionsControl";
@@ -39,8 +39,13 @@ import {
 } from "@/lib/planning/companyPlannerDefaults";
 import {
   createInitialAdvancedPlanning,
+  createStandardPlanningDraft,
+  alignStandardModulesParallelToFirst,
+  buildStandardPanelMetadata,
+  buildStandardSurfacePlanning,
   computeStandardDraftPanels,
   hasCommittedPanelsForRoof,
+  resolveStandardTiltInput,
   resolveRoofPlanningMode,
 } from "../modules/advanced/advancedPlanningApplication";
 import ZonePropertiesControl from "../zones/ZonePropertiesControl";
@@ -100,8 +105,6 @@ export default function ModulesPanel() {
   );
   const selSpec = usePlannerV2Store((s) => s.getSelectedPanel());
   const snapshot = usePlannerV2Store((s) => s.snapshot);
-  const addPanelsForRoof = usePlannerV2Store((s) => s.addPanelsForRoof);
-  const clearPanelsForRoof = usePlannerV2Store((s) => s.clearPanelsForRoof);
 
   // --- Catalogo PV (spostato qui dalla topbar) ---
   const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
@@ -126,9 +129,7 @@ export default function ModulesPanel() {
   const [pendingRoofType, setPendingRoofType] = React.useState<
     "pitched" | "flat" | null
   >(null);
-  const relayoutRef = React.useRef<
-    null | ((next?: "portrait" | "landscape") => void)
-  >(null);
+  const [moduleTiltText, setModuleTiltText] = React.useState("");
 
   const selectedRoof = React.useMemo(
     () => layers.find((roof) => roof.id === selectedId),
@@ -156,6 +157,12 @@ export default function ModulesPanel() {
   const displayedSpacingYM =
     displayedModules.spacingYM ?? displayedModules.spacingM;
   const displayedPanelId = standardDraft?.panelSpecId ?? selectedPanelId;
+  const displayedTiltInput = standardDraft?.moduleTilt ??
+    resolveStandardTiltInput(selectedRoof?.surfacePlanning);
+  const displayedTilt = resolveStandardModuleTilt({
+    moduleTilt: displayedTiltInput,
+    roofSlopeDeg: selectedRoof?.tiltDeg,
+  });
   const customerRoofType =
     displayMode === "standard"
       ? "pitched"
@@ -167,20 +174,76 @@ export default function ModulesPanel() {
     : customerRoofType === "flat"
       ? "flat"
       : "green";
+  React.useEffect(() => {
+    setModuleTiltText(
+      displayedTilt.effectiveTiltDeg === undefined
+        ? ""
+        : String(Number(displayedTilt.effectiveTiltDeg.toFixed(2))),
+    );
+  }, [displayedTilt.effectiveTiltDeg, displayedTilt.mode, selectedRoof?.id]);
   const patchDisplayedModules = React.useCallback(
     (patch: Partial<typeof modules>) => {
-      if (selectedRoof && standardDraft) {
+      if (selectedRoof) {
         setRoofPlanningDraft(selectedRoof.id, {
-          ...standardDraft,
-          modules: { ...standardDraft.modules, ...patch },
+          ...(standardDraft ?? createStandardPlanningDraft({
+            panelSpecId: displayedPanelId,
+            modules,
+            moduleTilt: displayedTiltInput,
+          })),
+          modules: { ...displayedModules, ...patch },
         });
         setConfirmStandardReplace(false);
         return;
       }
       setModules(patch);
     },
-    [selectedRoof, setModules, setRoofPlanningDraft, standardDraft],
+    [displayedModules, displayedPanelId, displayedTiltInput, modules, selectedRoof, setModules, setRoofPlanningDraft, standardDraft],
   );
+
+  const patchStandardTilt = React.useCallback((moduleTilt: StandardModuleTiltInput) => {
+    if (!selectedRoof) return;
+    setRoofPlanningDraft(selectedRoof.id, {
+      ...(standardDraft ?? createStandardPlanningDraft({
+        panelSpecId: displayedPanelId,
+        modules,
+        moduleTilt: displayedTiltInput,
+      })),
+      moduleTilt,
+    });
+    setConfirmStandardReplace(false);
+  }, [displayedPanelId, displayedTiltInput, modules, selectedRoof, setRoofPlanningDraft, standardDraft]);
+
+  const commitModuleTiltText = React.useCallback(() => {
+    const value = Number(moduleTiltText);
+    if (!Number.isFinite(value) || value < 0 || value > 90) {
+      setModuleTiltText(
+        displayedTilt.effectiveTiltDeg === undefined
+          ? ""
+          : String(Number(displayedTilt.effectiveTiltDeg.toFixed(2))),
+      );
+      return;
+    }
+    patchStandardTilt({ mode: "custom", customTiltDeg: value });
+  }, [displayedTilt.effectiveTiltDeg, moduleTiltText, patchStandardTilt]);
+  const displayedCanvasAngleDeg = selectedRoof
+    ? resolveStandardAutoLayoutCanvasAngle({
+        roofId: selectedRoof.id,
+        roofPolygon: selectedRoof.points,
+        legacyRoofAzimuthDeg: selectedRoof.azimuthDeg,
+        gridAngleDeg: displayedModules.gridAngleDeg,
+        perRoofAngles: displayedModules.perRoofAngles,
+        referenceEdgeIndex: selectedRoof.referenceEdgeIndex,
+      })
+    : 0;
+  const alignStandardParallelToFirst = React.useCallback(() => {
+    if (!selectedRoof) return;
+    patchDisplayedModules(
+      alignStandardModulesParallelToFirst({
+        modules: displayedModules,
+        roofId: selectedRoof.id,
+      }),
+    );
+  }, [displayedModules, patchDisplayedModules, selectedRoof]);
 
   const applyStandardDraft = React.useCallback(() => {
     if (!selectedRoof || !standardDraft) return;
@@ -198,12 +261,19 @@ export default function ModulesPanel() {
       zones: current.zones,
       snowGuards: current.snowGuards,
       createPanelId: (index) => `${selectedRoof.id}_p_${runId}_${index}`,
+      panelMetadata: buildStandardPanelMetadata({
+        roofSlopeDeg: selectedRoof.tiltDeg,
+        moduleTilt: standardDraft.moduleTilt,
+      }),
     });
     if (!nextPanels.length) return;
     commitRoofLayout({
       roofId: selectedRoof.id,
       panels: nextPanels,
-      surfacePlanning: undefined,
+      surfacePlanning: buildStandardSurfacePlanning({
+        roof: selectedRoof,
+        moduleTilt: standardDraft.moduleTilt,
+      }),
     });
     setSelectedPanel(panel.id);
     setModules(standardDraft.modules);
@@ -293,10 +363,9 @@ export default function ModulesPanel() {
       }
 
       setEditing(null);
-      if (selectedId === roofId) relayoutRef.current?.(); // ← usa la ref
     },
-    [tempVal, updateRoof, selectedId],
-  ); // ← rimosso relayoutSelectedRoof
+    [tempVal, updateRoof],
+  );
 
   /** Materializza la preview Standard corrente sulla falda selezionata. */
   const relayoutSelectedRoof = useCallback(
@@ -354,8 +423,6 @@ export default function ModulesPanel() {
       const commitAction = resolveStandardAutoLayoutCommitAction(layout.count);
       if (commitAction === "preserve") return false;
 
-      // sostituisci i pannelli esistenti con i nuovi
-      clearPanelsForRoof(selectedId);
       const now = Date.now().toString(36);
       const orderedPlacements = orderStandardAutoLayoutPlacements(
         layout.placements,
@@ -365,6 +432,11 @@ export default function ModulesPanel() {
           fallAzimuthDeg: resolveRoofFallAzimuth(roof),
         },
       );
+      const moduleTilt = resolveStandardTiltInput(roof.surfacePlanning);
+      const standardMetadata = buildStandardPanelMetadata({
+        roofSlopeDeg: roof.tiltDeg,
+        moduleTilt,
+      });
       const instances = orderedPlacements.map((r, idx) => ({
         id: `${selectedId}_p_${now}_${idx}`,
         roofId: selectedId,
@@ -375,8 +447,13 @@ export default function ModulesPanel() {
         angleDeg: r.angleDeg,
         orientation,
         panelId: selSpec.id,
+        ...(standardMetadata ? { standard: standardMetadata } : {}),
       }));
-      addPanelsForRoof(selectedId, instances);
+      commitRoofLayout({
+        roofId: selectedId,
+        panels: instances,
+        surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt }),
+      });
       return true;
     },
     [
@@ -396,14 +473,9 @@ export default function ModulesPanel() {
       modules.spacingXM,
       modules.spacingYM,
       modules.orientation,
-      addPanelsForRoof,
-      clearPanelsForRoof,
+      commitRoofLayout,
     ],
   );
-
-  React.useEffect(() => {
-    relayoutRef.current = relayoutSelectedRoof;
-  }, [relayoutSelectedRoof]);
 
   return (
     <div className="w-full max-w-[240px] space-y-4 p-2 text-foreground">
@@ -838,15 +910,15 @@ export default function ModulesPanel() {
               aria-label="Modul wählen"
               value={displayedPanelId}
               onChange={(event) => {
-                if (standardDraft) {
-                  setRoofPlanningDraft(selectedRoof.id, {
-                    ...standardDraft,
-                    panelSpecId: event.target.value,
-                  });
-                  setConfirmStandardReplace(false);
-                } else {
-                  setSelectedPanel(event.target.value);
-                }
+                setRoofPlanningDraft(selectedRoof.id, {
+                  ...(standardDraft ?? createStandardPlanningDraft({
+                    panelSpecId: displayedPanelId,
+                    modules,
+                    moduleTilt: displayedTiltInput,
+                  })),
+                  panelSpecId: event.target.value,
+                });
+                setConfirmStandardReplace(false);
               }}
               className={inputBase}
             >
@@ -860,38 +932,173 @@ export default function ModulesPanel() {
 
           <section className="space-y-2">
             <label className={labelSm}>Layout</label>
-            {standardDraft ? (
-              <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/25 p-1">
-                {(["portrait", "landscape"] as const).map((orientation) => (
-                  <button
-                    key={orientation}
-                    type="button"
-                    onClick={() => patchDisplayedModules({ orientation })}
-                    className={`h-9 rounded-lg text-[10px] font-medium ${displayedModules.orientation === orientation ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-                  >
-                    {orientation === "portrait" ? "Hochformat" : "Querformat"}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <OrientationToggle />
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/25 p-1">
+              {(["portrait", "landscape"] as const).map((orientation) => (
+                <button
+                  key={orientation}
+                  type="button"
+                  onClick={() => patchDisplayedModules({ orientation })}
+                  className={`h-9 rounded-lg text-[10px] font-medium ${displayedModules.orientation === orientation ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                >
+                  {orientation === "portrait" ? "Hochformat" : "Querformat"}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-2 border-b border-border/60 pb-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className={labelSm}>Modulneigung</span>
+              {displayedTilt.mode === "inherit-roof" && displayedTilt.effectiveTiltDeg !== undefined && (
+                <span className="text-[10px] text-primary">
+                  {Number(displayedTilt.effectiveTiltDeg.toFixed(2))}° · wie Dach
+                </span>
+              )}
+            </div>
+            <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={displayedTilt.mode === "inherit-roof"}
+                disabled={displayedTilt.effectiveTiltDeg === undefined}
+                onChange={(event) => {
+                  if (event.target.checked) patchStandardTilt({ mode: "inherit-roof" });
+                  else patchStandardTilt({
+                    mode: "custom",
+                    customTiltDeg: displayedTilt.effectiveTiltDeg ?? 0,
+                  });
+                }}
+              />
+              Dachneigung übernehmen
+            </label>
+            {displayedTilt.mode === "custom" && (
+              <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <input
+                  className={inputBase}
+                  type="text"
+                  inputMode="decimal"
+                  value={moduleTiltText}
+                  onChange={(event) => setModuleTiltText(event.target.value)}
+                  onBlur={commitModuleTiltText}
+                  onKeyDown={(event) => {
+                    stopHotkeysCapture(event);
+                    if (event.key === "Enter") event.currentTarget.blur();
+                  }}
+                  aria-label="Eigene Modulneigung"
+                />
+                <span>°</span>
+              </label>
+            )}
+            {displayedTilt.effectiveTiltDeg === undefined && (
+              <p className="text-[10px] text-amber-600">Dachneigung fehlt. Bitte zuerst in Gebäudeplanung eintragen.</p>
             )}
           </section>
 
-          {!standardDraft && (
-            <div className="grid gap-2">
-              <button
-                type="button"
-                className="h-9 w-full rounded-lg bg-primary text-[11px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-45"
-                disabled={!selectedRoof || !selSpec || !snapshot.mppImage}
-                onClick={() => {
-                  if (relayoutSelectedRoof()) toast.success("Module platziert");
-                }}
-              >
-                Vorschau als Module platzieren
-              </button>
+          <section className="space-y-3 border-b border-border/60 pb-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className={labelSm}>Ausrichtung</h3>
+              <strong className="text-[10px]">{Number((((displayedCanvasAngleDeg % 360) + 360) % 360).toFixed(2))}°</strong>
             </div>
-          )}
+            <button
+              type="button"
+              className="h-10 w-full rounded-xl border border-primary/40 bg-primary/5 text-[11px] font-semibold text-primary hover:bg-primary/10"
+              onClick={alignStandardParallelToFirst}
+            >
+              Parallel zum First
+            </button>
+
+            <details className="rounded-xl border border-border/60 text-[10px]">
+              <summary className="cursor-pointer px-3 py-2.5 font-medium text-muted-foreground">
+                Feinjustierung
+              </summary>
+              <div className="space-y-3 border-t border-border/60 p-3">
+                <label className="block space-y-1 text-muted-foreground">
+                  Drehung
+                  <span className="flex items-center gap-2">
+                    <input
+                      className={inputBase}
+                      type="number"
+                      min={0}
+                      max={359.99}
+                      step={0.01}
+                      value={Number((((displayedCanvasAngleDeg % 360) + 360) % 360).toFixed(2))}
+                      onChange={(event) => {
+                        const angle = Number(event.target.value);
+                        if (!Number.isFinite(angle)) return;
+                        patchDisplayedModules({
+                          perRoofAngles: {
+                            ...(displayedModules.perRoofAngles ?? {}),
+                            [selectedRoof.id]: ((angle % 360) + 360) % 360,
+                          },
+                        });
+                      }}
+                    />
+                    <span>°</span>
+                  </span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["gridPhaseX", "gridPhaseY"] as const).map((field) => (
+                    <label key={field} className="space-y-1 text-muted-foreground">
+                      {field === "gridPhaseX" ? "Horizontal verschieben" : "Vertikal verschieben"}
+                      <input
+                        className={inputBase}
+                        type="number"
+                        min={0}
+                        max={0.999}
+                        step={0.05}
+                        value={displayedModules[field] ?? 0}
+                        onChange={(event) => patchDisplayedModules({ [field]: Number(event.target.value) })}
+                      />
+                    </label>
+                  ))}
+                  {(["gridAnchorX", "gridAnchorY"] as const).map((field) => (
+                    <label key={field} className="space-y-1 text-muted-foreground">
+                      {field === "gridAnchorX" ? "Horizontal ausrichten" : "Vertikal ausrichten"}
+                      <select
+                        className={inputBase}
+                        value={displayedModules[field] ?? "start"}
+                        onChange={(event) => patchDisplayedModules({ [field]: event.target.value as "start" | "center" | "end" })}
+                      >
+                        <option value="start">Start</option>
+                        <option value="center">Mitte</option>
+                        <option value="end">Ende</option>
+                      </select>
+                    </label>
+                  ))}
+                </div>
+                <label className="block space-y-1 text-muted-foreground">
+                  Belegung
+                  <select
+                    className={inputBase}
+                    value={displayedModules.coverageRatio ?? 1}
+                    onChange={(event) => patchDisplayedModules({ coverageRatio: Number(event.target.value) })}
+                  >
+                    <option value={0.5}>50 %</option>
+                    <option value={0.75}>75 %</option>
+                    <option value={1}>100 %</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="text-[10px] font-medium text-primary hover:underline"
+                  onClick={() => {
+                    const perRoofAngles = { ...(displayedModules.perRoofAngles ?? {}) };
+                    delete perRoofAngles[selectedRoof.id];
+                    patchDisplayedModules({
+                      gridAngleDeg: 0,
+                      gridPhaseX: 0,
+                      gridPhaseY: 0,
+                      gridAnchorX: "start",
+                      gridAnchorY: "start",
+                      coverageRatio: 1,
+                      perRoofAngles,
+                    });
+                  }}
+                >
+                  Auf Standard zurücksetzen
+                </button>
+              </div>
+            </details>
+          </section>
 
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-2">
@@ -961,21 +1168,18 @@ export default function ModulesPanel() {
             </div>
           </section>
 
-          <details className="rounded-xl border border-border/60 text-[10px]">
-            <summary className="cursor-pointer px-3 py-2.5 font-medium text-muted-foreground">
-              Feinjustierung
-            </summary>
-            <div className="border-t border-border/60 p-3">
-              {!standardDraft ? (
-                <GridRotationControl />
-              ) : (
-                <p className="text-muted-foreground">
-                  Die technische Rasterausrichtung bleibt beim bestehenden
-                  Standard-Layout unverändert.
-                </p>
-              )}
-            </div>
-          </details>
+          {!standardDraft && (
+            <button
+              type="button"
+              className="h-9 w-full rounded-lg bg-primary text-[11px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-45"
+              disabled={!selectedRoof || !selSpec || !snapshot.mppImage}
+              onClick={() => {
+                if (relayoutSelectedRoof()) toast.success("Module platziert");
+              }}
+            >
+              Vorschau als Module platzieren
+            </button>
+          )}
 
           {standardDraft && (
             <section className="sticky bottom-0 -mx-2 space-y-2 border-y border-primary/25 bg-background/95 p-3 backdrop-blur">
@@ -1016,7 +1220,7 @@ export default function ModulesPanel() {
                 >
                   {confirmStandardReplace
                     ? "Ersetzen bestätigen"
-                    : "Layout anwenden"}
+                    : "Vorschau als Module platzieren"}
                 </button>
               </div>
             </section>

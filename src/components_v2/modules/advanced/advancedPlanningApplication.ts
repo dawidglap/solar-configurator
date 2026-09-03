@@ -22,11 +22,15 @@ import {
   createK2SDomeBlock,
   groupK2MontageFields,
   resolveSurfacePlanning,
+  resolveStandardModuleTilt,
   resolveK2ParallelRoofEdgeAlignment,
   validateGreenRoofGenericInputs,
   type AdvancedBlockDefinition,
   type AdvancedGeometryWarning,
   type AdvancedSurfacePlanningV1,
+  type StandardModuleTiltInput,
+  type StandardPanelMetadata,
+  type StandardSurfacePlanningV1,
   type SurfacePlanningV1,
 } from "@/lib/planning-core/advanced";
 import {
@@ -67,6 +71,7 @@ export type StandardPlanningDraft = {
   targetMode: "standard";
   panelSpecId: string;
   modules: ModulesConfig;
+  moduleTilt: StandardModuleTiltInput;
 };
 
 export type AdvancedPlanningDraft = {
@@ -288,11 +293,67 @@ export function createInitialAdvancedPlanning(input: {
 export function createStandardPlanningDraft(input: {
   panelSpecId: string;
   modules: ModulesConfig;
+  moduleTilt?: StandardModuleTiltInput;
 }): StandardPlanningDraft {
   return {
     targetMode: "standard",
     panelSpecId: input.panelSpecId,
     modules: cloneModules(input.modules),
+    moduleTilt: input.moduleTilt ?? { mode: "inherit-roof" },
+  };
+}
+
+export function resolveStandardTiltInput(
+  surfacePlanning: RoofArea["surfacePlanning"],
+): StandardModuleTiltInput {
+  const resolved = resolveSurfacePlanning(surfacePlanning);
+  return resolved.status === "supported-standard" && resolved.config.moduleTilt
+    ? resolved.config.moduleTilt
+    : { mode: "inherit-roof" };
+}
+
+export function buildStandardSurfacePlanning(input: {
+  roof: RoofArea;
+  moduleTilt: StandardModuleTiltInput;
+}): StandardSurfacePlanningV1 {
+  return {
+    schemaVersion: SURFACE_PLANNING_SCHEMA_VERSION,
+    mode: "standard",
+    surface: {
+      kind: "pitched",
+      ...(Number.isFinite(input.roof.tiltDeg) ? { slopeDeg: input.roof.tiltDeg } : {}),
+      ...(Number.isFinite(resolveRoofFallAzimuth(input.roof))
+        ? { fallAzimuthDeg: resolveRoofFallAzimuth(input.roof) }
+        : {}),
+    },
+    moduleTilt: input.moduleTilt,
+  };
+}
+
+export function buildStandardPanelMetadata(input: {
+  roofSlopeDeg?: number;
+  moduleTilt?: StandardModuleTiltInput;
+}): StandardPanelMetadata | undefined {
+  const resolved = resolveStandardModuleTilt(input);
+  return resolved.effectiveTiltDeg === undefined
+    ? undefined
+    : {
+        layoutMode: "standard",
+        moduleTiltMode: resolved.mode,
+        effectiveTiltDeg: resolved.effectiveTiltDeg,
+      };
+}
+
+export function alignStandardModulesParallelToFirst(input: {
+  modules: ModulesConfig;
+  roofId: string;
+}): ModulesConfig {
+  const perRoofAngles = { ...(input.modules.perRoofAngles ?? {}) };
+  delete perRoofAngles[input.roofId];
+  return {
+    ...input.modules,
+    gridAngleDeg: 0,
+    perRoofAngles,
   };
 }
 
@@ -1289,6 +1350,7 @@ export function computeStandardDraftPanels(input: {
   zones: Parameters<typeof selectLegacyStandardObstacles>[0];
   snowGuards: Parameters<typeof selectLegacyStandardObstacles>[1];
   createPanelId: (index: number) => string;
+  panelMetadata?: StandardPanelMetadata;
 }): PanelInstance[] {
   const obstacles = selectLegacyStandardObstacles(
     input.zones,
@@ -1342,5 +1404,6 @@ export function computeStandardDraftPanels(input: {
     angleDeg: placement.angleDeg,
     orientation: input.modules.orientation,
     panelId: input.panel.id,
+    ...(input.panelMetadata ? { standard: input.panelMetadata } : {}),
   }));
 }

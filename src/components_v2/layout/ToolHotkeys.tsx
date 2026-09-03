@@ -20,6 +20,11 @@ import { resolvePlannerStepForTool, resolvePlannerToolHotkey } from './toolHotke
 import type { Tool } from '@/types/planner';
 import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
 import { resolveRoofFallAzimuth } from '../roof/roofOrientation';
+import {
+  buildStandardPanelMetadata,
+  buildStandardSurfacePlanning,
+  resolveStandardTiltInput,
+} from '../modules/advanced/advancedPlanningApplication';
 
 
 
@@ -36,8 +41,10 @@ export default function ToolHotkeys() {
   const setModules          = usePlannerV2Store(s => s.setModules);
   const snapshot            = usePlannerV2Store(s => s.snapshot);
   const selSpec             = usePlannerV2Store(s => s.getSelectedPanel());
-  const addPanelsForRoof    = usePlannerV2Store(s => s.addPanelsForRoof);
-  const clearPanelsForRoof  = usePlannerV2Store(s => s.clearPanelsForRoof);
+  const catalogPanels       = usePlannerV2Store(s => s.catalogPanels);
+  const roofPlanningDrafts  = usePlannerV2Store(s => s.roofPlanningDrafts);
+  const commitRoofLayout    = usePlannerV2Store(s => s.commitRoofLayout);
+  const setSelectedPanel    = usePlannerV2Store(s => s.setSelectedPanel);
 
   const applyTool = useCallback((t: Tool, e?: KeyboardEvent) => {
     if (e) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); }
@@ -51,16 +58,24 @@ export default function ToolHotkeys() {
     // porta UI in modules
     if (step !== 'modules') setStep('modules');
 
-    if (!selectedId || !selSpec || !snapshot?.mppImage) return;
+    if (!selectedId || !snapshot?.mppImage) return;
     const roof = layers.find(l => l.id === selectedId);
     if (!roof?.points?.length) return;
+    const standardDraft = roofPlanningDrafts[selectedId]?.targetMode === 'standard'
+      ? roofPlanningDrafts[selectedId]
+      : undefined;
+    const standardModules = standardDraft?.modules ?? modules;
+    const standardPanel = standardDraft
+      ? catalogPanels.find((panel) => panel.id === standardDraft.panelSpecId)
+      : selSpec;
+    if (!standardPanel) return;
 
     const canvasAngleDeg = resolveStandardAutoLayoutCanvasAngle({
       roofId: selectedId,
       roofPolygon: roof.points,
       legacyRoofAzimuthDeg: roof.azimuthDeg,
-      gridAngleDeg: modules.gridAngleDeg,
-      perRoofAngles: modules.perRoofAngles,
+      gridAngleDeg: standardModules.gridAngleDeg,
+      perRoofAngles: standardModules.perRoofAngles,
       referenceEdgeIndex: roof.referenceEdgeIndex,
     });
     const currentState = usePlannerV2Store.getState();
@@ -69,23 +84,23 @@ export default function ToolHotkeys() {
       currentState.snowGuards,
       selectedId,
     );
-    const spacing = resolveStandardAutoLayoutSpacingAxes(modules);
+    const spacing = resolveStandardAutoLayoutSpacingAxes(standardModules);
     const result = computeLegacyStandardLayout({
       generation: {
         roofPolygon: roof.points,
         mppImage: snapshot.mppImage,
         canvasAngleDeg,
-        orientation: modules.orientation,
-        panelSizeM: { widthM: selSpec.widthM, heightM: selSpec.heightM },
+        orientation: standardModules.orientation,
+        panelSizeM: { widthM: standardPanel.widthM, heightM: standardPanel.heightM },
         spacingM: spacing.x,
         spacingXM: spacing.x,
         spacingYM: spacing.y,
-        marginM: resolveRoofEdgeMarginM(roof, modules.marginM),
-        phaseX: modules.gridPhaseX ?? 0,
-        phaseY: modules.gridPhaseY ?? 0,
-        anchorX: modules.gridAnchorX ?? 'start',
-        anchorY: modules.gridAnchorY ?? 'start',
-        coverageRatio: modules.coverageRatio ?? 1,
+        marginM: resolveRoofEdgeMarginM(roof, standardModules.marginM),
+        phaseX: standardModules.gridPhaseX ?? 0,
+        phaseY: standardModules.gridPhaseY ?? 0,
+        anchorX: standardModules.gridAnchorX ?? 'start',
+        anchorY: standardModules.gridAnchorY ?? 'start',
+        coverageRatio: standardModules.coverageRatio ?? 1,
       },
       ...obstacles,
       filterPolicy: STANDARD_AUTO_LAYOUT_POLICY.filterPolicy,
@@ -102,21 +117,24 @@ export default function ToolHotkeys() {
         fallAzimuthDeg: resolveRoofFallAzimuth(roof),
       },
     );
+    const moduleTilt = standardDraft?.moduleTilt ?? resolveStandardTiltInput(roof.surfacePlanning);
+    const standardMetadata = buildStandardPanelMetadata({ roofSlopeDeg: roof.tiltDeg, moduleTilt });
     const instances = orderedPlacements.map((r, idx) => ({
       id: `${selectedId}_p_${now}_${idx}`,
       roofId: selectedId,
       cx: r.cx, cy: r.cy,
       wPx: r.wPx, hPx: r.hPx,
       angleDeg: r.angleDeg,
-      orientation: modules.orientation,
-      panelId: selSpec.id,
+      orientation: standardModules.orientation,
+      panelId: standardPanel.id,
+      ...(standardMetadata ? { standard: standardMetadata } : {}),
     }));
 
-    clearPanelsForRoof(selectedId);
-    addPanelsForRoof(selectedId, instances);
-    if (modules.showGrid) setModules({ showGrid: false });
+    commitRoofLayout({ roofId: selectedId, panels: instances, surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt }) });
+    setSelectedPanel(standardPanel.id);
+    setModules({ ...standardModules, showGrid: false });
     setTool('select');
-  }, [addPanelsForRoof, clearPanelsForRoof, layers, modules, selectedId, selSpec, setModules, setStep, setTool, snapshot.mppImage, step]);
+  }, [catalogPanels, commitRoofLayout, layers, modules, roofPlanningDrafts, selectedId, selSpec, setModules, setSelectedPanel, setStep, setTool, snapshot.mppImage, step]);
 
   useEffect(() => {
     const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
