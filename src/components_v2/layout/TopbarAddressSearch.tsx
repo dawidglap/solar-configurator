@@ -446,7 +446,7 @@ export default function TopbarAddressSearch() {
 
       {confirmAddressChange && (
         <div
-          className="fixed inset-0 z-[2000000] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[2000000] flex items-center justify-center bg-black/55 p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="change-planning-address-title"
