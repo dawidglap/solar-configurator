@@ -61,7 +61,11 @@ function DirectionArrow({
   );
 }
 
-export default function AdvancedPreviewLayer() {
+export default function AdvancedPreviewLayer({
+  canvasRotationDeg = 0,
+}: {
+  canvasRotationDeg?: number;
+}) {
   const selectedId = usePlannerV2Store((state) => state.selectedId);
   const roof = usePlannerV2Store((state) => state.layers.find((item) => item.id === state.selectedId));
   const draft = usePlannerV2Store((state) => state.selectedId ? state.roofPlanningDrafts[state.selectedId] : undefined);
@@ -168,11 +172,6 @@ export default function AdvancedPreviewLayer() {
           ))}
           {preview.montageFields.map((field, fieldIndex) => {
             const labelPoint = centroid(field.outlinePx);
-            const first = field.outlinePx[0];
-            const second = field.outlinePx[1];
-            const labelRotationDeg = first && second
-              ? (Math.atan2(second.y - first.y, second.x - first.x) * 180) / Math.PI
-              : 0;
             return (
               <Group key={field.fieldKey} listening={false}>
                 <Line
@@ -188,7 +187,7 @@ export default function AdvancedPreviewLayer() {
                   y={labelPoint.y}
                   offsetX={showFieldDimensions ? 38 : 4}
                   offsetY={showFieldDimensions ? 7 : 4}
-                  rotation={showFieldDimensions ? labelRotationDeg : 0}
+                  rotation={-canvasRotationDeg}
                   text={showFieldDimensions
                     ? `F${fieldIndex + 1} · ${field.longSideSizeM.toFixed(2)} × ${field.railSizeM.toFixed(2)} m`
                     : `F${fieldIndex + 1}`}

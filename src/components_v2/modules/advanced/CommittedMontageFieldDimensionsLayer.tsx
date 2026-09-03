@@ -17,7 +17,11 @@ function centroid(points: Pt[]): Pt {
   );
 }
 
-export default function CommittedMontageFieldDimensionsLayer() {
+export default function CommittedMontageFieldDimensionsLayer({
+  canvasRotationDeg = 0,
+}: {
+  canvasRotationDeg?: number;
+}) {
   const show = usePlannerV2Store((state) => state.ui.showFieldDimensions);
   const step = usePlannerV2Store((state) => state.step);
   const selectedId = usePlannerV2Store((state) => state.selectedId);
@@ -52,11 +56,6 @@ export default function CommittedMontageFieldDimensionsLayer() {
     <Group listening={false}>
       {fields.map((field, index) => {
         const center = centroid(field.outlinePx);
-        const first = field.outlinePx[0];
-        const second = field.outlinePx[1];
-        const rotation = first && second
-          ? (Math.atan2(second.y - first.y, second.x - first.x) * 180) / Math.PI
-          : 0;
         return (
           <Group key={field.fieldKey} listening={false}>
             <Line
@@ -73,7 +72,7 @@ export default function CommittedMontageFieldDimensionsLayer() {
               y={center.y}
               offsetX={38}
               offsetY={7}
-              rotation={rotation}
+              rotation={-canvasRotationDeg}
               text={`F${index + 1} · ${field.longSideSizeM.toFixed(2)} × ${field.railSizeM.toFixed(2)} m`}
               fill={plannerTheme.primary}
               fontSize={8}

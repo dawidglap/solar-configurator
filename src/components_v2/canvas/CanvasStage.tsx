@@ -1049,7 +1049,9 @@ export default function CanvasStage() {
                     />
                   )}
 
-                {step === "modules" && !manualPlacementSession && <AdvancedPreviewLayer />}
+                {step === "modules" && !manualPlacementSession && (
+                  <AdvancedPreviewLayer canvasRotationDeg={rotateDeg} />
+                )}
                 <Group listening={!drawingCapturesPointer}>
                   <SonnendachOverlayKonva />
                 </Group>
@@ -1181,7 +1183,7 @@ export default function CanvasStage() {
                 )}
 
                 {step === "modules" && !manualPlacementSession && (
-                  <CommittedMontageFieldDimensionsLayer />
+                  <CommittedMontageFieldDimensionsLayer canvasRotationDeg={rotateDeg} />
                 )}
 
                 {step === "modules" && manualPlacementSession && (

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Arrow, Group, Line, Rect, Text } from "react-konva";
+import { Arrow, Group, Line, Text } from "react-konva";
 
 import {
   computeUsableRoof,
@@ -118,7 +118,7 @@ export default function RoofAnnotationsLayer() {
   const inverseScale = 1 / Math.max(scale, 0.01);
   const offset = 18 * inverseScale;
   const adapter = { mppImage, metricOriginPx: { x: 0, y: 0 } };
-  const usableRoof = advancedConfig && marginM > 0
+  const usableRoof = marginM > 0
     ? computeUsableRoof({
         roofPolygonM: imagePolygonToMetric([...points], adapter),
         marginM,
@@ -127,51 +127,15 @@ export default function RoofAnnotationsLayer() {
   const usableComponentsPx = usableRoof?.status === "valid"
     ? usableRoof.components.map((component) => metricPolygonToImage(component, adapter))
     : [];
-  const marginAnchor = model.edges[0]
-    ? {
-        x: model.edges[0].midpoint.x - model.edges[0].outward.x * 10 * inverseScale,
-        y: model.edges[0].midpoint.y - model.edges[0].outward.y * 10 * inverseScale,
-      }
-    : model.center;
-
   return (
     <Group id={`roof-annotation-transform-${roof.id}`} listening={false}>
       {step === "modules" && marginM > 0 && (
         <Group listening={false}>
-          {advancedConfig ? (
-            usableComponentsPx.map((component, index) => (
-              <Line
-                key={`usable-${index}`}
-                points={component.flatMap((point) => [point.x, point.y])}
-                closed
-                stroke={plannerTheme.marginBand}
-                strokeWidth={1.4 * inverseScale}
-                dash={[6 * inverseScale, 4 * inverseScale]}
-                opacity={0.95}
-                listening={false}
-              />
-            ))
-          ) : (
-            <RoofMarginBand polygon={[...points]} marginPx={marginM / mppImage} />
-          )}
-          <Rect
-            x={marginAnchor.x - 39 * inverseScale}
-            y={marginAnchor.y - 8 * inverseScale}
-            width={78 * inverseScale}
-            height={16 * inverseScale}
-            fill="rgba(10, 20, 28, 0.82)"
-            cornerRadius={4 * inverseScale}
-            listening={false}
-          />
-          <Text
-            x={marginAnchor.x - 39 * inverseScale}
-            y={marginAnchor.y - 4.5 * inverseScale}
-            width={78 * inverseScale}
-            text={`Randabstand ${marginM.toFixed(2)} m`}
-            align="center"
-            fill={plannerTheme.textLight}
-            fontSize={8 * inverseScale}
-            listening={false}
+          <RoofMarginBand
+            polygon={[...points]}
+            marginPx={marginM / mppImage}
+            innerPolygons={usableComponentsPx}
+            scale={scale}
           />
         </Group>
       )}
