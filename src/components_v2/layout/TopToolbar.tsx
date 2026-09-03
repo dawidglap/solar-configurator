@@ -14,7 +14,7 @@ import { CircleHelp, MousePointer, RotateCcw, RotateCw, Square } from "lucide-re
 
 // NUOVE icone topbar (1–10) da react-icons
 import { TbShape3, TbDropletHalf2Filled } from "react-icons/tb";
-import { MdOutlineTexture, MdViewModule, MdBorderStyle } from "react-icons/md";
+import { MdAddBox, MdOutlineTexture, MdViewModule, MdBorderStyle } from "react-icons/md";
 import { AiOutlineBorderHorizontal } from "react-icons/ai";
 import { LuSnowflake, LuShapes } from "react-icons/lu";
 import { FaRegTrashAlt } from "react-icons/fa";
@@ -37,6 +37,15 @@ import TopbarAddressSearch from "./TopbarAddressSearch";
 import PlannerHelpDialog from "./PlannerHelpDialog";
 import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
+import {
+  K2_D_DOME_SYSTEM_ID,
+  resolveSurfacePlanning,
+} from "@/lib/planning-core/advanced";
+import {
+  beginManualPlacement,
+  endManualPlacement,
+  useManualPlacementSession,
+} from "../modules/manualPlacementSession";
 
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
@@ -145,6 +154,41 @@ export default function TopToolbar() {
   const addPanelsForRoof = usePlannerV2Store((s) => s.addPanelsForRoof);
   const snapshot = usePlannerV2Store((s) => s.snapshot);
   const selSpec = usePlannerV2Store((s) => s.getSelectedPanel());
+  const selectedPlanningDraft = usePlannerV2Store((s) =>
+    s.selectedId ? s.roofPlanningDrafts[s.selectedId] : undefined,
+  );
+  const manualPlacementSession = useManualPlacementSession();
+
+  const selectedRoof = useMemo(
+    () => layers.find((roof) => roof.id === selectedId),
+    [layers, selectedId],
+  );
+  const persistedSurfacePlanning = useMemo(
+    () => resolveSurfacePlanning(selectedRoof?.surfacePlanning),
+    [selectedRoof?.surfacePlanning],
+  );
+  const displayedAdvancedConfig =
+    selectedPlanningDraft?.targetMode === "advanced"
+      ? selectedPlanningDraft.config
+      : !selectedPlanningDraft &&
+          persistedSurfacePlanning.status === "supported-advanced"
+        ? persistedSurfacePlanning.config
+        : undefined;
+  const manualPlacementKind = displayedAdvancedConfig
+    ? "advanced-block"
+    : selectedPlanningDraft?.targetMode === "standard" ||
+        persistedSurfacePlanning.effectiveMode === "standard"
+      ? "standard-module"
+      : undefined;
+  const manualPlacementLabel =
+    displayedAdvancedConfig?.advanced.system.systemId === K2_D_DOME_SYSTEM_ID
+      ? "Einzelnen K2 Block platzieren"
+      : "Einzelnes Modul platzieren";
+  const manualPlacementActive = Boolean(
+    manualPlacementSession &&
+      manualPlacementSession.roofId === selectedId &&
+      manualPlacementSession.kind === manualPlacementKind,
+  );
 
   const isMac = useMemo(
     () =>
@@ -384,6 +428,7 @@ export default function TopToolbar() {
 
   /* ── Nessun auto-switch: il tool cambia solo se lo step corrente lo consente ── */
   function go(t: any) {
+    if (manualPlacementSession) endManualPlacement();
     setTool(t);
   }
 
@@ -433,8 +478,52 @@ export default function TopToolbar() {
     return true;
   }
 
+  function handleManualPlacement() {
+    if (manualPlacementActive) {
+      endManualPlacement();
+      return;
+    }
+    if (!canUseModulesTools) {
+      toast.error("Du musst dich im Schritt „Module“ befinden.");
+      return;
+    }
+    if (!selectedId || !selectedRoof) {
+      toast.error("Wähle zuerst eine Dachfläche aus.");
+      return;
+    }
+    if (!snapshot.mppImage) {
+      toast.error("Maßstab fehlt (mppImage im Snapshot).");
+      return;
+    }
+    if (!manualPlacementKind) {
+      toast.error("Diese Dachkonfiguration unterstützt keine manuelle Platzierung.");
+      return;
+    }
+    if (
+      manualPlacementKind === "advanced-block" &&
+      !displayedAdvancedConfig?.advanced.module.panelSpecId
+    ) {
+      toast.error("Wähle zuerst ein Solarmodul aus.");
+      return;
+    }
+    if (manualPlacementKind === "standard-module") {
+      const panelSpecId =
+        selectedPlanningDraft?.targetMode === "standard"
+          ? selectedPlanningDraft.panelSpecId
+          : selectedPanelId;
+      if (!catalogPanels.some((panel) => panel.id === panelSpecId)) {
+        toast.error("Wähle zuerst ein Solarmodul aus.");
+        return;
+      }
+    }
+
+    setTool("select");
+    beginManualPlacement({ roofId: selectedId, kind: manualPlacementKind });
+  }
+
   /* ── Handler: In Module umwandeln (icona #3) ─────────────────────── */
   function handleConvertToModules() {
+    endManualPlacement();
     // Porta l'interfaccia in "modules"
     if (step !== "modules") setStep("modules" as any);
 
@@ -526,7 +615,7 @@ export default function TopToolbar() {
         <TopbarAddressSearch />
         {/* Auswählen → SEMPRE attivo */}
         <ActionBtn
-          active={tool === "select"}
+          active={tool === "select" && !manualPlacementSession}
           onClick={() => go("select" as any)}
           Icon={MousePointer}
           label=""
@@ -590,13 +679,23 @@ export default function TopToolbar() {
         <ActionBtn
           active={tool === "fill-area"}
           onClick={() => {
-            if (ensureModulesPrereqsForF()) setTool("fill-area" as any);
+            if (ensureModulesPrereqsForF()) go("fill-area" as any);
           }}
           Icon={MdBorderStyle}
           label=""
           disabled={!canUseModulesTools}
           tooltipLabel="Fläche füllen"
           tooltipKeys={["F"]}
+        />
+
+        <ActionBtn
+          active={manualPlacementActive}
+          onClick={handleManualPlacement}
+          Icon={MdAddBox}
+          label=""
+          disabled={!canUseModulesTools || !selectedId}
+          tooltipLabel={manualPlacementLabel}
+          tooltipKeys={["Klick"]}
         />
 
         <div className="mx-1 h-6 w-px bg-border" />

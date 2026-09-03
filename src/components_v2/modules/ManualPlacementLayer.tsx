@@ -56,15 +56,26 @@ export default function ManualPlacementLayer({
   const snapshot = usePlannerV2Store((state) => state.snapshot);
   const modules = usePlannerV2Store((state) => state.modules);
   const selectedPanel = usePlannerV2Store((state) => state.getSelectedPanel());
+  const catalogPanels = usePlannerV2Store((state) => state.catalogPanels);
   const drafts = usePlannerV2Store((state) => state.roofPlanningDrafts);
   const commitRoofLayout = usePlannerV2Store((state) => state.commitRoofLayout);
   const addPanelsForRoof = usePlannerV2Store((state) => state.addPanelsForRoof);
   const setSelectedPanels = usePlannerV2Store((state) => state.setSelectedPanels);
+  const setSelectedPanel = usePlannerV2Store((state) => state.setSelectedPanel);
+  const setModules = usePlannerV2Store((state) => state.setModules);
   const [candidate, setCandidate] = React.useState<ManualPlacementCandidate | null>(null);
   const latestPointer = React.useRef<{ x: number; y: number; disableSnap: boolean } | null>(null);
   const frameRef = React.useRef<number | null>(null);
 
   const roof = session ? layers.find((item) => item.id === session.roofId) : undefined;
+  const roofDraft = roof ? drafts[roof.id] : undefined;
+  const standardDraft = roofDraft?.targetMode === "standard"
+    ? roofDraft
+    : undefined;
+  const standardModules = standardDraft?.modules ?? modules;
+  const standardPanel = standardDraft
+    ? catalogPanels.find((panel) => panel.id === standardDraft.panelSpecId)
+    : selectedPanel;
   const advancedConfig = React.useMemo<AdvancedSurfacePlanningV1 | null>(() => {
     if (!roof) return null;
     const draft = drafts[roof.id];
@@ -99,19 +110,19 @@ export default function ManualPlacementLayer({
         panels,
       });
     }
-    if (!selectedPanel) return null;
+    if (!standardPanel) return null;
     const angleDeg = resolveStandardAutoLayoutCanvasAngle({
       roofId: roof.id,
       roofPolygon: roof.points,
       legacyRoofAzimuthDeg: roof.azimuthDeg,
-      gridAngleDeg: modules.gridAngleDeg,
-      perRoofAngles: modules.perRoofAngles,
+      gridAngleDeg: standardModules.gridAngleDeg,
+      perRoofAngles: standardModules.perRoofAngles,
       referenceEdgeIndex: roof.referenceEdgeIndex,
     });
-    const widthM = modules.orientation === "portrait" ? selectedPanel.widthM : selectedPanel.heightM;
-    const heightM = modules.orientation === "portrait" ? selectedPanel.heightM : selectedPanel.widthM;
-    const spacingX = modules.spacingXM ?? modules.spacingM;
-    const spacingY = modules.spacingYM ?? modules.spacingM;
+    const widthM = standardModules.orientation === "portrait" ? standardPanel.widthM : standardPanel.heightM;
+    const heightM = standardModules.orientation === "portrait" ? standardPanel.heightM : standardPanel.widthM;
+    const spacingX = standardModules.spacingXM ?? standardModules.spacingM;
+    const spacingY = standardModules.spacingYM ?? standardModules.spacingM;
     const centerPx = snapStandardManualCenter({
       pointerPx: raw,
       roofId: roof.id,
@@ -126,10 +137,10 @@ export default function ManualPlacementLayer({
     return buildStandardManualCandidate({
       centerPx,
       roof,
-      panel: selectedPanel,
-      orientation: modules.orientation,
+      panel: standardPanel,
+      orientation: standardModules.orientation,
       angleDeg,
-      marginM: resolveRoofEdgeMarginM(roof, modules.marginM),
+      marginM: resolveRoofEdgeMarginM(roof, standardModules.marginM),
       gapXM: spacingX,
       gapYM: spacingY,
       mppImage: snapshot.mppImage,
@@ -137,7 +148,7 @@ export default function ManualPlacementLayer({
       snowGuards,
       panels,
     });
-  }, [advancedConfig, definition, modules, panels, roof, selectedPanel, session, snapshot.mppImage, snowGuards, zones]);
+  }, [advancedConfig, definition, panels, roof, session, snapshot.mppImage, snowGuards, standardModules, standardPanel, zones]);
 
   const schedule = React.useCallback((point: { x: number; y: number; disableSnap: boolean }) => {
     latestPointer.current = point;
@@ -175,7 +186,7 @@ export default function ManualPlacementLayer({
   const commit = (placement: ManualPlacementCandidate | null) => {
     if (!placement?.valid) return;
     if (session.kind === "standard-module") {
-      if (!selectedPanel || placement.modules.length !== 1) return;
+      if (!standardPanel || placement.modules.length !== 1) return;
       const placedModule = placement.modules[0];
       const panel = {
         id: nanoid(),
@@ -185,10 +196,23 @@ export default function ManualPlacementLayer({
         wPx: placedModule.wPx,
         hPx: placedModule.hPx,
         angleDeg: placedModule.angleDeg,
-        orientation: modules.orientation,
-        panelId: selectedPanel.id,
+        orientation: standardModules.orientation,
+        panelId: standardPanel.id,
       } as const;
-      addPanelsForRoof(roof.id, [panel]);
+      if (standardDraft) {
+        const existing = usePlannerV2Store
+          .getState()
+          .panels.filter((item) => item.roofId === roof.id);
+        commitRoofLayout({
+          roofId: roof.id,
+          panels: [...existing, panel],
+          surfacePlanning: undefined,
+        });
+        setSelectedPanel(standardPanel.id);
+        setModules(standardModules);
+      } else {
+        addPanelsForRoof(roof.id, [panel]);
+      }
       setSelectedPanels([panel.id]);
       toast.success("Modul hinzugefügt");
       return;

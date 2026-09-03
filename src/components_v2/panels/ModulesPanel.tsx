@@ -44,7 +44,6 @@ import {
   resolveRoofPlanningMode,
 } from "../modules/advanced/advancedPlanningApplication";
 import ZonePropertiesControl from "../zones/ZonePropertiesControl";
-import { beginManualPlacement } from "../modules/manualPlacementSession";
 
 type Pt = { x: number; y: number };
 
@@ -890,14 +889,6 @@ export default function ModulesPanel() {
                 }}
               >
                 Vorschau als Module platzieren
-              </button>
-              <button
-                type="button"
-                className="h-9 w-full rounded-lg border border-primary/45 bg-primary/5 text-[11px] font-semibold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-45"
-                disabled={!selectedRoof || !selSpec || !snapshot.mppImage}
-                onClick={() => beginManualPlacement({ roofId: selectedRoof.id, kind: "standard-module" })}
-              >
-                + Modul hinzufügen
               </button>
             </div>
           )}

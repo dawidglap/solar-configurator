@@ -31,7 +31,6 @@ import {
   updateDefaultFlatSystem,
 } from "./advancedPlanningApplication";
 import { buildGuidedPlanningResult } from "./guidedPlanningPresentation";
-import { beginManualPlacement } from "../manualPlacementSession";
 
 const inputClass =
   "glass-input h-8 w-full rounded-lg px-2 text-[11px] focus:ring-1 focus:ring-primary/40";
@@ -588,17 +587,6 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
       <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">
         Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.
       </p>
-
-      {!isDraft && isSupportedSystem && (
-        <button
-          type="button"
-          className="h-9 w-full rounded-lg border border-primary/45 bg-primary/5 text-[11px] font-semibold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-45"
-          disabled={!mppImage || !moduleId}
-          onClick={() => beginManualPlacement({ roofId: roof.id, kind: "advanced-block" })}
-        >
-          {isDDome ? "+ K2 Block hinzufügen" : "+ Modul hinzufügen"}
-        </button>
-      )}
 
       {confirmReplace && (
         <div className="space-y-2 rounded-lg border border-amber-500/35 bg-amber-500/5 p-2 text-[10px]">
