@@ -18,3 +18,11 @@ export function canBootstrapPlanningFromAddress(
 ): boolean {
   return mode === "new";
 }
+
+/** Existing planning data may only be replaced after an explicit user confirmation. */
+export function canApplyAddressSelection(
+  mode: PlannerSessionMode,
+  confirmedExistingChange: boolean,
+): boolean {
+  return mode === "new" || confirmedExistingChange;
+}

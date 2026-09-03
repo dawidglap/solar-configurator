@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  canApplyAddressSelection,
   canBootstrapPlanningFromAddress,
   resolvePlannerSessionMode,
 } from "../../src/components_v2/planner/plannerSessionPolicy";
@@ -46,6 +47,12 @@ test("a genuine new-planning session still permits address initialization", () =
   });
   assert.equal(mode, "new");
   assert.equal(canBootstrapPlanningFromAddress(mode), true);
+});
+
+test("an existing planning address can only be replaced after explicit confirmation", () => {
+  assert.equal(canApplyAddressSelection("existing", false), false);
+  assert.equal(canApplyAddressSelection("existing", true), true);
+  assert.equal(canApplyAddressSelection("new", false), true);
 });
 
 test("zoom slider uses the canonical fitScale to 8x bounds with reversible logarithmic mapping", () => {

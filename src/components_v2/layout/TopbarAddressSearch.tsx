@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2, Search } from "lucide-react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
-import AddressSearchOSM from "../geocoding/AddressSearchOSM";
+import AddressSearchOSM, {
+  type OSMResult,
+} from "../geocoding/AddressSearchOSM";
 import {
   buildTiledSnapshot,
   TILE_SWISSTOPO_SAT,
@@ -18,6 +20,7 @@ import axios from "axios";
 import { history as plannerHistory } from "../state/history";
 import { savePlannerToDb } from "../state/planning/savePlanning";
 import {
+  canApplyAddressSelection,
   canBootstrapPlanningFromAddress,
   resolvePlannerSessionMode,
 } from "../planner/plannerSessionPolicy";
@@ -25,6 +28,21 @@ import {
 function stripHtml(input: string) {
   return input.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+type GeoAdminRoofResult = {
+  geometry?: { rings?: number[][][] };
+  attributes?: {
+    id?: string | number;
+    neigung?: number;
+    ausrichtung?: number;
+  };
+  layerId?: string | number;
+  featureId?: string | number;
+};
 
 function buildAddressFromParams(sp: ReturnType<typeof useSearchParams>) {
   const full = sp.get("address")?.trim();
@@ -100,7 +118,7 @@ async function fetchRoofsAtPointToPx(
     bbox3857: { minX: number; minY: number; maxX: number; maxY: number };
   },
 ) {
-  const { data } = await axios.get(
+  const { data } = await axios.get<{ results?: GeoAdminRoofResult[] }>(
     "https://api3.geo.admin.ch/rest/services/energie/MapServer/identify",
     {
       params: {
@@ -116,7 +134,7 @@ async function fetchRoofsAtPointToPx(
     },
   );
 
-  const results: any[] = data?.results ?? [];
+  const results = data?.results ?? [];
   const roofs: {
     id: string;
     pointsPx: { x: number; y: number }[];
@@ -126,7 +144,7 @@ async function fetchRoofsAtPointToPx(
 
   results.forEach((res, resIdx) => {
     const rings: number[][][] | undefined = res?.geometry?.rings;
-    const attrs: any = res?.attributes ?? {};
+    const attrs = res.attributes ?? {};
     if (!Array.isArray(rings)) return;
 
     rings.forEach((ring, ringIdx) => {
@@ -193,7 +211,10 @@ export default function TopbarAddressSearch() {
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [confirmAddressChange, setConfirmAddressChange] = useState(false);
+  const [addressChangeConfirmed, setAddressChangeConfirmed] = useState(false);
   const autoSearchTriggeredRef = useRef(false);
+  const searchRootRef = useRef<HTMLDivElement>(null);
 
   // testo visibile nella searchbar
   const [addressText, setAddressText] = useState<string>(
@@ -204,9 +225,16 @@ export default function TopbarAddressSearch() {
     setAddressText(address?.label ?? "");
   }, [address?.label]);
 
+  useEffect(() => {
+    if (!addressChangeConfirmed) return;
+    const input = searchRootRef.current?.querySelector("input");
+    input?.focus();
+    input?.select();
+  }, [addressChangeConfirmed]);
+
   const startFromAddress = useCallback(
     async (lat: number, lon: number, label: string) => {
-      if (!canBootstrapPlanningFromAddress(sessionMode)) return;
+      if (!canApplyAddressSelection(sessionMode, addressChangeConfirmed)) return;
       setErr(null);
       setLoading(true);
 
@@ -262,7 +290,7 @@ export default function TopbarAddressSearch() {
             tiltDeg: p.tiltDeg,
             azimuthDeg: p.azimuthDeg,
             source: "sonnendach",
-          } as any);
+          });
         });
 
         setUI({ rightPanelOpen: true });
@@ -274,13 +302,14 @@ export default function TopbarAddressSearch() {
             "No planningId found in URL, planner state not saved to DB.",
           );
         }
-      } catch (e: any) {
-        setErr(e?.message ?? "Unbekannter Fehler.");
+        setAddressChangeConfirmed(false);
+      } catch (error: unknown) {
+        setErr(errorMessage(error, "Unbekannter Fehler."));
       } finally {
         setLoading(false);
       }
     },
-    [addRoof, planningId, resetForNewAddress, sessionMode, setStep, setUI],
+    [addRoof, addressChangeConfirmed, planningId, resetForNewAddress, sessionMode, setStep, setUI],
   );
 
   useEffect(() => {
@@ -332,10 +361,11 @@ export default function TopbarAddressSearch() {
         setAddress({ label: result.label, lat: result.lat, lon: result.lon });
         setAddressText(result.label);
         await startFromAddress(result.lat, result.lon, result.label);
-      } catch (e: any) {
-        setErr(
-          e?.message ?? "Automatische Adresssuche konnte nicht gestartet werden.",
-        );
+      } catch (error: unknown) {
+        setErr(errorMessage(
+          error,
+          "Automatische Adresssuche konnte nicht gestartet werden.",
+        ));
       }
     })();
   }, [
@@ -354,6 +384,7 @@ export default function TopbarAddressSearch() {
   return (
     <>
       <div
+        ref={searchRootRef}
         className={`
           planner-topbar
           relative z-[1000000]
@@ -364,6 +395,15 @@ export default function TopbarAddressSearch() {
         `}
         aria-busy={loading ? "true" : "false"}
       >
+        {sessionMode === "existing" && !addressChangeConfirmed && (
+          <button
+            type="button"
+            className="absolute inset-0 z-20 cursor-text rounded-lg"
+            aria-label="Adresse der Planung ändern"
+            disabled={loading}
+            onClick={() => setConfirmAddressChange(true)}
+          />
+        )}
         <Search className="h-3 w-3 text-muted-foreground shrink-0" />
 
         <div className="relative flex-1">
@@ -374,17 +414,20 @@ export default function TopbarAddressSearch() {
             <AddressSearchOSM
               placeholder="Adresse suchen…"
               value={addressText}
-              readOnly={sessionMode === "existing"}
+              readOnly={sessionMode === "existing" && !addressChangeConfirmed}
               title={sessionMode === "existing"
-                ? "Adresse der bestehenden Planung"
+                ? addressChangeConfirmed
+                  ? "Neue Adresse suchen"
+                  : "Adresse ändern"
                 : "Adresse suchen"}
               onChangeText={(v: string) => {
-                if (sessionMode === "new") setAddressText(v);
+                if (canApplyAddressSelection(sessionMode, addressChangeConfirmed)) {
+                  setAddressText(v);
+                }
               }}
-              onPick={(r: any) => {
-                if (!canBootstrapPlanningFromAddress(sessionMode)) return;
-                const label =
-                  r?.label ?? r?.display_name ?? addressText ?? "Adresse";
+              onPick={(r: OSMResult) => {
+                if (!canApplyAddressSelection(sessionMode, addressChangeConfirmed)) return;
+                const label = r.label || addressText || "Adresse";
 
                 setAddress?.({ label, lat: r.lat, lon: r.lon });
                 setAddressText(label);
@@ -400,6 +443,43 @@ export default function TopbarAddressSearch() {
         )}
         {!!err && <span className="ml-1 text-[10px] text-destructive">{err}</span>}
       </div>
+
+      {confirmAddressChange && (
+        <div
+          className="fixed inset-0 z-[2000000] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="change-planning-address-title"
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-background p-5 text-foreground shadow-2xl">
+            <h2 id="change-planning-address-title" className="text-base font-semibold">
+              Adresse ändern?
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Wenn du die Adresse änderst, gehen alle bisherigen Änderungen dieser Planung verloren.
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className="h-10 rounded-xl border border-border text-sm font-medium"
+                onClick={() => setConfirmAddressChange(false)}
+              >
+                Nein
+              </button>
+              <button
+                type="button"
+                className="h-10 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground"
+                onClick={() => {
+                  setConfirmAddressChange(false);
+                  setAddressChangeConfirmed(true);
+                }}
+              >
+                Adresse ändern
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         .planner-topbar .react-autosuggest__suggestions-container,
