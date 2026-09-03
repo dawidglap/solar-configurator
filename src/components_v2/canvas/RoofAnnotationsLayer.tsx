@@ -129,7 +129,7 @@ export default function RoofAnnotationsLayer() {
     : [];
   return (
     <Group id={`roof-annotation-transform-${roof.id}`} listening={false}>
-      {step === "modules" && marginM > 0 && (
+      {marginM > 0 && (
         <Group listening={false}>
           <RoofMarginBand
             polygon={[...points]}

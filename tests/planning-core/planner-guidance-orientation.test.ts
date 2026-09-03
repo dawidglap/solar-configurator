@@ -84,3 +84,20 @@ test("contextual help and pitched-roof slope controls remain visible in source",
   assert.ok(dimensions.includes("Dachfläche · Kantenlängen"));
   assert.equal(compass.includes("+ rotateDeg"), false);
 });
+
+test("the Randabstand band is rendered in both building and module planning", () => {
+  const annotations = readFileSync(
+    new URL("../../src/components_v2/canvas/RoofAnnotationsLayer.tsx", import.meta.url),
+    "utf8",
+  );
+  const marginBand = readFileSync(
+    new URL("../../src/components_v2/modules/panels/RoofMarginBand.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.ok(annotations.includes('(step !== "building" && step !== "modules")'));
+  assert.ok(annotations.includes("{marginM > 0 && ("));
+  assert.equal(annotations.includes('{step === "modules" && marginM > 0'), false);
+  assert.ok(marginBand.includes('fill="rgba(239, 68, 68, 0.16)"'));
+  assert.ok(marginBand.includes("listening={false}"));
+});
