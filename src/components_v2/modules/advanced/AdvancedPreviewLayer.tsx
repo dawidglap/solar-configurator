@@ -17,7 +17,10 @@ import { plannerTheme } from "../../theme/plannerTheme";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
 import { computeAdvancedPlanningPreview } from "./advancedPlanningApplication";
 import ModuleSlopeArrow from "../panels/ModuleSlopeArrow";
-import { selectModuleSlopeArrowIds } from "../panels/moduleSlope";
+import {
+  resolveModuleDownhillAzimuth,
+  selectModuleSlopeArrowIds,
+} from "../panels/moduleSlope";
 
 function centroid(points: Pt[]): Pt {
   const count = Math.max(1, points.length);
@@ -116,6 +119,9 @@ export default function AdvancedPreviewLayer({
   const isOpposingSystem =
     system.systemId === K2_D_DOME_SYSTEM_ID ||
     system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
+  const previewBlockCenters = new Map(
+    (preview?.blocks ?? []).map((block) => [block.blockKey, centroid(block.footprintPx)]),
+  );
 
   return (
     <Group listening={false}>
@@ -150,26 +156,43 @@ export default function AdvancedPreviewLayer({
               </Group>
             );
           })}
-          {preview.modules.map((module) => (
-            <Group key={`${module.blockKey}:${module.slotIndex}`} listening={false}>
-              <Line
-                points={module.footprintPx.flatMap((point) => [point.x, point.y])}
-                closed
-                stroke={plannerTheme.panelStroke}
-                strokeWidth={0.7}
-                fill="rgba(30, 64, 175, 0.45)"
-              />
-              {slopeArrowIds.has(`${module.blockKey}:${module.slotIndex}`) && (
-                <ModuleSlopeArrow
-                  cx={module.cx}
-                  cy={module.cy}
-                  wPx={module.wPx}
-                  hPx={module.hPx}
-                  azimuthDeg={module.faceAzimuthDeg}
+          {preview.modules.map((module) => {
+            const blockCenter = previewBlockCenters.get(module.blockKey) ?? {
+              x: module.cx,
+              y: module.cy,
+            };
+            const downhillAzimuthDeg = resolveModuleDownhillAzimuth(isOpposingSystem
+              ? {
+                  kind: "flat-opposing",
+                  blockCenterPx: blockCenter,
+                  moduleCenterPx: { x: module.cx, y: module.cy },
+                  moduleFaceAzimuthDeg: module.faceAzimuthDeg,
+                }
+              : {
+                  kind: "flat-south",
+                  moduleFaceAzimuthDeg: module.faceAzimuthDeg,
+                });
+            return (
+              <Group key={`${module.blockKey}:${module.slotIndex}`} listening={false}>
+                <Line
+                  points={module.footprintPx.flatMap((point) => [point.x, point.y])}
+                  closed
+                  stroke={plannerTheme.panelStroke}
+                  strokeWidth={0.7}
+                  fill="rgba(30, 64, 175, 0.45)"
                 />
-              )}
-            </Group>
-          ))}
+                {slopeArrowIds.has(`${module.blockKey}:${module.slotIndex}`) && (
+                  <ModuleSlopeArrow
+                    cx={module.cx}
+                    cy={module.cy}
+                    wPx={module.wPx}
+                    hPx={module.hPx}
+                    azimuthDeg={downhillAzimuthDeg}
+                  />
+                )}
+              </Group>
+            );
+          })}
           {preview.montageFields.map((field, fieldIndex) => {
             const labelPoint = centroid(field.outlinePx);
             return (

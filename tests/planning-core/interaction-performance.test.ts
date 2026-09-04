@@ -7,9 +7,56 @@ import { translateInteractionPoints } from "../../src/components_v2/canvas/perfo
 import { createRafPointChannel } from "../../src/components_v2/canvas/performance/rafPointChannel";
 import {
   buildPanelDragStaticGeometry,
+  hasPanelOverlapCached,
+  resolveMagneticNeighbourSnapUV,
   resolveNoOverlapCached,
   type PanelInst,
 } from "../../src/components_v2/modules/panels/usePanelDragSnap";
+
+test("drag neighbour snap uses exact axis gaps without pushing invalid candidates", () => {
+  const panels = [{ id: "fixed", u: 10, v: 20, hw: 5, hh: 8 }];
+  const snapped = resolveMagneticNeighbourSnapUV({
+    u: 20.1,
+    v: 20.2,
+    hw: 5,
+    hh: 8,
+    gapXPx: 0.2,
+    gapYPx: 0.3,
+    activationThresholdPx: 2,
+    panels,
+  });
+  assert.deepEqual(snapped, { u: 20.2, v: 20 });
+  assert.equal(hasPanelOverlapCached({
+    u: 20.2,
+    v: 20,
+    hw: 5,
+    hh: 8,
+    gapPx: 0,
+    gapXPx: 0.2,
+    gapYPx: 0.3,
+    panels,
+  }), false);
+  assert.equal(hasPanelOverlapCached({
+    u: 19,
+    v: 20,
+    hw: 5,
+    hh: 8,
+    gapPx: 0,
+    gapXPx: 0.2,
+    gapYPx: 0.3,
+    panels,
+  }), true);
+  assert.equal(resolveMagneticNeighbourSnapUV({
+    u: 50,
+    v: 50,
+    hw: 5,
+    hh: 8,
+    gapXPx: 0.2,
+    gapYPx: 0.3,
+    activationThresholdPx: 2,
+    panels,
+  }), null);
+});
 
 test("raw pointer bursts coalesce to the latest animation frame value", () => {
   const callbacks: FrameRequestCallback[] = [];

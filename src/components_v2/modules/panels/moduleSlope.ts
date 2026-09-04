@@ -6,6 +6,58 @@ export function imageVectorFromGeographicAzimuth(azimuthDeg: number): {
   return { x: Math.sin(radians), y: -Math.cos(radians) };
 }
 
+function normalizeAzimuth(azimuthDeg: number): number {
+  return ((azimuthDeg % 360) + 360) % 360;
+}
+
+function geographicAzimuthFromImageVector(vector: { x: number; y: number }): number | undefined {
+  if (!Number.isFinite(vector.x) || !Number.isFinite(vector.y) || Math.hypot(vector.x, vector.y) < 1e-9) {
+    return undefined;
+  }
+  return normalizeAzimuth((Math.atan2(vector.x, -vector.y) * 180) / Math.PI);
+}
+
+export type ModuleDownhillInput =
+  | {
+      kind: "pitched";
+      roofFallAzimuthDeg?: number;
+    }
+  | {
+      kind: "flat-south";
+      /** Advanced face/frame azimuth points towards the module high side. */
+      moduleFaceAzimuthDeg?: number;
+    }
+  | {
+      kind: "flat-opposing";
+      /** The high point is the block centre; each module slopes outwards. */
+      blockCenterPx: { x: number; y: number };
+      moduleCenterPx: { x: number; y: number };
+      moduleFaceAzimuthDeg?: number;
+    };
+
+/**
+ * Resolves the physical high-to-low direction independently from rendering.
+ * For an opposing pair the position inside the block is authoritative, so the
+ * result stays outward even when the complete block is rotated.
+ */
+export function resolveModuleDownhillAzimuth(input: ModuleDownhillInput): number | undefined {
+  if (input.kind === "pitched") {
+    return typeof input.roofFallAzimuthDeg === "number" && Number.isFinite(input.roofFallAzimuthDeg)
+      ? normalizeAzimuth(input.roofFallAzimuthDeg)
+      : undefined;
+  }
+  if (input.kind === "flat-opposing") {
+    const fromBlockCenter = geographicAzimuthFromImageVector({
+      x: input.moduleCenterPx.x - input.blockCenterPx.x,
+      y: input.moduleCenterPx.y - input.blockCenterPx.y,
+    });
+    if (fromBlockCenter !== undefined) return fromBlockCenter;
+  }
+  return typeof input.moduleFaceAzimuthDeg === "number" && Number.isFinite(input.moduleFaceAzimuthDeg)
+    ? normalizeAzimuth(input.moduleFaceAzimuthDeg + 180)
+    : undefined;
+}
+
 export type ModuleRowArrowCandidate = {
   id: string;
   cx: number;

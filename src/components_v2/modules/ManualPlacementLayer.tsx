@@ -6,10 +6,18 @@ import type Konva from "konva";
 import { nanoid } from "nanoid";
 import toast from "react-hot-toast";
 
-import { resolveSurfacePlanning, type AdvancedSurfacePlanningV1 } from "@/lib/planning-core/advanced";
+import {
+  GENERIC_EAST_WEST_SYSTEM_ID,
+  K2_D_DOME_SYSTEM_ID,
+  resolveSurfacePlanning,
+  type AdvancedSurfacePlanningV1,
+} from "@/lib/planning-core/advanced";
 import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import { plannerTheme } from "../theme/plannerTheme";
+import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import ModuleSprite from "./ModuleSprite";
+import ModuleSlopeArrow from "./panels/ModuleSlopeArrow";
+import { resolveModuleDownhillAzimuth } from "./panels/moduleSlope";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import {
   resolveStandardAutoLayoutCanvasAngle,
@@ -68,6 +76,7 @@ export default function ManualPlacementLayer({
   const setSelectedPanels = usePlannerV2Store((state) => state.setSelectedPanels);
   const setSelectedPanel = usePlannerV2Store((state) => state.setSelectedPanel);
   const setModules = usePlannerV2Store((state) => state.setModules);
+  const stageScale = usePlannerV2Store((state) => state.view.scale || state.view.fitScale || 1);
   const [candidate, setCandidate] = React.useState<ManualPlacementCandidate | null>(null);
   const latestPointer = React.useRef<{ x: number; y: number; disableSnap: boolean } | null>(null);
   const frameRef = React.useRef<number | null>(null);
@@ -103,6 +112,7 @@ export default function ManualPlacementLayer({
         panels,
         definition,
         mppImage: snapshot.mppImage,
+        activationThresholdPx: 12 / Math.max(stageScale, 0.01),
         disableSnap: raw.disableSnap,
       });
       return buildAdvancedManualCandidate({
@@ -137,6 +147,7 @@ export default function ManualPlacementLayer({
       heightPx: heightM / snapshot.mppImage,
       gapXPx: spacingX / snapshot.mppImage,
       gapYPx: spacingY / snapshot.mppImage,
+      activationThresholdPx: 12 / Math.max(stageScale, 0.01),
       disableSnap: raw.disableSnap,
     });
     return buildStandardManualCandidate({
@@ -153,7 +164,7 @@ export default function ManualPlacementLayer({
       snowGuards,
       panels,
     });
-  }, [advancedConfig, definition, panels, roof, session, snapshot.mppImage, snowGuards, standardModules, standardPanel, zones]);
+  }, [advancedConfig, definition, panels, roof, session, snapshot.mppImage, snowGuards, stageScale, standardModules, standardPanel, zones]);
 
   const schedule = React.useCallback((point: { x: number; y: number; disableSnap: boolean }) => {
     latestPointer.current = point;
@@ -283,6 +294,23 @@ export default function ManualPlacementLayer({
 
   const valid = candidate?.valid ?? false;
   const stroke = valid ? plannerTheme.primary : plannerTheme.danger;
+  const inverseScale = 1 / Math.max(stageScale, 0.01);
+  const blockCenter = candidate?.blockFootprintPx.length
+    ? candidate.blockFootprintPx.reduce(
+        (sum, point) => ({
+          x: sum.x + point.x / candidate.blockFootprintPx.length,
+          y: sum.y + point.y / candidate.blockFootprintPx.length,
+        }),
+        { x: 0, y: 0 },
+      )
+    : null;
+  const opposingSystem = advancedConfig?.advanced.system.systemId === K2_D_DOME_SYSTEM_ID ||
+    advancedConfig?.advanced.system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
+  const helperText = valid ? "Klicken zum Platzieren" : "Position nicht möglich";
+  const helperAnchor = candidate?.blockFootprintPx.reduce(
+    (top, point) => point.y < top.y ? point : top,
+    candidate.blockFootprintPx[0] ?? { x: 0, y: 0 },
+  );
   return (
     <Group>
       <Rect
@@ -305,27 +333,50 @@ export default function ManualPlacementLayer({
         onClick={(event) => {
           if (event.evt.button !== 0) return;
           event.cancelBubble = true;
-          const point = pointerImage(event, toImgCoords);
-          const fresh = point
-            ? computeAt({ ...point, disableSnap: event.evt.shiftKey })
-            : candidate;
-          setCandidate(fresh);
-          commit(fresh);
+          // Commit exactly the candidate currently rendered as the ghost.
+          // Pointer movement will publish the next candidate on the next frame.
+          commit(candidate);
         }}
       />
       {candidate && (
         <Group listening={false} opacity={valid ? 0.72 : 0.42}>
-          {candidate.modules.map((module) => (
-            <ModuleSprite
-              key={module.slotIndex}
-              x={module.cx}
-              y={module.cy}
-              w={module.wPx}
-              h={module.hPx}
-              rotationDeg={module.angleDeg}
-              textureUrl="/images/panel.webp"
-            />
-          ))}
+          {candidate.modules.map((module) => {
+            const downhillAzimuthDeg = session.kind === "standard-module"
+              ? resolveModuleDownhillAzimuth({
+                  kind: "pitched",
+                  roofFallAzimuthDeg: resolveRoofFallAzimuth(roof),
+                })
+              : opposingSystem && blockCenter
+                ? resolveModuleDownhillAzimuth({
+                    kind: "flat-opposing",
+                    blockCenterPx: blockCenter,
+                    moduleCenterPx: { x: module.cx, y: module.cy },
+                    moduleFaceAzimuthDeg: module.faceAzimuthDeg,
+                  })
+                : resolveModuleDownhillAzimuth({
+                    kind: "flat-south",
+                    moduleFaceAzimuthDeg: module.faceAzimuthDeg,
+                  });
+            return (
+              <Group key={module.slotIndex} listening={false}>
+                <ModuleSprite
+                  x={module.cx}
+                  y={module.cy}
+                  w={module.wPx}
+                  h={module.hPx}
+                  rotationDeg={module.angleDeg}
+                  textureUrl="/images/panel.webp"
+                />
+                <ModuleSlopeArrow
+                  cx={module.cx}
+                  cy={module.cy}
+                  wPx={module.wPx}
+                  hPx={module.hPx}
+                  azimuthDeg={downhillAzimuthDeg}
+                />
+              </Group>
+            );
+          })}
           <Line
             points={candidate.blockFootprintPx.flatMap((point) => [point.x, point.y])}
             closed
@@ -333,13 +384,32 @@ export default function ManualPlacementLayer({
             strokeWidth={1.5}
             dash={valid ? undefined : [5, 3]}
           />
-          <Text
-            x={candidate.blockFootprintPx[0]?.x ?? 0}
-            y={(candidate.blockFootprintPx[0]?.y ?? 0) - 14}
-            text={valid ? "Klicken zum Platzieren · Esc beendet" : "Position nicht gültig · Esc beendet"}
-            fill={stroke}
-            fontSize={11}
-          />
+          {helperAnchor && (
+            <Group
+              x={helperAnchor.x}
+              y={helperAnchor.y - 34 * inverseScale}
+              listening={false}
+            >
+              <Rect
+                x={-4 * inverseScale}
+                y={-3 * inverseScale}
+                width={142 * inverseScale}
+                height={29 * inverseScale}
+                fill="rgba(15, 23, 42, 0.92)"
+                stroke={stroke}
+                strokeWidth={0.8 * inverseScale}
+                cornerRadius={5 * inverseScale}
+                listening={false}
+              />
+              <Text
+                text={`${helperText}\nEsc zum Beenden`}
+                fill={plannerTheme.textLight}
+                fontSize={11 * inverseScale}
+                lineHeight={1.15}
+                listening={false}
+              />
+            </Group>
+          )}
         </Group>
       )}
     </Group>

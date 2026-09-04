@@ -27,6 +27,7 @@ import {
 import type { RoofArea } from "../../src/types/planner";
 import {
   imageVectorFromGeographicAzimuth,
+  resolveModuleDownhillAzimuth,
   selectModuleSlopeArrowIds,
 } from "../../src/components_v2/modules/panels/moduleSlope";
 import {
@@ -205,6 +206,41 @@ test("module downhill arrows use geographic azimuth in image coordinates", () =>
   const west = imageVectorFromGeographicAzimuth(270);
   assert.ok(Math.abs(west.x + 1) < 1e-12);
   assert.ok(Math.abs(west.y) < 1e-12);
+});
+
+test("canonical module downhill semantics distinguish roof fall, South high side and opposing pairs", () => {
+  assert.equal(resolveModuleDownhillAzimuth({
+    kind: "pitched",
+    roofFallAzimuthDeg: 180,
+  }), 180);
+  assert.equal(resolveModuleDownhillAzimuth({
+    kind: "flat-south",
+    moduleFaceAzimuthDeg: 0,
+  }), 180);
+  assert.equal(resolveModuleDownhillAzimuth({
+    kind: "flat-south",
+    moduleFaceAzimuthDeg: 90,
+  }), 270);
+  assert.equal(resolveModuleDownhillAzimuth({
+    kind: "flat-south",
+    moduleFaceAzimuthDeg: 180,
+  }), 0);
+
+  const left = resolveModuleDownhillAzimuth({
+    kind: "flat-opposing",
+    blockCenterPx: { x: 100, y: 100 },
+    moduleCenterPx: { x: 80, y: 100 },
+    moduleFaceAzimuthDeg: 90,
+  });
+  const right = resolveModuleDownhillAzimuth({
+    kind: "flat-opposing",
+    blockCenterPx: { x: 100, y: 100 },
+    moduleCenterPx: { x: 120, y: 100 },
+    moduleFaceAzimuthDeg: 270,
+  });
+  assert.equal(left, 270);
+  assert.equal(right, 90);
+  assert.equal(((right! - left!) + 360) % 360, 180);
 });
 
 test("module downhill arrows are limited to the first three modules of every rotated row", () => {

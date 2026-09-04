@@ -17,6 +17,7 @@ import {
   resolveManualAdvancedBlockDefinition,
   regroupK2PanelsAfterManualAdd,
   snapAdvancedManualCenter,
+  snapStandardManualCenter,
 } from "../../src/components_v2/modules/manualPlacement";
 import type { ModulesConfig, PanelInstance, PanelSpec, RoofArea } from "../../src/types/planner";
 import { buildGuidedPlanningResult } from "../../src/components_v2/modules/advanced/guidedPlanningPresentation";
@@ -331,6 +332,108 @@ test("advanced snapping is deterministic and Shift bypasses it", () => {
     disableSnap: false,
   });
   assert.deepEqual(first, second);
+
+  const blockCenter = { x: 52, y: 50 };
+  const rotation = ((90 - definition.planarOrientationDeg) * Math.PI) / 180;
+  const exactNeighbour = {
+    x: blockCenter.x + definition.pitchM.x * Math.cos(rotation) / 0.1,
+    y: blockCenter.y - definition.pitchM.x * Math.sin(rotation) / 0.1,
+  };
+  const nearNeighbour = { x: exactNeighbour.x + 1, y: exactNeighbour.y - 0.5 };
+  const snappedNeighbour = snapAdvancedManualCenter({
+    pointerPx: nearNeighbour,
+    roofId: ROOF.id,
+    panels: existing,
+    definition,
+    mppImage: 0.1,
+    activationThresholdPx: 2,
+    disableSnap: false,
+  });
+  assert.ok(Math.abs(snappedNeighbour.x - exactNeighbour.x) < 1e-9);
+  assert.ok(Math.abs(snappedNeighbour.y - exactNeighbour.y) < 1e-9);
+
+  const far = { x: exactNeighbour.x + 20, y: exactNeighbour.y + 20 };
+  assert.deepEqual(snapAdvancedManualCenter({
+    pointerPx: far,
+    roofId: ROOF.id,
+    panels: existing,
+    definition,
+    mppImage: 0.1,
+    activationThresholdPx: 2,
+    disableSnap: false,
+  }), far);
+});
+
+test("Standard magnetic snap creates an exact compact 2x2 grid and is rotation invariant", () => {
+  const angleDeg = 37;
+  const radians = angleDeg * Math.PI / 180;
+  const toWorld = (local: { x: number; y: number }) => ({
+    x: 80 + local.x * Math.cos(radians) - local.y * Math.sin(radians),
+    y: 60 + local.x * Math.sin(radians) + local.y * Math.cos(radians),
+  });
+  const widthPx = PANEL.widthM / 0.1;
+  const heightPx = PANEL.heightM / 0.1;
+  const gapPx = 0.019 / 0.1;
+  const stepX = widthPx + gapPx;
+  const stepY = heightPx + gapPx;
+  const existing = [
+    { id: "tl", local: { x: 0, y: 0 } },
+    { id: "tr", local: { x: stepX, y: 0 } },
+    { id: "bl", local: { x: 0, y: stepY } },
+  ].map(({ id, local }) => ({
+    id,
+    roofId: ROOF.id,
+    ...toWorld(local),
+    cx: toWorld(local).x,
+    cy: toWorld(local).y,
+    wPx: widthPx,
+    hPx: heightPx,
+    angleDeg,
+    orientation: "portrait" as const,
+    panelId: PANEL.id,
+  }));
+  const exact = toWorld({ x: stepX, y: stepY });
+  const pointer = { x: exact.x + 2, y: exact.y - 1 };
+  const snapped = snapStandardManualCenter({
+    pointerPx: pointer,
+    roofId: ROOF.id,
+    panels: existing,
+    angleDeg,
+    widthPx,
+    heightPx,
+    gapXPx: gapPx,
+    gapYPx: gapPx,
+    activationThresholdPx: 4,
+    disableSnap: false,
+  });
+  assert.ok(Math.abs(snapped.x - exact.x) < 1e-9);
+  assert.ok(Math.abs(snapped.y - exact.y) < 1e-9);
+
+  const far = { x: exact.x + 20, y: exact.y + 20 };
+  assert.deepEqual(snapStandardManualCenter({
+    pointerPx: far,
+    roofId: ROOF.id,
+    panels: existing,
+    angleDeg,
+    widthPx,
+    heightPx,
+    gapXPx: gapPx,
+    gapYPx: gapPx,
+    activationThresholdPx: 4,
+    disableSnap: false,
+  }), far);
+  assert.deepEqual(snapStandardManualCenter({
+    pointerPx: pointer,
+    roofId: ROOF.id,
+    panels: existing,
+    angleDeg,
+    widthPx,
+    heightPx,
+    gapXPx: gapPx,
+    gapYPx: gapPx,
+    activationThresholdPx: 4,
+    disableSnap: true,
+  }), pointer);
 });
 
 test("a fixed committed layout reports truthful actual counts after manual addition", () => {

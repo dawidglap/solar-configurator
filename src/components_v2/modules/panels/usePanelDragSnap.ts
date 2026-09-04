@@ -70,6 +70,55 @@ export type StaticPanelUV = {
     hh: number;
 };
 
+export function resolveMagneticNeighbourSnapUV(input: {
+    u: number;
+    v: number;
+    hw: number;
+    hh: number;
+    gapXPx: number;
+    gapYPx: number;
+    activationThresholdPx: number;
+    panels: readonly StaticPanelUV[];
+}): UV | null {
+    let best: UV | null = null;
+    let bestDistance = Math.max(0, input.activationThresholdPx) + Number.EPSILON;
+    for (const panel of input.panels) {
+        const horizontalOffset = input.hw + panel.hw + input.gapXPx;
+        const verticalOffset = input.hh + panel.hh + input.gapYPx;
+        const targets = [
+            { u: panel.u - horizontalOffset, v: panel.v },
+            { u: panel.u + horizontalOffset, v: panel.v },
+            { u: panel.u, v: panel.v - verticalOffset },
+            { u: panel.u, v: panel.v + verticalOffset },
+        ];
+        for (const target of targets) {
+            const distance = Math.hypot(input.u - target.u, input.v - target.v);
+            if (distance < bestDistance) {
+                best = target;
+                bestDistance = distance;
+            }
+        }
+    }
+    return best;
+}
+
+export function hasPanelOverlapCached(input: {
+    u: number;
+    v: number;
+    hw: number;
+    hh: number;
+    gapPx: number;
+    gapXPx?: number;
+    gapYPx?: number;
+    panels: readonly StaticPanelUV[];
+}): boolean {
+    return input.panels.some((panel) => {
+        const minU = input.hw + panel.hw + (input.gapXPx ?? input.gapPx);
+        const minV = input.hh + panel.hh + (input.gapYPx ?? input.gapPx);
+        return Math.abs(input.u - panel.u) < minU && Math.abs(input.v - panel.v) < minV;
+    });
+}
+
 export function buildPanelDragStaticGeometry(input: {
     allPanels: PanelInst[];
     roofId: string;
@@ -153,7 +202,7 @@ export function usePanelDragSnap({
     const draggedSlopeArrowNodeRef = React.useRef<Konva.Node | null>(null);
     const dragStartPanelRef = React.useRef<PanelInst | null>(null);
     const finalPositionRef = React.useRef<Pt | null>(null);
-    const frameRef = React.useRef<FrameScheduler<Pt> | null>(null);
+    const frameRef = React.useRef<FrameScheduler<{ point: Pt; disableSnap: boolean }> | null>(null);
 
     // Guide calcolate (altri pannelli + bordi tetto)
     const guidesRef = React.useRef<{
@@ -214,24 +263,7 @@ export function usePanelDragSnap({
         [allPanels, roofId, defaultAngleDeg, project, uvBounds, edgeMarginPx]
     );
 
-    // --- risoluzione overlap (spinge fuori lungo asse con penetrazione minore)
     const staticPanelsRef = React.useRef<Array<{ id: string; u: number; v: number; hw: number; hh: number }>>([]);
-
-    const resolveNoOverlap = React.useCallback(
-        (u0: number, v0: number, hw: number, hh: number) => {
-            return resolveNoOverlapCached({
-                u: u0,
-                v: v0,
-                hw,
-                hh,
-                gapPx,
-                gapXPx,
-                gapYPx,
-                panels: staticPanelsRef.current,
-            });
-        },
-        [gapPx, gapXPx, gapYPx]
-    );
 
     const endDrag = React.useCallback((commit = true) => {
         frameRef.current?.flush();
@@ -311,7 +343,7 @@ export function usePanelDragSnap({
             const ns = '.paneldrag';
             st.off(ns);
 
-            const applyPointerFrame = (q: Pt) => {
+            const applyPointerFrame = ({ point: q, disableSnap }: { point: Pt; disableSnap: boolean }) => {
                 const id = draggingIdRef.current;
                 const off = startOffsetRef.current;
                 const sz = dragSizeHalfRef.current;
@@ -321,45 +353,68 @@ export function usePanelDragSnap({
                 const cand = { x: q.x + off.dx, y: q.y + off.dy };
                 const cur = project(cand);
 
-                // --- SNAP 1D su u/v (centri + bordi + margini tetto interni)
+                // Neighbour snap is two-dimensional and has priority. It uses
+                // the exact configured clear gaps and only activates nearby.
                 let bestU = cur.u;
                 let bestDU = snapPxImg + 1;
                 let snappedU = false;
-
-                for (const g of guidesRef.current.uCenters) {
-                    const du = Math.abs(cur.u - g);
-                    if (du <= snapPxImg && du < bestDU) { bestDU = du; bestU = g; snappedU = true; }
-                }
-                for (const ePos of guidesRef.current.uEdges) {
-                    const cand1 = ePos - sz.hw;
-                    const cand2 = ePos + sz.hw;
-                    const du1 = Math.abs(cur.u - cand1);
-                    const du2 = Math.abs(cur.u - cand2);
-                    if (du1 <= snapPxImg && du1 < bestDU) { bestDU = du1; bestU = cand1; snappedU = true; }
-                    if (du2 <= snapPxImg && du2 < bestDU) { bestDU = du2; bestU = cand2; snappedU = true; }
-                }
-
                 let bestV = cur.v;
                 let bestDV = snapPxImg + 1;
                 let snappedV = false;
-
-                for (const g of guidesRef.current.vCenters) {
-                    const dv = Math.abs(cur.v - g);
-                    if (dv <= snapPxImg && dv < bestDV) { bestDV = dv; bestV = g; snappedV = true; }
+                const magnetic = disableSnap ? null : resolveMagneticNeighbourSnapUV({
+                    u: cur.u,
+                    v: cur.v,
+                    hw: sz.hw,
+                    hh: sz.hh,
+                    gapXPx: gapXPx ?? gapPx,
+                    gapYPx: gapYPx ?? gapPx,
+                    activationThresholdPx: snapPxImg,
+                    panels: staticPanelsRef.current,
+                });
+                if (magnetic) {
+                    bestU = magnetic.u;
+                    bestV = magnetic.v;
+                    snappedU = true;
+                    snappedV = true;
+                } else if (!disableSnap) {
+                    for (const g of guidesRef.current.uCenters) {
+                        const du = Math.abs(cur.u - g);
+                        if (du <= snapPxImg && du < bestDU) { bestDU = du; bestU = g; snappedU = true; }
+                    }
+                    for (const ePos of guidesRef.current.uEdges) {
+                        const cand1 = ePos - sz.hw;
+                        const cand2 = ePos + sz.hw;
+                        const du1 = Math.abs(cur.u - cand1);
+                        const du2 = Math.abs(cur.u - cand2);
+                        if (du1 <= snapPxImg && du1 < bestDU) { bestDU = du1; bestU = cand1; snappedU = true; }
+                        if (du2 <= snapPxImg && du2 < bestDU) { bestDU = du2; bestU = cand2; snappedU = true; }
+                    }
+                    for (const g of guidesRef.current.vCenters) {
+                        const dv = Math.abs(cur.v - g);
+                        if (dv <= snapPxImg && dv < bestDV) { bestDV = dv; bestV = g; snappedV = true; }
+                    }
+                    for (const ePos of guidesRef.current.vEdges) {
+                        const cand1 = ePos - sz.hh;
+                        const cand2 = ePos + sz.hh;
+                        const dv1 = Math.abs(cur.v - cand1);
+                        const dv2 = Math.abs(cur.v - cand2);
+                        if (dv1 <= snapPxImg && dv1 < bestDV) { bestDV = dv1; bestV = cand1; snappedV = true; }
+                        if (dv2 <= snapPxImg && dv2 < bestDV) { bestDV = dv2; bestV = cand2; snappedV = true; }
+                    }
                 }
-                for (const ePos of guidesRef.current.vEdges) {
-                    const cand1 = ePos - sz.hh;
-                    const cand2 = ePos + sz.hh;
-                    const dv1 = Math.abs(cur.v - cand1);
-                    const dv2 = Math.abs(cur.v - cand2);
-                    if (dv1 <= snapPxImg && dv1 < bestDV) { bestDV = dv1; bestV = cand1; snappedV = true; }
-                    if (dv2 <= snapPxImg && dv2 < bestDV) { bestDV = dv2; bestV = cand2; snappedV = true; }
-                }
 
-                // --- NO-OVERLAP
-                const separated = resolveNoOverlap(bestU, bestV, sz.hw, sz.hh);
-                bestU = separated.u;
-                bestV = separated.v;
+                // Invalid candidates never enter canonical state and are not
+                // pushed/teleported elsewhere. The node stays at last valid.
+                if (hasPanelOverlapCached({
+                    u: bestU,
+                    v: bestV,
+                    hw: sz.hw,
+                    hh: sz.hh,
+                    gapPx,
+                    gapXPx,
+                    gapYPx,
+                    panels: staticPanelsRef.current,
+                })) return;
 
                 // hint lines
                 if (snappedU) {
@@ -393,10 +448,13 @@ export function usePanelDragSnap({
 
             frameRef.current = createLatestFrameScheduler(applyPointerFrame);
 
-            st.on('mousemove' + ns + ' touchmove' + ns, () => {
+            st.on('mousemove' + ns + ' touchmove' + ns, (event: any) => {
                 const mp = st.getPointerPosition();
                 if (!mp) return;
-                frameRef.current?.schedule(stageToImg(mp.x, mp.y));
+                frameRef.current?.schedule({
+                    point: stageToImg(mp.x, mp.y),
+                    disableSnap: Boolean(event?.evt?.shiftKey),
+                });
             });
 
             st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns, () => endDrag(true));
@@ -414,13 +472,15 @@ export function usePanelDragSnap({
             uvBounds,
             snapPxImg,
             clearHints,
-            resolveNoOverlap,
             reservedGuard,
             normalizeCandidate,
             buildGuides,
             setGuide,
             defaultAngleDeg,
             roofId,
+            gapPx,
+            gapXPx,
+            gapYPx,
         ]
     );
 

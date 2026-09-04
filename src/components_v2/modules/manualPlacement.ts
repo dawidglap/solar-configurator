@@ -94,9 +94,10 @@ function committedPanelFootprints(
   panels: readonly PanelInstance[],
   roofId: string,
   adapter: ImageMetricAdapter,
+  excludePanelIds: ReadonlySet<string> = new Set(),
 ): MetricPolygon[] {
   return panels
-    .filter((panel) => panel.roofId === roofId)
+    .filter((panel) => panel.roofId === roofId && !excludePanelIds.has(panel.id))
     .map((panel) =>
       imagePolygonToMetric(
         rectangle(
@@ -118,6 +119,7 @@ function validate(input: {
   zones: readonly ObstacleZone[];
   snowGuards: readonly SnowGuard[];
   panels: readonly PanelInstance[];
+  excludePanelIds?: ReadonlySet<string>;
 }): { valid: boolean; reasons: ManualPlacementReason[] } {
   const usableRoof = computeUsableRoof({
     roofPolygonM: imagePolygonToMetric(input.roof.points, input.adapter),
@@ -143,13 +145,42 @@ function validate(input: {
   });
   const reasons: ManualPlacementReason[] = [...geometric.reasons];
   if (
-    committedPanelFootprints(input.panels, input.roof.id, input.adapter).some(
+    committedPanelFootprints(input.panels, input.roof.id, input.adapter, input.excludePanelIds).some(
       (panelFootprint) => polygonsIntersectOrTouch(input.footprintM, panelFootprint),
     )
   ) {
     reasons.push("panel-overlap");
   }
   return { valid: reasons.length === 0, reasons };
+}
+
+export function validateExistingPanelPlacement(input: {
+  panel: PanelInstance;
+  centerPx: Pt;
+  roof: RoofArea;
+  marginM: number;
+  mppImage: number;
+  zones: readonly ObstacleZone[];
+  snowGuards: readonly SnowGuard[];
+  panels: readonly PanelInstance[];
+  excludePanelIds?: ReadonlySet<string>;
+}): { valid: boolean; reasons: ManualPlacementReason[] } {
+  const adapter = imageAdapter(input.roof, input.mppImage);
+  return validate({
+    footprintM: imagePolygonToMetric(rectangle(
+      input.centerPx,
+      input.panel.wPx,
+      input.panel.hPx,
+      input.panel.angleDeg,
+    ), adapter),
+    roof: input.roof,
+    marginM: input.marginM,
+    adapter,
+    zones: input.zones,
+    snowGuards: input.snowGuards,
+    panels: input.panels,
+    excludePanelIds: input.excludePanelIds ?? new Set([input.panel.id]),
+  });
 }
 
 export function buildStandardManualCandidate(input: {
@@ -188,8 +219,8 @@ export function buildStandardManualCandidate(input: {
     const du = Math.abs(dx * cos + dy * sin);
     const dv = Math.abs(-dx * sin + dy * cos);
     return (
-      du < (wPx + panel.wPx) / 2 + (input.gapXM ?? 0) / input.mppImage &&
-      dv < (hPx + panel.hPx) / 2 + (input.gapYM ?? 0) / input.mppImage
+      du < (wPx + panel.wPx) / 2 + (input.gapXM ?? 0) / input.mppImage - 1e-6 &&
+      dv < (hPx + panel.hPx) / 2 + (input.gapYM ?? 0) / input.mppImage - 1e-6
     );
   });
   if (tooClose && !validation.reasons.includes("panel-overlap")) {
@@ -220,6 +251,7 @@ export function snapStandardManualCenter(input: {
   heightPx: number;
   gapXPx: number;
   gapYPx: number;
+  activationThresholdPx?: number;
   disableSnap: boolean;
 }): Pt {
   if (input.disableSnap) return input.pointerPx;
@@ -235,35 +267,33 @@ export function snapStandardManualCenter(input: {
     y: point.x * sin + point.y * cos,
   });
   const pointer = toLocal(input.pointerPx);
-  let x = pointer.x;
-  let y = pointer.y;
-  let dxBest = 10;
-  let dyBest = 10;
+  const activationThresholdPx = Math.max(0, input.activationThresholdPx ?? 10);
+  let best = pointer;
+  let snapped = false;
+  let bestDistance = activationThresholdPx + Number.EPSILON;
   for (const panel of input.panels) {
     if (panel.roofId !== input.roofId) continue;
     const angleDifference = Math.abs((((panel.angleDeg - input.angleDeg + 180) % 360) + 360) % 360 - 180);
     if (Math.min(angleDifference, Math.abs(180 - angleDifference)) > 5) continue;
     const center = toLocal({ x: panel.cx, y: panel.cy });
-    const xTargets = [
-      center.x,
-      center.x - (input.widthPx + panel.wPx) / 2 - input.gapXPx,
-      center.x + (input.widthPx + panel.wPx) / 2 + input.gapXPx,
+    const horizontalOffset = (input.widthPx + panel.wPx) / 2 + input.gapXPx;
+    const verticalOffset = (input.heightPx + panel.hPx) / 2 + input.gapYPx;
+    const targets = [
+      { x: center.x - horizontalOffset, y: center.y },
+      { x: center.x + horizontalOffset, y: center.y },
+      { x: center.x, y: center.y - verticalOffset },
+      { x: center.x, y: center.y + verticalOffset },
     ];
-    const yTargets = [
-      center.y,
-      center.y - (input.heightPx + panel.hPx) / 2 - input.gapYPx,
-      center.y + (input.heightPx + panel.hPx) / 2 + input.gapYPx,
-    ];
-    xTargets.forEach((target) => {
-      const distance = Math.abs(pointer.x - target);
-      if (distance < dxBest) { dxBest = distance; x = target; }
-    });
-    yTargets.forEach((target) => {
-      const distance = Math.abs(pointer.y - target);
-      if (distance < dyBest) { dyBest = distance; y = target; }
+    targets.forEach((target) => {
+      const distance = Math.hypot(pointer.x - target.x, pointer.y - target.y);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = target;
+        snapped = true;
+      }
     });
   }
-  return toWorld({ x, y });
+  return snapped ? toWorld(best) : input.pointerPx;
 }
 
 export function resolveManualAdvancedBlockDefinition(
@@ -318,6 +348,7 @@ export function snapAdvancedManualCenter(input: {
   panels: readonly PanelInstance[];
   definition: AdvancedBlockDefinition;
   mppImage: number;
+  activationThresholdPx?: number;
   disableSnap: boolean;
 }): Pt {
   if (input.disableSnap) return input.pointerPx;
@@ -338,24 +369,26 @@ export function snapAdvancedManualCenter(input: {
   const cos = Math.cos(rotation);
   const sin = Math.sin(rotation);
   let best = input.pointerPx;
-  let bestDistance = 10;
+  let bestDistance = Math.max(0, input.activationThresholdPx ?? 10) + Number.EPSILON;
   for (const origin of centers) {
-    const dxM = (input.pointerPx.x - origin.x) * input.mppImage;
-    const dyM = -(input.pointerPx.y - origin.y) * input.mppImage;
-    const localX = dxM * cos + dyM * sin;
-    const localY = -dxM * sin + dyM * cos;
-    const snappedX = Math.round(localX / input.definition.pitchM.x) * input.definition.pitchM.x;
-    const snappedY = Math.round(localY / input.definition.pitchM.y) * input.definition.pitchM.y;
-    const worldX = snappedX * cos - snappedY * sin;
-    const worldY = snappedX * sin + snappedY * cos;
-    const candidate = {
-      x: origin.x + worldX / input.mppImage,
-      y: origin.y - worldY / input.mppImage,
-    };
-    const distance = Math.hypot(candidate.x - input.pointerPx.x, candidate.y - input.pointerPx.y);
-    if (distance < bestDistance) {
-      best = candidate;
-      bestDistance = distance;
+    const targets = [
+      { x: -input.definition.pitchM.x, y: 0 },
+      { x: input.definition.pitchM.x, y: 0 },
+      { x: 0, y: -input.definition.pitchM.y },
+      { x: 0, y: input.definition.pitchM.y },
+    ];
+    for (const target of targets) {
+      const worldX = target.x * cos - target.y * sin;
+      const worldY = target.x * sin + target.y * cos;
+      const candidate = {
+        x: origin.x + worldX / input.mppImage,
+        y: origin.y - worldY / input.mppImage,
+      };
+      const distance = Math.hypot(candidate.x - input.pointerPx.x, candidate.y - input.pointerPx.y);
+      if (distance < bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+      }
     }
   }
   return best;
