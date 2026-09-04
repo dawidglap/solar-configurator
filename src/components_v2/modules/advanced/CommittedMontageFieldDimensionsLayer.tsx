@@ -1,30 +1,18 @@
 "use client";
 
 import React from "react";
-import { Group, Line, Text } from "react-konva";
-
 import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
-import type { Pt } from "@/types/planner";
-import { plannerTheme } from "../../theme/plannerTheme";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
+import type { ThermalFieldDisplayInput } from "../thermalFields/thermalFieldDisplay";
 import {
-  buildCommittedMontageFieldMeasurements,
   buildCommittedStandardThermalFieldMeasurements,
   buildCommittedThermalFieldMeasurements,
 } from "./committedMontageFieldMeasurements";
 
-function centroid(points: Pt[]): Pt {
-  const count = Math.max(1, points.length);
-  return points.reduce(
-    (sum, point) => ({ x: sum.x + point.x / count, y: sum.y + point.y / count }),
-    { x: 0, y: 0 },
-  );
-}
-
 export default function CommittedMontageFieldDimensionsLayer({
-  canvasRotationDeg = 0,
+  onThermalFieldsChange,
 }: {
-  canvasRotationDeg?: number;
+  onThermalFieldsChange?: (roofId: string, fields: ThermalFieldDisplayInput[]) => void;
 }) {
   const show = usePlannerV2Store((state) => state.ui.showFieldDimensions);
   const step = usePlannerV2Store((state) => state.step);
@@ -40,19 +28,6 @@ export default function CommittedMontageFieldDimensionsLayer({
   const persisted = React.useMemo(
     () => resolveSurfacePlanning(roof?.surfacePlanning),
     [roof?.surfacePlanning],
-  );
-  const fields = React.useMemo(
-    () =>
-      show && step === "modules" && selectedId && roof && !draft && mppImage &&
-      persisted.status === "supported-advanced"
-        ? buildCommittedMontageFieldMeasurements({
-            roof,
-            config: persisted.config,
-            panels,
-            mppImage,
-          })
-        : [],
-    [draft, mppImage, panels, persisted, roof, selectedId, show, step],
   );
   const thermalFields = React.useMemo(
     () =>
@@ -70,66 +45,39 @@ export default function CommittedMontageFieldDimensionsLayer({
         : [],
     [draft, mppImage, panels, persisted, roof, selectedId, show, step],
   );
+  const displayInputs = React.useMemo<ThermalFieldDisplayInput[]>(() => {
+    if (!show || !roof || !thermalFields.length) return [];
+    const limits = persisted.status === "supported-advanced" || persisted.status === "supported-standard"
+      ? persisted.config.thermalFieldLimits
+      : undefined;
+    if (!limits) return [];
+    return thermalFields.map((field) => ({
+      key: field.thermalFieldKey,
+      outlinePx: field.outlinePx,
+      lengthM: field.longSideSizeM,
+      widthM: field.railSizeM,
+      moduleCount: field.moduleCount,
+      ...(persisted.status === "supported-advanced" ? { blockCount: field.blockCount } : {}),
+      ...(limits.kind === "flat-block" && limits.maxModuleLongSideDirectionM === undefined
+        ? {}
+        : { lengthLimitM: limits.kind === "flat-block"
+          ? limits.maxModuleLongSideDirectionM
+          : limits.maxRowDirectionM }),
+      widthLimitM: limits.kind === "flat-block"
+        ? limits.maxRailDirectionM
+        : limits.maxColumnDirectionM,
+      valid:
+        field.railSizeM <= (limits.kind === "flat-block" ? limits.maxRailDirectionM : limits.maxColumnDirectionM) + 1e-9 &&
+        (limits.kind === "flat-block" && limits.maxModuleLongSideDirectionM === undefined
+          ? true
+          : field.longSideSizeM <= (limits.kind === "flat-block" ? limits.maxModuleLongSideDirectionM! : limits.maxRowDirectionM) + 1e-9),
+    }));
+  }, [persisted, roof, show, thermalFields]);
+  React.useEffect(() => {
+    if (!roof) return;
+    onThermalFieldsChange?.(roof.id, displayInputs);
+    return () => onThermalFieldsChange?.(roof.id, []);
+  }, [displayInputs, onThermalFieldsChange, roof]);
 
-  if (!show || (!fields.length && !thermalFields.length)) return null;
-  return (
-    <Group listening={false}>
-      {fields.map((field, index) => {
-        const center = centroid(field.outlinePx);
-        return (
-          <Group key={field.fieldKey} listening={false}>
-            <Line
-              points={field.outlinePx.flatMap((point) => [point.x, point.y])}
-              closed
-              stroke={plannerTheme.primary}
-              strokeWidth={1.6}
-              dash={[9, 5]}
-              opacity={0.78}
-              listening={false}
-            />
-            <Text
-              x={center.x}
-              y={center.y}
-              offsetX={38}
-              offsetY={7}
-              rotation={-canvasRotationDeg}
-              text={`F${index + 1} · ${field.longSideSizeM.toFixed(2)} × ${field.railSizeM.toFixed(2)} m`}
-              fill={plannerTheme.primary}
-              fontSize={8}
-              fontStyle="bold"
-              listening={false}
-            />
-          </Group>
-        );
-      })}
-      {thermalFields.map((field, index) => {
-        const center = centroid(field.outlinePx);
-        return (
-          <Group key={field.thermalFieldKey} listening={false}>
-            <Line
-              points={field.outlinePx.flatMap((point) => [point.x, point.y])}
-              closed
-              stroke="#f59e0b"
-              strokeWidth={1.1}
-              dash={[3, 4]}
-              opacity={0.72}
-              listening={false}
-            />
-            <Text
-              x={center.x}
-              y={center.y}
-              offsetX={42}
-              offsetY={-8}
-              rotation={-canvasRotationDeg}
-              text={`T${index + 1} · ${field.longSideSizeM.toFixed(2)} × ${field.railSizeM.toFixed(2)} m`}
-              fill="#f59e0b"
-              fontSize={8}
-              fontStyle="bold"
-              listening={false}
-            />
-          </Group>
-        );
-      })}
-    </Group>
-  );
+  return null;
 }

@@ -14,7 +14,7 @@ import {
 
 const TICKS = Array.from({ length: 36 }, (_, i) => i * 10); // alle 10°
 
-export default function CompassHUD() {
+export default function CompassHUD({ rightOffsetPx = 0 }: { rightOffsetPx?: number }) {
   const layers = usePlannerV2Store((s) => s.layers);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
   const draft = usePlannerV2Store((s) =>
@@ -53,7 +53,10 @@ export default function CompassHUD() {
     .join(" / ");
 
   return (
-    <div className="fixed right-3 top-24 z-[260] pointer-events-none mt-4">
+    <div
+      className="fixed top-24 z-[260] pointer-events-none mt-4 transition-[right] duration-150"
+      style={{ right: 12 + rightOffsetPx }}
+    >
       <div
         className="
           pointer-events-auto flex flex-col items-center gap-1.5

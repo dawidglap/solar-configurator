@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Group, Rect, Line, Text, Image as KonvaImage } from 'react-konva';
+import { Group, Rect, Line, Image as KonvaImage } from 'react-konva';
 import { computeAutoLayoutRects } from './layout';      // ← stessa cartella
 import { overlapsReservedRect, overlapsSnowGuard } from '../zones/utils';
 import { plannerTheme } from '../theme/plannerTheme';
@@ -12,6 +12,7 @@ import {
   groupRectangularThermalUnits,
   type ThermalFieldLimits,
 } from '@/lib/planning-core/advanced';
+import type { ThermalFieldDisplayInput } from './thermalFields/thermalFieldDisplay';
 
 type Pt = { x: number; y: number };
 type Anchor = 'start' | 'center' | 'end';
@@ -40,7 +41,7 @@ type Props = {
   // copertura lungo Y (righe): 0.5, 0.75, 1 …
   coverageRatio?: number;
   thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: 'pitched-grid' }>;
-  canvasRotationDeg?: number;
+  onThermalFieldsChange?: (roofId: string, fields: ThermalFieldDisplayInput[]) => void;
 };
 
 /* ───────── helpers geometrici SOLO per la GRIGLIA VISIVA ───────── */
@@ -129,7 +130,7 @@ export default function ModulesPreview({
   anchorY = 'start',
   coverageRatio = 1,
   thermalFieldLimits,
-  canvasRotationDeg = 0,
+  onThermalFieldsChange,
 }: Props) {
   // 1) Calcolo ufficiale dei rettangoli (stessa funzione usata al commit)
   const rectsAll = useMemo(() => {
@@ -224,6 +225,23 @@ export default function ModulesPreview({
       })),
     }));
   }, [mppImage, rects, spacingM, spacingXM, spacingYM, thermalFieldLimits]);
+  const thermalFieldDisplayInputs = useMemo<ThermalFieldDisplayInput[]>(() => {
+    if (!thermalFieldLimits) return [];
+    return thermalFields.map((field) => ({
+      key: field.thermalFieldKey,
+      outlinePx: field.outlinePx,
+      lengthM: field.rowDirectionSizeM,
+      widthM: field.columnDirectionSizeM,
+      moduleCount: field.moduleCount,
+      lengthLimitM: thermalFieldLimits.maxRowDirectionM,
+      widthLimitM: thermalFieldLimits.maxColumnDirectionM,
+      valid: field.compliant,
+    }));
+  }, [thermalFieldLimits, thermalFields]);
+  React.useEffect(() => {
+    onThermalFieldsChange?.(roofId, thermalFieldDisplayInputs);
+    return () => onThermalFieldsChange?.(roofId, []);
+  }, [onThermalFieldsChange, roofId, thermalFieldDisplayInputs]);
 
   // 3) Griglia visiva (linee) — calcolata con la stessa logica di anchor/phase
   const gridLinesWorld = useMemo(() => {
@@ -386,33 +404,6 @@ export default function ModulesPreview({
           )}
         </Group>
       ))}
-      {thermalFields.map((field, index) => {
-        const center = centroid(field.outlinePx);
-        return (
-          <Group key={field.thermalFieldKey} listening={false}>
-            <Line
-              points={field.outlinePx.flatMap((point) => [point.x, point.y])}
-              closed
-              stroke="#f59e0b"
-              strokeWidth={1.1}
-              dash={[3, 4]}
-              opacity={0.72}
-              listening={false}
-            />
-            <Text
-              x={center.x}
-              y={center.y - 9}
-              offsetX={5}
-              rotation={-canvasRotationDeg}
-              text={`T${index + 1}`}
-              fill="#f59e0b"
-              fontSize={9}
-              fontStyle="bold"
-              listening={false}
-            />
-          </Group>
-        );
-      })}
     </Group>
   );
 }

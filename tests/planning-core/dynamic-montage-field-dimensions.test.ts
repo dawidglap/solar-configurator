@@ -70,7 +70,7 @@ test("Feldmaße is a default-off view toggle and is not part of persisted planni
   );
   const partialize = store.slice(store.indexOf("partialize:"), store.indexOf("migrate:"));
 
-  assert.match(toolbar, /Montagefeld-Maße anzeigen/);
+  assert.match(toolbar, /Thermische Feldmaße anzeigen/);
   assert.match(toolbar, /Feldmaße/);
   assert.match(store, /showFieldDimensions: false/);
   assert.equal(partialize.includes("showFieldDimensions"), false);

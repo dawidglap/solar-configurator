@@ -794,7 +794,7 @@ export default function TopToolbar() {
                 : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground",
             ].join(" ")}
             aria-pressed={showFieldDimensions}
-            title="Montagefeld-Maße anzeigen"
+            title="Thermische Feldmaße anzeigen"
           >
             <Ruler className="h-3.5 w-3.5" aria-hidden="true" />
             Feldmaße

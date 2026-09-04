@@ -24,6 +24,14 @@ import ManualPlacementLayer from "../modules/ManualPlacementLayer";
 import { endManualPlacement, useManualPlacementSession } from "../modules/manualPlacementSession";
 import AdvancedPreviewLayer from "../modules/advanced/AdvancedPreviewLayer";
 import CommittedMontageFieldDimensionsLayer from "../modules/advanced/CommittedMontageFieldDimensionsLayer";
+import ThermalFieldCanvasLayer from "../modules/thermalFields/ThermalFieldCanvasLayer";
+import ThermalFieldOverviewDrawer, {
+  THERMAL_FIELD_DRAWER_WIDTH_PX,
+} from "../modules/thermalFields/ThermalFieldOverviewDrawer";
+import {
+  buildThermalFieldDisplay,
+  type ThermalFieldDisplayInput,
+} from "../modules/thermalFields/thermalFieldDisplay";
 import RoofAnnotationsLayer from "./RoofAnnotationsLayer";
 import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import {
@@ -225,6 +233,34 @@ export default function CanvasStage() {
   const SHOW_AREA_LABELS = false;
 
   const [showUiGrid, setShowUiGrid] = useState(true);
+  const showFieldDimensions = usePlannerV2Store((state) => state.ui.showFieldDimensions);
+  const [fieldDrawerOpen, setFieldDrawerOpen] = useState(false);
+  const [selectedThermalFieldKey, setSelectedThermalFieldKey] = useState<string>();
+  type ThermalFieldSource = { roofId?: string; fields: ThermalFieldDisplayInput[] };
+  const [thermalFieldSources, setThermalFieldSources] = useState<{
+    standardPreview: ThermalFieldSource;
+    advancedPreview: ThermalFieldSource;
+    committed: ThermalFieldSource;
+  }>({
+    standardPreview: { fields: [] },
+    advancedPreview: { fields: [] },
+    committed: { fields: [] },
+  });
+  const setStandardPreviewThermalFields = useCallback((roofId: string, fields: ThermalFieldDisplayInput[]) => {
+    setThermalFieldSources((current) => current.standardPreview.roofId === roofId && current.standardPreview.fields === fields
+      ? current
+      : { ...current, standardPreview: { roofId, fields } });
+  }, []);
+  const setAdvancedPreviewThermalFields = useCallback((roofId: string, fields: ThermalFieldDisplayInput[]) => {
+    setThermalFieldSources((current) => current.advancedPreview.roofId === roofId && current.advancedPreview.fields === fields
+      ? current
+      : { ...current, advancedPreview: { roofId, fields } });
+  }, []);
+  const setCommittedThermalFields = useCallback((roofId: string, fields: ThermalFieldDisplayInput[]) => {
+    setThermalFieldSources((current) => current.committed.roofId === roofId && current.committed.fields === fields
+      ? current
+      : { ...current, committed: { roofId, fields } });
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -371,6 +407,50 @@ export default function CanvasStage() {
       allPanels.some((p) => p.roofId === selectedId),
     [allPanels, selectedId],
   );
+  const standardPreviewVisible = Boolean(
+    step === "modules" &&
+    !manualPlacementSession &&
+    selectedRoof &&
+    standardPreviewPanel &&
+    snap.mppImage &&
+    standardPreviewModules.showGrid &&
+    selectedPlanningDraft?.targetMode !== "advanced" &&
+    (!hasPanelsOnSelected || selectedPlanningDraft?.targetMode === "standard"),
+  );
+  const candidateThermalFieldSource = selectedPlanningDraft?.targetMode === "advanced"
+    ? thermalFieldSources.advancedPreview
+    : selectedPlanningDraft?.targetMode === "standard" || standardPreviewVisible
+      ? thermalFieldSources.standardPreview
+      : thermalFieldSources.committed;
+  const activeThermalFieldInputs = candidateThermalFieldSource.roofId === selectedId
+    ? candidateThermalFieldSource.fields
+    : [];
+  const activeThermalFields = useMemo(
+    () => buildThermalFieldDisplay(activeThermalFieldInputs),
+    [activeThermalFieldInputs],
+  );
+  const thermalFieldsArePreview = Boolean(
+    selectedPlanningDraft || (standardPreviewVisible && !hasPanelsOnSelected),
+  );
+  const previousShowFieldDimensions = useRef(showFieldDimensions);
+  useEffect(() => {
+    if (showFieldDimensions && !previousShowFieldDimensions.current) {
+      setFieldDrawerOpen(true);
+    }
+    if (!showFieldDimensions) {
+      setFieldDrawerOpen(false);
+      setSelectedThermalFieldKey(undefined);
+    }
+    previousShowFieldDimensions.current = showFieldDimensions;
+  }, [showFieldDimensions]);
+  useEffect(() => {
+    if (
+      selectedThermalFieldKey &&
+      !activeThermalFields.some((field) => field.key === selectedThermalFieldKey)
+    ) {
+      setSelectedThermalFieldKey(undefined);
+    }
+  }, [activeThermalFields, selectedThermalFieldKey]);
 
   // reset shapeMode on selection change
   useEffect(() => {
@@ -1035,14 +1115,7 @@ export default function CanvasStage() {
                 />
 
                 {/* --- TUTTO IL RESTO (ModulesPreview, SonnendachOverlayKonva, RoofShapesLayer, ZonesLayer, pannelli, anteprime, ecc.) RIMANE QUI DENTRO --- */}
-                {step === "modules" &&
-                  !manualPlacementSession &&
-                  selectedRoof &&
-                  standardPreviewPanel &&
-                  snap.mppImage &&
-                  standardPreviewModules.showGrid &&
-                  selectedPlanningDraft?.targetMode !== "advanced" &&
-                  (!hasPanelsOnSelected || selectedPlanningDraft?.targetMode === "standard") && (
+                {standardPreviewVisible && selectedRoof && standardPreviewPanel && snap.mppImage && (
                     <ModulesPreview
                       roofId={selectedRoof.id}
                       polygon={selectedRoof.points}
@@ -1062,12 +1135,15 @@ export default function CanvasStage() {
                       anchorY={(standardPreviewModules.gridAnchorY as any) || "start"}
                       coverageRatio={standardPreviewModules.coverageRatio ?? 1}
                       thermalFieldLimits={standardThermalFieldLimits}
-                      canvasRotationDeg={rotateDeg}
+                      onThermalFieldsChange={setStandardPreviewThermalFields}
                     />
                   )}
 
                 {step === "modules" && !manualPlacementSession && (
-                  <AdvancedPreviewLayer canvasRotationDeg={rotateDeg} />
+                  <AdvancedPreviewLayer
+                    canvasRotationDeg={rotateDeg}
+                    onThermalFieldsChange={setAdvancedPreviewThermalFields}
+                  />
                 )}
                 <Group listening={!drawingCapturesPointer}>
                   <SonnendachOverlayKonva />
@@ -1200,7 +1276,22 @@ export default function CanvasStage() {
                 )}
 
                 {step === "modules" && !manualPlacementSession && (
-                  <CommittedMontageFieldDimensionsLayer canvasRotationDeg={rotateDeg} />
+                  <CommittedMontageFieldDimensionsLayer
+                    onThermalFieldsChange={setCommittedThermalFields}
+                  />
+                )}
+
+                {step === "modules" && showFieldDimensions && activeThermalFields.length > 0 && (
+                  <ThermalFieldCanvasLayer
+                    fields={activeThermalFields}
+                    selectedKey={selectedThermalFieldKey}
+                    canvasRotationDeg={rotateDeg}
+                    viewportScale={layerScale}
+                    onSelect={(key) => {
+                      setSelectedThermalFieldKey(key);
+                      setFieldDrawerOpen(true);
+                    }}
+                  />
                 )}
 
                 {step === "modules" && manualPlacementSession && (
@@ -1299,7 +1390,9 @@ export default function CanvasStage() {
 
       <RoofHotkeys />
 
-      <CompassHUD />
+      <CompassHUD
+        rightOffsetPx={showFieldDimensions && fieldDrawerOpen ? THERMAL_FIELD_DRAWER_WIDTH_PX + 12 : 0}
+      />
 
       {img && (
         <MapZoomControl
@@ -1308,6 +1401,18 @@ export default function CanvasStage() {
           minScale={minScale}
           maxScale={maxScale}
           onScaleChange={setScaleAroundViewportCenter}
+          rightOffsetPx={showFieldDimensions && fieldDrawerOpen ? THERMAL_FIELD_DRAWER_WIDTH_PX + 12 : 0}
+        />
+      )}
+
+      {step === "modules" && showFieldDimensions && (
+        <ThermalFieldOverviewDrawer
+          open={fieldDrawerOpen}
+          fields={activeThermalFields}
+          selectedKey={selectedThermalFieldKey}
+          preview={thermalFieldsArePreview}
+          onOpenChange={setFieldDrawerOpen}
+          onSelect={(key) => setSelectedThermalFieldKey(key)}
         />
       )}
 
@@ -1323,7 +1428,10 @@ export default function CanvasStage() {
         canToggleShape={step !== "modules"}
       />
       {/* ORIENTATION HUD — STEALTH (improved) */}
-      <div className="fixed right-3 bottom-6 z-[600] group pointer-events-none">
+      <div
+        className="fixed bottom-6 z-[600] group pointer-events-none transition-[right] duration-150"
+        style={{ right: 12 + (showFieldDimensions && fieldDrawerOpen ? THERMAL_FIELD_DRAWER_WIDTH_PX + 12 : 0) }}
+      >
         <div
           className="glass-panel pointer-events-auto relative rounded-lg text-muted-foreground shadow
                backdrop-blur px-1.5 py-1 flex items-center gap-1.5 transition-all duration-150

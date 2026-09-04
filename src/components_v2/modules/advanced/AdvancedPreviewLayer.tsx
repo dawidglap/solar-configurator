@@ -21,6 +21,7 @@ import {
   resolveModuleDownhillAzimuth,
   selectModuleSlopeArrowIds,
 } from "../panels/moduleSlope";
+import type { ThermalFieldDisplayInput } from "../thermalFields/thermalFieldDisplay";
 
 function centroid(points: Pt[]): Pt {
   const count = Math.max(1, points.length);
@@ -66,8 +67,10 @@ function DirectionArrow({
 
 export default function AdvancedPreviewLayer({
   canvasRotationDeg = 0,
+  onThermalFieldsChange,
 }: {
   canvasRotationDeg?: number;
+  onThermalFieldsChange?: (roofId: string, fields: ThermalFieldDisplayInput[]) => void;
 }) {
   const selectedId = usePlannerV2Store((state) => state.selectedId);
   const roof = usePlannerV2Store((state) => state.layers.find((item) => item.id === state.selectedId));
@@ -91,6 +94,28 @@ export default function AdvancedPreviewLayer({
         : null,
     [config, draft?.targetMode, mppImage, roof, snowGuards, zones],
   );
+  const thermalFieldDisplayInputs = React.useMemo<ThermalFieldDisplayInput[]>(() => {
+    const limits = config?.thermalFieldLimits;
+    if (!preview || !limits) return [];
+    return preview.thermalFields.map((field) => ({
+      key: field.thermalFieldKey,
+      outlinePx: field.outlinePx,
+      lengthM: field.rowDirectionSizeM,
+      widthM: field.columnDirectionSizeM,
+      moduleCount: field.moduleCount,
+      blockCount: field.unitCount,
+      ...(limits.maxModuleLongSideDirectionM !== undefined
+        ? { lengthLimitM: limits.maxModuleLongSideDirectionM }
+        : {}),
+      widthLimitM: limits.maxRailDirectionM,
+      valid: field.compliant,
+    }));
+  }, [config?.thermalFieldLimits, preview]);
+  React.useEffect(() => {
+    if (!roof) return;
+    onThermalFieldsChange?.(roof.id, thermalFieldDisplayInputs);
+    return () => onThermalFieldsChange?.(roof.id, []);
+  }, [onThermalFieldsChange, roof, thermalFieldDisplayInputs]);
   const slopeArrowIds = React.useMemo(
     () => selectModuleSlopeArrowIds({
       modules: (preview?.modules ?? []).map((module) => ({
@@ -193,7 +218,7 @@ export default function AdvancedPreviewLayer({
               </Group>
             );
           })}
-          {preview.montageFields.map((field, fieldIndex) => {
+          {!showFieldDimensions && preview.montageFields.map((field, fieldIndex) => {
             const labelPoint = centroid(field.outlinePx);
             return (
               <Group key={field.fieldKey} listening={false}>
@@ -215,34 +240,6 @@ export default function AdvancedPreviewLayer({
                     ? `F${fieldIndex + 1} · ${field.longSideSizeM.toFixed(2)} × ${field.railSizeM.toFixed(2)} m`
                     : `F${fieldIndex + 1}`}
                   fill={plannerTheme.primary}
-                  fontSize={showFieldDimensions ? 8 : 9}
-                  fontStyle="bold"
-                />
-              </Group>
-            );
-          })}
-          {preview.thermalFields.map((field, fieldIndex) => {
-            const labelPoint = centroid(field.outlinePx);
-            return (
-              <Group key={field.thermalFieldKey} listening={false}>
-                <Line
-                  points={field.outlinePx.flatMap((point) => [point.x, point.y])}
-                  closed
-                  stroke="#f59e0b"
-                  strokeWidth={1.1}
-                  dash={[3, 4]}
-                  opacity={0.72}
-                />
-                <Text
-                  x={labelPoint.x}
-                  y={labelPoint.y}
-                  offsetX={showFieldDimensions ? 42 : 5}
-                  offsetY={showFieldDimensions ? -8 : -7}
-                  rotation={-canvasRotationDeg}
-                  text={showFieldDimensions
-                    ? `T${fieldIndex + 1} · ${field.rowDirectionSizeM.toFixed(2)} × ${field.columnDirectionSizeM.toFixed(2)} m`
-                    : `T${fieldIndex + 1}`}
-                  fill="#f59e0b"
                   fontSize={showFieldDimensions ? 8 : 9}
                   fontStyle="bold"
                 />

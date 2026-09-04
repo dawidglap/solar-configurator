@@ -13,6 +13,7 @@ type Props = {
   minScale: number;
   maxScale: number;
   onScaleChange: (scale: number) => void;
+  rightOffsetPx?: number;
 };
 
 export default function MapZoomControl({
@@ -21,6 +22,7 @@ export default function MapZoomControl({
   minScale,
   maxScale,
   onScaleChange,
+  rightOffsetPx = 0,
 }: Props) {
   const frame = React.useRef<number | null>(null);
   const latest = React.useRef(scale);
@@ -47,7 +49,8 @@ export default function MapZoomControl({
 
   return (
     <div
-      className="fixed right-4 top-1/2 z-[590] -translate-y-1/2 rounded-xl border border-border bg-background/90 p-1.5 shadow-lg backdrop-blur-md"
+      className="fixed top-1/2 z-[590] -translate-y-1/2 rounded-xl border border-border bg-background/90 p-1.5 shadow-lg backdrop-blur-md transition-[right] duration-150"
+      style={{ right: 16 + rightOffsetPx }}
       aria-label="Kartenzoom"
       onPointerDown={stop}
       onMouseDown={stop}
