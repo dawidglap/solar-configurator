@@ -16,97 +16,134 @@ type Props = {
   rightOffsetPx?: number;
 };
 
-export default function MapZoomControl({
-  scale,
-  fitScale,
-  minScale,
-  maxScale,
-  onScaleChange,
-  rightOffsetPx = 0,
-}: Props) {
-  const frame = React.useRef<number | null>(null);
-  const latest = React.useRef(scale);
+export type MapZoomControlHandle = {
+  setTransientScale: (scale: number) => void;
+};
 
-  React.useEffect(() => {
-    if (frame.current == null) latest.current = scale;
-  }, [scale]);
+const MapZoomControl = React.forwardRef<MapZoomControlHandle, Props>(
+  function MapZoomControl(
+    {
+      scale,
+      fitScale,
+      minScale,
+      maxScale,
+      onScaleChange,
+      rightOffsetPx = 0,
+    },
+    ref,
+  ) {
+    const frame = React.useRef<number | null>(null);
+    const latest = React.useRef(scale);
+    const sliderRef = React.useRef<HTMLInputElement>(null);
 
-  const schedule = React.useCallback((nextScale: number) => {
-    latest.current = nextScale;
-    if (frame.current != null) return;
-    frame.current = requestAnimationFrame(() => {
-      frame.current = null;
-      onScaleChange(latest.current);
-    });
-  }, [onScaleChange]);
+    React.useEffect(() => {
+      if (frame.current == null) {
+        latest.current = scale;
+        if (sliderRef.current) {
+          sliderRef.current.value = String(scaleToSliderPercent(scale, fitScale));
+        }
+      }
+    }, [fitScale, scale]);
 
-  React.useEffect(() => () => {
-    if (frame.current != null) cancelAnimationFrame(frame.current);
-  }, []);
+    React.useImperativeHandle(
+      ref,
+      () => ({
+        setTransientScale(nextScale: number) {
+          latest.current = nextScale;
+          if (sliderRef.current) {
+            sliderRef.current.value = String(
+              scaleToSliderPercent(nextScale, fitScale),
+            );
+          }
+        },
+      }),
+      [fitScale],
+    );
 
-  const stop = (event: React.SyntheticEvent) => event.stopPropagation();
-  const percent = scaleToSliderPercent(scale, fitScale);
+    const schedule = React.useCallback((nextScale: number) => {
+      latest.current = nextScale;
+      if (frame.current != null) return;
+      frame.current = requestAnimationFrame(() => {
+        frame.current = null;
+        onScaleChange(latest.current);
+      });
+    }, [onScaleChange]);
 
-  return (
-    <div
-      className="fixed top-1/2 z-[590] -translate-y-1/2 rounded-xl border border-border bg-background/90 p-1.5 shadow-lg backdrop-blur-md transition-[right] duration-150"
-      style={{ right: 16 + rightOffsetPx }}
-      aria-label="Kartenzoom"
-      onPointerDown={stop}
-      onMouseDown={stop}
-      onTouchStart={stop}
-      onWheel={stop}
-    >
-      <div className="flex flex-col items-center gap-1">
-        <button
-          type="button"
-          className="glass-button-secondary grid h-7 w-7 place-items-center p-0 text-base"
-          onClick={() => onScaleChange(Math.min(maxScale, scale * 1.1))}
-          aria-label="Karte vergrößern"
-          title="Karte vergrößern"
-        >
-          +
-        </button>
+    React.useEffect(() => () => {
+      if (frame.current != null) cancelAnimationFrame(frame.current);
+    }, []);
 
-        <div className="flex h-28 w-7 items-center justify-center overflow-visible">
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={0.25}
-            value={percent}
-            onChange={(event) => schedule(sliderPercentToScale(Number(event.target.value), fitScale))}
-            onPointerUp={() => {
-              if (frame.current != null) {
-                cancelAnimationFrame(frame.current);
-                frame.current = null;
+    const stop = (event: React.SyntheticEvent) => event.stopPropagation();
+    const percent = scaleToSliderPercent(scale, fitScale);
+
+    return (
+      <div
+        className="fixed top-1/2 z-[590] -translate-y-1/2 rounded-xl border border-border bg-background/90 p-1.5 shadow-lg backdrop-blur-md transition-[right] duration-150"
+        style={{ right: 16 + rightOffsetPx }}
+        aria-label="Kartenzoom"
+        onPointerDown={stop}
+        onMouseDown={stop}
+        onTouchStart={stop}
+        onWheel={stop}
+      >
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            className="glass-button-secondary grid h-7 w-7 place-items-center p-0 text-base"
+            onClick={() => onScaleChange(Math.min(maxScale, latest.current * 1.1))}
+            aria-label="Karte vergrößern"
+            title="Karte vergrößern"
+          >
+            +
+          </button>
+
+          <div className="flex h-28 w-7 items-center justify-center overflow-visible">
+            <input
+              type="range"
+              ref={sliderRef}
+              min={0}
+              max={100}
+              step={0.25}
+              value={percent}
+              onChange={(event) =>
+                schedule(sliderPercentToScale(Number(event.target.value), fitScale))
               }
-              onScaleChange(latest.current);
-            }}
-            className="h-1.5 w-24 -rotate-90 accent-primary"
-            aria-label="Kartenzoom"
-          />
-        </div>
+              onPointerUp={() => {
+                if (frame.current != null) {
+                  cancelAnimationFrame(frame.current);
+                  frame.current = null;
+                }
+                onScaleChange(latest.current);
+              }}
+              className="h-1.5 w-24 -rotate-90 accent-primary"
+              aria-label="Kartenzoom"
+            />
+          </div>
 
-        <button
-          type="button"
-          className="glass-button-secondary grid h-7 w-7 place-items-center p-0 text-base"
-          onClick={() => onScaleChange(Math.max(minScale, scale / 1.1))}
-          aria-label="Karte verkleinern"
-          title="Karte verkleinern"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className="glass-button-secondary grid h-6 w-7 place-items-center p-0"
-          onClick={() => onScaleChange(fitScale)}
-          aria-label="Zoom zurücksetzen"
-          title="Zoom zurücksetzen"
-        >
-          <RotateCcw className="h-3 w-3" />
-        </button>
+          <button
+            type="button"
+            className="glass-button-secondary grid h-7 w-7 place-items-center p-0 text-base"
+            onClick={() => onScaleChange(Math.max(minScale, latest.current / 1.1))}
+            aria-label="Karte verkleinern"
+            title="Karte verkleinern"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className="glass-button-secondary grid h-6 w-7 place-items-center p-0"
+            onClick={() => onScaleChange(fitScale)}
+            aria-label="Zoom zurücksetzen"
+            title="Zoom zurücksetzen"
+          >
+            <RotateCcw className="h-3 w-3" />
+          </button>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  },
+);
+
+MapZoomControl.displayName = "MapZoomControl";
+
+export default MapZoomControl;

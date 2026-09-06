@@ -53,7 +53,7 @@ import RoofHudOverlay from "./RoofHudOverlay";
 import { useContainerSize } from "../canvas/hooks/useContainerSize";
 import { useBaseImage } from "../canvas/hooks/useBaseImage";
 import { useStagePanZoom } from "../canvas/hooks/useStagePanZoom";
-import MapZoomControl from "./MapZoomControl";
+import MapZoomControl, { type MapZoomControlHandle } from "./MapZoomControl";
 import { useDrawingTools } from "../canvas/hooks/useDrawingTools";
 import DrawingOverlays from "./DrawingOverlays";
 import TransientDrawingPreviews from "./TransientDrawingPreviews";
@@ -88,6 +88,25 @@ import {
   resolvePlannerInteractionMode,
   shouldIgnorePlannerHotkeyTarget,
 } from "./interactionPolicy";
+import {
+  computeBuildingRevealTarget,
+  interpolateBuildingRevealCamera,
+  type BuildingRevealCamera,
+} from "@/lib/planning/viewport/buildingReveal";
+import {
+  BUILDING_REVEAL_REQUEST_EVENT,
+  type BuildingRevealRequest,
+} from "./buildingRevealEvent";
+
+const BUILDING_REVEAL_DURATION_MS = 1100;
+
+function readCssPixelVariable(name: string, fallback: number): number {
+  if (typeof window === "undefined") return fallback;
+  const parsed = Number.parseFloat(
+    window.getComputedStyle(document.documentElement).getPropertyValue(name),
+  );
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
 
 const deg2rad = (d: number) => (d * Math.PI) / 180;
 function centroid(pts: Pt[]) {
@@ -127,6 +146,30 @@ declare global {
 export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
+  const zoomControlRef = useRef<MapZoomControlHandle>(null);
+  const revealAnimationFrameRef = useRef<number | null>(null);
+  const activeRevealRequestIdRef = useRef<string | null>(null);
+  const completedRevealRequestIdsRef = useRef(new Set<string>());
+  const revealCameraRef = useRef<BuildingRevealCamera | null>(null);
+  const cancelRevealRef = useRef<() => boolean>(() => false);
+  const [revealRequest, setRevealRequest] = useState<BuildingRevealRequest | null>(null);
+  const [revealAnimating, setRevealAnimating] = useState(false);
+
+  useEffect(() => {
+    const onRevealRequest = (event: Event) => {
+      const request = (event as CustomEvent<BuildingRevealRequest>).detail;
+      if (!request?.requestId || !request.roofs?.length) return;
+      setRevealRequest(request);
+    };
+    window.addEventListener(BUILDING_REVEAL_REQUEST_EVENT, onRevealRequest);
+    return () => {
+      window.removeEventListener(BUILDING_REVEAL_REQUEST_EVENT, onRevealRequest);
+      if (revealAnimationFrameRef.current != null) {
+        cancelAnimationFrame(revealAnimationFrameRef.current);
+        revealAnimationFrameRef.current = null;
+      }
+    };
+  }, []);
   useEffect(() => {
     window.__helionicCaptureProjectSnapshot = async () => {
       try {
@@ -310,6 +353,7 @@ export default function CanvasStage() {
 
       if (ev.key === "[" || ev.key === "]") {
         ev.preventDefault();
+        cancelRevealRef.current();
         const step = ev.shiftKey ? 10 : 1;
         setRotateDeg((d) => d + (ev.key === "]" ? step : -step));
       }
@@ -614,6 +658,8 @@ export default function CanvasStage() {
 
   const [rotateDeg, setRotateDeg] = useState(0); // se non l'hai già
   const [rotInput, setRotInput] = useState<string>("0");
+  const rotateDegRef = useRef(rotateDeg);
+  rotateDegRef.current = rotateDeg;
 
   // calcolo progress per lo slider (0–100)
   const sliderPct = useMemo(() => {
@@ -626,12 +672,16 @@ export default function CanvasStage() {
   }, [rotateDeg]);
 
   const bumpRotation = (delta: number) => {
+    cancelRevealRef.current();
     setRotateDeg((d) => wrapDeg(d + delta));
   };
 
   const applyRotationFromInput = () => {
     const v = parseFloat(rotInput.replace(",", "."));
-    if (Number.isFinite(v)) setRotateDeg(wrapDeg(v));
+    if (Number.isFinite(v)) {
+      cancelRevealRef.current();
+      setRotateDeg(wrapDeg(v));
+    }
     else setRotInput(String(rotateDeg)); // ripristina se input invalido
   };
 
@@ -648,12 +698,157 @@ export default function CanvasStage() {
     minScale,
     maxScale,
     setScaleAroundViewportCenter,
+    syncTransientView,
   } = useStagePanZoom({
     img,
     size,
     view,
     setView,
   });
+
+  const applyTransientRevealCamera = useCallback(
+    (camera: BuildingRevealCamera) => {
+      const stage = stageRef.current?.getStage?.();
+      if (!stage) return;
+      stage.position({ x: camera.offsetX, y: camera.offsetY });
+      for (const layer of stage.getLayers()) {
+        layer.scale({ x: camera.scale, y: camera.scale });
+      }
+      stage.find(".viewport-rotated-content").forEach((node: Konva.Node) => {
+        node.rotation(camera.rotationDeg);
+      });
+      stage.batchDraw();
+      syncTransientView({
+        scale: camera.scale,
+        offsetX: camera.offsetX,
+        offsetY: camera.offsetY,
+      });
+      zoomControlRef.current?.setTransientScale(camera.scale);
+      rotateDegRef.current = camera.rotationDeg;
+      revealCameraRef.current = camera;
+    },
+    [syncTransientView],
+  );
+
+  const commitRevealCamera = useCallback(
+    (camera: BuildingRevealCamera) => {
+      syncTransientView({
+        scale: camera.scale,
+        offsetX: camera.offsetX,
+        offsetY: camera.offsetY,
+      });
+      setView({
+        scale: camera.scale,
+        offsetX: camera.offsetX,
+        offsetY: camera.offsetY,
+      });
+      setRotateDeg(camera.rotationDeg);
+      revealCameraRef.current = camera;
+    },
+    [setView, syncTransientView],
+  );
+
+  const cancelBuildingReveal = useCallback(() => {
+    const requestId = activeRevealRequestIdRef.current;
+    if (!requestId) return false;
+    if (revealAnimationFrameRef.current != null) {
+      cancelAnimationFrame(revealAnimationFrameRef.current);
+      revealAnimationFrameRef.current = null;
+    }
+    activeRevealRequestIdRef.current = null;
+    completedRevealRequestIdsRef.current.add(requestId);
+    const currentCamera = revealCameraRef.current;
+    if (currentCamera) commitRevealCamera(currentCamera);
+    setRevealAnimating(false);
+    setRevealRequest((current) => current?.requestId === requestId ? null : current);
+    return true;
+  }, [commitRevealCamera]);
+  cancelRevealRef.current = cancelBuildingReveal;
+
+  useEffect(() => {
+    if (!revealRequest || !img || !(size.w > 0 && size.h > 0)) return;
+    if (activeRevealRequestIdRef.current) return;
+    if (completedRevealRequestIdsRef.current.has(revealRequest.requestId)) return;
+
+    const expectedFitScale = Math.max(
+      size.w / img.naturalWidth,
+      size.h / img.naturalHeight,
+    );
+    if (Math.abs((view.fitScale || 0) - expectedFitScale) > 1e-6) return;
+
+    const currentView = usePlannerV2Store.getState().view;
+    const startCamera: BuildingRevealCamera = {
+      scale: currentView.scale || currentView.fitScale || expectedFitScale,
+      offsetX: currentView.offsetX || 0,
+      offsetY: currentView.offsetY || 0,
+      rotationDeg: rotateDegRef.current,
+    };
+    const sidebarWidth = readCssPixelVariable("--propW", 280);
+    const target = computeBuildingRevealTarget({
+      roofs: revealRequest.roofs,
+      image: { width: img.naturalWidth, height: img.naturalHeight },
+      viewport: { width: size.w, height: size.h },
+      insets: {
+        left: sidebarWidth + 28,
+        right: 148,
+        top: 96,
+        bottom: 72,
+      },
+      currentRotationDeg: startCamera.rotationDeg,
+      minScale,
+      maxScale,
+      fillFraction: 0.66,
+    });
+    if (!target) {
+      completedRevealRequestIdsRef.current.add(revealRequest.requestId);
+      setRevealRequest(null);
+      return;
+    }
+
+    activeRevealRequestIdRef.current = revealRequest.requestId;
+    revealCameraRef.current = startCamera;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) {
+      const finalCamera: BuildingRevealCamera = target;
+      applyTransientRevealCamera(finalCamera);
+      commitRevealCamera(finalCamera);
+      completedRevealRequestIdsRef.current.add(revealRequest.requestId);
+      activeRevealRequestIdRef.current = null;
+      setRevealRequest(null);
+      return;
+    }
+
+    setRevealAnimating(true);
+    const startedAt = performance.now();
+    const animate = (now: number) => {
+      if (activeRevealRequestIdRef.current !== revealRequest.requestId) return;
+      const progress = Math.min(1, (now - startedAt) / BUILDING_REVEAL_DURATION_MS);
+      const camera = interpolateBuildingRevealCamera(startCamera, target, progress);
+      applyTransientRevealCamera(camera);
+      if (progress < 1) {
+        revealAnimationFrameRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      revealAnimationFrameRef.current = null;
+      completedRevealRequestIdsRef.current.add(revealRequest.requestId);
+      activeRevealRequestIdRef.current = null;
+      commitRevealCamera(target);
+      setRevealAnimating(false);
+      setRevealRequest(null);
+    };
+    revealAnimationFrameRef.current = requestAnimationFrame(animate);
+  }, [
+    applyTransientRevealCamera,
+    commitRevealCamera,
+    img,
+    maxScale,
+    minScale,
+    revealRequest,
+    size.h,
+    size.w,
+    view.fitScale,
+  ]);
 
   // stage -> image coords
   // stage -> image coords (considera rotazione e scala/pan del gruppo)
@@ -750,6 +945,7 @@ export default function CanvasStage() {
     if (!container) return;
 
     const onMouseDown = (event: MouseEvent) => {
+      if (event.button === 2) cancelBuildingReveal();
       if (!beginRightPan(event, stage)) return;
       container.focus();
       event.preventDefault();
@@ -784,7 +980,7 @@ export default function CanvasStage() {
       window.removeEventListener("blur", endRightPan);
       endRightPan();
     };
-  }, [img, size.w, size.h, beginRightPan, moveRightPan, endRightPan]);
+  }, [img, size.w, size.h, beginRightPan, moveRightPan, endRightPan, cancelBuildingReveal]);
 
   const hasFillDraft = Boolean(fillDraft);
 
@@ -986,15 +1182,19 @@ export default function CanvasStage() {
             x={view.offsetX || 0}
             y={view.offsetY || 0}
             draggable={
-              canDrag &&
+              (canDrag || revealAnimating) &&
               !drawingCapturesPointer &&
               !isRightPanning &&
               !draggingVertex &&
               !draggingPanel
             }
+            onDragStart={cancelBuildingReveal}
             onDragMove={onDragMove}
             onDragEnd={onStageDragEnd}
-            onWheel={onWheel}
+            onWheel={(event) => {
+              cancelBuildingReveal();
+              onWheel(event);
+            }}
             onMouseDown={(evt: Konva.KonvaEventObject<MouseEvent>) => {
               if (drawingEnabled) onStagePointerDown?.(evt);
             }}
@@ -1082,6 +1282,7 @@ export default function CanvasStage() {
             <Layer scaleX={layerScale} scaleY={layerScale}>
               <Group
                 ref={contentGroupRef}
+                name="viewport-rotated-content"
                 x={img?.naturalWidth ? img.naturalWidth / 2 : 0}
                 y={img?.naturalHeight ? img.naturalHeight / 2 : 0}
                 offsetX={img?.naturalWidth ? img.naturalWidth / 2 : 0}
@@ -1308,6 +1509,7 @@ export default function CanvasStage() {
             </Layer>
             <Layer scaleX={layerScale} scaleY={layerScale} listening={false} perfectDrawEnabled={false}>
               <Group
+                name="viewport-rotated-content"
                 x={img?.naturalWidth ? img.naturalWidth / 2 : 0}
                 y={img?.naturalHeight ? img.naturalHeight / 2 : 0}
                 offsetX={img?.naturalWidth ? img.naturalWidth / 2 : 0}
@@ -1392,15 +1594,20 @@ export default function CanvasStage() {
 
       <CompassHUD
         rightOffsetPx={showFieldDimensions && fieldDrawerOpen ? THERMAL_FIELD_DRAWER_WIDTH_PX + 12 : 0}
+        canvasRotationDeg={rotateDeg}
       />
 
       {img && (
         <MapZoomControl
+          ref={zoomControlRef}
           scale={view.scale || view.fitScale || 1}
           fitScale={view.fitScale || 1}
           minScale={minScale}
           maxScale={maxScale}
-          onScaleChange={setScaleAroundViewportCenter}
+          onScaleChange={(scale) => {
+            cancelBuildingReveal();
+            setScaleAroundViewportCenter(scale);
+          }}
           rightOffsetPx={showFieldDimensions && fieldDrawerOpen ? THERMAL_FIELD_DRAWER_WIDTH_PX + 12 : 0}
         />
       )}
@@ -1463,7 +1670,10 @@ export default function CanvasStage() {
             max={180}
             step={0.5}
             value={rotateDeg}
-            onChange={(e) => setRotateDeg(wrapDeg(parseFloat(e.target.value)))}
+            onChange={(e) => {
+              cancelBuildingReveal();
+              setRotateDeg(wrapDeg(parseFloat(e.target.value)));
+            }}
             className="w-36 h-1.5 mx-1 accent-primary"
             style={{
               WebkitAppearance: "none",
@@ -1504,7 +1714,10 @@ export default function CanvasStage() {
                 const v = e.target.value.replace(",", ".");
                 setRotInput(v);
                 const n = parseFloat(v);
-                if (Number.isFinite(n)) setRotateDeg(wrapDeg(n));
+                if (Number.isFinite(n)) {
+                  cancelBuildingReveal();
+                  setRotateDeg(wrapDeg(n));
+                }
               }}
               title="Grad (dreht in Echtzeit)"
             />
@@ -1514,6 +1727,7 @@ export default function CanvasStage() {
             <button
               className="glass-button-secondary grid h-6 w-6 place-items-center p-0"
               onClick={() => {
+                cancelBuildingReveal();
                 setRotateDeg(0);
                 setRotInput("0");
               }}

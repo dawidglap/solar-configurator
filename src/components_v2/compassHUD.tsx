@@ -14,7 +14,26 @@ import {
 
 const TICKS = Array.from({ length: 36 }, (_, i) => i * 10); // alle 10°
 
-export default function CompassHUD({ rightOffsetPx = 0 }: { rightOffsetPx?: number }) {
+function normalize360(value: number) {
+  return ((value % 360) + 360) % 360;
+}
+
+function cardinalPosition(azimuthDeg: number): React.CSSProperties {
+  const radians = (azimuthDeg * Math.PI) / 180;
+  return {
+    left: `${50 + Math.sin(radians) * 43}%`,
+    top: `${50 - Math.cos(radians) * 43}%`,
+    transform: "translate(-50%, -50%)",
+  };
+}
+
+export default function CompassHUD({
+  rightOffsetPx = 0,
+  canvasRotationDeg = 0,
+}: {
+  rightOffsetPx?: number;
+  canvasRotationDeg?: number;
+}) {
   const layers = usePlannerV2Store((s) => s.layers);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
   const draft = usePlannerV2Store((s) =>
@@ -48,6 +67,7 @@ export default function CompassHUD({ rightOffsetPx = 0 }: { rightOffsetPx?: numb
   const directionDegs = opposingModules && isFlat
     ? [primaryDirectionDeg, (primaryDirectionDeg + 180) % 360]
     : [primaryDirectionDeg];
+  const northOnScreenDeg = normalize360(canvasRotationDeg);
   const numericLabel = directionDegs
     .map((direction) => `${Math.round(direction)}° ${roofAzimuthCardinal(direction)}`)
     .join(" / ");
@@ -74,7 +94,7 @@ export default function CompassHUD({ rightOffsetPx = 0 }: { rightOffsetPx?: numb
                 key={deg}
                 className="absolute left-1/2 top-1/2"
                 style={{
-                  transform: `rotate(${deg}deg) translateY(-48%)`,
+                  transform: `rotate(${deg + canvasRotationDeg}deg) translateY(-48%)`,
                   transformOrigin: "center",
                 }}
               >
@@ -90,21 +110,39 @@ export default function CompassHUD({ rightOffsetPx = 0 }: { rightOffsetPx?: numb
           })}
 
           {/* Himmelsrichtungen */}
-          <span className="absolute top-1 left-1/2 -translate-x-1/2 text-[11px] font-semibold text-red-400">
+          <span
+            className="absolute text-[11px] font-semibold text-red-400"
+            style={cardinalPosition(northOnScreenDeg)}
+          >
             N
           </span>
-          <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] font-semibold">
+          <span
+            className="absolute text-[10px] font-semibold"
+            style={cardinalPosition(northOnScreenDeg + 90)}
+          >
             E
           </span>
-          <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] font-semibold">
+          <span
+            className="absolute text-[10px] font-semibold"
+            style={cardinalPosition(northOnScreenDeg + 180)}
+          >
             S
           </span>
-          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-[10px] font-semibold">
+          <span
+            className="absolute text-[10px] font-semibold"
+            style={cardinalPosition(northOnScreenDeg + 270)}
+          >
             W
           </span>
 
           {/* ROTE Linie = absoluter Norden */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+          <div
+            className="absolute left-1/2 top-1/2"
+            style={{
+              transform: `translate(-50%, -50%) rotate(${canvasRotationDeg}deg)`,
+              transformOrigin: "center",
+            }}
+          >
             <div className="w-[2px] h-10 rounded-full bg-red-500/90" />
           </div>
 
@@ -113,7 +151,7 @@ export default function CompassHUD({ rightOffsetPx = 0 }: { rightOffsetPx?: numb
               key={directionDeg}
               className="absolute left-1/2 top-1/2"
               style={{
-                transform: `translate(-50%, -50%) rotate(${directionDeg}deg)`,
+                transform: `translate(-50%, -50%) rotate(${directionDeg + canvasRotationDeg}deg)`,
                 transformOrigin: "center",
               }}
             >

@@ -58,6 +58,10 @@ export function useStagePanZoom({
         [view.fitScale],
     );
 
+    const syncTransientView = useCallback((next: Partial<View>) => {
+        viewRef.current = { ...viewRef.current, ...next };
+    }, []);
+
     const setScaleAroundViewportCenter = useCallback((targetScale: number) => {
         if (!img) return;
         const next = zoomViewportAroundPoint({
@@ -67,8 +71,9 @@ export function useStagePanZoom({
             viewport: { w: size.w, h: size.h },
             image: { width: img.naturalWidth, height: img.naturalHeight },
         });
+        syncTransientView(next);
         setView(next);
-    }, [img, setView, size.w, size.h]);
+    }, [img, setView, size.w, size.h, syncTransientView]);
 
     const canDrag = useMemo(() => {
         const s = view.scale || view.fitScale || 1;
@@ -83,39 +88,46 @@ export function useStagePanZoom({
 
             const stage = e.target.getStage();
             const pointer = stage.getPointerPosition();
-            const oldScale = view.scale || view.fitScale || 1;
+            const currentView = viewRef.current;
+            const oldScale = currentView.scale || currentView.fitScale || 1;
             const raw = e.evt.deltaY > 0 ? oldScale / 1.1 : oldScale * 1.1;
             const newScale = clampScale(raw);
 
-            const worldX = (pointer.x - (view.offsetX || 0)) / oldScale;
-            const worldY = (pointer.y - (view.offsetY || 0)) / oldScale;
+            const worldX = (pointer.x - (currentView.offsetX || 0)) / oldScale;
+            const worldY = (pointer.y - (currentView.offsetY || 0)) / oldScale;
 
-            let newOX = pointer.x - worldX * newScale;
-            let newOY = pointer.y - worldY * newScale;
+            const newOX = pointer.x - worldX * newScale;
+            const newOY = pointer.y - worldY * newScale;
 
             const cl = clampOffset(newScale, newOX, newOY);
-            setView({ scale: newScale, offsetX: cl.x, offsetY: cl.y });
+            const next = { scale: newScale, offsetX: cl.x, offsetY: cl.y };
+            syncTransientView(next);
+            setView(next);
         },
-        [img, view.scale, view.fitScale, view.offsetX, view.offsetY, clampScale, clampOffset, setView]
+        [img, clampScale, clampOffset, setView, syncTransientView]
     );
 
     const onDragMove = useCallback(
         (e: any) => {
             const ox = e.target.x();
             const oy = e.target.y();
-            const s = view.scale || view.fitScale || 1;
+            const currentView = viewRef.current;
+            const s = currentView.scale || currentView.fitScale || 1;
             const cl = clampOffset(s, ox, oy);
             e.target.position({ x: cl.x, y: cl.y });
             finalOffsetRef.current = cl;
         },
-        [view.scale, view.fitScale, clampOffset]
+        [clampOffset]
     );
 
     const onDragEnd = useCallback(() => {
         const final = finalOffsetRef.current;
         finalOffsetRef.current = null;
-        if (final) setView({ offsetX: final.x, offsetY: final.y });
-    }, [setView]);
+        if (final) {
+            syncTransientView({ offsetX: final.x, offsetY: final.y });
+            setView({ offsetX: final.x, offsetY: final.y });
+        }
+    }, [setView, syncTransientView]);
 
     const beginRightPan = useCallback(
         (event: MouseEvent, stage?: any) => {
@@ -155,7 +167,7 @@ export function useStagePanZoom({
             }
             return true;
         },
-        [clampOffset, setView]
+        [clampOffset]
     );
 
     const endRightPan = useCallback(() => {
@@ -164,10 +176,13 @@ export function useStagePanZoom({
         const final = finalOffsetRef.current;
         finalOffsetRef.current = null;
         activeStageRef.current = null;
-        if (final) setView({ offsetX: final.x, offsetY: final.y });
+        if (final) {
+            syncTransientView({ offsetX: final.x, offsetY: final.y });
+            setView({ offsetX: final.x, offsetY: final.y });
+        }
         setIsRightPanning(false);
         return true;
-    }, [setView]);
+    }, [setView, syncTransientView]);
 
     return {
         canDrag,
@@ -181,5 +196,6 @@ export function useStagePanZoom({
         minScale: scaleBounds.minScale,
         maxScale: scaleBounds.maxScale,
         setScaleAroundViewportCenter,
+        syncTransientView,
     };
 }

@@ -26,3 +26,11 @@ export function canApplyAddressSelection(
 ): boolean {
   return mode === "new" || confirmedExistingChange;
 }
+
+/** Session-only camera reveal: never eligible for a persisted/re-entry session. */
+export function shouldRequestBuildingReveal(
+  mode: PlannerSessionMode,
+  importedRoofCount: number,
+): boolean {
+  return mode === "new" && Number.isInteger(importedRoofCount) && importedRoofCount > 0;
+}

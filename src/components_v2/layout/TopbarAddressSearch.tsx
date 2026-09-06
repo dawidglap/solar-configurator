@@ -23,7 +23,10 @@ import {
   canApplyAddressSelection,
   canBootstrapPlanningFromAddress,
   resolvePlannerSessionMode,
+  shouldRequestBuildingReveal,
 } from "../planner/plannerSessionPolicy";
+import { dispatchBuildingRevealRequest } from "../canvas/buildingRevealEvent";
+import type { SonnendachRevealRoof } from "@/lib/planning/viewport/buildingReveal";
 
 function stripHtml(input: string) {
   return input.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -39,10 +42,41 @@ type GeoAdminRoofResult = {
     id?: string | number;
     neigung?: number;
     ausrichtung?: number;
+    [key: string]: unknown;
   };
   layerId?: string | number;
   featureId?: string | number;
 };
+
+function readSourceNumber(
+  attributes: GeoAdminRoofResult["attributes"],
+  keys: string[],
+): number | undefined {
+  if (!attributes) return undefined;
+  const entries = new Map(
+    Object.entries(attributes).map(([key, value]) => [key.toLowerCase(), value]),
+  );
+  for (const key of keys) {
+    const value = Number(entries.get(key.toLowerCase()));
+    if (Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
+function readSourceString(
+  attributes: GeoAdminRoofResult["attributes"],
+  keys: string[],
+): string | undefined {
+  if (!attributes) return undefined;
+  const entries = new Map(
+    Object.entries(attributes).map(([key, value]) => [key.toLowerCase(), value]),
+  );
+  for (const key of keys) {
+    const value = entries.get(key.toLowerCase());
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
 
 function buildAddressFromParams(sp: ReturnType<typeof useSearchParams>) {
   const full = sp.get("address")?.trim();
@@ -140,6 +174,10 @@ async function fetchRoofsAtPointToPx(
     pointsPx: { x: number; y: number }[];
     tiltDeg?: number;
     azimuthDeg?: number;
+    suitability?: string;
+    irradiationKwhM2?: number;
+    yearlyPvYieldKwh?: number;
+    buildingId?: string;
   }[] = [];
 
   results.forEach((res, resIdx) => {
@@ -162,6 +200,30 @@ async function fetchRoofsAtPointToPx(
           typeof attrs?.ausrichtung === "number"
             ? attrs.ausrichtung
             : undefined,
+        suitability: readSourceString(attrs, [
+          "klasse_text",
+          "dach_eignung",
+          "eignung",
+          "qualitaet",
+          "quality",
+        ]) ?? readSourceNumber(attrs, ["klasse"])?.toString(),
+        irradiationKwhM2: readSourceNumber(attrs, [
+          "mstrahlung",
+          "strahlung",
+          "globalstrahlung",
+          "solarstrahlung",
+          "irradiation",
+          "gstrahlung",
+        ]),
+        yearlyPvYieldKwh: readSourceNumber(attrs, [
+          "pv_energie",
+          "pvenergie",
+          "ertrag",
+          "yield",
+          "jahresertrag",
+          "stromertrag",
+        ]),
+        buildingId: readSourceNumber(attrs, ["building_id", "gwr_egid"])?.toString(),
       });
     });
   });
@@ -214,6 +276,7 @@ export default function TopbarAddressSearch() {
   const [confirmAddressChange, setConfirmAddressChange] = useState(false);
   const [addressChangeConfirmed, setAddressChangeConfirmed] = useState(false);
   const autoSearchTriggeredRef = useRef(false);
+  const revealRequestSequenceRef = useRef(0);
   const searchRootRef = useRef<HTMLDivElement>(null);
 
   // testo visibile nella searchbar
@@ -282,18 +345,40 @@ export default function TopbarAddressSearch() {
 
         const roofs = await fetchRoofsAtPointToPx(lat, lon, snapObj);
 
-        roofs.forEach((p, i) => {
+        const importedRoofs = roofs.map((p, i) => {
+          const id = `sd_${p.id}_${i}`;
           addRoof({
-            id: `sd_${p.id}_${i}`,
+            id,
             name: `Roof ${i + 1}`,
             points: p.pointsPx,
             tiltDeg: p.tiltDeg,
             azimuthDeg: p.azimuthDeg,
             source: "sonnendach",
           });
+          return { ...p, id, sourceIndex: i };
         });
 
         setUI({ rightPanelOpen: true });
+
+        // A reveal request is deliberately session-only. Existing planning
+        // address replacement and every hydration/re-entry path are excluded.
+        if (shouldRequestBuildingReveal(sessionMode, importedRoofs.length)) {
+          revealRequestSequenceRef.current += 1;
+          const revealRoofs: SonnendachRevealRoof[] = importedRoofs.map((roof) => ({
+            id: roof.id,
+            points: roof.pointsPx,
+            sourceIndex: roof.sourceIndex,
+            roofKind: (roof.tiltDeg ?? 0) > 0.05 ? "pitched" : "flat",
+            suitability: roof.suitability,
+            irradiationKwhM2: roof.irradiationKwhM2,
+            yearlyPvYieldKwh: roof.yearlyPvYieldKwh,
+            buildingId: roof.buildingId,
+          }));
+          dispatchBuildingRevealRequest({
+            requestId: `${lat.toFixed(7)}:${lon.toFixed(7)}:${revealRequestSequenceRef.current}`,
+            roofs: revealRoofs,
+          });
+        }
 
         if (planningId) {
           await savePlannerToDb(planningId);
