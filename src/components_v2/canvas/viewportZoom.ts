@@ -9,13 +9,16 @@ export type ViewportSize = { w: number; h: number };
 export type ImageSize = { width: number; height: number };
 
 export function getViewportScaleBounds(fitScale?: number) {
-  const minScale = fitScale && fitScale > 0 ? fitScale : 1;
+  const minScale = Number.isFinite(fitScale) && (fitScale as number) > 0
+    ? fitScale as number
+    : 1;
   return { minScale, maxScale: minScale * 8 };
 }
 
 export function clampViewportScale(scale: number, fitScale?: number) {
   const { minScale, maxScale } = getViewportScaleBounds(fitScale);
-  return Math.max(minScale, Math.min(maxScale, scale));
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : minScale;
+  return Math.max(minScale, Math.min(maxScale, safeScale));
 }
 
 export function clampViewportOffset(input: {
@@ -27,8 +30,8 @@ export function clampViewportOffset(input: {
 }) {
   const scaledWidth = input.image.width * input.scale;
   const scaledHeight = input.image.height * input.scale;
-  let offsetX = input.offsetX;
-  let offsetY = input.offsetY;
+  let offsetX = Number.isFinite(input.offsetX) ? input.offsetX : 0;
+  let offsetY = Number.isFinite(input.offsetY) ? input.offsetY : 0;
 
   if (scaledWidth <= input.viewport.w) offsetX = (input.viewport.w - scaledWidth) / 2;
   if (scaledHeight <= input.viewport.h) offsetY = (input.viewport.h - scaledHeight) / 2;

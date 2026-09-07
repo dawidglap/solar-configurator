@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 type Size = { w: number; h: number };
 
@@ -18,25 +18,38 @@ export function useBaseImage({
   onCoverComputed?: (cover: number, ox: number, oy: number) => void;
 }) {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
+  const coverInitializedForImageRef = useRef<HTMLImageElement | null>(null);
 
   // load image
   useEffect(() => {
-    if (!url) { setImg(null); return; }
+    if (!url) {
+      coverInitializedForImageRef.current = null;
+      setImg(null);
+      return;
+    }
+    let cancelled = false;
     const i = new Image();
     i.crossOrigin = 'anonymous';
-    i.onload = () => setImg(i);
+    i.onload = () => {
+      if (!cancelled) setImg(i);
+    };
     i.src = url;
-    return () => setImg(null);
+    return () => {
+      cancelled = true;
+      i.onload = null;
+    };
   }, [url]);
 
   // compute cover + centered offsets
   useEffect(() => {
     if (!img || !size.w || !size.h) return;
+    if (coverInitializedForImageRef.current === img) return;
     const cover = Math.max(size.w / img.naturalWidth, size.h / img.naturalHeight);
     const sw = img.naturalWidth * cover;
     const sh = img.naturalHeight * cover;
     const ox = (size.w - sw) / 2;
     const oy = (size.h - sh) / 2;
+    coverInitializedForImageRef.current = img;
     onCoverComputed?.(cover, ox, oy);
   }, [img, size.w, size.h, onCoverComputed]);
 

@@ -7,11 +7,14 @@ import {
   resolvePlannerSessionMode,
 } from "../../src/components_v2/planner/plannerSessionPolicy";
 import {
+  clampViewportOffset,
+  clampViewportScale,
   getViewportScaleBounds,
   scaleToSliderPercent,
   sliderPercentToScale,
   zoomViewportAroundPoint,
 } from "../../src/components_v2/canvas/viewportZoom";
+import { readFileSync } from "node:fs";
 
 test("an existing planning identity blocks every address bootstrap action", () => {
   const planning = {
@@ -93,4 +96,26 @@ test("viewport-center zoom changes only view transform and preserves planning/ca
   assert.deepEqual(worldAfter, worldBefore);
   assert.equal(JSON.stringify(canonical), before);
   assert.equal(canonical.mppImage, 0.071);
+});
+
+test("invalid transient camera values resolve to finite safe viewport values", () => {
+  assert.equal(clampViewportScale(Number.NaN, 0.5), 0.5);
+  assert.equal(clampViewportScale(Number.POSITIVE_INFINITY, 0.5), 0.5);
+  assert.deepEqual(clampViewportOffset({
+    scale: 1,
+    offsetX: Number.NaN,
+    offsetY: Number.POSITIVE_INFINITY,
+    viewport: { w: 1200, h: 800 },
+    image: { width: 2800, height: 1800 },
+  }), { x: 0, y: 0 });
+});
+
+test("base image remains mounted and cover initialization is one-shot per loaded image", () => {
+  const source = readFileSync(
+    new URL("../../src/components_v2/canvas/hooks/useBaseImage.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /coverInitializedForImageRef\.current === img/);
+  assert.doesNotMatch(source, /return \(\) => setImg\(null\)/);
+  assert.match(source, /\[url\]/);
 });

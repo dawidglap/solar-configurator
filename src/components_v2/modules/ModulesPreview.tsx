@@ -240,8 +240,10 @@ export default function ModulesPreview({
   }, [thermalFieldLimits, thermalFields]);
   React.useEffect(() => {
     onThermalFieldsChange?.(roofId, thermalFieldDisplayInputs);
-    return () => onThermalFieldsChange?.(roofId, []);
   }, [onThermalFieldsChange, roofId, thermalFieldDisplayInputs]);
+  React.useEffect(() => {
+    return () => onThermalFieldsChange?.(roofId, []);
+  }, [onThermalFieldsChange, roofId]);
 
   // 3) Griglia visiva (linee) — calcolata con la stessa logica di anchor/phase
   const gridLinesWorld = useMemo(() => {

@@ -28,6 +28,37 @@ export type ThermalFieldDisplay = ThermalFieldDisplayInput & {
   color: string;
 };
 
+function samePoint(a: Pt, b: Pt): boolean {
+  return a.x === b.x && a.y === b.y;
+}
+
+/** Prevent preview children from causing a child -> CanvasStage render loop. */
+export function areThermalFieldDisplayInputsEqual(
+  a: readonly ThermalFieldDisplayInput[],
+  b: readonly ThermalFieldDisplayInput[],
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return a.every((field, index) => {
+    const other = b[index];
+    return Boolean(
+      other &&
+      field.key === other.key &&
+      field.lengthM === other.lengthM &&
+      field.widthM === other.widthM &&
+      field.moduleCount === other.moduleCount &&
+      field.blockCount === other.blockCount &&
+      field.lengthLimitM === other.lengthLimitM &&
+      field.widthLimitM === other.widthLimitM &&
+      field.valid === other.valid &&
+      field.outlinePx.length === other.outlinePx.length &&
+      field.outlinePx.every((point, pointIndex) =>
+        samePoint(point, other.outlinePx[pointIndex]),
+      )
+    );
+  });
+}
+
 function hashKey(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {

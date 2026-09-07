@@ -79,8 +79,14 @@ export default function AdvancedPreviewLayer({
   const zones = usePlannerV2Store((state) => state.zones);
   const snowGuards = usePlannerV2Store((state) => state.snowGuards);
   const showFieldDimensions = usePlannerV2Store((state) => state.ui.showFieldDimensions);
+  const roofId = roof?.id;
 
-  const persisted = resolveSurfacePlanning(roof?.surfacePlanning);
+  // Resolution normalizes into a new object. Keep it stable across camera-only
+  // CanvasStage renders so preview/Feldmaße are not regenerated on every zoom.
+  const persisted = React.useMemo(
+    () => resolveSurfacePlanning(roof?.surfacePlanning),
+    [roof?.surfacePlanning],
+  );
   const config: AdvancedSurfacePlanningV1 | undefined =
     draft?.targetMode === "advanced"
       ? draft.config
@@ -112,10 +118,13 @@ export default function AdvancedPreviewLayer({
     }));
   }, [config?.thermalFieldLimits, preview]);
   React.useEffect(() => {
-    if (!roof) return;
-    onThermalFieldsChange?.(roof.id, thermalFieldDisplayInputs);
-    return () => onThermalFieldsChange?.(roof.id, []);
-  }, [onThermalFieldsChange, roof, thermalFieldDisplayInputs]);
+    if (!roofId) return;
+    onThermalFieldsChange?.(roofId, thermalFieldDisplayInputs);
+  }, [onThermalFieldsChange, roofId, thermalFieldDisplayInputs]);
+  React.useEffect(() => {
+    if (!roofId) return;
+    return () => onThermalFieldsChange?.(roofId, []);
+  }, [onThermalFieldsChange, roofId]);
   const slopeArrowIds = React.useMemo(
     () => selectModuleSlopeArrowIds({
       modules: (preview?.modules ?? []).map((module) => ({

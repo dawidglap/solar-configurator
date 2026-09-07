@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 
 import {
+  areThermalFieldDisplayInputsEqual,
   buildThermalFieldDisplay,
   formatFieldMetres,
 } from "../../src/components_v2/modules/thermalFields/thermalFieldDisplay";
@@ -45,6 +46,36 @@ test("thermal colors remain stable when a materialization run prefix changes", (
     preview.map((field) => field.color),
     committed.map((field) => field.color),
   );
+});
+
+test("equivalent thermal payloads do not require another CanvasStage state update", () => {
+  const copied = inputs.map((field) => ({
+    ...field,
+    outlinePx: field.outlinePx.map((point) => ({ ...point })),
+  }));
+  assert.notEqual(copied, inputs);
+  assert.equal(areThermalFieldDisplayInputsEqual(inputs, copied), true);
+  assert.equal(
+    areThermalFieldDisplayInputsEqual(inputs, [
+      { ...copied[0], moduleCount: copied[0].moduleCount + 1 },
+      ...copied.slice(1),
+    ]),
+    false,
+  );
+});
+
+test("advanced preview memoizes normalized config and thermal publication is opt-in", () => {
+  const advanced = readFileSync(
+    new URL("../../src/components_v2/modules/advanced/AdvancedPreviewLayer.tsx", import.meta.url),
+    "utf8",
+  );
+  const stage = readFileSync(
+    new URL("../../src/components_v2/canvas/CanvasStage.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(advanced, /React\.useMemo\([\s\S]*resolveSurfacePlanning\(roof\?\.surfacePlanning\)/);
+  assert.match(stage, /areThermalFieldDisplayInputsEqual\(current\.advancedPreview\.fields, fields\)/);
+  assert.match(stage, /onThermalFieldsChange=\{showFieldDimensions \? setAdvancedPreviewThermalFields : undefined\}/);
 });
 
 test("drawer values use German formatting with at most two decimals", () => {

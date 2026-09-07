@@ -25,6 +25,7 @@ export default function CommittedMontageFieldDimensionsLayer({
   );
   const panels = usePlannerV2Store((state) => state.panels);
   const mppImage = usePlannerV2Store((state) => state.snapshot.mppImage);
+  const roofId = roof?.id;
   const persisted = React.useMemo(
     () => resolveSurfacePlanning(roof?.surfacePlanning),
     [roof?.surfacePlanning],
@@ -74,10 +75,13 @@ export default function CommittedMontageFieldDimensionsLayer({
     }));
   }, [persisted, roof, show, thermalFields]);
   React.useEffect(() => {
-    if (!roof) return;
-    onThermalFieldsChange?.(roof.id, displayInputs);
-    return () => onThermalFieldsChange?.(roof.id, []);
-  }, [displayInputs, onThermalFieldsChange, roof]);
+    if (!roofId) return;
+    onThermalFieldsChange?.(roofId, displayInputs);
+  }, [displayInputs, onThermalFieldsChange, roofId]);
+  React.useEffect(() => {
+    if (!roofId) return;
+    return () => onThermalFieldsChange?.(roofId, []);
+  }, [onThermalFieldsChange, roofId]);
 
   return null;
 }

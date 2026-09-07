@@ -29,6 +29,7 @@ import ThermalFieldOverviewDrawer, {
   THERMAL_FIELD_DRAWER_WIDTH_PX,
 } from "../modules/thermalFields/ThermalFieldOverviewDrawer";
 import {
+  areThermalFieldDisplayInputsEqual,
   buildThermalFieldDisplay,
   type ThermalFieldDisplayInput,
 } from "../modules/thermalFields/thermalFieldDisplay";
@@ -290,17 +291,17 @@ export default function CanvasStage() {
     committed: { fields: [] },
   });
   const setStandardPreviewThermalFields = useCallback((roofId: string, fields: ThermalFieldDisplayInput[]) => {
-    setThermalFieldSources((current) => current.standardPreview.roofId === roofId && current.standardPreview.fields === fields
+    setThermalFieldSources((current) => current.standardPreview.roofId === roofId && areThermalFieldDisplayInputsEqual(current.standardPreview.fields, fields)
       ? current
       : { ...current, standardPreview: { roofId, fields } });
   }, []);
   const setAdvancedPreviewThermalFields = useCallback((roofId: string, fields: ThermalFieldDisplayInput[]) => {
-    setThermalFieldSources((current) => current.advancedPreview.roofId === roofId && current.advancedPreview.fields === fields
+    setThermalFieldSources((current) => current.advancedPreview.roofId === roofId && areThermalFieldDisplayInputsEqual(current.advancedPreview.fields, fields)
       ? current
       : { ...current, advancedPreview: { roofId, fields } });
   }, []);
   const setCommittedThermalFields = useCallback((roofId: string, fields: ThermalFieldDisplayInput[]) => {
-    setThermalFieldSources((current) => current.committed.roofId === roofId && current.committed.fields === fields
+    setThermalFieldSources((current) => current.committed.roofId === roofId && areThermalFieldDisplayInputsEqual(current.committed.fields, fields)
       ? current
       : { ...current, committed: { roofId, fields } });
   }, []);
@@ -1336,14 +1337,14 @@ export default function CanvasStage() {
                       anchorY={(standardPreviewModules.gridAnchorY as any) || "start"}
                       coverageRatio={standardPreviewModules.coverageRatio ?? 1}
                       thermalFieldLimits={standardThermalFieldLimits}
-                      onThermalFieldsChange={setStandardPreviewThermalFields}
+                      onThermalFieldsChange={showFieldDimensions ? setStandardPreviewThermalFields : undefined}
                     />
                   )}
 
                 {step === "modules" && !manualPlacementSession && (
                   <AdvancedPreviewLayer
                     canvasRotationDeg={rotateDeg}
-                    onThermalFieldsChange={setAdvancedPreviewThermalFields}
+                    onThermalFieldsChange={showFieldDimensions ? setAdvancedPreviewThermalFields : undefined}
                   />
                 )}
                 <Group listening={!drawingCapturesPointer}>
@@ -1478,7 +1479,7 @@ export default function CanvasStage() {
 
                 {step === "modules" && !manualPlacementSession && (
                   <CommittedMontageFieldDimensionsLayer
-                    onThermalFieldsChange={setCommittedThermalFields}
+                    onThermalFieldsChange={showFieldDimensions ? setCommittedThermalFields : undefined}
                   />
                 )}
 
