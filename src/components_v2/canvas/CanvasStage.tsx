@@ -1,6 +1,6 @@
 "use client";
 import type Konva from "konva";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Stage,
   Layer,
@@ -1635,20 +1635,19 @@ export default function CanvasStage() {
         }
         canToggleShape={step !== "modules"}
       />
-      {/* ORIENTATION HUD — STEALTH (improved) */}
+      {/* ORIENTATION HUD */}
       <div
-        className="fixed bottom-6 z-[600] group pointer-events-none transition-[right] duration-150"
+        className="planner-view-control fixed bottom-6 z-[600] pointer-events-none transition-[right] duration-150"
         style={{ right: 12 + (showFieldDimensions && fieldDrawerOpen ? THERMAL_FIELD_DRAWER_WIDTH_PX + 12 : 0) }}
       >
         <div
-          className="glass-panel pointer-events-auto relative rounded-lg text-muted-foreground shadow
-               backdrop-blur px-1.5 py-1 flex items-center gap-1.5 transition-all duration-150
-               scale-90 opacity-70 group-hover:scale-100 group-hover:opacity-100"
+          className="planner-view-control-bar glass-panel pointer-events-auto text-muted-foreground"
           style={{ WebkitBackdropFilter: "blur(6px)" }}
         >
           {/* -10 */}
           <button
-            className="glass-button-secondary h-6 min-w-6 px-1 text-[11px]"
+            type="button"
+            className="planner-view-control-button planner-view-control-button--wide glass-button-secondary"
             onClick={() => bumpRotation(-10)}
             title="Drehen -10° (Shift+[)"
           >
@@ -1657,38 +1656,39 @@ export default function CanvasStage() {
 
           {/* -1 */}
           <button
-            className="glass-button-secondary h-6 min-w-6 px-1 text-[11px]"
+            type="button"
+            className="planner-view-control-button glass-button-secondary"
             onClick={() => bumpRotation(-1)}
             title="Drehen -1° ([)"
           >
             −1
           </button>
 
-          {/* slider: più lungo, più fine, track visibile con parte riempita */}
-          <input
-            type="range"
-            min={-180}
-            max={180}
-            step={0.5}
-            value={rotateDeg}
-            onChange={(e) => {
-              cancelBuildingReveal();
-              setRotateDeg(wrapDeg(parseFloat(e.target.value)));
-            }}
-            className="w-36 h-1.5 mx-1 accent-primary"
-            style={{
-              WebkitAppearance: "none",
-              appearance: "none",
-              borderRadius: 9999,
-              // track: base scura + progress chiaro fino a sliderPct
-              background: `linear-gradient(to right, ${plannerTheme.primary} ${sliderPct}%, rgba(234,246,255,0.22) ${sliderPct}%)`,
-            }}
-            title="Ziehe, um zu drehen"
-          />
+          <div className="planner-view-control-slider-wrap">
+            <input
+              type="range"
+              min={-180}
+              max={180}
+              step={0.5}
+              value={rotateDeg}
+              onChange={(e) => {
+                cancelBuildingReveal();
+                setRotateDeg(wrapDeg(parseFloat(e.target.value)));
+              }}
+              className="planner-view-control-slider"
+              style={{
+                "--planner-control-progress": `${sliderPct}%`,
+                "--planner-control-accent": plannerTheme.primary,
+              } as CSSProperties}
+              aria-label="Ansicht drehen"
+              title="Ziehe, um zu drehen"
+            />
+          </div>
 
           {/* +1 */}
           <button
-            className="glass-button-secondary h-6 min-w-6 px-1 text-[11px]"
+            type="button"
+            className="planner-view-control-button glass-button-secondary"
             onClick={() => bumpRotation(+1)}
             title="Drehen +1° (])"
           >
@@ -1697,19 +1697,22 @@ export default function CanvasStage() {
 
           {/* +10 */}
           <button
-            className="glass-button-secondary h-6 min-w-6 px-1 text-[11px]"
+            type="button"
+            className="planner-view-control-button planner-view-control-button--wide glass-button-secondary"
             onClick={() => bumpRotation(+10)}
             title="Drehen +10° (Shift+])"
           >
             +10
           </button>
 
+          <div className="planner-view-control-divider" aria-hidden="true" />
+
           {/* input inline: ruota LIVE mentre digiti */}
-          <div className="flex items-center gap-1 pl-1">
+          <div className="planner-view-control-value">
             <input
               type="text"
               inputMode="decimal"
-              className="glass-input h-6 w-11 px-1 py-0 text-right text-[11px]"
+              className="planner-view-control-value-input"
               value={rotInput}
               onChange={(e) => {
                 const v = e.target.value.replace(",", ".");
@@ -1720,30 +1723,30 @@ export default function CanvasStage() {
                   setRotateDeg(wrapDeg(n));
                 }
               }}
+              aria-label="Drehwinkel"
               title="Grad (dreht in Echtzeit)"
             />
-            <span className="text-[10px] text-muted-foreground">°</span>
-
-            {/* Reset */}
-            <button
-              className="glass-button-secondary grid h-6 w-6 place-items-center p-0"
-              onClick={() => {
-                cancelBuildingReveal();
-                setRotateDeg(0);
-                setRotInput("0");
-              }}
-              title="Zurücksetzen auf 0°"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
+            <span aria-hidden="true">°</span>
           </div>
 
-          {/* PILL hint (DE) sotto all'HUD */}
-          <div className="absolute right-0 translate-y-full mt-1 pointer-events-none">
-            <span className="status-badge-neutral px-2 py-0.5 text-[10px]">
-              Raster ein-/ausblenden: <strong>G</strong>
-            </span>
-          </div>
+          {/* Reset */}
+          <button
+            type="button"
+            className="planner-view-control-button glass-button-secondary"
+            onClick={() => {
+              cancelBuildingReveal();
+              setRotateDeg(0);
+              setRotInput("0");
+            }}
+            aria-label="Ansicht auf 0 Grad zurücksetzen"
+            title="Zurücksetzen auf 0°"
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="planner-view-control-helper status-badge-neutral">
+          Raster ein-/ausblenden: <strong>G</strong>
         </div>
       </div>
     </div>
