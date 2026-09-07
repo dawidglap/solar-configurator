@@ -27,6 +27,12 @@ const controlClass =
 const labelClass =
   "text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
 
+function resolveDirectionPreset(value: number | undefined) {
+  return ROOF_DIRECTION_CHOICES.find(
+    (choice) => value != null && Math.abs(choice.azimuthDeg - value) < 0.01,
+  );
+}
+
 export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
   const updateRoof = usePlannerV2Store((state) => state.updateRoof);
   const planningDraft = usePlannerV2Store((state) => state.roofPlanningDrafts[roof.id]);
@@ -42,19 +48,38 @@ export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
   );
   const resolvedAzimuth = advancedConfig?.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(roof);
   const marginM = resolveRoofEdgeMarginM(roof, standardMarginM);
+  const resolvedPreset = resolveDirectionPreset(resolvedAzimuth);
   const [tiltInput, setTiltInput] = React.useState(String(slopeDeg));
   const [marginInput, setMarginInput] = React.useState(String(marginM));
   const [azimuthInput, setAzimuthInput] = React.useState(
     resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth * 100) / 100),
   );
+  const [directionMode, setDirectionMode] = React.useState<"preset" | "custom">(
+    resolvedPreset ? "preset" : "custom",
+  );
+  const lastCustomAzimuthByRoofRef = React.useRef<Map<string, number>>(
+    new Map(
+      !resolvedPreset && resolvedAzimuth != null
+        ? [[roof.id, resolvedAzimuth]]
+        : [],
+    ),
+  );
 
   React.useEffect(() => {
     setTiltInput(String(slopeDeg));
     setMarginInput(String(marginM));
+  }, [marginM, roof.id, slopeDeg]);
+
+  React.useEffect(() => {
     setAzimuthInput(
       resolvedAzimuth == null ? "" : String(Math.round(resolvedAzimuth * 100) / 100),
     );
-  }, [marginM, resolvedAzimuth, roof.id, slopeDeg]);
+    const preset = resolveDirectionPreset(resolvedAzimuth);
+    setDirectionMode(preset ? "preset" : "custom");
+    if (!preset && resolvedAzimuth != null) {
+      lastCustomAzimuthByRoofRef.current.set(roof.id, resolvedAzimuth);
+    }
+  }, [resolvedAzimuth, roof.id]);
 
   const patchAdvanced = (patch: {
     slopeDeg?: number;
@@ -155,7 +180,10 @@ export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
       return;
     }
     const value = normalizeRoofAzimuthDeg(candidate);
+    const preset = resolveDirectionPreset(value);
     setAzimuthInput(String(Math.round(value * 100) / 100));
+    setDirectionMode(preset ? "preset" : "custom");
+    if (!preset) lastCustomAzimuthByRoofRef.current.set(roof.id, value);
     updateRoof(roof.id, {
       fallAzimuthDeg: value,
       surfacePlanning: patchAdvanced({ fallAzimuthDeg: value }),
@@ -164,9 +192,6 @@ export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
   };
 
   const showFallDirection = shouldShowRoofFallDirection(roofKind, slopeDeg);
-  const selectedPreset = ROOF_DIRECTION_CHOICES.find(
-    (choice) => resolvedAzimuth != null && Math.abs(choice.azimuthDeg - resolvedAzimuth) < 0.01,
-  );
 
   const formattedResolvedAzimuth = resolvedAzimuth == null
     ? "Nicht festgelegt"
@@ -248,9 +273,24 @@ export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
             <select
               id={`fall-direction-${roof.id}`}
               className={controlClass}
-              value={selectedPreset ? String(selectedPreset.azimuthDeg) : "custom"}
+              value={
+                directionMode === "preset" && resolvedPreset
+                  ? String(resolvedPreset.azimuthDeg)
+                  : "custom"
+              }
               onChange={(event) => {
-                if (event.target.value !== "custom") {
+                if (event.target.value === "custom") {
+                  const customValue =
+                    lastCustomAzimuthByRoofRef.current.get(roof.id) ??
+                    resolvedAzimuth;
+                  setAzimuthInput(
+                    customValue == null
+                      ? ""
+                      : String(Math.round(customValue * 100) / 100),
+                  );
+                  setDirectionMode("custom");
+                } else {
+                  setDirectionMode("preset");
                   commitAzimuth(Number(event.target.value));
                 }
               }}
@@ -260,10 +300,10 @@ export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
                   {choice.label} · {choice.azimuthDeg}°
                 </option>
               ))}
-              {!selectedPreset && <option value="custom">Benutzerdefiniert</option>}
+              <option value="custom">Benutzerdefiniert…</option>
             </select>
           </div>
-          {!selectedPreset && (
+          {directionMode === "custom" && (
             <div className="space-y-2">
               <label
                 htmlFor={`exact-fall-direction-${roof.id}`}

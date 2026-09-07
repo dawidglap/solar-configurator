@@ -67,6 +67,10 @@ test("contextual help and pitched-roof slope controls remain visible in source",
     new URL("../../src/components_v2/panels/RoofDimensionsControl.tsx", import.meta.url),
     "utf8",
   );
+  const slopeControl = readFileSync(
+    new URL("../../src/components_v2/panels/PitchedRoofSlopeControl.tsx", import.meta.url),
+    "utf8",
+  );
 
   assert.ok(toolbar.includes("CircleHelp"));
   assert.ok(help.includes("Gebäudeplanung – Hilfe"));
@@ -81,6 +85,12 @@ test("contextual help and pitched-roof slope controls remain visible in source",
   assert.ok(panel.includes("Vorschau als Module platzieren"));
   assert.ok(canvas.includes("RoofAnnotationsLayer"));
   assert.ok(panel.includes("formatRoofSlopeDirection"));
+  assert.ok(slopeControl.includes("Benutzerdefiniert…"));
+  assert.ok(slopeControl.includes("resolveDirectionPreset"));
+  assert.equal(
+    slopeControl.includes('{!selectedPreset && <option value="custom">'),
+    false,
+  );
   assert.ok(dimensions.includes("NumericFieldWithSuffix"));
   assert.ok(dimensions.includes(">Kanten</p>"));
   assert.ok(dimensions.includes("getCanonicalRoofEdges"));
