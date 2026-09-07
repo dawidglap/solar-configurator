@@ -9,6 +9,7 @@ import {
 } from "@/lib/planning/roofProperties";
 import type { RoofArea } from "@/types/planner";
 import { usePlannerV2Store } from "../state/plannerV2Store";
+import NumericFieldWithSuffix from "../ui/NumericFieldWithSuffix";
 import {
   formatRoofAzimuth,
   normalizeRoofAzimuthDeg,
@@ -21,7 +22,10 @@ type Props = {
   roofKind: "pitched" | "flat" | "green";
 };
 
-const inputClass = "glass-input h-8 min-w-0 flex-1 rounded-lg px-2 text-[11px]";
+const controlClass =
+  "glass-input h-9 w-full rounded-lg px-3 py-0 text-[11px] leading-none focus:ring-1 focus:ring-primary/40";
+const labelClass =
+  "text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
 
 export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
   const updateRoof = usePlannerV2Store((state) => state.updateRoof);
@@ -164,98 +168,114 @@ export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
     (choice) => resolvedAzimuth != null && Math.abs(choice.azimuthDeg - resolvedAzimuth) < 0.01,
   );
 
-  return (
-    <section className="space-y-3 border-b border-border/60 pb-4">
-      <label className="block space-y-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        Dachneigung
-        <span className="mt-1 flex items-center gap-2 font-normal normal-case">
-          <input
-            type="text"
-            inputMode="decimal"
-            value={tiltInput}
-            disabled={roofKind === "flat"}
-            onChange={(event) => setTiltInput(event.target.value)}
-            onBlur={commitTilt}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.key === "Enter") event.currentTarget.blur();
-              if (event.key === "Escape") {
-                setTiltInput(String(slopeDeg));
-                event.currentTarget.blur();
-              }
-            }}
-            className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-60`}
-            data-stop-hotkeys="true"
-            aria-label="Dachneigung in Grad"
-          />
-          <span>°</span>
-        </span>
-        {roofKind === "flat" && (
-          <span className="mt-1 block text-[10px] font-normal normal-case text-muted-foreground">
-            Flachdach · Dachneigung fest auf 0°
-          </span>
-        )}
-      </label>
+  const formattedResolvedAzimuth = resolvedAzimuth == null
+    ? "Nicht festgelegt"
+    : formatRoofAzimuth(resolvedAzimuth).replace("° ", "° · ");
 
-      <label className="block space-y-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        Randabstand
-        <span className="mt-1 flex items-center gap-2 font-normal normal-case">
-          <input
-            type="text"
-            inputMode="decimal"
-            value={marginInput}
-            onChange={(event) => setMarginInput(event.target.value)}
-            onBlur={commitMargin}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.key === "Enter") event.currentTarget.blur();
-              if (event.key === "Escape") {
-                setMarginInput(String(marginM));
-                event.currentTarget.blur();
-              }
-            }}
-            className={inputClass}
-            data-stop-hotkeys="true"
-            aria-label="Randabstand in Meter"
-          />
-          <span>m</span>
-        </span>
-      </label>
+  return (
+    <section className="space-y-6 border-b border-border/60 pb-5">
+      <div className="space-y-2">
+        <label htmlFor={`roof-slope-${roof.id}`} className={labelClass}>
+          Dachneigung
+        </label>
+        <NumericFieldWithSuffix
+          id={`roof-slope-${roof.id}`}
+          type="text"
+          inputMode="decimal"
+          suffix="°"
+          value={tiltInput}
+          disabled={roofKind === "flat"}
+          onChange={(event) => setTiltInput(event.target.value)}
+          onBlur={commitTilt}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") {
+              setTiltInput(String(slopeDeg));
+              event.currentTarget.blur();
+            }
+          }}
+          className="disabled:cursor-not-allowed disabled:opacity-60"
+          data-stop-hotkeys="true"
+          aria-label="Dachneigung in Grad"
+        />
+        {roofKind === "flat" && (
+          <p className="text-[10px] text-muted-foreground">
+            Flachdach · Dachneigung fest auf 0°
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor={`roof-margin-${roof.id}`} className={labelClass}>
+          Randabstand
+        </label>
+        <NumericFieldWithSuffix
+          id={`roof-margin-${roof.id}`}
+          type="text"
+          inputMode="decimal"
+          suffix="m"
+          value={marginInput}
+          onChange={(event) => setMarginInput(event.target.value)}
+          onBlur={commitMargin}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") {
+              setMarginInput(String(marginM));
+              event.currentTarget.blur();
+            }
+          }}
+          data-stop-hotkeys="true"
+          aria-label="Randabstand in Meter"
+        />
+      </div>
 
       {showFallDirection && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <label
-              htmlFor={`fall-direction-${roof.id}`}
-              className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label
+                htmlFor={`fall-direction-${roof.id}`}
+                className={labelClass}
+              >
+                Gefällerichtung
+              </label>
+              <strong className="shrink-0 text-[11px] font-semibold text-primary">
+                {formattedResolvedAzimuth}
+              </strong>
+            </div>
+            <select
+              id={`fall-direction-${roof.id}`}
+              className={controlClass}
+              value={selectedPreset ? String(selectedPreset.azimuthDeg) : "custom"}
+              onChange={(event) => {
+                if (event.target.value !== "custom") {
+                  commitAzimuth(Number(event.target.value));
+                }
+              }}
             >
-              Gefällerichtung
-            </label>
-            <strong className="text-[11px] text-primary">
-              {resolvedAzimuth == null ? "Nicht festgelegt" : formatRoofAzimuth(resolvedAzimuth)}
-            </strong>
+              {ROOF_DIRECTION_CHOICES.map((choice) => (
+                <option key={choice.azimuthDeg} value={choice.azimuthDeg}>
+                  {choice.label} · {choice.azimuthDeg}°
+                </option>
+              ))}
+              {!selectedPreset && <option value="custom">Benutzerdefiniert</option>}
+            </select>
           </div>
-          <select
-            id={`fall-direction-${roof.id}`}
-            className={`${inputClass} w-full`}
-            value={selectedPreset ? String(selectedPreset.azimuthDeg) : "custom"}
-            onChange={(event) => {
-              if (event.target.value !== "custom") commitAzimuth(Number(event.target.value));
-            }}
-          >
-            {ROOF_DIRECTION_CHOICES.map((choice) => (
-              <option key={choice.azimuthDeg} value={choice.azimuthDeg}>
-                {choice.label} · {choice.azimuthDeg}°
-              </option>
-            ))}
-            {!selectedPreset && <option value="custom">Benutzerdefiniert</option>}
-          </select>
           {!selectedPreset && (
-            <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
-              Exakt
-              <input
+            <div className="space-y-2">
+              <label
+                htmlFor={`exact-fall-direction-${roof.id}`}
+                className={labelClass}
+              >
+                Exakter Winkel
+              </label>
+              <NumericFieldWithSuffix
+                id={`exact-fall-direction-${roof.id}`}
                 type="text"
                 inputMode="decimal"
+                suffix="°"
                 value={azimuthInput}
                 onChange={(event) => setAzimuthInput(event.target.value)}
                 onBlur={() => commitAzimuth()}
@@ -267,12 +287,10 @@ export default function PitchedRoofSlopeControl({ roof, roofKind }: Props) {
                     event.currentTarget.blur();
                   }
                 }}
-                className={inputClass}
                 data-stop-hotkeys="true"
                 aria-label="Exakte Gefällerichtung in Grad"
               />
-              <span>°</span>
-            </label>
+            </div>
           )}
         </div>
       )}
