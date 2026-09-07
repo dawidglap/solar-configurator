@@ -18,11 +18,20 @@ import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
 import { resolveRoofSlopeForKind } from "@/lib/planning/roofProperties";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
+import NumericFieldWithSuffix from "../ui/NumericFieldWithSuffix";
 
-const inputClass =
-  "glass-input h-8 w-full rounded-lg px-2 text-[11px] focus:ring-1 focus:ring-primary/40";
+const controlClass =
+  "glass-input h-9 w-full rounded-lg px-3 py-0 text-[11px] leading-none focus:ring-1 focus:ring-primary/40";
 const labelClass =
   "block text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
+const fieldLabelClass = "block text-[10px] text-muted-foreground";
+
+const dimensionFormatter = new Intl.NumberFormat("de-DE", {
+  maximumFractionDigits: 2,
+});
+const orientationFormatter = new Intl.NumberFormat("de-DE", {
+  maximumFractionDigits: 1,
+});
 
 type RoofKind = "pitched" | "flat" | "green";
 
@@ -98,6 +107,7 @@ export default function RoofDimensionsControl({
     const role = pitchedRoles.get(edgeIndex) ?? "edge";
     return EDGE_ROLE_LABELS[role] ?? `Kante ${edgeIndex + 1}`;
   };
+  const formatDimensionM = (value: number) => `${dimensionFormatter.format(value)} m`;
 
   React.useEffect(() => {
     setLengthInput(lengthValue);
@@ -145,13 +155,13 @@ export default function RoofDimensionsControl({
 
   const referenceSelector =
     (roofKind === "flat" || roofKind === "pitched") && segments.length > 0 ? (
-    <div className="space-y-1">
+    <div className="space-y-3">
       <label className={labelClass} htmlFor={`reference-edge-${roof.id}`}>
         {roofKind === "pitched" ? "First" : "Referenzkante"}
       </label>
       <select
         id={`reference-edge-${roof.id}`}
-        className={inputClass}
+        className={controlClass}
         value={referenceEdgeIndex ?? 0}
         onChange={(event) =>
           updateRoof(roof.id, { referenceEdgeIndex: Number(event.target.value) })
@@ -159,70 +169,85 @@ export default function RoofDimensionsControl({
       >
         {segments.map((segment) => (
           <option key={segment.segmentIndex} value={segment.segmentIndex}>
-            Kante {segment.segmentIndex + 1} · {segment.lengthM.toFixed(2)} m
+            Kante {segment.segmentIndex + 1} · {formatDimensionM(segment.lengthM)}
           </option>
         ))}
       </select>
       {referenceEdgeIndex != null && (
-        <p className="text-[10px] text-muted-foreground">
-          Ausrichtung {roofKind === "pitched" ? "First" : "Referenzkante"}: {Math.round(
-            canonicalEdges[referenceEdgeIndex]?.geographicAzimuthDeg ?? 0,
-          )}°
-        </p>
+        <div className="flex items-center justify-between gap-3 text-[10px]">
+          <span className="text-muted-foreground">Ausrichtung</span>
+          <strong className="font-semibold tabular-nums text-foreground">
+            {orientationFormatter.format(
+              canonicalEdges[referenceEdgeIndex]?.geographicAzimuthDeg ?? 0,
+            )}°
+          </strong>
+        </div>
       )}
     </div>
   ) : null;
 
   if (!analysis.supported) {
     return (
-      <section className="space-y-2">
-        <label className={labelClass}>Dachfläche · Kantenlängen</label>
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
-          Jede Kante wird in Metern aus der aktuellen Dachgeometrie berechnet.
-        </p>
+      <section className="space-y-6">
+        <div className="space-y-3">
+          <label className={labelClass}>Dachfläche</label>
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            Jede Kante wird in Metern aus der aktuellen Dachgeometrie berechnet.
+          </p>
+        </div>
         {referenceSelector}
-        <div className="grid grid-cols-2 gap-2">
-          {segments.map((segment) => (
-            <label
-              key={segment.segmentIndex}
-              className="space-y-1 text-[10px] text-muted-foreground"
-            >
-              {edgeLabel(segment.segmentIndex)}
-              <div className="flex items-center gap-1">
-                <input
-                  aria-label={`${edgeLabel(segment.segmentIndex)} (m)`}
-                  className={inputClass}
-                  data-stop-hotkeys="true"
-                  inputMode="decimal"
-                  value={segmentInputs[segment.segmentIndex] ?? ""}
-                  onChange={(event) =>
-                    setSegmentInputs((current) => {
-                      const next = [...current];
-                      next[segment.segmentIndex] = event.target.value;
-                      return next;
-                    })
-                  }
-                  onBlur={() => commitSegment(segment.segmentIndex)}
-                  onKeyDown={(event) => {
-                    event.stopPropagation();
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      event.currentTarget.blur();
-                    } else if (event.key === "Escape") {
-                      event.preventDefault();
-                      cancelSegmentBlur.current = segment.segmentIndex;
-                      setSegmentInputs(
-                        segments.map((item) => item.lengthM.toFixed(2)),
-                      );
-                      setError(undefined);
-                      event.currentTarget.blur();
+        <div className="space-y-3">
+          <p className={labelClass}>Kanten</p>
+          <div className="grid grid-cols-2 gap-2.5">
+            {segments.map((segment) => {
+              const isFirst =
+                roofKind === "pitched" &&
+                segment.segmentIndex === referenceEdgeIndex;
+              return (
+                <div key={segment.segmentIndex} className="min-w-0 space-y-2">
+                  <label
+                    htmlFor={`roof-edge-${roof.id}-${segment.segmentIndex}`}
+                    className={`${fieldLabelClass} truncate ${
+                      isFirst ? "font-medium text-primary" : ""
+                    }`}
+                  >
+                    {edgeLabel(segment.segmentIndex)}
+                  </label>
+                  <NumericFieldWithSuffix
+                    id={`roof-edge-${roof.id}-${segment.segmentIndex}`}
+                    aria-label={`${edgeLabel(segment.segmentIndex)} (m)`}
+                    data-stop-hotkeys="true"
+                    inputMode="decimal"
+                    suffix="m"
+                    value={segmentInputs[segment.segmentIndex] ?? ""}
+                    onChange={(event) =>
+                      setSegmentInputs((current) => {
+                        const next = [...current];
+                        next[segment.segmentIndex] = event.target.value;
+                        return next;
+                      })
                     }
-                  }}
-                />
-                <span>m</span>
-              </div>
-            </label>
-          ))}
+                    onBlur={() => commitSegment(segment.segmentIndex)}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelSegmentBlur.current = segment.segmentIndex;
+                        setSegmentInputs(
+                          segments.map((item) => item.lengthM.toFixed(2)),
+                        );
+                        setError(undefined);
+                        event.currentTarget.blur();
+                      }
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
         {error && <p className="text-[10px] text-destructive">{error}</p>}
         {geometryChanged && panels.some((panel) => panel.roofId === roof.id) && (
@@ -281,52 +306,80 @@ export default function RoofDimensionsControl({
   };
 
   return (
-    <section className="space-y-2">
-      <label className={labelClass}>Dachfläche</label>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="space-y-1 text-[10px] text-muted-foreground">
-          Länge
-          <div className="flex items-center gap-1">
-            <input
+    <section className="space-y-6">
+      <div className="space-y-3">
+        <label className={labelClass}>Dachfläche</label>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="min-w-0 space-y-2">
+            <label htmlFor={`roof-length-${roof.id}`} className={fieldLabelClass}>
+              Länge
+            </label>
+            <NumericFieldWithSuffix
+              id={`roof-length-${roof.id}`}
               aria-label="Dachlänge (m)"
-              className={inputClass}
               data-stop-hotkeys="true"
               inputMode="decimal"
+              suffix="m"
               value={lengthInput}
               onChange={(event) => setLengthInput(event.target.value)}
               onBlur={() => commit("length")}
               onKeyDown={(event) => handleKeyDown(event, "length")}
             />
-            <span>m</span>
           </div>
-        </label>
-        <label className="space-y-1 text-[10px] text-muted-foreground">
-          Breite
-          <div className="flex items-center gap-1">
-            <input
+          <div className="min-w-0 space-y-2">
+            <label htmlFor={`roof-width-${roof.id}`} className={fieldLabelClass}>
+              Breite
+            </label>
+            <NumericFieldWithSuffix
+              id={`roof-width-${roof.id}`}
               aria-label="Dachbreite (m)"
-              className={inputClass}
               data-stop-hotkeys="true"
               inputMode="decimal"
+              suffix="m"
               value={widthInput}
               onChange={(event) => setWidthInput(event.target.value)}
               onBlur={() => commit("width")}
               onKeyDown={(event) => handleKeyDown(event, "width")}
             />
-            <span>m</span>
           </div>
-        </label>
+        </div>
+        <div className="flex items-center justify-between gap-3 text-[10px]">
+          <span className="text-muted-foreground">Ausrichtung</span>
+          <strong className="font-semibold tabular-nums text-foreground">
+            {orientationFormatter.format(analysis.dimensions.canvasAngleDeg)}°
+          </strong>
+        </div>
       </div>
-      <p className="text-[10px] text-muted-foreground">
-        Ausrichtung: {analysis.dimensions.canvasAngleDeg.toFixed(1)}°
-      </p>
       {referenceSelector}
-      <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/50 p-2 text-[10px] text-muted-foreground">
-        {segments.map((segment) => (
-          <span key={segment.segmentIndex}>
-            {edgeLabel(segment.segmentIndex)} · {segment.lengthM.toFixed(2)} m
-          </span>
-        ))}
+      <div className="space-y-3">
+        <p className={labelClass}>Kanten</p>
+        <div className="grid grid-cols-2 gap-2.5">
+          {segments.map((segment) => {
+            const isFirst =
+              roofKind === "pitched" &&
+              segment.segmentIndex === referenceEdgeIndex;
+            return (
+              <div
+                key={segment.segmentIndex}
+                className={[
+                  "min-h-14 min-w-0 rounded-lg border bg-muted/10 px-3 py-2",
+                  isFirst
+                    ? "border-primary/45 bg-primary/5"
+                    : "border-border/50",
+                ].join(" ")}
+              >
+                <p
+                  className={`truncate text-[10px] ${isFirst ? "font-medium text-primary" : "text-muted-foreground"}`}
+                >
+                  {edgeLabel(segment.segmentIndex)}
+                </p>
+                <p className="mt-1 whitespace-nowrap text-[11px] font-semibold tabular-nums text-foreground">
+                  {formatDimensionM(segment.lengthM)}
+                </p>
+              </div>
+            );
+          })}
+        </div>
       </div>
       {error && <p className="text-[10px] text-destructive">{error}</p>}
       {geometryChanged && panels.some((panel) => panel.roofId === roof.id) && (
