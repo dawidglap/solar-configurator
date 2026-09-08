@@ -19,6 +19,7 @@ export const createUiSlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
         leftPanelOpen: false,
         searchOpen: false,
         showPanelsInBuilding: true,
+        showModulePreview: true,
         showFieldDimensions: false,
     },
 

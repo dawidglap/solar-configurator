@@ -36,6 +36,7 @@ import {
 } from "./advancedPlanningApplication";
 import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
 import { buildGuidedPlanningResult } from "./guidedPlanningPresentation";
+import ModulePreviewVisibilityToggle from "../ModulePreviewVisibilityToggle";
 
 const inputClass =
   "glass-input h-8 w-full rounded-lg px-2 text-[11px] focus:ring-1 focus:ring-primary/40";
@@ -396,7 +397,6 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
                 {config.advanced.module.powerW != null ? `${fmt(config.advanced.module.powerW, 0)} W · ` : ""}
                 {fmt(config.advanced.module.heightM * 1000, 0)} × {fmt(config.advanced.module.widthM * 1000, 0)} mm
               </p>
-              <p className="mt-1 text-[10px] text-muted-foreground">Querformat</p>
             </div>
             <button
               type="button"
@@ -428,6 +428,14 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
             </label>
           )}
         </div>
+      </section>
+
+      <section className="space-y-2 border-b border-border/60 pb-4">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className={labelClass}>Layout</h3>
+          <span className="text-[10px] text-muted-foreground">Querformat · System</span>
+        </div>
+        <ModulePreviewVisibilityToggle />
       </section>
 
       <section className="space-y-3 border-b border-border/60 pb-4">

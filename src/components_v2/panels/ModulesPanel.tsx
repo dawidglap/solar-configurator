@@ -47,6 +47,7 @@ import {
   resolveRoofPlanningMode,
 } from "../modules/advanced/advancedPlanningApplication";
 import ZonePropertiesControl from "../zones/ZonePropertiesControl";
+import ModulePreviewVisibilityToggle from "../modules/ModulePreviewVisibilityToggle";
 
 type Pt = { x: number; y: number };
 
@@ -955,6 +956,7 @@ export default function ModulesPanel() {
                 </button>
               ))}
             </div>
+            <ModulePreviewVisibilityToggle />
           </section>
 
           <section className="space-y-2 border-b border-border/60 pb-4">

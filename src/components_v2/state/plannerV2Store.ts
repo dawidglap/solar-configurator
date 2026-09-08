@@ -104,6 +104,7 @@ const DEFAULT_UI = {
   leftPanelOpen: false,
   searchOpen: false,
   showPanelsInBuilding: true,
+  showModulePreview: true,
   showFieldDimensions: false,
 };
 
@@ -376,6 +377,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             perRoofAngles: {},
           },
           roofPlanningDrafts: {},
+          ui: { ...s.ui, showModulePreview: true },
         }));
         history.clear();
       },

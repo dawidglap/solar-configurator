@@ -396,6 +396,9 @@ export default function CanvasStage() {
   const showPanelsInBuilding = usePlannerV2Store(
     (state) => state.ui.showPanelsInBuilding,
   );
+  const showModulePreview = usePlannerV2Store(
+    (state) => state.ui.showModulePreview,
+  );
   const selectedPlanningDraft = selectedId ? roofPlanningDrafts[selectedId] : undefined;
   const standardPreviewModules = selectedPlanningDraft?.targetMode === "standard"
     ? selectedPlanningDraft.modules
@@ -455,6 +458,7 @@ export default function CanvasStage() {
     [allPanels, selectedId],
   );
   const standardPreviewVisible = Boolean(
+    showModulePreview &&
     step === "modules" &&
     !manualPlacementSession &&
     selectedRoof &&
@@ -464,11 +468,13 @@ export default function CanvasStage() {
     selectedPlanningDraft?.targetMode !== "advanced" &&
     (!hasPanelsOnSelected || selectedPlanningDraft?.targetMode === "standard"),
   );
-  const candidateThermalFieldSource = selectedPlanningDraft?.targetMode === "advanced"
-    ? thermalFieldSources.advancedPreview
-    : selectedPlanningDraft?.targetMode === "standard" || standardPreviewVisible
-      ? thermalFieldSources.standardPreview
-      : thermalFieldSources.committed;
+  const candidateThermalFieldSource = showModulePreview
+    ? selectedPlanningDraft?.targetMode === "advanced"
+      ? thermalFieldSources.advancedPreview
+      : selectedPlanningDraft?.targetMode === "standard" || standardPreviewVisible
+        ? thermalFieldSources.standardPreview
+        : thermalFieldSources.committed
+    : thermalFieldSources.committed;
   const activeThermalFieldInputs = useMemo(
     () => candidateThermalFieldSource.roofId === selectedId
       ? candidateThermalFieldSource.fields
@@ -480,7 +486,8 @@ export default function CanvasStage() {
     [activeThermalFieldInputs],
   );
   const thermalFieldsArePreview = Boolean(
-    selectedPlanningDraft || (standardPreviewVisible && !hasPanelsOnSelected),
+    showModulePreview &&
+    (selectedPlanningDraft || (standardPreviewVisible && !hasPanelsOnSelected)),
   );
   const previousShowFieldDimensions = useRef(showFieldDimensions);
   useEffect(() => {
@@ -1346,7 +1353,7 @@ export default function CanvasStage() {
                     />
                   )}
 
-                {step === "modules" && !manualPlacementSession && (
+                {showModulePreview && step === "modules" && !manualPlacementSession && (
                   <AdvancedPreviewLayer
                     canvasRotationDeg={rotateDeg}
                     onThermalFieldsChange={showFieldDimensions ? setAdvancedPreviewThermalFields : undefined}
