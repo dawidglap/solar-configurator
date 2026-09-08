@@ -1,10 +1,48 @@
-import { rotateMetricPoint, type MetricPolygon } from "../geometry-v2";
+import {
+  polygonBounds,
+  resolveMaximumWholeUnits,
+  rotateMetricPoint,
+  type GenerateGridPlacementsInput,
+  type MetricPolygon,
+} from "../geometry-v2";
 import { ADVANCED_BLOCK_ENGINE_VERSION } from "./types";
 import type { PlacedAdvancedBlock } from "./types";
 import { groupEffectiveMontageFields } from "./k2MontageFields";
 import type { ThermalFieldLimits } from "./surfacePlanning";
 
 export const THERMAL_FIELD_GROUPING_VERSION = "thermal-fields-v1" as const;
+
+export function createThermalGridBreaks(input: {
+  footprint: MetricPolygon;
+  pitchM: { x: number; y: number };
+  limits: ThermalFieldLimits;
+}): GenerateGridPlacementsInput["thermalBreaks"] | undefined {
+  const gap = input.limits.thermalSeparationGapM;
+  if (gap === undefined) return undefined;
+  const bounds = polygonBounds(input.footprint);
+  const unitX = bounds.maxX - bounds.minX;
+  const unitY = bounds.maxY - bounds.minY;
+  const limitX = input.limits.kind === "pitched-grid"
+    ? input.limits.maxRowDirectionM
+    : input.limits.maxModuleLongSideDirectionM;
+  const limitY = input.limits.kind === "pitched-grid"
+    ? input.limits.maxColumnDirectionM
+    : input.limits.maxRailDirectionM;
+  const maxX = limitX === undefined ? undefined : resolveMaximumWholeUnits({
+    unitExtentM: unitX,
+    regularPitchM: input.pitchM.x,
+    fieldLimitM: limitX,
+  });
+  const maxY = resolveMaximumWholeUnits({
+    unitExtentM: unitY,
+    regularPitchM: input.pitchM.y,
+    fieldLimitM: limitY,
+  });
+  return {
+    ...(maxX && maxX > 0 ? { x: { unitExtentM: unitX, maxUnitsPerField: maxX, separationGapM: gap } } : {}),
+    ...(maxY > 0 ? { y: { unitExtentM: unitY, maxUnitsPerField: maxY, separationGapM: gap } } : {}),
+  };
+}
 
 export type ThermalField = {
   thermalFieldKey: string;
@@ -99,6 +137,8 @@ export type RectangularThermalUnit = {
   heightM: number;
   rotationCartesianDeg: number;
   moduleCount?: number;
+  columnIndex?: number;
+  rowIndex?: number;
 };
 
 /** Adapter for legacy-v1 module rectangles; it changes no placement geometry. */
@@ -122,8 +162,8 @@ export function groupRectangularThermalUnits(input: {
   const minY = Math.min(...localCenters.map((point) => point.y));
   const blocks: PlacedAdvancedBlock[] = input.units.map((unit, index) => {
     const local = localCenters[index];
-    const columnIndex = Math.round((local.x - minX) / input.pitchM.x);
-    const rowIndex = Math.round((local.y - minY) / input.pitchM.y);
+    const columnIndex = unit.columnIndex ?? Math.round((local.x - minX) / input.pitchM.x);
+    const rowIndex = unit.rowIndex ?? Math.round((local.y - minY) / input.pitchM.y);
     const localFootprint = [
       { x: -unit.widthM / 2, y: -unit.heightM / 2 },
       { x: unit.widthM / 2, y: -unit.heightM / 2 },

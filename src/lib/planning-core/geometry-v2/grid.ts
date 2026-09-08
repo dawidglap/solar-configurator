@@ -14,6 +14,7 @@ import {
   type MetricPoint,
   type PlacementUnitGeometry,
 } from "./types";
+import { generateThermalAxisPositions } from "./thermalAxis";
 
 function validPhase(phase: number): boolean {
   return Number.isFinite(phase) && phase >= 0 && phase < 1;
@@ -169,20 +170,22 @@ export function generateGridPlacements(
   const minOriginY = roofBounds.minY - footprintBounds.minY;
   const maxOriginY = roofBounds.maxY - footprintBounds.maxY;
 
-  const columns = generateAnchoredAxisPositions({
+  const columns = input.thermalBreaks?.x ? generateThermalAxisPositions({
     min: minOriginX,
     max: maxOriginX,
     pitch: input.unit.pitchM.x,
     phase: phaseX,
     anchor: anchorX,
-  });
-  const rows = generateAnchoredAxisPositions({
+    break: input.thermalBreaks.x,
+  }) : generateAnchoredAxisPositions({ min: minOriginX, max: maxOriginX, pitch: input.unit.pitchM.x, phase: phaseX, anchor: anchorX });
+  const rows = input.thermalBreaks?.y ? generateThermalAxisPositions({
     min: minOriginY,
     max: maxOriginY,
     pitch: input.unit.pitchM.y,
     phase: phaseY,
     anchor: anchorY,
-  });
+    break: input.thermalBreaks.y,
+  }) : generateAnchoredAxisPositions({ min: minOriginY, max: maxOriginY, pitch: input.unit.pitchM.y, phase: phaseY, anchor: anchorY });
 
   const result: GenerateGridPlacementsResult = {
     engineVersion: GEOMETRY_V2_ENGINE_VERSION,

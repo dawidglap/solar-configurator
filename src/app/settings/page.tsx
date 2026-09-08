@@ -8,6 +8,7 @@ import {
   COMPANY_MODULE_SPACING_LIMITS_MM,
   COMPANY_PLANNER_DEFAULTS_SCHEMA_VERSION,
   COMPANY_THERMAL_FIELD_LIMITS_M,
+  COMPANY_THERMAL_GAP_LIMITS_MM,
   validateCompanyPlannerDefaults,
 } from "@/lib/planning/companyPlannerDefaults";
 
@@ -20,6 +21,7 @@ export default function SettingsPage() {
   const [pitchedWidth, setPitchedWidth] = useState("17.6");
   const [flatPrimary, setFlatPrimary] = useState("12.3");
   const [flatEastWestSecondary, setFlatEastWestSecondary] = useState("16");
+  const [thermalGap, setThermalGap] = useState("140");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -30,6 +32,7 @@ export default function SettingsPage() {
     setPitchedWidth(String(query.data.plannerDefaults.thermalSeparations.pitched.maxFieldWidthM));
     setFlatPrimary(String(query.data.plannerDefaults.thermalSeparations.flat.maxPrimaryFieldLengthM));
     setFlatEastWestSecondary(String(query.data.plannerDefaults.thermalSeparations.flatEastWest.maxSecondaryFieldLengthM));
+    setThermalGap(String(query.data.plannerDefaults.thermalSeparations.gapMm));
   }, [query.data]);
 
   const save = async () => {
@@ -40,6 +43,7 @@ export default function SettingsPage() {
         verticalMm: Number(vertical),
       },
       thermalSeparations: {
+        gapMm: Number(thermalGap),
         pitched: {
           maxFieldLengthM: Number(pitchedLength),
           maxFieldWidthM: Number(pitchedWidth),
@@ -160,6 +164,22 @@ export default function SettingsPage() {
                   werden. Bestehende Planungen werden nicht geändert.
                 </p>
               </div>
+              <label className="block space-y-2 text-sm">
+                <span>Thermischer Trennabstand</span>
+                <span className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={COMPANY_THERMAL_GAP_LIMITS_MM.min}
+                    max={COMPANY_THERMAL_GAP_LIMITS_MM.max}
+                    step="1"
+                    value={thermalGap}
+                    onChange={(event) => setThermalGap(event.target.value)}
+                    disabled={!query.data?.canEdit}
+                    className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 outline-none focus:border-primary disabled:opacity-60"
+                  />
+                  <span className="text-muted-foreground">mm</span>
+                </span>
+              </label>
               <div className="grid gap-4 sm:grid-cols-2">
                 {[
                   ["Schrägdach · max. Feldlänge", pitchedLength, setPitchedLength],

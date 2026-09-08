@@ -10,6 +10,7 @@ import ModuleSlopeArrow from './panels/ModuleSlopeArrow';
 import { selectModuleSlopeArrowIds } from './panels/moduleSlope';
 import {
   groupRectangularThermalUnits,
+  createThermalGridBreaks,
   type ThermalFieldLimits,
 } from '@/lib/planning-core/advanced';
 import type { ThermalFieldDisplayInput } from './thermalFields/thermalFieldDisplay';
@@ -132,6 +133,21 @@ export default function ModulesPreview({
   thermalFieldLimits,
   onThermalFieldsChange,
 }: Props) {
+  const thermalBreaks = useMemo(() => {
+    if (!thermalFieldLimits) return undefined;
+    const widthM = orientation === 'portrait' ? panelSizeM.w : panelSizeM.h;
+    const heightM = orientation === 'portrait' ? panelSizeM.h : panelSizeM.w;
+    return createThermalGridBreaks({
+      footprint: [
+        { x: -widthM / 2, y: -heightM / 2 },
+        { x: widthM / 2, y: -heightM / 2 },
+        { x: widthM / 2, y: heightM / 2 },
+        { x: -widthM / 2, y: heightM / 2 },
+      ],
+      pitchM: { x: widthM + (spacingXM ?? spacingM), y: heightM + (spacingYM ?? spacingM) },
+      limits: thermalFieldLimits,
+    });
+  }, [orientation, panelSizeM.h, panelSizeM.w, spacingM, spacingXM, spacingYM, thermalFieldLimits]);
   // 1) Calcolo ufficiale dei rettangoli (stessa funzione usata al commit)
   const rectsAll = useMemo(() => {
     if (!polygon?.length || !mppImage) return [];
@@ -150,10 +166,11 @@ export default function ModulesPreview({
       anchorX,
       anchorY,
       coverageRatio, // ← preview rispetta 1/2, 3/4, 1/1
+      thermalBreaks,
     });
   }, [
     polygon, mppImage, azimuthDeg, orientation, panelSizeM,
-    spacingM, spacingXM, spacingYM, marginM, phaseX, phaseY, anchorX, anchorY, coverageRatio,
+    spacingM, spacingXM, spacingYM, marginM, phaseX, phaseY, anchorX, anchorY, coverageRatio, thermalBreaks,
   ]);
 
   // 2) Filtro zone riservate + schneefang (coerente con FillAreaController + U)
@@ -210,6 +227,8 @@ export default function ModulesPreview({
         widthM: rect.wPx * mppImage,
         heightM: rect.hPx * mppImage,
         rotationCartesianDeg: -rect.angleDeg,
+        columnIndex: rect.columnIndex,
+        rowIndex: rect.rowIndex,
       })),
       pitchM: {
         x: panelW + (spacingXM ?? spacingM),
@@ -236,6 +255,11 @@ export default function ModulesPreview({
       lengthLimitM: thermalFieldLimits.maxRowDirectionM,
       widthLimitM: thermalFieldLimits.maxColumnDirectionM,
       valid: field.compliant,
+      rowStart: field.rowStart,
+      rowEnd: field.rowEnd,
+      columnStart: field.columnStart,
+      columnEnd: field.columnEnd,
+      thermalSeparationGapM: thermalFieldLimits.thermalSeparationGapM,
     }));
   }, [thermalFieldLimits, thermalFields]);
   React.useEffect(() => {

@@ -27,6 +27,7 @@ export function computeAutoLayoutRects(args: {
   anchorX?: LegacyGridAnchor;
   anchorY?: LegacyGridAnchor;
   coverageRatio?: number;
+  thermalBreaks?: import("@/lib/planning-core/legacy-standard").LegacyStandardGenerationInput["thermalBreaks"];
 }): AutoRect[] {
   return computeLegacyStandardCandidates({
     roofPolygon: args.polygon,
@@ -46,5 +47,6 @@ export function computeAutoLayoutRects(args: {
     anchorX: args.anchorX,
     anchorY: args.anchorY,
     coverageRatio: args.coverageRatio,
+    thermalBreaks: args.thermalBreaks,
   });
 }

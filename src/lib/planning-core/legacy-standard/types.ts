@@ -9,6 +9,8 @@ export type LegacyStandardCandidate = {
   wPx: number;
   hPx: number;
   angleDeg: number;
+  columnIndex?: number;
+  rowIndex?: number;
 };
 
 export type LegacyReservedZone = {
@@ -44,6 +46,10 @@ export type LegacyStandardGenerationInput = {
   anchorX?: LegacyGridAnchor;
   anchorY?: LegacyGridAnchor;
   coverageRatio?: number;
+  thermalBreaks?: {
+    x?: { maxUnitsPerField: number; separationGapM: number };
+    y?: { maxUnitsPerField: number; separationGapM: number };
+  };
 };
 
 export type LegacyStandardLayoutInput = {

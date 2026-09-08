@@ -2,6 +2,7 @@ import {
   combinePolygonBounds,
   computeUsableRoof,
   generateGridPlacements,
+  generateThermalAxisPositions,
   normalizeDegrees,
   polygonBounds,
   rotateMetricPoint,
@@ -132,6 +133,7 @@ export function computeAdvancedBlockLayout(
     anchorY: input.anchorY,
     reservedZones: input.reservedZones,
     snowGuards: input.snowGuards,
+    thermalBreaks: input.thermalBreaks,
   });
   const blocks = grid.placements.map((placement, blockIndex) =>
     instantiateAdvancedBlock({
@@ -183,7 +185,19 @@ function fixedAxisPositions(input: {
   count: number;
   phase: number;
   anchor: "start" | "center" | "end";
+  thermalBreak?: NonNullable<ComputeAdvancedBlockLayoutInput["thermalBreaks"]>["x"];
 }): number[] {
+  if (input.thermalBreak) {
+    return generateThermalAxisPositions({
+      min: input.min,
+      max: input.max,
+      pitch: input.pitch,
+      count: input.count,
+      phase: input.phase,
+      anchor: input.anchor,
+      break: input.thermalBreak,
+    });
+  }
   const span = (input.count - 1) * input.pitch;
   const first =
     input.anchor === "start"
@@ -262,6 +276,7 @@ export function computeFixedAdvancedBlockLayout(
     count: input.blocksPerRow,
     phase: input.phaseX ?? 0,
     anchor: input.anchorX ?? "center",
+    thermalBreak: input.thermalBreaks?.x,
   });
   const rows = fixedAxisPositions({
     min: roofBounds.minY - footprintBounds.minY,
@@ -270,6 +285,7 @@ export function computeFixedAdvancedBlockLayout(
     count: input.rowCount,
     phase: input.phaseY ?? 0,
     anchor: input.anchorY ?? "center",
+    thermalBreak: input.thermalBreaks?.y,
   });
 
   const candidates = rows.flatMap((rowPosition, rowIndex) =>

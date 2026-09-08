@@ -76,6 +76,10 @@ export type GenerateGridPlacementsInput = {
   anchorY?: GridAnchor;
   reservedZones?: PolygonObstacle[];
   snowGuards?: SegmentObstacle[];
+  thermalBreaks?: {
+    x?: import("./thermalAxis").ThermalAxisBreak;
+    y?: import("./thermalAxis").ThermalAxisBreak;
+  };
 };
 
 export type GenerateGridPlacementsResult = {

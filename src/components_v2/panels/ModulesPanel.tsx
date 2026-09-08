@@ -11,35 +11,30 @@ import { Eye, EyeOff } from "lucide-react";
 import { nanoid } from "nanoid";
 import toast from "react-hot-toast";
 
-import { computeLegacyStandardLayout } from "@/lib/planning-core/legacy-standard";
 import {
   resolveStandardAutoLayoutCanvasAngle,
-  resolveStandardAutoLayoutCommitAction,
-  orderStandardAutoLayoutPlacements,
   resolveStandardAutoLayoutSpacingAxes,
-  selectLegacyStandardObstacles,
-  STANDARD_AUTO_LAYOUT_POLICY,
 } from "../modules/legacyStandardApplicationPolicy";
 import {
   resolveSurfacePlanning,
   resolveStandardModuleTilt,
   type AdvancedSurfacePlanningV1,
   type StandardModuleTiltInput,
+  type ThermalFieldLimits,
 } from "@/lib/planning-core/advanced";
 import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
 import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
 import PitchedRoofSlopeControl from "./PitchedRoofSlopeControl";
 import { formatRoofSlopeDirection, resolveRoofFallAzimuth } from "../roof/roofOrientation";
-import { modulesWithRoofEdgeMargin, resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
-import { resolveRoofReferenceEdgeIndex } from "@/lib/planning-core/geometry-v2";
+import { modulesWithRoofEdgeMargin } from "@/lib/planning/roofProperties";
+import { resolveMaximumWholeUnits, resolveRoofReferenceEdgeIndex } from "@/lib/planning-core/geometry-v2";
 import {
   COMPANY_MODULE_SPACING_LIMITS_MM,
   isValidModuleSpacingMm,
   resolveCompanyThermalFieldLimits,
   isValidThermalFieldLimitM,
 } from "@/lib/planning/companyPlannerDefaults";
-import { groupRectangularThermalUnits } from "@/lib/planning-core/advanced";
 import {
   createInitialAdvancedPlanning,
   createStandardPlanningDraft,
@@ -166,14 +161,26 @@ export default function ModulesPanel() {
     moduleTilt: displayedTiltInput,
     roofSlopeDeg: selectedRoof?.tiltDeg,
   });
-  const companyPitchedThermalLimits = resolveCompanyThermalFieldLimits({
-    company: companyPlannerDefaults,
-    roofKind: "pitched",
-  });
-  const displayedThermalLimits = standardDraft?.thermalFieldLimits ??
-    (persistedPlanning.status === "supported-standard"
-      ? persistedPlanning.config.thermalFieldLimits
-      : undefined) ?? companyPitchedThermalLimits;
+  const displayedThermalLimits = React.useMemo<
+    Extract<ThermalFieldLimits, { kind: "pitched-grid" }>
+  >(() => {
+    const companyResolved = resolveCompanyThermalFieldLimits({
+      company: companyPlannerDefaults,
+      roofKind: "pitched",
+    });
+    const companyLimits: Extract<ThermalFieldLimits, { kind: "pitched-grid" }> =
+      companyResolved.kind === "pitched-grid"
+        ? companyResolved
+        : { kind: "pitched-grid", maxRowDirectionM: 17.6, maxColumnDirectionM: 17.6, thermalSeparationGapM: 0.14 };
+    const persisted = resolveSurfacePlanning(selectedRoof?.surfacePlanning);
+    return {
+      ...companyLimits,
+      ...(persisted.status === "supported-standard"
+        ? persisted.config.thermalFieldLimits
+        : undefined),
+      ...standardDraft?.thermalFieldLimits,
+    };
+  }, [companyPlannerDefaults, selectedRoof?.surfacePlanning, standardDraft?.thermalFieldLimits]);
   const customerRoofType =
     displayMode === "standard"
       ? "pitched"
@@ -229,6 +236,7 @@ export default function ModulesPanel() {
   const patchStandardThermalLimits = React.useCallback((patch: {
     maxRowDirectionM?: number;
     maxColumnDirectionM?: number;
+    thermalSeparationGapM?: number;
   }) => {
     if (!selectedRoof || displayedThermalLimits.kind !== "pitched-grid") return;
     setRoofPlanningDraft(selectedRoof.id, {
@@ -265,6 +273,16 @@ export default function ModulesPanel() {
         referenceEdgeIndex: selectedRoof.referenceEdgeIndex,
       })
     : 0;
+  const standardThermalSteps = selSpec && displayedThermalLimits.kind === "pitched-grid"
+    ? (() => {
+        const widthM = displayedModules.orientation === "portrait" ? selSpec.widthM : selSpec.heightM;
+        const heightM = displayedModules.orientation === "portrait" ? selSpec.heightM : selSpec.widthM;
+        return {
+          alongFirst: resolveMaximumWholeUnits({ unitExtentM: widthM, regularPitchM: widthM + displayedSpacingXM, fieldLimitM: displayedThermalLimits.maxRowDirectionM }),
+          downhillRows: resolveMaximumWholeUnits({ unitExtentM: heightM, regularPitchM: heightM + displayedSpacingYM, fieldLimitM: displayedThermalLimits.maxColumnDirectionM }),
+        };
+      })()
+    : null;
   const alignStandardParallelToFirst = React.useCallback(() => {
     if (!selectedRoof) return;
     patchDisplayedModules(
@@ -415,15 +433,6 @@ export default function ModulesPanel() {
       const roof = layers.find((l) => l.id === selectedId);
       if (!roof?.points?.length) return false;
 
-      const canvasAngleDeg = resolveStandardAutoLayoutCanvasAngle({
-        roofId: selectedId,
-        roofPolygon: roof.points,
-        legacyRoofAzimuthDeg: roof.azimuthDeg,
-        gridAngleDeg: modules.gridAngleDeg,
-        perRoofAngles: modules.perRoofAngles,
-        referenceEdgeIndex: roof.referenceEdgeIndex,
-      });
-
       const spacing = resolveStandardAutoLayoutSpacingAxes({
         spacingM: modules.spacingM,
         spacingXM: modules.spacingXM,
@@ -432,46 +441,7 @@ export default function ModulesPanel() {
       const orientation = (nextOrientation ?? modules.orientation) as
         "portrait" | "landscape";
 
-      const currentState = usePlannerV2Store.getState();
-      const obstacles = selectLegacyStandardObstacles(
-        currentState.zones,
-        currentState.snowGuards,
-        selectedId,
-      );
-      const layout = computeLegacyStandardLayout({
-        generation: {
-          roofPolygon: roof.points,
-          mppImage: snapshot.mppImage,
-          canvasAngleDeg,
-          orientation,
-          panelSizeM: { widthM: selSpec.widthM, heightM: selSpec.heightM },
-          spacingM: spacing.x,
-          spacingXM: spacing.x,
-          spacingYM: spacing.y,
-          marginM: resolveRoofEdgeMarginM(roof, modules.marginM),
-          phaseX: modules.gridPhaseX ?? 0,
-          phaseY: modules.gridPhaseY ?? 0,
-          anchorX: modules.gridAnchorX ?? "start",
-          anchorY: modules.gridAnchorY ?? "start",
-          coverageRatio: modules.coverageRatio ?? 1,
-        },
-        reservedZones: obstacles.reservedZones,
-        snowGuards: obstacles.snowGuards,
-        filterPolicy: STANDARD_AUTO_LAYOUT_POLICY.filterPolicy,
-      });
-
-      const commitAction = resolveStandardAutoLayoutCommitAction(layout.count);
-      if (commitAction === "preserve") return false;
-
       const now = Date.now().toString(36);
-      const orderedPlacements = orderStandardAutoLayoutPlacements(
-        layout.placements,
-        {
-          roofPolygon: roof.points,
-          referenceEdgeIndex: roof.referenceEdgeIndex,
-          fallAzimuthDeg: resolveRoofFallAzimuth(roof),
-        },
-      );
       const moduleTilt = resolveStandardTiltInput(roof.surfacePlanning);
       const standardMetadata = buildStandardPanelMetadata({
         roofSlopeDeg: roof.tiltDeg,
@@ -480,40 +450,25 @@ export default function ModulesPanel() {
       const thermalLimits = displayedThermalLimits.kind === "pitched-grid"
         ? displayedThermalLimits
         : undefined;
-      const panelWidthM = orientation === "portrait" ? selSpec.widthM : selSpec.heightM;
-      const panelHeightM = orientation === "portrait" ? selSpec.heightM : selSpec.widthM;
-      const thermalGrouping = thermalLimits
-        ? groupRectangularThermalUnits({
-            units: orderedPlacements.map((placement, index) => ({
-              unitKey: `standard:${index}`,
-              centerM: { x: placement.cx * snapshot.mppImage!, y: -placement.cy * snapshot.mppImage! },
-              widthM: placement.wPx * snapshot.mppImage!,
-              heightM: placement.hPx * snapshot.mppImage!,
-              rotationCartesianDeg: -placement.angleDeg,
-            })),
-            pitchM: { x: panelWidthM + spacing.x, y: panelHeightM + spacing.y },
-            limits: thermalLimits,
-          })
-        : null;
-      const instances = orderedPlacements.map((r, idx) => ({
-        id: `${selectedId}_p_${now}_${idx}`,
-        roofId: selectedId,
-        cx: r.cx,
-        cy: r.cy,
-        wPx: r.wPx,
-        hPx: r.hPx,
-        angleDeg: r.angleDeg,
-        orientation,
-        panelId: selSpec.id,
-        ...(standardMetadata ? {
-          standard: {
-            ...standardMetadata,
-            ...(thermalGrouping?.unitToThermalFieldKey[`standard:${idx}`]
-              ? { thermalFieldKey: thermalGrouping.unitToThermalFieldKey[`standard:${idx}`] }
-              : {}),
-          },
-        } : {}),
-      }));
+      const currentState = usePlannerV2Store.getState();
+      const instances = computeStandardDraftPanels({
+        roof,
+        panel: selSpec,
+        modules: {
+          ...modules,
+          orientation,
+          spacingM: spacing.x,
+          spacingXM: spacing.x,
+          spacingYM: spacing.y,
+        },
+        mppImage: snapshot.mppImage,
+        zones: currentState.zones,
+        snowGuards: currentState.snowGuards,
+        thermalFieldLimits: thermalLimits,
+        panelMetadata: standardMetadata,
+        createPanelId: (index) => `${selectedId}_p_${now}_${index}`,
+      });
+      if (!instances.length) return false;
       commitRoofLayout({
         roofId: selectedId,
         panels: instances,
@@ -526,18 +481,7 @@ export default function ModulesPanel() {
       selSpec,
       snapshot?.mppImage,
       layers,
-      modules.gridAngleDeg,
-      modules.perRoofAngles,
-      modules.marginM,
-      modules.gridPhaseX,
-      modules.gridPhaseY,
-      modules.gridAnchorX,
-      modules.gridAnchorY,
-      modules.coverageRatio,
-      modules.spacingM,
-      modules.spacingXM,
-      modules.spacingYM,
-      modules.orientation,
+      modules,
       displayedThermalLimits,
       commitRoofLayout,
     ],
@@ -1246,6 +1190,7 @@ export default function ModulesPanel() {
                   onClick={() => patchStandardThermalLimits({
                     maxRowDirectionM: companyPlannerDefaults.thermalSeparations.pitched.maxFieldLengthM,
                     maxColumnDirectionM: companyPlannerDefaults.thermalSeparations.pitched.maxFieldWidthM,
+                    thermalSeparationGapM: companyPlannerDefaults.thermalSeparations.gapMm / 1000,
                   })}
                 >
                   Firmenstandard
@@ -1289,6 +1234,32 @@ export default function ModulesPanel() {
                   </span>
                 </label>
               </div>
+              {standardThermalSteps && (
+                <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/60 bg-muted/15 p-2 text-[10px]">
+                  <span className="text-muted-foreground">Max. Module am First</span><strong className="text-right">{standardThermalSteps.alongFirst}</strong>
+                  <span className="text-muted-foreground">Max. Reihen im Gefälle</span><strong className="text-right">{standardThermalSteps.downhillRows}</strong>
+                </div>
+              )}
+              <label className="space-y-1 text-[10px] text-muted-foreground">
+                Thermischer Trennabstand
+                <span className="flex items-center gap-1">
+                  <input
+                    className={inputBase}
+                    type="number"
+                    min={0}
+                    max={5000}
+                    step={1}
+                    value={(displayedThermalLimits.thermalSeparationGapM ?? 0.14) * 1000}
+                    onChange={(event) => {
+                      const valueMm = Number(event.target.value);
+                      if (Number.isFinite(valueMm) && valueMm >= 0 && valueMm <= 5000) {
+                        patchStandardThermalLimits({ thermalSeparationGapM: valueMm / 1000 });
+                      }
+                    }}
+                  />
+                  <span>mm</span>
+                </span>
+              </label>
             </section>
           )}
 

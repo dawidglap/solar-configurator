@@ -22,6 +22,7 @@ import {
   selectModuleSlopeArrowIds,
 } from "../panels/moduleSlope";
 import type { ThermalFieldDisplayInput } from "../thermalFields/thermalFieldDisplay";
+import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
 
 function centroid(points: Pt[]): Pt {
   const count = Math.max(1, points.length);
@@ -79,6 +80,7 @@ export default function AdvancedPreviewLayer({
   const zones = usePlannerV2Store((state) => state.zones);
   const snowGuards = usePlannerV2Store((state) => state.snowGuards);
   const showFieldDimensions = usePlannerV2Store((state) => state.ui.showFieldDimensions);
+  const companyPlannerDefaults = usePlannerV2Store((state) => state.companyPlannerDefaults);
   const roofId = roof?.id;
 
   // Resolution normalizes into a new object. Keep it stable across camera-only
@@ -87,12 +89,18 @@ export default function AdvancedPreviewLayer({
     () => resolveSurfacePlanning(roof?.surfacePlanning),
     [roof?.surfacePlanning],
   );
-  const config: AdvancedSurfacePlanningV1 | undefined =
+  const rawConfig: AdvancedSurfacePlanningV1 | undefined =
     draft?.targetMode === "advanced"
       ? draft.config
       : !draft && persisted.status === "supported-advanced"
         ? persisted.config
         : undefined;
+  const config = React.useMemo(
+    () => rawConfig
+      ? withEffectiveAdvancedThermalLimits(rawConfig, companyPlannerDefaults)
+      : undefined,
+    [companyPlannerDefaults, rawConfig],
+  );
   const preview = React.useMemo(
     () =>
       roof && config && draft?.targetMode === "advanced"
@@ -115,6 +123,11 @@ export default function AdvancedPreviewLayer({
         : {}),
       widthLimitM: limits.maxRailDirectionM,
       valid: field.compliant,
+      rowStart: field.rowStart,
+      rowEnd: field.rowEnd,
+      columnStart: field.columnStart,
+      columnEnd: field.columnEnd,
+      thermalSeparationGapM: limits.thermalSeparationGapM,
     }));
   }, [config?.thermalFieldLimits, preview]);
   React.useEffect(() => {

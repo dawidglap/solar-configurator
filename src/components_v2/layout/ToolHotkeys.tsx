@@ -2,28 +2,17 @@
 'use client';
 
 import { useCallback, useEffect } from 'react';
-import {
-  computeLegacyStandardLayout,
-} from '@/lib/planning-core/legacy-standard';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import { history } from '../state/history';
-import {
-  resolveStandardAutoLayoutCanvasAngle,
-  resolveStandardAutoLayoutCommitAction,
-  orderStandardAutoLayoutPlacements,
-  resolveStandardAutoLayoutSpacingAxes,
-  selectLegacyStandardObstacles,
-  STANDARD_AUTO_LAYOUT_POLICY,
-} from '../modules/legacyStandardApplicationPolicy';
 import { shouldIgnorePlannerHotkeyTarget } from '../canvas/interactionPolicy';
 import { resolvePlannerStepForTool, resolvePlannerToolHotkey } from './toolHotkeyPolicy';
 import type { Tool } from '@/types/planner';
-import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
-import { resolveRoofFallAzimuth } from '../roof/roofOrientation';
 import { resolveSurfacePlanning } from '@/lib/planning-core/advanced';
+import { resolveCompanyThermalFieldLimits } from '@/lib/planning/companyPlannerDefaults';
 import {
   buildStandardPanelMetadata,
   buildStandardSurfacePlanning,
+  computeStandardDraftPanels,
   resolveStandardTiltInput,
 } from '../modules/advanced/advancedPlanningApplication';
 
@@ -71,68 +60,27 @@ export default function ToolHotkeys() {
       : selSpec;
     if (!standardPanel) return;
 
-    const canvasAngleDeg = resolveStandardAutoLayoutCanvasAngle({
-      roofId: selectedId,
-      roofPolygon: roof.points,
-      legacyRoofAzimuthDeg: roof.azimuthDeg,
-      gridAngleDeg: standardModules.gridAngleDeg,
-      perRoofAngles: standardModules.perRoofAngles,
-      referenceEdgeIndex: roof.referenceEdgeIndex,
-    });
     const currentState = usePlannerV2Store.getState();
-    const obstacles = selectLegacyStandardObstacles(
-      currentState.zones,
-      currentState.snowGuards,
-      selectedId,
-    );
-    const spacing = resolveStandardAutoLayoutSpacingAxes(standardModules);
-    const result = computeLegacyStandardLayout({
-      generation: {
-        roofPolygon: roof.points,
-        mppImage: snapshot.mppImage,
-        canvasAngleDeg,
-        orientation: standardModules.orientation,
-        panelSizeM: { widthM: standardPanel.widthM, heightM: standardPanel.heightM },
-        spacingM: spacing.x,
-        spacingXM: spacing.x,
-        spacingYM: spacing.y,
-        marginM: resolveRoofEdgeMarginM(roof, standardModules.marginM),
-        phaseX: standardModules.gridPhaseX ?? 0,
-        phaseY: standardModules.gridPhaseY ?? 0,
-        anchorX: standardModules.gridAnchorX ?? 'start',
-        anchorY: standardModules.gridAnchorY ?? 'start',
-        coverageRatio: standardModules.coverageRatio ?? 1,
-      },
-      ...obstacles,
-      filterPolicy: STANDARD_AUTO_LAYOUT_POLICY.filterPolicy,
-    });
-    const commitAction = resolveStandardAutoLayoutCommitAction(result.count);
-    if (commitAction === 'preserve') return;
-
     const now = Date.now().toString(36);
-    const orderedPlacements = orderStandardAutoLayoutPlacements(
-      result.placements,
-      {
-        roofPolygon: roof.points,
-        referenceEdgeIndex: roof.referenceEdgeIndex,
-        fallAzimuthDeg: resolveRoofFallAzimuth(roof),
-      },
-    );
     const moduleTilt = standardDraft?.moduleTilt ?? resolveStandardTiltInput(roof.surfacePlanning);
     const persistedStandard = resolveSurfacePlanning(roof.surfacePlanning);
+    const companyLimits = resolveCompanyThermalFieldLimits({ company: currentState.companyPlannerDefaults, roofKind: 'pitched' });
     const thermalFieldLimits = standardDraft?.thermalFieldLimits ??
-      (persistedStandard.status === 'supported-standard' ? persistedStandard.config.thermalFieldLimits : undefined);
+      (persistedStandard.status === 'supported-standard' ? persistedStandard.config.thermalFieldLimits : undefined) ??
+      (companyLimits.kind === 'pitched-grid' ? companyLimits : undefined);
     const standardMetadata = buildStandardPanelMetadata({ roofSlopeDeg: roof.tiltDeg, moduleTilt });
-    const instances = orderedPlacements.map((r, idx) => ({
-      id: `${selectedId}_p_${now}_${idx}`,
-      roofId: selectedId,
-      cx: r.cx, cy: r.cy,
-      wPx: r.wPx, hPx: r.hPx,
-      angleDeg: r.angleDeg,
-      orientation: standardModules.orientation,
-      panelId: standardPanel.id,
-      ...(standardMetadata ? { standard: standardMetadata } : {}),
-    }));
+    const instances = computeStandardDraftPanels({
+      roof,
+      panel: standardPanel,
+      modules: standardModules,
+      mppImage: snapshot.mppImage,
+      zones: currentState.zones,
+      snowGuards: currentState.snowGuards,
+      thermalFieldLimits,
+      panelMetadata: standardMetadata,
+      createPanelId: (index) => `${selectedId}_p_${now}_${index}`,
+    });
+    if (!instances.length) return;
 
     commitRoofLayout({ roofId: selectedId, panels: instances, surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt, thermalFieldLimits }) });
     setSelectedPanel(standardPanel.id);

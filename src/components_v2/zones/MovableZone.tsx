@@ -125,6 +125,21 @@ export default function MovableZone({
 
   const RED = plannerTheme.danger;
   const fill = selected ? "rgba(255, 95, 86, 0.24)" : plannerTheme.dangerSoft;
+  const hatch = React.useMemo(() => {
+    const xs = zone.points.map((point) => point.x);
+    const ys = zone.points.map((point) => point.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const span = maxY - minY;
+    const lines: number[][] = [];
+    for (let x = minX - span; x <= maxX + span; x += 18) {
+      lines.push([x, minY, x + span, maxY]);
+      lines.push([x, maxY, x + span, minY]);
+    }
+    return lines;
+  }, [zone.points]);
   return (
     <Group ref={groupRef} id={`zone-group-${zone.id}`}>
       <Line
@@ -138,6 +153,28 @@ export default function MovableZone({
         listening={false}
         perfectDrawEnabled={false}
       />
+      <Group
+        listening={false}
+        clipFunc={(context) => {
+          if (!zone.points.length) return;
+          context.beginPath();
+          context.moveTo(zone.points[0].x, zone.points[0].y);
+          zone.points.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+          context.closePath();
+        }}
+      >
+        {hatch.map((points, index) => (
+          <Line
+            key={`zone-hatch-${index}`}
+            points={points}
+            stroke={RED}
+            strokeWidth={0.65}
+            opacity={selected ? 0.55 : 0.35}
+            listening={false}
+            perfectDrawEnabled={false}
+          />
+        ))}
+      </Group>
       {interactive && (
         <Line
           points={flat(zone.points)}

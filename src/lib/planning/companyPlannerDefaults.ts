@@ -12,6 +12,8 @@ export const BUILT_IN_COMPANY_PLANNER_DEFAULTS = {
     verticalMm: 19,
   },
   thermalSeparations: {
+    /** Clear edge-to-edge separation used at every thermal field break. */
+    gapMm: 140,
     pitched: {
       maxFieldLengthM: 17.6,
       maxFieldWidthM: 17.6,
@@ -37,6 +39,8 @@ export const COMPANY_THERMAL_FIELD_LIMITS_M = {
   max: 100,
 } as const;
 
+export const COMPANY_THERMAL_GAP_LIMITS_MM = { min: 0, max: 5000 } as const;
+
 export function isValidModuleSpacingMm(value: unknown): value is number {
   return (
     typeof value === "number" &&
@@ -54,6 +58,7 @@ export type CompanyPlannerDefaultsV1 = {
     verticalMm: number;
   };
   thermalSeparations: {
+    gapMm: number;
     pitched: {
       maxFieldLengthM: number;
       maxFieldWidthM: number;
@@ -99,6 +104,12 @@ export function isValidThermalFieldLimitM(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) &&
     value >= COMPANY_THERMAL_FIELD_LIMITS_M.min &&
     value <= COMPANY_THERMAL_FIELD_LIMITS_M.max;
+}
+
+export function isValidThermalSeparationGapMm(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) &&
+    value >= COMPANY_THERMAL_GAP_LIMITS_MM.min &&
+    value <= COMPANY_THERMAL_GAP_LIMITS_MM.max;
 }
 
 function readThermalLimit(
@@ -147,11 +158,21 @@ export function validateCompanyPlannerDefaults(
   // supplies the built-in values without requiring a schema migration.
   const thermalSeparations = thermalInput === undefined
     ? {
+        gapMm: BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.gapMm,
         pitched: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.pitched },
         flat: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.flat },
         flatEastWest: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.flatEastWest },
       }
     : {
+        gapMm: thermalInput.gapMm === undefined
+          ? BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.gapMm
+          : (() => {
+              if (!isValidThermalSeparationGapMm(thermalInput.gapMm)) {
+                errors.push(`thermalSeparations.gapMm must be between ${COMPANY_THERMAL_GAP_LIMITS_MM.min} and ${COMPANY_THERMAL_GAP_LIMITS_MM.max} mm.`);
+                return undefined;
+              }
+              return thermalInput.gapMm;
+            })(),
         pitched: {
           maxFieldLengthM: readThermalLimit(pitchedInput?.maxFieldLengthM, "thermalSeparations.pitched.maxFieldLengthM", errors),
           maxFieldWidthM: readThermalLimit(pitchedInput?.maxFieldWidthM, "thermalSeparations.pitched.maxFieldWidthM", errors),
@@ -191,6 +212,7 @@ export function resolveCompanyPlannerDefaults(
             BUILT_IN_COMPANY_PLANNER_DEFAULTS.moduleSpacing.verticalMm,
         },
         thermalSeparations: {
+          gapMm: BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.gapMm,
           pitched: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.pitched },
           flat: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.flat },
           flatEastWest: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.flatEastWest },
@@ -203,11 +225,13 @@ export type EffectiveThermalFieldLimits =
       kind: "pitched-grid";
       maxRowDirectionM: number;
       maxColumnDirectionM: number;
+      thermalSeparationGapM: number;
     }
   | {
       kind: "flat-block";
       maxRailDirectionM: number;
       maxModuleLongSideDirectionM?: number;
+      thermalSeparationGapM: number;
     };
 
 export function resolveCompanyThermalFieldLimits(input: {
@@ -216,16 +240,19 @@ export function resolveCompanyThermalFieldLimits(input: {
   mountingOrientation?: "south" | "east-west";
 }): EffectiveThermalFieldLimits {
   const defaults = resolveCompanyPlannerDefaults(input.company).thermalSeparations;
+  const thermalSeparationGapM = defaults.gapMm / 1000;
   if (input.roofKind === "pitched") {
     return {
       kind: "pitched-grid",
       maxRowDirectionM: defaults.pitched.maxFieldLengthM,
       maxColumnDirectionM: defaults.pitched.maxFieldWidthM,
+      thermalSeparationGapM,
     };
   }
   return {
     kind: "flat-block",
     maxRailDirectionM: defaults.flat.maxPrimaryFieldLengthM,
+    thermalSeparationGapM,
     ...(input.mountingOrientation === "east-west"
       ? { maxModuleLongSideDirectionM: defaults.flatEastWest.maxSecondaryFieldLengthM }
       : {}),

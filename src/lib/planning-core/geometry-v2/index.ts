@@ -4,6 +4,7 @@ export * from "./polygon";
 export * from "./usableRoof";
 export * from "./collision";
 export * from "./grid";
+export * from "./thermalAxis";
 export * from "./roofDimensions";
 export * from "./roofEdges";
 export * from "./roofRelativeObstacle";

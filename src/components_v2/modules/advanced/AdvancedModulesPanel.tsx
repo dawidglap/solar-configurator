@@ -10,8 +10,10 @@ import {
   K2_D_DOME_SYSTEM_ID,
   K2_S_DOME_SYSTEM_ID,
   type AdvancedSurfacePlanningV1,
+  type ThermalFieldLimits,
 } from "@/lib/planning-core/advanced";
 import type { RoofArea } from "@/types/planner";
+import { resolveMaximumWholeUnits } from "@/lib/planning-core/geometry-v2";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
 import {
   COMPANY_MODULE_SPACING_LIMITS_MM,
@@ -32,6 +34,7 @@ import {
   setAdvancedQuantityMode,
   updateDefaultFlatSystem,
 } from "./advancedPlanningApplication";
+import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
 import { buildGuidedPlanningResult } from "./guidedPlanningPresentation";
 
 const inputClass =
@@ -112,18 +115,6 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
     return () => window.cancelAnimationFrame(frame);
   }, [fineTuningOpen, focusManualOrientation]);
 
-  const preview = React.useMemo(
-    () =>
-      computeAdvancedPlanningPreview({
-        roof,
-        config,
-        mppImage: mppImage ?? 0,
-        zones,
-        snowGuards,
-      }),
-    [roof, config, mppImage, zones, snowGuards],
-  );
-
   const update = React.useCallback(
     (next: AdvancedSurfacePlanningV1) => {
       setConfirmReplace(false);
@@ -153,10 +144,28 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
     roofKind: "flat",
     mountingOrientation: isOpposingSystem ? "east-west" : "south",
   });
-  const companyThermalLimits = companyThermalLimitsResolved.kind === "flat-block"
+  const companyThermalLimits: Extract<ThermalFieldLimits, { kind: "flat-block" }> = companyThermalLimitsResolved.kind === "flat-block"
     ? companyThermalLimitsResolved
-    : { kind: "flat-block" as const, maxRailDirectionM: 12.3 };
-  const thermalLimits = config.thermalFieldLimits ?? companyThermalLimits;
+    : { kind: "flat-block" as const, maxRailDirectionM: 12.3, thermalSeparationGapM: 0.14 };
+  const thermalLimits: Extract<ThermalFieldLimits, { kind: "flat-block" }> = {
+    ...companyThermalLimits,
+    ...config.thermalFieldLimits,
+  };
+  const effectiveConfig = React.useMemo(
+    () => withEffectiveAdvancedThermalLimits(config, companyPlannerDefaults),
+    [companyPlannerDefaults, config],
+  );
+  const preview = React.useMemo(
+    () =>
+      computeAdvancedPlanningPreview({
+        roof,
+        config: effectiveConfig,
+        mppImage: mppImage ?? 0,
+        zones,
+        snowGuards,
+      }),
+    [roof, effectiveConfig, mppImage, zones, snowGuards],
+  );
   const nominalTiltDeg = "nominalTiltDeg" in system ? system.nominalTiltDeg : 10;
   const moduleGapM = "moduleGapX" in system ? system.moduleGapX ?? 0.018 : 0.018;
   const moduleId = config.advanced.module.panelSpecId ?? "";
@@ -168,6 +177,35 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
     preview.valid &&
     preview.moduleCount > 0 &&
     !!moduleId;
+  const advancedThermalSteps = React.useMemo(() => {
+    const first = preview.blocks.find((block) => block.valid);
+    if (!first || !(mppImage && mppImage > 0) || !preview.derived) return null;
+    const radians = (-first.rotationCanvasDeg * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const local = first.footprintPx.map((point) => ({
+      x: point.x * cos - point.y * sin,
+      y: point.x * sin + point.y * cos,
+    }));
+    const unitX = (Math.max(...local.map((point) => point.x)) - Math.min(...local.map((point) => point.x))) * mppImage;
+    const unitY = (Math.max(...local.map((point) => point.y)) - Math.min(...local.map((point) => point.y))) * mppImage;
+    const pitchX = preview.derived.kind === "generic"
+      ? preview.derived.pitchXM
+      : config.advanced.module.heightM + preview.derived.moduleLongSideSpacingM;
+    const pitchY = preview.derived.kind === "generic" ? preview.derived.pitchYM : rowSpaceM;
+    return {
+      columns: thermalLimits.maxModuleLongSideDirectionM === undefined ? undefined : resolveMaximumWholeUnits({
+        unitExtentM: unitX,
+        regularPitchM: pitchX,
+        fieldLimitM: thermalLimits.maxModuleLongSideDirectionM,
+      }),
+      rows: resolveMaximumWholeUnits({
+        unitExtentM: unitY,
+        regularPitchM: pitchY,
+        fieldLimitM: thermalLimits.maxRailDirectionM,
+      }),
+    };
+  }, [config.advanced.module.heightM, mppImage, preview, rowSpaceM, thermalLimits.maxModuleLongSideDirectionM, thermalLimits.maxRailDirectionM]);
   const quantityMode = config.advanced.layout.quantityMode ?? "auto";
   const blocksPerRow = config.advanced.layout.blocksPerRow ?? 5;
   const rowCount = config.advanced.layout.rowCount ?? 3;
@@ -209,9 +247,10 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
     const latestRoof = latest.layers.find((item) => item.id === roof.id);
     const latestDraft = latest.roofPlanningDrafts[roof.id];
     if (!latestRoof || latestDraft?.targetMode !== "advanced") return;
+    const latestConfig = withEffectiveAdvancedThermalLimits(latestDraft.config, latest.companyPlannerDefaults);
     const latestPreview = computeAdvancedPlanningPreview({
       roof: latestRoof,
-      config: latestDraft.config,
+      config: latestConfig,
       mppImage: latest.snapshot.mppImage ?? 0,
       zones: latest.zones,
       snowGuards: latest.snowGuards,
@@ -220,7 +259,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
     const layoutRunId = nanoid();
     const nextPanels = materializeAdvancedPanels({
       roofId: roof.id,
-      config: latestDraft.config,
+      config: latestConfig,
       preview: latestPreview,
       layoutRunId,
       createPanelId: (index) => `${roof.id}_advanced_${layoutRunId}_${index}`,
@@ -229,7 +268,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
     commitRoofLayout({
       roofId: roof.id,
       panels: nextPanels,
-      surfacePlanning: latestDraft.config,
+      surfacePlanning: latestConfig,
     });
     setConfirmReplace(false);
     toast.success("Layout angewendet");
@@ -255,7 +294,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
       },
     });
 
-  const patchThermalLimits = (patch: Partial<typeof thermalLimits>) => {
+  const patchThermalLimits = (patch: Partial<Extract<ThermalFieldLimits, { kind: "flat-block" }>>) => {
     const next = { ...thermalLimits, ...patch, kind: "flat-block" as const };
     update({ ...config, thermalFieldLimits: next });
   };
@@ -308,6 +347,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
                 thermalFieldLimits: {
                   kind: "flat-block",
                   maxRailDirectionM: thermalLimits.maxRailDirectionM,
+                  thermalSeparationGapM: thermalLimits.thermalSeparationGapM,
                 },
               });
             }}
@@ -327,6 +367,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
                 thermalFieldLimits: {
                   kind: "flat-block",
                   maxRailDirectionM: thermalLimits.maxRailDirectionM,
+                  thermalSeparationGapM: thermalLimits.thermalSeparationGapM,
                   maxModuleLongSideDirectionM:
                     thermalLimits.maxModuleLongSideDirectionM ??
                     companyPlannerDefaults.thermalSeparations.flatEastWest.maxSecondaryFieldLengthM,
@@ -633,6 +674,32 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
             </span>
           </label>
         )}
+        {advancedThermalSteps && (
+          <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/60 bg-muted/15 p-2 text-[10px]">
+            {advancedThermalSteps.columns !== undefined && <><span className="text-muted-foreground">Max. Blöcke pro Reihe</span><strong className="text-right">{advancedThermalSteps.columns}</strong></>}
+            <span className="text-muted-foreground">Max. Reihen pro Feld</span><strong className="text-right">{advancedThermalSteps.rows}</strong>
+          </div>
+        )}
+        <label className="block space-y-1 text-[10px] text-muted-foreground">
+          Thermischer Trennabstand
+          <span className="flex items-center gap-2">
+            <input
+              className={inputClass}
+              type="number"
+              min={0}
+              max={5000}
+              step={1}
+              value={(thermalLimits.thermalSeparationGapM ?? 0.14) * 1000}
+              onChange={(event) => {
+                const valueMm = Number(event.target.value);
+                if (Number.isFinite(valueMm) && valueMm >= 0 && valueMm <= 5000) {
+                  patchThermalLimits({ thermalSeparationGapM: valueMm / 1000 });
+                }
+              }}
+            />
+            <span>mm</span>
+          </span>
+        </label>
         <p className="text-[9px] text-muted-foreground">
           {config.thermalFieldLimits ? "Dachflächenspezifischer Wert" : "Firmenstandard"}
         </p>

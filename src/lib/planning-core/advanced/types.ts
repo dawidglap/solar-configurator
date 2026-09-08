@@ -1,5 +1,6 @@
 import type {
   GeometryDiagnostic,
+  GenerateGridPlacementsInput,
   GridAnchor,
   MetricPoint,
   MetricPolygon,
@@ -114,6 +115,7 @@ export type ComputeAdvancedBlockLayoutInput = {
   anchorY?: GridAnchor;
   reservedZones?: PolygonObstacle[];
   snowGuards?: SegmentObstacle[];
+  thermalBreaks?: GenerateGridPlacementsInput["thermalBreaks"];
 };
 
 export type ComputeFixedAdvancedBlockLayoutInput =

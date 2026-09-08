@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ChevronRight, X } from "lucide-react";
+import { ChevronRight, Download, X } from "lucide-react";
 
 import type { ThermalFieldDisplay } from "./thermalFieldDisplay";
 import { formatFieldMetres } from "./thermalFieldDisplay";
@@ -15,6 +15,8 @@ export default function ThermalFieldOverviewDrawer({
   preview,
   onOpenChange,
   onSelect,
+  onDownload,
+  downloadDisabledReason,
 }: {
   open: boolean;
   fields: readonly ThermalFieldDisplay[];
@@ -22,6 +24,8 @@ export default function ThermalFieldOverviewDrawer({
   preview: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (key: string) => void;
+  onDownload?: () => void;
+  downloadDisabledReason?: string;
 }) {
   const cardRefs = React.useRef(new Map<string, HTMLButtonElement>());
 
@@ -130,11 +134,20 @@ export default function ThermalFieldOverviewDrawer({
                   {field.widthLimitM !== undefined ? formatFieldMetres(field.widthLimitM) : ""} m
                 </div>
               )}
+              {field.thermalSeparationGapM !== undefined && (
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  Trennabstand: {Math.round(field.thermalSeparationGapM * 1000)} mm
+                </div>
+              )}
             </button>
           );
         })}
       </div>
       <footer className="shrink-0 border-t border-border px-4 py-2 text-[10px] text-muted-foreground">
+        <button type="button" className="glass-button-secondary mb-2 flex h-9 w-full items-center justify-center gap-2 text-xs disabled:cursor-not-allowed disabled:opacity-45" disabled={!onDownload || Boolean(downloadDisabledReason)} onClick={onDownload} title={downloadDisabledReason}>
+          <Download className="h-4 w-4" aria-hidden="true" /> PDF herunterladen
+        </button>
+        {downloadDisabledReason && <p className="mb-1 text-amber-400">{downloadDisabledReason}</p>}
         Thermische Feldaufteilung · keine statische Prüfung
       </footer>
     </aside>

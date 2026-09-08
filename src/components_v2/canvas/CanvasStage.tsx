@@ -28,6 +28,7 @@ import ThermalFieldCanvasLayer from "../modules/thermalFields/ThermalFieldCanvas
 import ThermalFieldOverviewDrawer, {
   THERMAL_FIELD_DRAWER_WIDTH_PX,
 } from "../modules/thermalFields/ThermalFieldOverviewDrawer";
+import { downloadThermalFieldPdf } from "../modules/thermalFields/thermalFieldPdf";
 import {
   areThermalFieldDisplayInputsEqual,
   buildThermalFieldDisplay,
@@ -230,6 +231,7 @@ export default function CanvasStage() {
   const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
   const duplicatePanel = usePlannerV2Store((s) => s.duplicatePanel);
   const addZone = usePlannerV2Store((s) => s.addZone);
+  const zones = usePlannerV2Store((s) => s.zones);
   const addSnowGuard = usePlannerV2Store((s) => s.addSnowGuard);
   const snowGuards = usePlannerV2Store((s) => s.snowGuards);
   const selectedSnowGuardId = usePlannerV2Store((s) => s.selectedSnowGuardId);
@@ -467,9 +469,12 @@ export default function CanvasStage() {
     : selectedPlanningDraft?.targetMode === "standard" || standardPreviewVisible
       ? thermalFieldSources.standardPreview
       : thermalFieldSources.committed;
-  const activeThermalFieldInputs = candidateThermalFieldSource.roofId === selectedId
-    ? candidateThermalFieldSource.fields
-    : [];
+  const activeThermalFieldInputs = useMemo(
+    () => candidateThermalFieldSource.roofId === selectedId
+      ? candidateThermalFieldSource.fields
+      : [],
+    [candidateThermalFieldSource, selectedId],
+  );
   const activeThermalFields = useMemo(
     () => buildThermalFieldDisplay(activeThermalFieldInputs),
     [activeThermalFieldInputs],
@@ -1621,6 +1626,46 @@ export default function CanvasStage() {
           preview={thermalFieldsArePreview}
           onOpenChange={setFieldDrawerOpen}
           onSelect={(key) => setSelectedThermalFieldKey(key)}
+          onDownload={!thermalFieldsArePreview && selectedRoof ? () => {
+            const committedPlanning = resolveSurfacePlanning(selectedRoof.surfacePlanning);
+            const advancedModule = committedPlanning.status === "supported-advanced"
+              ? committedPlanning.config.advanced.module
+              : undefined;
+            const appliedPanel = allPanels.find((panel) => panel.roofId === selectedRoof.id);
+            const panelSpec = catalogPanels.find((panel) => panel.id === appliedPanel?.panelId);
+            const marginM = committedPlanning.status === "supported-advanced"
+              ? committedPlanning.config.advanced.layout.marginM
+              : resolveRoofEdgeMarginM(selectedRoof, modules.marginM);
+            void downloadThermalFieldPdf({
+              roof: selectedRoof,
+              panels: allPanels,
+              obstacles: zones.filter((zone) => zone.roofId === selectedRoof.id),
+              fields: activeThermalFields,
+              separationGapM: activeThermalFields[0]?.thermalSeparationGapM,
+              backgroundImageUrl: snap.url,
+              ...(snap.width && snap.height
+                ? { backgroundImageSize: { width: snap.width, height: snap.height } }
+                : {}),
+              mppImage: snap.mppImage,
+              marginM,
+              module: advancedModule
+                ? {
+                    label: advancedModule.panelSpecId ?? "Modul",
+                    widthM: advancedModule.widthM,
+                    heightM: advancedModule.heightM,
+                    orientation: advancedModule.orientation,
+                  }
+                : panelSpec
+                  ? {
+                      label: `${panelSpec.brand} ${panelSpec.model}`,
+                      widthM: panelSpec.widthM,
+                      heightM: panelSpec.heightM,
+                      orientation: appliedPanel?.orientation,
+                    }
+                  : { label: "Modul" },
+            });
+          } : undefined}
+          downloadDisabledReason={thermalFieldsArePreview ? "Bitte Änderungen zuerst anwenden." : undefined}
         />
       )}
 

@@ -41,6 +41,8 @@ export type ThermalFieldLimits =
       maxRowDirectionM: number;
       /** Module-grid column/downhill direction. */
       maxColumnDirectionM: number;
+      /** Clear edge-to-edge gap inserted between consecutive thermal fields. */
+      thermalSeparationGapM?: number;
     }
   | {
       kind: "flat-block";
@@ -48,6 +50,8 @@ export type ThermalFieldLimits =
       maxRailDirectionM: number;
       /** Module-long-side direction; absent when no secondary rule applies. */
       maxModuleLongSideDirectionM?: number;
+      /** Clear edge-to-edge gap inserted between consecutive thermal fields. */
+      thermalSeparationGapM?: number;
     };
 
 export type AdvancedModuleSnapshot = {
@@ -336,6 +340,12 @@ function readThermalFieldLimits(
     return undefined;
   }
   const validLimit = (current: unknown) => finite(current) && current > 0 && current <= 100;
+  const validGap = (current: unknown) => current === undefined ||
+    (finite(current) && current >= 0 && current <= 5);
+  if (!validGap(value.thermalSeparationGapM)) {
+    issues.push(issue("thermalFieldLimits.thermalSeparationGapM", "invalid-thermal-separation-gap", "Thermal separation gap must be within [0, 5] m."));
+    return undefined;
+  }
   if (expectedKind === "pitched-grid") {
     if (!validLimit(value.maxRowDirectionM) || !validLimit(value.maxColumnDirectionM)) {
       issues.push(issue("thermalFieldLimits", "invalid-thermal-field-limits", "Pitched thermal limits must be within (0, 100] m."));
@@ -345,6 +355,9 @@ function readThermalFieldLimits(
       kind: "pitched-grid",
       maxRowDirectionM: value.maxRowDirectionM as number,
       maxColumnDirectionM: value.maxColumnDirectionM as number,
+      ...(value.thermalSeparationGapM !== undefined
+        ? { thermalSeparationGapM: value.thermalSeparationGapM as number }
+        : {}),
     };
   }
   if (!validLimit(value.maxRailDirectionM) ||
@@ -357,6 +370,9 @@ function readThermalFieldLimits(
     maxRailDirectionM: value.maxRailDirectionM as number,
     ...(value.maxModuleLongSideDirectionM !== undefined
       ? { maxModuleLongSideDirectionM: value.maxModuleLongSideDirectionM as number }
+      : {}),
+    ...(value.thermalSeparationGapM !== undefined
+      ? { thermalSeparationGapM: value.thermalSeparationGapM as number }
       : {}),
   };
 }

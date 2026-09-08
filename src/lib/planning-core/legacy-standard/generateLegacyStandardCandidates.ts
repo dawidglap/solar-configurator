@@ -3,6 +3,7 @@ import type {
   LegacyStandardCandidate,
   LegacyStandardGenerationInput,
 } from "./types";
+import { generateThermalAxisPositions } from "../geometry-v2/thermalAxis";
 
 const EPS = 0.5;
 const deg2rad = (degrees: number) => (degrees * Math.PI) / 180;
@@ -125,6 +126,7 @@ export function computeLegacyStandardCandidates(
     phaseX = 0,
     anchorX = "start",
     coverageRatio = 1,
+    thermalBreaks,
   } = input;
 
   // legacy-v1 intentionally ignores input.phaseY and input.anchorY.
@@ -212,14 +214,24 @@ export function computeLegacyStandardCandidates(
 
   const cellWidth = panelWidth + gapX;
   const cellHeight = panelHeight + gapY;
-  const rowStarts: number[] = [];
-  for (
-    let y = minY + marginPx;
-    y + panelHeight <= maxY - marginPx + 1e-6;
-    y += cellHeight
-  ) {
-    rowStarts.push(y);
-  }
+  const rowStarts: number[] = thermalBreaks?.y
+    ? generateThermalAxisPositions({
+        min: minY + marginPx,
+        max: maxY - marginPx - panelHeight,
+        pitch: cellHeight,
+        phase: 0,
+        anchor: "start",
+        break: {
+          unitExtentM: panelHeight,
+          maxUnitsPerField: thermalBreaks.y.maxUnitsPerField,
+          separationGapM: pixels(thermalBreaks.y.separationGapM),
+        },
+      })
+    : (() => {
+        const positions: number[] = [];
+        for (let y = minY + marginPx; y + panelHeight <= maxY - marginPx + 1e-6; y += cellHeight) positions.push(y);
+        return positions;
+      })();
 
   const maximumRows = rowStarts.length;
   const rowsToUse = Math.max(
@@ -259,25 +271,33 @@ export function computeLegacyStandardCandidates(
     const segmentMaxX = bestSegment.maxX - marginPx;
     if (segmentMaxX - segmentMinX < panelWidth) continue;
 
-    const spanX = segmentMaxX - segmentMinX;
-    const maximumColumns = Math.max(
-      0,
-      Math.floor((spanX - panelWidth + 1e-6) / cellWidth) + 1,
-    );
-    const usedWidth =
-      maximumColumns > 0
-        ? maximumColumns * panelWidth + (maximumColumns - 1) * gapX
-        : 0;
-    const remainingX = Math.max(0, spanX - usedWidth);
-    const anchorOffsetX =
-      anchorX === "end" ? remainingX : anchorX === "center" ? remainingX / 2 : 0;
-    const startX = segmentMinX + anchorOffsetX + normalizePhase(phaseX) * cellWidth;
+    const xPositions = thermalBreaks?.x
+      ? generateThermalAxisPositions({
+          min: segmentMinX,
+          max: segmentMaxX - panelWidth,
+          pitch: cellWidth,
+          phase: normalizePhase(phaseX),
+          anchor: anchorX,
+          break: {
+            unitExtentM: panelWidth,
+            maxUnitsPerField: thermalBreaks.x.maxUnitsPerField,
+            separationGapM: pixels(thermalBreaks.x.separationGapM),
+          },
+        })
+      : (() => {
+          const spanX = segmentMaxX - segmentMinX;
+          const maximumColumns = Math.max(0, Math.floor((spanX - panelWidth + 1e-6) / cellWidth) + 1);
+          const usedWidth = maximumColumns > 0 ? maximumColumns * panelWidth + (maximumColumns - 1) * gapX : 0;
+          const remainingX = Math.max(0, spanX - usedWidth);
+          const anchorOffsetX = anchorX === "end" ? remainingX : anchorX === "center" ? remainingX / 2 : 0;
+          const startX = segmentMinX + anchorOffsetX + normalizePhase(phaseX) * cellWidth;
+          const positions: number[] = [];
+          for (let x = startX; x + panelWidth <= segmentMaxX + 1e-6; x += cellWidth) positions.push(x);
+          return positions;
+        })();
 
-    for (
-      let x = startX;
-      x + panelWidth <= segmentMaxX + 1e-6;
-      x += cellWidth
-    ) {
+    for (let columnIndex = 0; columnIndex < xPositions.length; columnIndex += 1) {
+      const x = xPositions[columnIndex];
       const corners: LegacyPoint[] = [
         { x, y },
         { x: x + panelWidth, y },
@@ -299,6 +319,8 @@ export function computeLegacyStandardCandidates(
         wPx: panelWidth,
         hPx: panelHeight,
         angleDeg,
+        columnIndex,
+        rowIndex,
       });
     }
   }

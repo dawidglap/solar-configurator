@@ -72,6 +72,7 @@ export default function CommittedMontageFieldDimensionsLayer({
         (limits.kind === "flat-block" && limits.maxModuleLongSideDirectionM === undefined
           ? true
           : field.longSideSizeM <= (limits.kind === "flat-block" ? limits.maxModuleLongSideDirectionM! : limits.maxRowDirectionM) + 1e-9),
+      thermalSeparationGapM: limits.thermalSeparationGapM,
     }));
   }, [persisted, roof, show, thermalFields]);
   React.useEffect(() => {

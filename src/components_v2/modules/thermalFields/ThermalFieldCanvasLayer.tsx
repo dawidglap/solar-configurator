@@ -4,7 +4,10 @@ import React from "react";
 import { Group, Line, Rect, Text } from "react-konva";
 
 import type { Pt } from "@/types/planner";
-import type { ThermalFieldDisplay } from "./thermalFieldDisplay";
+import {
+  buildThermalBreakDisplays,
+  type ThermalFieldDisplay,
+} from "./thermalFieldDisplay";
 
 function centroid(points: readonly Pt[]): Pt {
   const count = Math.max(1, points.length);
@@ -28,6 +31,7 @@ export default function ThermalFieldCanvasLayer({
   onSelect: (key: string) => void;
 }) {
   const inverseScale = 1 / Math.max(viewportScale, 0.0001);
+  const breaks = React.useMemo(() => buildThermalBreakDisplays(fields), [fields]);
   return (
     <Group>
       {fields.map((field) => {
@@ -85,6 +89,18 @@ export default function ThermalFieldCanvasLayer({
                 fontStyle="bold"
                 listening={false}
               />
+            </Group>
+          </Group>
+        );
+      })}
+      {breaks.map((item) => {
+        const middle = { x: (item.start.x + item.end.x) / 2, y: (item.start.y + item.end.y) / 2 };
+        return (
+          <Group key={item.key} listening={false}>
+            <Line points={[item.start.x, item.start.y, item.end.x, item.end.y]} stroke="#f59e0b" strokeWidth={1.5} strokeScaleEnabled={false} dash={[4, 3]} listening={false} />
+            <Group x={middle.x} y={middle.y} rotation={-canvasRotationDeg} scaleX={inverseScale} scaleY={inverseScale} listening={false}>
+              <Rect x={-27} y={-9} width={54} height={18} cornerRadius={9} fill="rgba(12,18,28,0.9)" stroke="#f59e0b" strokeWidth={1} listening={false} />
+              <Text x={-27} y={-5} width={54} align="center" text={`${Math.round(item.gapM * 1000)} mm`} fill="#f8fafc" fontSize={10} listening={false} />
             </Group>
           </Group>
         );
