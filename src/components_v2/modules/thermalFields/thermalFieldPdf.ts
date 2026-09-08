@@ -10,6 +10,11 @@ import {
   metricPolygonToImage,
 } from "@/lib/planning-core/geometry-v2";
 import { getCanonicalRoofEdges } from "@/lib/planning-core/geometry-v2/roofEdges";
+import {
+  HINDERNIS_HATCH_OPACITY,
+  HINDERNIS_HATCH_SPACING,
+  HINDERNIS_HATCH_STROKE_WIDTH,
+} from "@/lib/planning/presentation/hindernisHatch";
 
 export type ThermalFieldPdfInput = {
   roof: RoofArea;
@@ -30,6 +35,19 @@ export type ThermalFieldPdfInput = {
 };
 
 const A4_LANDSCAPE: [number, number] = [841.89, 595.28];
+const PRINT = {
+  white: rgb(1, 1, 1),
+  planBackground: rgb(0.97, 0.98, 0.985),
+  text: rgb(0.067, 0.094, 0.153),
+  secondary: rgb(0.31, 0.35, 0.41),
+  muted: rgb(0.44, 0.48, 0.54),
+  border: rgb(0.84, 0.86, 0.89),
+  panelFill: rgb(0.76, 0.82, 0.87),
+  panelStroke: rgb(0.20, 0.25, 0.31),
+  obstacle: rgb(0.72, 0.15, 0.12),
+  success: rgb(0.08, 0.42, 0.27),
+  warning: rgb(0.66, 0.18, 0.14),
+} as const;
 const hex = (value: string) => {
   const clean = value.replace("#", "");
   return rgb(parseInt(clean.slice(0, 2), 16) / 255, parseInt(clean.slice(2, 4), 16) / 255, parseInt(clean.slice(4, 6), 16) / 255);
@@ -122,7 +140,7 @@ export async function buildThermalFieldPdf(input: ThermalFieldPdfInput): Promise
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
   const page = document.addPage(A4_LANDSCAPE);
   const { width, height } = page.getSize();
-  page.drawRectangle({ x: 0, y: 0, width, height, color: rgb(0.055, 0.075, 0.11) });
+  page.drawRectangle({ x: 0, y: 0, width, height, color: PRINT.white });
 
   const roofPanels = input.panels.filter((panel) => panel.roofId === input.roof.id);
   const allPoints = [
@@ -167,36 +185,48 @@ export async function buildThermalFieldPdf(input: ThermalFieldPdfInput): Promise
       satelliteEmbedded = false;
     }
   }
-  if (!satelliteEmbedded) page.drawRectangle({ ...frame, color: rgb(0.12, 0.16, 0.2) });
+  if (!satelliteEmbedded) page.drawRectangle({ ...frame, color: PRINT.planBackground });
+  drawPolygonOutline(page, [
+    { x: frame.x, y: frame.y },
+    { x: frame.x + frame.width, y: frame.y },
+    { x: frame.x + frame.width, y: frame.y + frame.height },
+    { x: frame.x, y: frame.y + frame.height },
+  ], { color: PRINT.border, thickness: 0.6 });
 
   page.drawSvgPath(polygonPath(input.roof.points), {
     borderColor: rgb(0.18, 0.83, 0.75), borderWidth: 2, color: rgb(0.18, 0.83, 0.75), opacity: 0.09,
   });
   drawPolygonOutline(page, input.roof.points.map(map), { color: rgb(0.18, 0.83, 0.75), thickness: 2, opacity: 0.95 });
   input.obstacles.forEach((obstacle) => {
-    page.drawSvgPath(polygonPath(obstacle.points), { borderColor: rgb(1, 0.37, 0.32), borderWidth: 1.5, color: rgb(1, 0.37, 0.32), opacity: 0.14 });
+    page.drawSvgPath(polygonPath(obstacle.points), { borderColor: PRINT.obstacle, borderWidth: 1.4, color: PRINT.obstacle, opacity: 0.045 });
     const points = obstacle.points.map(map);
     const left = Math.min(...points.map((point) => point.x));
     const right = Math.max(...points.map((point) => point.x));
     const bottom = Math.min(...points.map((point) => point.y));
     const top = Math.max(...points.map((point) => point.y));
-    drawPolygonOutline(page, points, { color: rgb(1, 0.37, 0.32), thickness: 1.5, opacity: 0.95 });
-    for (let offset = left - (top - bottom); offset < right; offset += 10) {
+    drawPolygonOutline(page, points, { color: PRINT.obstacle, thickness: 1.4, opacity: 0.95 });
+    for (let offset = left - (top - bottom); offset < right; offset += HINDERNIS_HATCH_SPACING) {
       const diagonals: Array<[Pt, Pt]> = [
         [{ x: offset, y: bottom }, { x: offset + top - bottom, y: top }],
         [{ x: offset, y: top }, { x: offset + top - bottom, y: bottom }],
       ];
       diagonals.forEach(([start, end], diagonalIndex) => clippedSegments(start, end, points).forEach(([clippedStart, clippedEnd]) => {
-        page.drawLine({ start: clippedStart, end: clippedEnd, color: rgb(1, 0.37, 0.32), thickness: 0.45, opacity: diagonalIndex === 0 ? 0.55 : 0.4 });
+        page.drawLine({
+          start: clippedStart,
+          end: clippedEnd,
+          color: PRINT.obstacle,
+          thickness: HINDERNIS_HATCH_STROKE_WIDTH,
+          opacity: diagonalIndex === 0 ? HINDERNIS_HATCH_OPACITY + 0.08 : HINDERNIS_HATCH_OPACITY,
+        });
       }));
     }
   });
   roofPanels.forEach((panel) => {
     const points = panelPolygon(panel).map(map);
     page.drawSvgPath(polygonPath(panelPolygon(panel)), {
-      color: rgb(0.12, 0.27, 0.4), opacity: 0.9,
+      color: PRINT.panelFill, opacity: satelliteEmbedded ? 0.78 : 0.9,
     });
-    drawPolygonOutline(page, points, { color: rgb(0.68, 0.78, 0.86), thickness: 0.45, opacity: 0.9 });
+    drawPolygonOutline(page, points, { color: PRINT.panelStroke, thickness: 0.45, opacity: 0.9 });
   });
   input.fields.forEach((field) => {
     drawPolygonOutline(page, field.outlinePx.map(map), { color: hex(field.color), thickness: 2.2, opacity: 0.95 });
@@ -209,8 +239,8 @@ export async function buildThermalFieldPdf(input: ThermalFieldPdfInput): Promise
     const end = map(thermalBreak.end);
     const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
     page.drawLine({ start, end, color: rgb(0.96, 0.62, 0.04), thickness: 1.1, dashArray: [3, 2] });
-    page.drawRectangle({ x: middle.x - 16, y: middle.y - 5, width: 32, height: 11, color: rgb(0.055, 0.075, 0.11), opacity: 0.92 });
-    page.drawText(`${Math.round(thermalBreak.gapM * 1000)} mm`, { x: middle.x - 13, y: middle.y - 2, size: 6.5, font: bold, color: rgb(0.96, 0.97, 1) });
+    page.drawRectangle({ x: middle.x - 16, y: middle.y - 5, width: 32, height: 11, color: PRINT.white, borderColor: PRINT.border, borderWidth: 0.4, opacity: 0.96 });
+    page.drawText(`${Math.round(thermalBreak.gapM * 1000)} mm`, { x: middle.x - 13, y: middle.y - 2, size: 6.5, font: bold, color: PRINT.text });
   });
 
   if (input.mppImage && input.marginM && input.marginM > 0) {
@@ -238,38 +268,47 @@ export async function buildThermalFieldPdf(input: ThermalFieldPdfInput): Promise
     const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
     page.drawText("REFERENZKANTE", { x: middle.x - 26, y: middle.y + 5, size: 7, font: bold, color: rgb(0.18, 0.83, 0.75) });
   }
-  page.drawText("Thermische Feldaufteilung", { x: 42, y: height - 34, size: 18, font: bold, color: rgb(0.95, 0.97, 1) });
-  page.drawText(`${input.fields.length} Felder · ${roofPanels.length} Module`, { x: 42, y: height - 50, size: 9, font: regular, color: rgb(0.68, 0.73, 0.8) });
+  page.drawText("Thermische Feldaufteilung", { x: 42, y: height - 34, size: 18, font: bold, color: PRINT.text });
+  page.drawText(`${input.fields.length} Felder · ${roofPanels.length} Module`, { x: 42, y: height - 50, size: 9, font: regular, color: PRINT.secondary });
   page.drawText("N", { x: width - 49, y: height - 38, size: 12, font: bold, color: rgb(0.95, 0.35, 0.35) });
   page.drawLine({ start: { x: width - 45, y: height - 65 }, end: { x: width - 45, y: height - 42 }, color: rgb(0.95, 0.35, 0.35), thickness: 1.5 });
 
   const details = document.addPage(A4_LANDSCAPE);
-  details.drawRectangle({ x: 0, y: 0, width, height, color: rgb(0.055, 0.075, 0.11) });
-  details.drawText("Feldübersicht", { x: 42, y: height - 42, size: 20, font: bold, color: rgb(0.95, 0.97, 1) });
-  details.drawText(`Thermischer Trennabstand: ${Math.round((input.separationGapM ?? 0) * 1000)} mm`, { x: 42, y: height - 64, size: 10, font: regular, color: rgb(0.7, 0.76, 0.82) });
+  details.drawRectangle({ x: 0, y: 0, width, height, color: PRINT.white });
+  details.drawText("Feldübersicht", { x: 42, y: height - 42, size: 20, font: bold, color: PRINT.text });
+  details.drawText(`Thermischer Trennabstand: ${Math.round((input.separationGapM ?? 0) * 1000)} mm`, { x: 42, y: height - 64, size: 10, font: regular, color: PRINT.secondary });
   if (input.module) {
     const dimensions = input.module.widthM && input.module.heightM
       ? ` · ${input.module.widthM.toFixed(3)} × ${input.module.heightM.toFixed(3)} m`
       : "";
     const orientation = input.module.orientation === "portrait" ? " · Hochformat" : input.module.orientation === "landscape" ? " · Querformat" : "";
-    details.drawText(`Modul: ${input.module.label}${dimensions}${orientation}`, { x: 42, y: height - 79, size: 9, font: regular, color: rgb(0.7, 0.76, 0.82) });
+    details.drawText(`Modul: ${input.module.label}${dimensions}${orientation}`, { x: 42, y: height - 79, size: 9, font: regular, color: PRINT.secondary });
   }
-  let y = height - 100;
+  const columns = { field: 42, size: 120, modules: 280, blocks: 390, limit: 470, status: 650 };
+  let y = height - 112;
+  details.drawLine({ start: { x: 42, y: y + 13 }, end: { x: width - 42, y: y + 13 }, color: PRINT.border, thickness: 0.7 });
+  details.drawText("Feld", { x: columns.field, y, size: 8, font: bold, color: PRINT.muted });
+  details.drawText("Maße", { x: columns.size, y, size: 8, font: bold, color: PRINT.muted });
+  details.drawText("Module", { x: columns.modules, y, size: 8, font: bold, color: PRINT.muted });
+  details.drawText("Blöcke", { x: columns.blocks, y, size: 8, font: bold, color: PRINT.muted });
+  details.drawText("Grenze", { x: columns.limit, y, size: 8, font: bold, color: PRINT.muted });
+  details.drawText("Status", { x: columns.status, y, size: 8, font: bold, color: PRINT.muted });
+  y -= 22;
   input.fields.forEach((field) => {
-    details.drawRectangle({ x: 42, y: y - 3, width: 10, height: 10, color: hex(field.color) });
-    details.drawText(field.displayId, { x: 62, y, size: 11, font: bold, color: rgb(0.95, 0.97, 1) });
-    details.drawText(`${field.lengthM.toFixed(2)} × ${field.widthM.toFixed(2)} m`, { x: 120, y, size: 10, font: regular, color: rgb(0.88, 0.91, 0.95) });
-    details.drawText(`${field.moduleCount} Module${field.blockCount === undefined ? "" : ` · ${field.blockCount} Blocks`}`, { x: 280, y, size: 10, font: regular, color: rgb(0.7, 0.76, 0.82) });
-    details.drawText(field.valid ? "OK" : "Grenzwert überschritten", { x: 510, y, size: 10, font: bold, color: field.valid ? rgb(0.18, 0.83, 0.75) : rgb(1, 0.37, 0.32) });
+    details.drawRectangle({ x: columns.field, y: y - 2, width: 8, height: 8, color: hex(field.color) });
+    details.drawText(field.displayId, { x: columns.field + 15, y, size: 10, font: bold, color: PRINT.text });
+    details.drawText(`${field.lengthM.toFixed(2)} × ${field.widthM.toFixed(2)} m`, { x: columns.size, y, size: 9, font: regular, color: PRINT.text });
+    details.drawText(String(field.moduleCount), { x: columns.modules, y, size: 9, font: regular, color: PRINT.text });
+    details.drawText(field.blockCount === undefined ? "-" : String(field.blockCount), { x: columns.blocks, y, size: 9, font: regular, color: PRINT.text });
     const limits = [field.lengthLimitM, field.widthLimitM]
       .filter((value): value is number => value !== undefined)
       .map((value) => value.toFixed(2));
-    if (limits.length) {
-      details.drawText(`Grenze: ${limits.join(" × ")} m`, { x: 120, y: y - 12, size: 7.5, font: regular, color: rgb(0.62, 0.67, 0.74) });
-    }
-    y -= 32;
+    details.drawText(limits.length ? `${limits.join(" × ")} m` : "-", { x: columns.limit, y, size: 9, font: regular, color: PRINT.secondary });
+    details.drawText(field.valid ? "OK" : "Grenzwert überschritten", { x: columns.status, y, size: 9, font: bold, color: field.valid ? PRINT.success : PRINT.warning });
+    details.drawLine({ start: { x: 42, y: y - 9 }, end: { x: width - 42, y: y - 9 }, color: PRINT.border, thickness: 0.45 });
+    y -= 26;
   });
-  details.drawText("Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.", { x: 42, y: 34, size: 8, font: regular, color: rgb(0.62, 0.67, 0.74) });
+  details.drawText("Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.", { x: 42, y: 34, size: 8, font: regular, color: PRINT.muted });
   return document.save();
 }
 

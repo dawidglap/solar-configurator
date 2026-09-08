@@ -48,6 +48,7 @@ export default function ZonesLayer({
             imgW={imgW}
             imgH={imgH}
             toImg={toImg}
+            stageScale={stageScale}
             snapRadiusImg={10 / Math.max(stageScale, 0.01)}
             onSelect={() => setSelectedZone(z.id)}
             onChange={(patch) => updateZone(z.id, patch)}

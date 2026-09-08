@@ -4,6 +4,10 @@ import { PDFDocument } from "pdf-lib";
 import { readFileSync } from "node:fs";
 
 import { buildThermalFieldPdf } from "../../src/components_v2/modules/thermalFields/thermalFieldPdf";
+import {
+  HINDERNIS_HATCH_SPACING,
+  resolveHindernisHatchPatternScale,
+} from "../../src/lib/planning/presentation/hindernisHatch";
 
 test("committed thermal export builds a two-page vector fallback PDF", async () => {
   const bytes = await buildThermalFieldPdf({
@@ -36,10 +40,21 @@ test("obstacles use a dedicated X hatch and export stays committed-only in Canva
   const zone = readFileSync(new URL("../../src/components_v2/zones/MovableZone.tsx", import.meta.url), "utf8");
   const stage = readFileSync(new URL("../../src/components_v2/canvas/CanvasStage.tsx", import.meta.url), "utf8");
   assert.match(zone, /zone-hatch-/);
-  assert.match(zone, /clipFunc/);
+  assert.match(zone, /fillPatternImage/);
+  assert.doesNotMatch(zone, /hatch\.map/);
   assert.match(stage, /!thermalFieldsArePreview/);
   assert.match(stage, /Bitte Änderungen zuerst anwenden/);
   const pdfSource = readFileSync(new URL("../../src/components_v2/modules/thermalFields/thermalFieldPdf.ts", import.meta.url), "utf8");
-  assert.match(pdfSource, /Grenze:/);
+  assert.match(pdfSource, /PRINT\.white/);
+  assert.match(pdfSource, /HINDERNIS_HATCH_SPACING/);
   assert.match(pdfSource, /Thermischer Trennabstand:/);
+});
+
+test("Hindernis hatch is nine times denser and remains stable in output space", () => {
+  assert.equal(HINDERNIS_HATCH_SPACING, 2);
+  assert.equal(18 / HINDERNIS_HATCH_SPACING, 9);
+  for (const stageScale of [0.5, 1, 2, 4]) {
+    const sourceCellScreenSize = 4 * resolveHindernisHatchPatternScale(stageScale) * stageScale;
+    assert.ok(Math.abs(sourceCellScreenSize - HINDERNIS_HATCH_SPACING) < 1e-12);
+  }
 });

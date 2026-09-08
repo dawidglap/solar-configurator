@@ -11,6 +11,34 @@ import { history } from "../state/history";
 import { plannerTheme } from "../theme/plannerTheme";
 import { createLatestFrameScheduler, type FrameScheduler } from "../canvas/performance/latestFrameScheduler";
 import ZoneHandlesKonva from "./ZoneHandlesKonva";
+import {
+  HINDERNIS_HATCH_OPACITY,
+  HINDERNIS_HATCH_SPACING,
+  HINDERNIS_HATCH_SOURCE_CELL_SIZE,
+  HINDERNIS_HATCH_STROKE_WIDTH,
+  resolveHindernisHatchPatternScale,
+} from "@/lib/planning/presentation/hindernisHatch";
+
+function createHindernisHatchPattern(color: string): HTMLImageElement | undefined {
+  if (typeof document === "undefined") return undefined;
+  const canvas = document.createElement("canvas");
+  canvas.width = HINDERNIS_HATCH_SOURCE_CELL_SIZE;
+  canvas.height = HINDERNIS_HATCH_SOURCE_CELL_SIZE;
+  const context = canvas.getContext("2d");
+  if (!context) return undefined;
+  context.strokeStyle = color;
+  context.lineWidth = HINDERNIS_HATCH_STROKE_WIDTH *
+    HINDERNIS_HATCH_SOURCE_CELL_SIZE / HINDERNIS_HATCH_SPACING;
+  context.beginPath();
+  context.moveTo(0, 0);
+  context.lineTo(HINDERNIS_HATCH_SOURCE_CELL_SIZE, HINDERNIS_HATCH_SOURCE_CELL_SIZE);
+  context.moveTo(HINDERNIS_HATCH_SOURCE_CELL_SIZE, 0);
+  context.lineTo(0, HINDERNIS_HATCH_SOURCE_CELL_SIZE);
+  context.stroke();
+  // Konva accepts any CanvasImageSource for fill patterns, while react-konva's
+  // public prop currently narrows the type to HTMLImageElement.
+  return canvas as unknown as HTMLImageElement;
+}
 
 function flat(points: Pt[]): number[] {
   return points.flatMap((point) => [point.x, point.y]);
@@ -24,6 +52,7 @@ export default function MovableZone({
   imgW,
   imgH,
   toImg,
+  stageScale,
   snapRadiusImg,
   onSelect,
   onChange,
@@ -35,6 +64,7 @@ export default function MovableZone({
   imgW: number;
   imgH: number;
   toImg: (sx: number, sy: number) => Pt;
+  stageScale: number;
   snapRadiusImg: number;
   onSelect: () => void;
   onChange: (patch: Partial<Zone>) => void;
@@ -125,21 +155,8 @@ export default function MovableZone({
 
   const RED = plannerTheme.danger;
   const fill = selected ? "rgba(255, 95, 86, 0.24)" : plannerTheme.dangerSoft;
-  const hatch = React.useMemo(() => {
-    const xs = zone.points.map((point) => point.x);
-    const ys = zone.points.map((point) => point.y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const span = maxY - minY;
-    const lines: number[][] = [];
-    for (let x = minX - span; x <= maxX + span; x += 18) {
-      lines.push([x, minY, x + span, maxY]);
-      lines.push([x, maxY, x + span, minY]);
-    }
-    return lines;
-  }, [zone.points]);
+  const hatchPattern = React.useMemo(() => createHindernisHatchPattern(RED), [RED]);
+  const hatchPatternScale = resolveHindernisHatchPatternScale(stageScale);
   return (
     <Group ref={groupRef} id={`zone-group-${zone.id}`}>
       <Line
@@ -153,28 +170,18 @@ export default function MovableZone({
         listening={false}
         perfectDrawEnabled={false}
       />
-      <Group
+      <Line
+        name="zone-hatch-dense"
+        points={flat(zone.points)}
+        closed
         listening={false}
-        clipFunc={(context) => {
-          if (!zone.points.length) return;
-          context.beginPath();
-          context.moveTo(zone.points[0].x, zone.points[0].y);
-          zone.points.slice(1).forEach((point) => context.lineTo(point.x, point.y));
-          context.closePath();
-        }}
-      >
-        {hatch.map((points, index) => (
-          <Line
-            key={`zone-hatch-${index}`}
-            points={points}
-            stroke={RED}
-            strokeWidth={0.65}
-            opacity={selected ? 0.55 : 0.35}
-            listening={false}
-            perfectDrawEnabled={false}
-          />
-        ))}
-      </Group>
+        fillPatternImage={hatchPattern}
+        fillPatternRepeat="repeat"
+        fillPatternScaleX={hatchPatternScale}
+        fillPatternScaleY={hatchPatternScale}
+        opacity={selected ? HINDERNIS_HATCH_OPACITY + 0.07 : HINDERNIS_HATCH_OPACITY}
+        perfectDrawEnabled={false}
+      />
       {interactive && (
         <Line
           points={flat(zone.points)}
