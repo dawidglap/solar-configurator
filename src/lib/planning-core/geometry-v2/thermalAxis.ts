@@ -9,6 +9,44 @@ export type ThermalAxisBreak = {
   separationGapM: number;
 };
 
+/**
+ * Splits a finite run into the minimum number of fields required by the
+ * maximum, distributing whole placement units as evenly as possible.
+ * Larger groups are kept first so the result is stable for every caller.
+ */
+export function resolveBalancedThermalFieldSizes(
+  unitCount: number,
+  maxUnitsPerField: number,
+): number[] {
+  if (!Number.isInteger(unitCount) || unitCount <= 0) return [];
+  if (!Number.isInteger(maxUnitsPerField) || maxUnitsPerField <= 0) {
+    return [unitCount];
+  }
+  const fieldCount = Math.ceil(unitCount / maxUnitsPerField);
+  const baseSize = Math.floor(unitCount / fieldCount);
+  const largerFieldCount = unitCount % fieldCount;
+  return Array.from(
+    { length: fieldCount },
+    (_, index) => baseSize + (index < largerFieldCount ? 1 : 0),
+  );
+}
+
+function balancedBreakCountBefore(
+  index: number,
+  unitCount: number,
+  maxUnitsPerField: number,
+): number {
+  const sizes = resolveBalancedThermalFieldSizes(unitCount, maxUnitsPerField);
+  let boundary = 0;
+  let breaks = 0;
+  for (let fieldIndex = 0; fieldIndex < sizes.length - 1; fieldIndex += 1) {
+    boundary += sizes[fieldIndex];
+    if (index < boundary) break;
+    breaks += 1;
+  }
+  return breaks;
+}
+
 export function resolveMaximumWholeUnits(input: {
   unitExtentM: number;
   regularPitchM: number;
@@ -66,7 +104,7 @@ export function generateThermalAxisPositions(input: {
   ) return [];
 
   const axisBreak = input.break;
-  const offsetAt = (index: number) => thermalAxisSpan({
+  const discoveryOffsetAt = (index: number) => thermalAxisSpan({
     count: index + 1,
     regularPitchM: input.pitch,
     break: axisBreak,
@@ -75,13 +113,22 @@ export function generateThermalAxisPositions(input: {
   if (count === undefined) {
     count = 0;
     while (count < 100_000) {
-      const span = offsetAt(count);
+      const span = discoveryOffsetAt(count);
       if (span > input.max - input.min + GEOMETRY_EPSILON_M) break;
       count += 1;
     }
   }
   if (!Number.isInteger(count) || count <= 0) return [];
 
+  const regularGapM = axisBreak
+    ? input.pitch - axisBreak.unitExtentM
+    : 0;
+  const offsetAt = (index: number) => index * input.pitch + (
+    axisBreak && axisBreak.maxUnitsPerField > 0
+      ? balancedBreakCountBefore(index, count as number, axisBreak.maxUnitsPerField) *
+        (axisBreak.separationGapM - regularGapM)
+      : 0
+  );
   const span = offsetAt(count - 1);
   const phaseOffset = input.phase * input.pitch;
   const first = input.anchor === "start"

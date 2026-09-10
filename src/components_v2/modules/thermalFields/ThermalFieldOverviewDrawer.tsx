@@ -5,6 +5,7 @@ import { ChevronRight, Download, X } from "lucide-react";
 
 import type { ThermalFieldDisplay } from "./thermalFieldDisplay";
 import { formatFieldMetres } from "./thermalFieldDisplay";
+import ThermalFieldLimitsControl from "./ThermalFieldLimitsControl";
 
 export const THERMAL_FIELD_DRAWER_WIDTH_PX = 360;
 
@@ -83,6 +84,7 @@ export default function ThermalFieldOverviewDrawer({
       </header>
 
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        <ThermalFieldLimitsControl />
         {fields.length === 0 && (
           <div className="rounded-xl border border-border px-3 py-4 text-sm text-muted-foreground">
             Keine thermischen Felder verfügbar.

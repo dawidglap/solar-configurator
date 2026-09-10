@@ -90,6 +90,7 @@ export function groupThermalFields(input: {
     pitchM: input.pitchM,
     maxRailSizeM,
     maxLongSideSizeM,
+    balanced: true,
   });
   const fields = grouped.map((field) => {
     const thermalFieldKey = field.fieldKey.replace(/^f:/, "t:");

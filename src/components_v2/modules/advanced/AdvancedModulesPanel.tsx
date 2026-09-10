@@ -10,16 +10,12 @@ import {
   K2_D_DOME_SYSTEM_ID,
   K2_S_DOME_SYSTEM_ID,
   type AdvancedSurfacePlanningV1,
-  type ThermalFieldLimits,
 } from "@/lib/planning-core/advanced";
 import type { RoofArea } from "@/types/planner";
-import { resolveMaximumWholeUnits } from "@/lib/planning-core/geometry-v2";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
 import {
   COMPANY_MODULE_SPACING_LIMITS_MM,
   isValidModuleSpacingMm,
-  isValidThermalFieldLimitM,
-  resolveCompanyThermalFieldLimits,
 } from "@/lib/planning/companyPlannerDefaults";
 import {
   computeAdvancedPlanningPreview,
@@ -149,18 +145,6 @@ export default function AdvancedModulesPanel({
       ? system.primaryFaceAzimuthDeg
       : 90;
   const rowSpaceM = getAdvancedRowSpaceM(config);
-  const companyThermalLimitsResolved = resolveCompanyThermalFieldLimits({
-    company: companyPlannerDefaults,
-    roofKind: "flat",
-    mountingOrientation: isOpposingSystem ? "east-west" : "south",
-  });
-  const companyThermalLimits: Extract<ThermalFieldLimits, { kind: "flat-block" }> = companyThermalLimitsResolved.kind === "flat-block"
-    ? companyThermalLimitsResolved
-    : { kind: "flat-block" as const, maxRailDirectionM: 12.3, thermalSeparationGapM: 0.14 };
-  const thermalLimits: Extract<ThermalFieldLimits, { kind: "flat-block" }> = {
-    ...companyThermalLimits,
-    ...config.thermalFieldLimits,
-  };
   const effectiveConfig = React.useMemo(
     () => withEffectiveAdvancedThermalLimits(config, companyPlannerDefaults),
     [companyPlannerDefaults, config],
@@ -188,35 +172,6 @@ export default function AdvancedModulesPanel({
     preview.valid &&
     preview.moduleCount > 0 &&
     !!moduleId;
-  const advancedThermalSteps = React.useMemo(() => {
-    const first = preview.blocks.find((block) => block.valid);
-    if (!first || !(mppImage && mppImage > 0) || !preview.derived) return null;
-    const radians = (-first.rotationCanvasDeg * Math.PI) / 180;
-    const cos = Math.cos(radians);
-    const sin = Math.sin(radians);
-    const local = first.footprintPx.map((point) => ({
-      x: point.x * cos - point.y * sin,
-      y: point.x * sin + point.y * cos,
-    }));
-    const unitX = (Math.max(...local.map((point) => point.x)) - Math.min(...local.map((point) => point.x))) * mppImage;
-    const unitY = (Math.max(...local.map((point) => point.y)) - Math.min(...local.map((point) => point.y))) * mppImage;
-    const pitchX = preview.derived.kind === "generic"
-      ? preview.derived.pitchXM
-      : config.advanced.module.heightM + preview.derived.moduleLongSideSpacingM;
-    const pitchY = preview.derived.kind === "generic" ? preview.derived.pitchYM : rowSpaceM;
-    return {
-      columns: thermalLimits.maxModuleLongSideDirectionM === undefined ? undefined : resolveMaximumWholeUnits({
-        unitExtentM: unitX,
-        regularPitchM: pitchX,
-        fieldLimitM: thermalLimits.maxModuleLongSideDirectionM,
-      }),
-      rows: resolveMaximumWholeUnits({
-        unitExtentM: unitY,
-        regularPitchM: pitchY,
-        fieldLimitM: thermalLimits.maxRailDirectionM,
-      }),
-    };
-  }, [config.advanced.module.heightM, mppImage, preview, rowSpaceM, thermalLimits.maxModuleLongSideDirectionM, thermalLimits.maxRailDirectionM]);
   const quantityMode = config.advanced.layout.quantityMode ?? "auto";
   const blocksPerRow = config.advanced.layout.blocksPerRow ?? 5;
   const rowCount = config.advanced.layout.rowCount ?? 3;
@@ -302,11 +257,6 @@ export default function AdvancedModulesPanel({
       return;
     }
     apply();
-  };
-
-  const patchThermalLimits = (patch: Partial<Extract<ThermalFieldLimits, { kind: "flat-block" }>>) => {
-    const next = { ...thermalLimits, ...patch, kind: "flat-block" as const };
-    update({ ...config, thermalFieldLimits: next });
   };
 
   const patchDefaultSystemNumber = (
@@ -586,87 +536,6 @@ export default function AdvancedModulesPanel({
             <span>°</span>
           </span>
         </div>
-      </section>
-
-      <section className="space-y-2 border-b border-border/60 pb-4">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className={labelClass}>Thermische Feldgrenzen</h3>
-          <button
-            type="button"
-            className="text-[9px] text-primary hover:underline"
-            title={`Firmenstandard: ${companyThermalLimits.maxRailDirectionM.toFixed(2)} m`}
-            onClick={() => update({ ...config, thermalFieldLimits: companyThermalLimits })}
-          >
-            Firmenstandard
-          </button>
-        </div>
-        <label className="block space-y-1 text-[10px] text-muted-foreground">
-          Max. Feldlänge · Reihenrichtung
-          <span className="flex items-center gap-2">
-            <input
-              className={inputClass}
-              type="number"
-              min={0.1}
-              max={100}
-              step={0.1}
-              value={thermalLimits.maxRailDirectionM}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (isValidThermalFieldLimitM(value)) patchThermalLimits({ maxRailDirectionM: value });
-              }}
-            />
-            <span>m</span>
-          </span>
-        </label>
-        {isOpposingSystem && (
-          <label className="block space-y-1 text-[10px] text-muted-foreground">
-            Max. Feldlänge · Modullängsrichtung
-            <span className="flex items-center gap-2">
-              <input
-                className={inputClass}
-                type="number"
-                min={0.1}
-                max={100}
-                step={0.1}
-                value={thermalLimits.maxModuleLongSideDirectionM ?? companyThermalLimits.maxModuleLongSideDirectionM ?? 16}
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if (isValidThermalFieldLimitM(value)) patchThermalLimits({ maxModuleLongSideDirectionM: value });
-                }}
-              />
-              <span>m</span>
-            </span>
-          </label>
-        )}
-        {advancedThermalSteps && (
-          <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/60 bg-muted/15 p-2 text-[10px]">
-            {advancedThermalSteps.columns !== undefined && <><span className="text-muted-foreground">Max. Blöcke pro Reihe</span><strong className="text-right">{advancedThermalSteps.columns}</strong></>}
-            <span className="text-muted-foreground">Max. Reihen pro Feld</span><strong className="text-right">{advancedThermalSteps.rows}</strong>
-          </div>
-        )}
-        <label className="block space-y-1 text-[10px] text-muted-foreground">
-          Thermischer Trennabstand
-          <span className="flex items-center gap-2">
-            <input
-              className={inputClass}
-              type="number"
-              min={0}
-              max={5000}
-              step={1}
-              value={(thermalLimits.thermalSeparationGapM ?? 0.14) * 1000}
-              onChange={(event) => {
-                const valueMm = Number(event.target.value);
-                if (Number.isFinite(valueMm) && valueMm >= 0 && valueMm <= 5000) {
-                  patchThermalLimits({ thermalSeparationGapM: valueMm / 1000 });
-                }
-              }}
-            />
-            <span>mm</span>
-          </span>
-        </label>
-        <p className="text-[9px] text-muted-foreground">
-          {config.thermalFieldLimits ? "Dachflächenspezifischer Wert" : "Firmenstandard"}
-        </p>
       </section>
 
       <section className={`rounded-xl border p-3 ${result.status === "valid" ? "border-primary/30 bg-primary/5" : "border-destructive/40 bg-destructive/5"}`} aria-live="polite">

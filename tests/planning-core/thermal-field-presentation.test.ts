@@ -134,3 +134,30 @@ test("drawer is transient, independently collapsible and right controls receive 
   assert.equal(partialize.includes("fieldDrawerOpen"), false);
   assert.equal(partialize.includes("selectedThermalFieldKey"), false);
 });
+
+test("thermal limits live only in Feldübersicht and retain company-default affordance", () => {
+  const drawer = readFileSync(
+    new URL("../../src/components_v2/modules/thermalFields/ThermalFieldOverviewDrawer.tsx", import.meta.url),
+    "utf8",
+  );
+  const limits = readFileSync(
+    new URL("../../src/components_v2/modules/thermalFields/ThermalFieldLimitsControl.tsx", import.meta.url),
+    "utf8",
+  );
+  const standard = readFileSync(
+    new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const advanced = readFileSync(
+    new URL("../../src/components_v2/modules/advanced/AdvancedModulesPanel.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(drawer, /<ThermalFieldLimitsControl \/>/);
+  assert.match(limits, /Thermische Feldgrenzen/);
+  assert.match(limits, /Firmenstandard/);
+  assert.match(limits, /Max\. Module am First/);
+  assert.match(limits, /Max\. Reihen im Gefälle/);
+  assert.doesNotMatch(standard, />Thermische Feldgrenzen</);
+  assert.doesNotMatch(advanced, />Thermische Feldgrenzen</);
+});

@@ -17,6 +17,7 @@ import {
 import {
   generateThermalAxisPositions,
   generateGridPlacements,
+  resolveBalancedThermalFieldSizes,
   resolveMaximumWholeUnits,
   thermalAxisSpan,
 } from "../../src/lib/planning-core/geometry-v2";
@@ -151,6 +152,45 @@ test("thermal break is an exact clear edge-to-edge replacement gap", () => {
   assert.deepEqual(positions.map((value) => Number(value.toFixed(6))), [0, 1.02, 2.16, 3.18, 4.32]);
   assert.equal(Number((positions[2] - positions[1] - 1).toFixed(6)), 0.14);
   assert.equal(Number(thermalAxisSpan({ count: 5, regularPitchM: 1.02, break: axisBreak }).toFixed(6)), 4.32);
+});
+
+test("thermal runs use the minimum number of harmonious whole-unit fields", () => {
+  assert.deepEqual(resolveBalancedThermalFieldSizes(18, 10), [9, 9]);
+  assert.deepEqual(resolveBalancedThermalFieldSizes(23, 10), [8, 8, 7]);
+  assert.deepEqual(resolveBalancedThermalFieldSizes(9, 10), [9]);
+
+  const positions = generateThermalAxisPositions({
+    min: 0,
+    max: 100,
+    pitch: 1,
+    phase: 0,
+    anchor: "start",
+    count: 18,
+    break: { unitExtentM: 0.9, maxUnitsPerField: 10, separationGapM: 0.2 },
+  });
+  assert.equal(Number((positions[9] - positions[8] - 0.9).toFixed(6)), 0.2);
+  assert.equal(Number((positions[10] - positions[9]).toFixed(6)), 1);
+
+  const grouped = groupRectangularThermalUnits({
+    units: positions.map((x, columnIndex) => ({
+      unitKey: `balanced:${columnIndex}`,
+      centerM: { x, y: 0 },
+      widthM: 0.9,
+      heightM: 0.9,
+      rotationCartesianDeg: 0,
+      columnIndex,
+      rowIndex: 0,
+    })),
+    pitchM: { x: 1, y: 1 },
+    limits: {
+      kind: "pitched-grid",
+      maxRowDirectionM: 9.9,
+      maxColumnDirectionM: 100,
+      thermalSeparationGapM: 0.2,
+    },
+  });
+  assert.deepEqual(grouped.fields.map((field) => field.unitCount), [9, 9]);
+  assert.ok(grouped.fields.every((field) => field.rowDirectionSizeM <= 9.9));
 });
 
 test("company and per-roof gap precedence produce their exact physical clearance", () => {

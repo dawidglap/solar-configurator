@@ -27,12 +27,11 @@ import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
 import PitchedRoofSlopeControl from "./PitchedRoofSlopeControl";
 import { formatRoofSlopeDirection, resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import { modulesWithRoofEdgeMargin } from "@/lib/planning/roofProperties";
-import { resolveMaximumWholeUnits, resolveRoofReferenceEdgeIndex } from "@/lib/planning-core/geometry-v2";
+import { resolveRoofReferenceEdgeIndex } from "@/lib/planning-core/geometry-v2";
 import {
   COMPANY_MODULE_SPACING_LIMITS_MM,
   isValidModuleSpacingMm,
   resolveCompanyThermalFieldLimits,
-  isValidThermalFieldLimitM,
 } from "@/lib/planning/companyPlannerDefaults";
 import {
   createInitialAdvancedPlanning,
@@ -289,24 +288,6 @@ export default function ModulesPanel() {
     setConfirmStandardReplace(false);
   }, [displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selectedRoof, setRoofPlanningDraft, standardDraft]);
 
-  const patchStandardThermalLimits = React.useCallback((patch: {
-    maxRowDirectionM?: number;
-    maxColumnDirectionM?: number;
-    thermalSeparationGapM?: number;
-  }) => {
-    if (!selectedRoof || displayedThermalLimits.kind !== "pitched-grid") return;
-    setRoofPlanningDraft(selectedRoof.id, {
-      ...(standardDraft ?? createStandardPlanningDraft({
-        panelSpecId: displayedPanelId,
-        modules,
-        moduleTilt: displayedTiltInput,
-        thermalFieldLimits: displayedThermalLimits,
-      })),
-      thermalFieldLimits: { ...displayedThermalLimits, ...patch },
-    });
-    setConfirmStandardReplace(false);
-  }, [displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selectedRoof, setRoofPlanningDraft, standardDraft]);
-
   const commitModuleTiltText = React.useCallback(() => {
     const value = Number(moduleTiltText);
     if (!Number.isFinite(value) || value < 0 || value > 90) {
@@ -319,16 +300,6 @@ export default function ModulesPanel() {
     }
     patchStandardTilt({ mode: "custom", customTiltDeg: value });
   }, [displayedTilt.effectiveTiltDeg, moduleTiltText, patchStandardTilt]);
-  const standardThermalSteps = selSpec && displayedThermalLimits.kind === "pitched-grid"
-    ? (() => {
-        const widthM = displayedModules.orientation === "portrait" ? selSpec.widthM : selSpec.heightM;
-        const heightM = displayedModules.orientation === "portrait" ? selSpec.heightM : selSpec.widthM;
-        return {
-          alongFirst: resolveMaximumWholeUnits({ unitExtentM: widthM, regularPitchM: widthM + displayedSpacingXM, fieldLimitM: displayedThermalLimits.maxRowDirectionM }),
-          downhillRows: resolveMaximumWholeUnits({ unitExtentM: heightM, regularPitchM: heightM + displayedSpacingYM, fieldLimitM: displayedThermalLimits.maxColumnDirectionM }),
-        };
-      })()
-    : null;
   const applyStandardDraft = React.useCallback(() => {
     if (!selectedRoof || !standardDraft) return;
     const panel = catalogPanels.find(
@@ -1173,90 +1144,6 @@ export default function ModulesPanel() {
             </label>
             </div>
           </section>
-
-          {displayedThermalLimits.kind === "pitched-grid" && (
-            <section className="space-y-2 border-t border-border/60 pt-4">
-              <div className="flex items-center justify-between gap-2">
-                <span className={labelSm}>Thermische Feldgrenzen</span>
-                <button
-                  type="button"
-                  className="text-[9px] text-primary hover:underline"
-                  title={`Firmenstandard: ${companyPlannerDefaults.thermalSeparations.pitched.maxFieldLengthM.toFixed(2)} × ${companyPlannerDefaults.thermalSeparations.pitched.maxFieldWidthM.toFixed(2)} m`}
-                  onClick={() => patchStandardThermalLimits({
-                    maxRowDirectionM: companyPlannerDefaults.thermalSeparations.pitched.maxFieldLengthM,
-                    maxColumnDirectionM: companyPlannerDefaults.thermalSeparations.pitched.maxFieldWidthM,
-                    thermalSeparationGapM: companyPlannerDefaults.thermalSeparations.gapMm / 1000,
-                  })}
-                >
-                  Firmenstandard
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="space-y-1 text-[10px] text-muted-foreground">
-                  Max. Feldlänge · First
-                  <span className="flex items-center gap-1">
-                    <input
-                      className={inputBase}
-                      type="number"
-                      min={0.1}
-                      max={100}
-                      step={0.1}
-                      value={displayedThermalLimits.maxRowDirectionM}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (isValidThermalFieldLimitM(value)) patchStandardThermalLimits({ maxRowDirectionM: value });
-                      }}
-                    />
-                    <span>m</span>
-                  </span>
-                </label>
-                <label className="space-y-1 text-[10px] text-muted-foreground">
-                  Max. Feldbreite · Gefälle
-                  <span className="flex items-center gap-1">
-                    <input
-                      className={inputBase}
-                      type="number"
-                      min={0.1}
-                      max={100}
-                      step={0.1}
-                      value={displayedThermalLimits.maxColumnDirectionM}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (isValidThermalFieldLimitM(value)) patchStandardThermalLimits({ maxColumnDirectionM: value });
-                      }}
-                    />
-                    <span>m</span>
-                  </span>
-                </label>
-              </div>
-              {standardThermalSteps && (
-                <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/60 bg-muted/15 p-2 text-[10px]">
-                  <span className="text-muted-foreground">Max. Module am First</span><strong className="text-right">{standardThermalSteps.alongFirst}</strong>
-                  <span className="text-muted-foreground">Max. Reihen im Gefälle</span><strong className="text-right">{standardThermalSteps.downhillRows}</strong>
-                </div>
-              )}
-              <label className="space-y-1 text-[10px] text-muted-foreground">
-                Thermischer Trennabstand
-                <span className="flex items-center gap-1">
-                  <input
-                    className={inputBase}
-                    type="number"
-                    min={0}
-                    max={5000}
-                    step={1}
-                    value={(displayedThermalLimits.thermalSeparationGapM ?? 0.14) * 1000}
-                    onChange={(event) => {
-                      const valueMm = Number(event.target.value);
-                      if (Number.isFinite(valueMm) && valueMm >= 0 && valueMm <= 5000) {
-                        patchStandardThermalLimits({ thermalSeparationGapM: valueMm / 1000 });
-                      }
-                    }}
-                  />
-                  <span>mm</span>
-                </span>
-              </label>
-            </section>
-          )}
 
           {standardDraft && (
             <section className="sticky bottom-0 -mx-2 space-y-2 border-y border-primary/25 bg-background/95 p-3 backdrop-blur">

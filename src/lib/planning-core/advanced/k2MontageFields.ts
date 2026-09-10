@@ -1,4 +1,8 @@
-import { rotateMetricPoint, type MetricPolygon } from "../geometry-v2";
+import {
+  resolveBalancedThermalFieldSizes,
+  rotateMetricPoint,
+  type MetricPolygon,
+} from "../geometry-v2";
 import {
   K2_D_DOME_ADAPTER_VERSION,
   K2_D_DOME_CONSTANTS_MM,
@@ -73,6 +77,8 @@ export type GroupEffectiveMontageFieldsInput = {
   pitchM: { x: number; y: number };
   maxRailSizeM?: number;
   maxLongSideSizeM?: number;
+  /** Thermal fields use harmonious whole-unit chunks; mounting fields retain legacy grouping. */
+  balanced?: boolean;
 };
 
 const EPSILON_M = 1e-9;
@@ -85,6 +91,27 @@ function compareBlocks(first: PlacedAdvancedBlock, second: PlacedAdvancedBlock):
   return first.rowIndex - second.rowIndex ||
     first.columnIndex - second.columnIndex ||
     first.blockKey.localeCompare(second.blockKey);
+}
+
+function balancedPrefixLength(runLength: number, maximum: number): number {
+  return resolveBalancedThermalFieldSizes(runLength, maximum)[0] ?? 0;
+}
+
+function localCenter(block: PlacedAdvancedBlock): { x: number; y: number } {
+  return rotateMetricPoint(block.centerM, -block.rotationCartesianDeg);
+}
+
+function isRegularGridNeighbor(
+  first: PlacedAdvancedBlock,
+  second: PlacedAdvancedBlock,
+  axis: "rows" | "columns",
+  pitchM: { x: number; y: number },
+): boolean {
+  const a = localCenter(first);
+  const b = localCenter(second);
+  const delta = axis === "columns" ? Math.abs(b.x - a.x) : Math.abs(b.y - a.y);
+  const pitch = axis === "columns" ? pitchM.x : pitchM.y;
+  return Math.abs(delta - pitch) <= 1e-6;
 }
 
 function largestCompliantCount(
@@ -171,16 +198,35 @@ export function groupEffectiveMontageFields(
   while (unassigned.size > 0) {
     const seed = ordered.find((block) => unassigned.has(coordinateKey(block.rowIndex, block.columnIndex)));
     if (!seed) throw new Error("Montagefeld grouping lost an unassigned block.");
-    const columns: number[] = [];
-    for (let column = seed.columnIndex; columns.length < maxColumns; column += 1) {
-      if (!unassigned.has(coordinateKey(seed.rowIndex, column))) break;
-      columns.push(column);
+    const columnRun: number[] = [];
+    for (let column = seed.columnIndex; ; column += 1) {
+      if (!input.balanced && columnRun.length >= maxColumns) break;
+      const current = byCoordinate.get(coordinateKey(seed.rowIndex, column));
+      if (!current || !unassigned.has(coordinateKey(seed.rowIndex, column))) break;
+      const previous = columnRun.length
+        ? byCoordinate.get(coordinateKey(seed.rowIndex, columnRun[columnRun.length - 1]))
+        : undefined;
+      if (input.balanced && previous && !isRegularGridNeighbor(previous, current, "columns", input.pitchM)) break;
+      columnRun.push(column);
     }
-    const rows = [seed.rowIndex];
-    for (let row = seed.rowIndex + 1; rows.length < maxRows; row += 1) {
+    const columns = input.balanced
+      ? columnRun.slice(0, balancedPrefixLength(columnRun.length, maxColumns))
+      : columnRun;
+    const rowRun = [seed.rowIndex];
+    for (let row = seed.rowIndex + 1; ; row += 1) {
+      if (!input.balanced && rowRun.length >= maxRows) break;
       if (!columns.every((column) => unassigned.has(coordinateKey(row, column)))) break;
-      rows.push(row);
+      const previousRow = rowRun[rowRun.length - 1];
+      if (input.balanced && !columns.every((column) => {
+        const previous = byCoordinate.get(coordinateKey(previousRow, column));
+        const current = byCoordinate.get(coordinateKey(row, column));
+        return Boolean(previous && current && isRegularGridNeighbor(previous, current, "rows", input.pitchM));
+      })) break;
+      rowRun.push(row);
     }
+    const rows = input.balanced
+      ? rowRun.slice(0, balancedPrefixLength(rowRun.length, maxRows))
+      : rowRun;
     const fieldBlocks = rows.flatMap((row) =>
       columns.map((column) => byCoordinate.get(coordinateKey(row, column))!),
     ).sort(compareBlocks);
