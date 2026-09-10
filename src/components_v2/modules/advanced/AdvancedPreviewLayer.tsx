@@ -17,10 +17,6 @@ import { plannerTheme } from "../../theme/plannerTheme";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
 import { computeAdvancedPlanningPreview } from "./advancedPlanningApplication";
 import ModuleSlopeArrow from "../panels/ModuleSlopeArrow";
-import {
-  resolveModuleDownhillAzimuth,
-  selectModuleSlopeArrowIds,
-} from "../panels/moduleSlope";
 import type { ThermalFieldDisplayInput } from "../thermalFields/thermalFieldDisplay";
 import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
 
@@ -138,18 +134,6 @@ export default function AdvancedPreviewLayer({
     if (!roofId) return;
     return () => onThermalFieldsChange?.(roofId, []);
   }, [onThermalFieldsChange, roofId]);
-  const slopeArrowIds = React.useMemo(
-    () => selectModuleSlopeArrowIds({
-      modules: (preview?.modules ?? []).map((module) => ({
-        id: `${module.blockKey}:${module.slotIndex}`,
-        cx: module.cx,
-        cy: module.cy,
-        hPx: module.hPx,
-      })),
-      rowAxisCanvasDeg: preview?.modules[0]?.angleDeg ?? 0,
-    }),
-    [preview],
-  );
 
   if (!selectedId || !roof || !config) return null;
   const center = centroid(roof.points);
@@ -166,10 +150,6 @@ export default function AdvancedPreviewLayer({
   const isOpposingSystem =
     system.systemId === K2_D_DOME_SYSTEM_ID ||
     system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
-  const previewBlockCenters = new Map(
-    (preview?.blocks ?? []).map((block) => [block.blockKey, centroid(block.footprintPx)]),
-  );
-
   return (
     <Group listening={false}>
       {preview && preview.blocks.length > 0 && (
@@ -204,21 +184,6 @@ export default function AdvancedPreviewLayer({
             );
           })}
           {preview.modules.map((module) => {
-            const blockCenter = previewBlockCenters.get(module.blockKey) ?? {
-              x: module.cx,
-              y: module.cy,
-            };
-            const downhillAzimuthDeg = resolveModuleDownhillAzimuth(isOpposingSystem
-              ? {
-                  kind: "flat-opposing",
-                  blockCenterPx: blockCenter,
-                  moduleCenterPx: { x: module.cx, y: module.cy },
-                  moduleFaceAzimuthDeg: module.faceAzimuthDeg,
-                }
-              : {
-                  kind: "flat-south",
-                  moduleFaceAzimuthDeg: module.faceAzimuthDeg,
-                });
             return (
               <Group key={`${module.blockKey}:${module.slotIndex}`} listening={false}>
                 <Line
@@ -228,15 +193,13 @@ export default function AdvancedPreviewLayer({
                   strokeWidth={0.7}
                   fill="rgba(30, 64, 175, 0.45)"
                 />
-                {slopeArrowIds.has(`${module.blockKey}:${module.slotIndex}`) && (
-                  <ModuleSlopeArrow
-                    cx={module.cx}
-                    cy={module.cy}
-                    wPx={module.wPx}
-                    hPx={module.hPx}
-                    azimuthDeg={downhillAzimuthDeg}
-                  />
-                )}
+                <ModuleSlopeArrow
+                  cx={module.cx}
+                  cy={module.cy}
+                  wPx={module.wPx}
+                  hPx={module.hPx}
+                  panelRotationDeg={module.angleDeg}
+                />
               </Group>
             );
           })}

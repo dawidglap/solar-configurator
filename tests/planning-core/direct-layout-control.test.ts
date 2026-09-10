@@ -12,6 +12,7 @@ import {
   screenNudgeToImageDelta,
   translateDirectPanels,
 } from "../../src/components_v2/modules/panels/directLayoutGeometry";
+import { resolvePanelLocalArrowAzimuth } from "../../src/components_v2/modules/panels/moduleSlope";
 
 function panel(id: string, roofId = "roof-a", cx = 30, cy = 30): PanelInstance {
   return {
@@ -30,6 +31,7 @@ function panel(id: string, roofId = "roof-a", cx = 30, cy = 30): PanelInstance {
 function dDome(id: string, slotIndex: number, cx: number): PanelInstance {
   return {
     ...panel(id, "roof-a", cx, 30),
+    angleDeg: slotIndex ? 180 : 0,
     advanced: {
       layoutMode: "advanced",
       systemId: K2_D_DOME_SYSTEM_ID,
@@ -152,6 +154,8 @@ test("D-Dome rigid rotation preserves pair distance, identity and opposite faces
   assert.ok(Math.abs(Math.hypot(rotated[1].cx - rotated[0].cx, rotated[1].cy - rotated[0].cy) - 10) < 1e-10);
   assert.equal(rotated[0].advanced?.moduleFaceAzimuthDeg, 85);
   assert.equal(rotated[1].advanced?.moduleFaceAzimuthDeg, 265);
+  assert.equal(resolvePanelLocalArrowAzimuth(rotated[0].angleDeg), 5);
+  assert.equal(resolvePanelLocalArrowAzimuth(rotated[1].angleDeg), 185);
 });
 
 test("canonical validation blocks roof edge, Randabstand, obstacle and static-panel collisions", () => {

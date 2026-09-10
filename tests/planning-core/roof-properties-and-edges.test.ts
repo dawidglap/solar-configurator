@@ -8,7 +8,10 @@ import {
   resolveRoofReferenceEdgeIndex,
   resizeRectangularRoof,
 } from "../../src/lib/planning-core/geometry-v2";
-import { resolveK2ParallelRoofEdgeAlignment } from "../../src/lib/planning-core/advanced/roofEdgeAlignment";
+import {
+  resolveK2ParallelRoofEdgeAlignment,
+  resolveRoofEdgeInwardNormal,
+} from "../../src/lib/planning-core/advanced/roofEdgeAlignment";
 import {
   orderStandardAutoLayoutPlacements,
   resolveStandardAutoLayoutCanvasAngle,
@@ -27,8 +30,7 @@ import {
 import type { RoofArea } from "../../src/types/planner";
 import {
   imageVectorFromGeographicAzimuth,
-  resolveModuleDownhillAzimuth,
-  selectModuleSlopeArrowIds,
+  resolvePanelLocalArrowAzimuth,
 } from "../../src/components_v2/modules/panels/moduleSlope";
 import {
   buildRoofAnnotationModel,
@@ -111,7 +113,39 @@ test("explicit flat Referenzkante overrides the rectangle/longest-edge alignment
   });
   assert.equal(alignment?.source, "explicit-reference-edge");
   assert.equal(alignment?.edgeIndex, 1);
-  assert.equal(alignment?.faceAzimuthDeg, 90);
+  assert.equal(alignment?.faceAzimuthDeg, 270);
+});
+
+test("flat Referenzkante resolves the inward normal for every rectangle edge", () => {
+  const expectedByEdge = [180, 270, 0, 90];
+  expectedByEdge.forEach((expected, referenceEdgeIndex) => {
+    const alignment = resolveK2ParallelRoofEdgeAlignment({
+      roofPointsPx: rectangle,
+      mppImage: 0.1,
+      referenceEdgeIndex,
+    });
+    assert.equal(alignment?.faceAzimuthDeg, expected);
+  });
+});
+
+test("arbitrarily rotated Referenzkante resolves a perpendicular inward direction", () => {
+  const rotationDeg = 31;
+  const radians = rotationDeg * Math.PI / 180;
+  const center = { x: 200, y: 160 };
+  const rotated = rectangle.map((point) => {
+    const dx = point.x - 60;
+    const dy = point.y - 40;
+    return {
+      x: center.x + dx * Math.cos(radians) - dy * Math.sin(radians),
+      y: center.y + dx * Math.sin(radians) + dy * Math.cos(radians),
+    };
+  });
+  const edge = getCanonicalRoofEdges(rotated)[0];
+  const inward = resolveRoofEdgeInwardNormal({ roofPoints: rotated, edge });
+  assert.ok(inward);
+  assert.ok(Math.abs(inward.geographicAzimuthDeg - 211) < 1e-9);
+  const edgeVector = edge.direction;
+  assert.ok(Math.abs(edgeVector.x * inward.vector.x + edgeVector.y * inward.vector.y) < 1e-12);
 });
 
 test("new Standard layout axis starts from the plan-coordinate left end of First", () => {
@@ -208,65 +242,28 @@ test("module downhill arrows use geographic azimuth in image coordinates", () =>
   assert.ok(Math.abs(west.y) < 1e-12);
 });
 
-test("canonical module downhill semantics distinguish roof fall, South high side and opposing pairs", () => {
-  assert.equal(resolveModuleDownhillAzimuth({
-    kind: "pitched",
-    roofFallAzimuthDeg: 180,
-  }), 180);
-  assert.equal(resolveModuleDownhillAzimuth({
-    kind: "flat-south",
-    moduleFaceAzimuthDeg: 0,
-  }), 180);
-  assert.equal(resolveModuleDownhillAzimuth({
-    kind: "flat-south",
-    moduleFaceAzimuthDeg: 90,
-  }), 270);
-  assert.equal(resolveModuleDownhillAzimuth({
-    kind: "flat-south",
-    moduleFaceAzimuthDeg: 180,
-  }), 0);
+test("panel-local arrow stays perpendicular to the base and follows manual rotation", () => {
+  const baseRotation = 73;
+  const delta = 17;
+  const initialArrow = resolvePanelLocalArrowAzimuth(baseRotation);
+  const rotatedArrow = resolvePanelLocalArrowAzimuth(baseRotation + delta);
+  assert.equal(initialArrow, 73);
+  assert.equal(rotatedArrow, 90);
+  assert.equal(rotatedArrow! - initialArrow!, delta);
 
-  const left = resolveModuleDownhillAzimuth({
-    kind: "flat-opposing",
-    blockCenterPx: { x: 100, y: 100 },
-    moduleCenterPx: { x: 80, y: 100 },
-    moduleFaceAzimuthDeg: 90,
-  });
-  const right = resolveModuleDownhillAzimuth({
-    kind: "flat-opposing",
-    blockCenterPx: { x: 100, y: 100 },
-    moduleCenterPx: { x: 120, y: 100 },
-    moduleFaceAzimuthDeg: 270,
-  });
-  assert.equal(left, 270);
-  assert.equal(right, 90);
-  assert.equal(((right! - left!) + 360) % 360, 180);
+  const baseRadians = baseRotation * Math.PI / 180;
+  const arrow = imageVectorFromGeographicAzimuth(initialArrow!);
+  const base = { x: Math.cos(baseRadians), y: Math.sin(baseRadians) };
+  assert.ok(Math.abs(base.x * arrow.x + base.y * arrow.y) < 1e-12);
 });
 
-test("module downhill arrows are limited to the first three modules of every rotated row", () => {
-  const angleDeg = 37;
-  const radians = angleDeg * Math.PI / 180;
-  const world = (u: number, v: number) => ({
-    x: u * Math.cos(radians) - v * Math.sin(radians),
-    y: u * Math.sin(radians) + v * Math.cos(radians),
-  });
-  const modules = [0, 1].flatMap((row) =>
-    [0, 1, 2, 3, 4].map((column) => ({
-      id: `r${row}c${column}`,
-      ...world(column * 12, row * 20),
-      hPx: 10,
-    })),
-  ).map(({ id, x, y, hPx }) => ({ id, cx: x, cy: y, hPx }));
-
-  const selected = selectModuleSlopeArrowIds({
-    modules: [...modules].reverse(),
-    rowAxisCanvasDeg: angleDeg,
-  });
-
-  assert.deepEqual([...selected].sort(), [
-    "r0c0", "r0c1", "r0c2",
-    "r1c0", "r1c1", "r1c2",
-  ]);
+test("panel-local arrow resolution has no sampling limit", () => {
+  for (const count of [21, 38, 400]) {
+    const arrows = Array.from({ length: count }, (_, index) =>
+      resolvePanelLocalArrowAzimuth(index * 7.25),
+    ).filter((angle) => angle !== undefined);
+    assert.equal(arrows.length, count);
+  }
 });
 
 test("roof annotation model derives four semantic pitched edges without a phantom closing edge", () => {

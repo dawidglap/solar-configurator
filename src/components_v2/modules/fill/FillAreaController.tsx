@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import type Konva from 'konva';
 import { nanoid } from 'nanoid';
 import toast from 'react-hot-toast';
 import { usePlannerV2Store } from '@/components_v2/state/plannerV2Store';
@@ -23,7 +24,7 @@ import { isPrimaryPointerButton } from '../../canvas/interactionPolicy';
 type ModRect = { cx: number; cy: number; wPx: number; hPx: number; angleDeg: number };
 
 type Props = {
-  stageRef: React.RefObject<any>;
+  stageRef: React.RefObject<Konva.Stage | null>;
   toImgCoords: (x: number, y: number) => Pt;
   onDraftChange?: (draft: { a: Pt; b: Pt; poly: Pt[]; rects: ModRect[] } | null) => void;
   cancelVersion?: number;
@@ -49,7 +50,7 @@ function localToWorld(p: Pt, O: Pt, theta: number): Pt {
 }
 function normDeg(d: number) { const x = d % 360; return x < 0 ? x + 360 : x; }
 function angleDiffDeg(a: number, b: number) {
-  let d = Math.abs(normDeg(a) - normDeg(b));
+  const d = Math.abs(normDeg(a) - normDeg(b));
   return d > 180 ? 360 - d : d;
 }
 function longestEdgeAngleDeg(pts: Pt[] | null | undefined) {
@@ -72,9 +73,6 @@ function axisAlignedRect(a: Pt, b: Pt): Pt[] {
     { x: Math.min(a.x, b.x), y: Math.max(a.y, b.y) },
   ];
 }
-
-/* --------------------------- anti-float --------------------------- */
-const EPS = 1e-6;
 
 /* --------------------------- griglia condivisa --------------------------- */
 function gridBasics(angleDeg: number) {

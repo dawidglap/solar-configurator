@@ -7,17 +7,13 @@ import { nanoid } from "nanoid";
 import toast from "react-hot-toast";
 
 import {
-  GENERIC_EAST_WEST_SYSTEM_ID,
-  K2_D_DOME_SYSTEM_ID,
   resolveSurfacePlanning,
   type AdvancedSurfacePlanningV1,
 } from "@/lib/planning-core/advanced";
 import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import { plannerTheme } from "../theme/plannerTheme";
-import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import ModuleSprite from "./ModuleSprite";
 import ModuleSlopeArrow from "./panels/ModuleSlopeArrow";
-import { resolveModuleDownhillAzimuth } from "./panels/moduleSlope";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import {
   resolveStandardAutoLayoutCanvasAngle,
@@ -295,17 +291,6 @@ export default function ManualPlacementLayer({
   const valid = candidate?.valid ?? false;
   const stroke = valid ? plannerTheme.primary : plannerTheme.danger;
   const inverseScale = 1 / Math.max(stageScale, 0.01);
-  const blockCenter = candidate?.blockFootprintPx.length
-    ? candidate.blockFootprintPx.reduce(
-        (sum, point) => ({
-          x: sum.x + point.x / candidate.blockFootprintPx.length,
-          y: sum.y + point.y / candidate.blockFootprintPx.length,
-        }),
-        { x: 0, y: 0 },
-      )
-    : null;
-  const opposingSystem = advancedConfig?.advanced.system.systemId === K2_D_DOME_SYSTEM_ID ||
-    advancedConfig?.advanced.system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
   const helperText = valid ? "Klicken zum Platzieren" : "Position nicht möglich";
   const helperAnchor = candidate?.blockFootprintPx.reduce(
     (top, point) => point.y < top.y ? point : top,
@@ -341,22 +326,6 @@ export default function ManualPlacementLayer({
       {candidate && (
         <Group listening={false} opacity={valid ? 0.72 : 0.42}>
           {candidate.modules.map((module) => {
-            const downhillAzimuthDeg = session.kind === "standard-module"
-              ? resolveModuleDownhillAzimuth({
-                  kind: "pitched",
-                  roofFallAzimuthDeg: resolveRoofFallAzimuth(roof),
-                })
-              : opposingSystem && blockCenter
-                ? resolveModuleDownhillAzimuth({
-                    kind: "flat-opposing",
-                    blockCenterPx: blockCenter,
-                    moduleCenterPx: { x: module.cx, y: module.cy },
-                    moduleFaceAzimuthDeg: module.faceAzimuthDeg,
-                  })
-                : resolveModuleDownhillAzimuth({
-                    kind: "flat-south",
-                    moduleFaceAzimuthDeg: module.faceAzimuthDeg,
-                  });
             return (
               <Group key={module.slotIndex} listening={false}>
                 <ModuleSprite
@@ -372,7 +341,7 @@ export default function ManualPlacementLayer({
                   cy={module.cy}
                   wPx={module.wPx}
                   hPx={module.hPx}
-                  azimuthDeg={downhillAzimuthDeg}
+                  panelRotationDeg={module.angleDeg}
                 />
               </Group>
             );

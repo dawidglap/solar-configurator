@@ -7,7 +7,6 @@ import { computeAutoLayoutRects } from './layout';      // ← stessa cartella
 import { overlapsReservedRect, overlapsSnowGuard } from '../zones/utils';
 import { plannerTheme } from '../theme/plannerTheme';
 import ModuleSlopeArrow from './panels/ModuleSlopeArrow';
-import { selectModuleSlopeArrowIds } from './panels/moduleSlope';
 import {
   groupRectangularThermalUnits,
   createThermalGridBreaks,
@@ -23,7 +22,6 @@ type Props = {
   polygon: Pt[];                           // px immagine
   mppImage: number;                        // metri/px
   azimuthDeg?: number;                     // 0=N(↑), 90=E(→)
-  moduleFallAzimuthDeg?: number;           // geographic downhill direction
   orientation: 'portrait' | 'landscape';
   panelSizeM: { w: number; h: number };    // metri (w=lato corto, h=lato lungo)
   spacingM: number;                        // metri fra moduli
@@ -116,7 +114,6 @@ export default function ModulesPreview({
   polygon,
   mppImage,
   azimuthDeg,
-  moduleFallAzimuthDeg,
   orientation,
   panelSizeM,
   spacingM,
@@ -204,18 +201,6 @@ export default function ModulesPreview({
     [rectsAll, roofId]
   );
 
-  const slopeArrowIds = useMemo(
-    () => selectModuleSlopeArrowIds({
-      modules: rects.map((rect, index) => ({
-        id: String(index),
-        cx: rect.cx,
-        cy: rect.cy,
-        hPx: rect.hPx,
-      })),
-      rowAxisCanvasDeg: rects[0]?.angleDeg ?? azimuthDeg ?? 0,
-    }),
-    [azimuthDeg, rects],
-  );
   const thermalFields = useMemo(() => {
     if (!thermalFieldLimits || !rects.length || !(mppImage > 0)) return [];
     const panelW = rects[0].wPx * mppImage;
@@ -390,8 +375,8 @@ export default function ModulesPreview({
       ))}
 
       {/* moduli (preview = commit, ma filtrati da hindernis + snow-guard) */}
-      {rects.map((r, i) => (
-        <Group key={i} listening={false}>
+      {rects.map((r, index) => (
+        <Group key={index} listening={false}>
           {img ? (
             <KonvaImage
               image={img}
@@ -419,15 +404,13 @@ export default function ModulesPreview({
               listening={false}
             />
           )}
-          {slopeArrowIds.has(String(i)) && (
-            <ModuleSlopeArrow
-              cx={r.cx}
-              cy={r.cy}
-              wPx={r.wPx}
-              hPx={r.hPx}
-              azimuthDeg={moduleFallAzimuthDeg}
-            />
-          )}
+          <ModuleSlopeArrow
+            cx={r.cx}
+            cy={r.cy}
+            wPx={r.wPx}
+            hPx={r.hPx}
+            panelRotationDeg={r.angleDeg}
+          />
         </Group>
       ))}
     </Group>

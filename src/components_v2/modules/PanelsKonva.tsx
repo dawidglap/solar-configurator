@@ -15,13 +15,8 @@ import { legacyPointInPolygon } from '@/lib/planning-core/legacy-standard/collis
 import { plannerTheme } from '../theme/plannerTheme';
 import { createLatestFrameScheduler, type FrameScheduler } from '../canvas/performance/latestFrameScheduler';
 import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
-import { resolveRoofFallAzimuth } from '../roof/roofOrientation';
 import type { PanelInstance } from '@/types/planner';
-import { selectModuleSlopeArrowIds } from './panels/moduleSlope';
-import { resolveModuleDownhillAzimuth } from './panels/moduleSlope';
 import {
-  GENERIC_EAST_WEST_SYSTEM_ID,
-  K2_D_DOME_SYSTEM_ID,
   resolveSurfacePlanning,
 } from '@/lib/planning-core/advanced';
 import {
@@ -140,7 +135,6 @@ export default function PanelsKonva(props: {
     [committedAdvancedConfig],
   );
   const roofAzimuthDeg = roof?.azimuthDeg;
-  const roofFallAzimuthDeg = roof ? resolveRoofFallAzimuth(roof) : undefined;
   const polyAngleDeg = React.useMemo(() => (longestEdgeAngle(roofPolygon) * 180) / Math.PI, [roofPolygon]);
   const defaultAngleDeg = React.useMemo(() => {
     if (typeof roofAzimuthDeg === 'number') {
@@ -149,31 +143,6 @@ export default function PanelsKonva(props: {
     }
     return polyAngleDeg;
   }, [roofAzimuthDeg, polyAngleDeg]);
-  const slopeArrowPanelIds = React.useMemo(
-    () => selectModuleSlopeArrowIds({
-      modules: panels.map((panel) => ({
-        id: panel.id,
-        cx: panel.cx,
-        cy: panel.cy,
-        hPx: panel.hPx,
-      })),
-      rowAxisCanvasDeg: panels[0]?.angleDeg ?? defaultAngleDeg,
-    }),
-    [defaultAngleDeg, panels],
-  );
-  const advancedBlockCenters = React.useMemo(() => {
-    const grouped = new Map<string, PanelInst[]>();
-    panels.forEach((panel) => {
-      const blockKey = panel.advanced?.blockKey;
-      if (!blockKey) return;
-      grouped.set(blockKey, [...(grouped.get(blockKey) ?? []), panel]);
-    });
-    return new Map([...grouped].map(([blockKey, blockPanels]) => [blockKey, {
-      x: blockPanels.reduce((sum, panel) => sum + panel.cx, 0) / blockPanels.length,
-      y: blockPanels.reduce((sum, panel) => sum + panel.cy, 0) / blockPanels.length,
-    }]));
-  }, [panels]);
-
   // assi locali falda
   const theta = (defaultAngleDeg * Math.PI) / 180;
   const ex = { x: Math.cos(theta), y: Math.sin(theta) }; // u axis
@@ -719,25 +688,6 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
 
         const rotationDeg =
           typeof p.angleDeg === 'number' ? p.angleDeg : defaultAngleDeg;
-        const isOpposing = p.advanced?.systemId === K2_D_DOME_SYSTEM_ID ||
-          p.advanced?.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
-        const moduleFallAzimuthDeg = p.advanced
-          ? resolveModuleDownhillAzimuth(isOpposing
-            ? {
-                kind: 'flat-opposing',
-                blockCenterPx: advancedBlockCenters.get(p.advanced.blockKey) ?? { x: p.cx, y: p.cy },
-                moduleCenterPx: { x: p.cx, y: p.cy },
-                moduleFaceAzimuthDeg: p.advanced.moduleFaceAzimuthDeg,
-              }
-            : {
-                kind: 'flat-south',
-                moduleFaceAzimuthDeg: p.advanced.moduleFaceAzimuthDeg,
-              })
-          : resolveModuleDownhillAzimuth({
-              kind: 'pitched',
-              roofFallAzimuthDeg: (roof?.tiltDeg ?? 0) > 0.05 ? roofFallAzimuthDeg : undefined,
-            });
-
         return (
           <PanelItem
             key={p.id}
@@ -747,8 +697,6 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
             wPx={p.wPx}
             hPx={p.hPx}
             rotationDeg={rotationDeg}
-            moduleFallAzimuthDeg={moduleFallAzimuthDeg}
-            showSlopeArrow={slopeArrowPanelIds.has(p.id)}
             selected={sel}
             image={img}
             onStartDrag={startPanelDrag}

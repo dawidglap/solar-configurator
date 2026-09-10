@@ -21,6 +21,7 @@ import type {
   AdvancedSurfacePlanningV1,
 } from "../../src/lib/planning-core/advanced";
 import type { ModulesConfig, PanelSpec, RoofArea } from "../../src/types/planner";
+import { resolvePanelLocalArrowAzimuth } from "../../src/components_v2/modules/panels/moduleSlope";
 
 const MODULE: PanelSpec = {
   id: "module-440",
@@ -359,15 +360,23 @@ test("Parallel zur Dachkante aligns a rotated 37 degree rectangle and preserves 
   });
   assert.equal(aligned.advanced.system.systemId, K2_D_DOME_SYSTEM_ID);
   if (aligned.advanced.system.systemId !== K2_D_DOME_SYSTEM_ID) return;
-  assert.ok(Math.abs(aligned.advanced.system.primaryFaceAzimuthDeg - 37) < 1e-8);
+  assert.ok(Math.abs(aligned.advanced.system.primaryFaceAzimuthDeg - 217) < 1e-8);
   const result = preview(aligned, roof);
   assert.equal(result.valid, true);
   if (!result.valid) return;
-  assert.ok(result.blocks.every((block) => Math.abs(block.rotationCanvasDeg - 37) < 1e-8));
+  assert.ok(result.blocks.every((block) => Math.abs(block.rotationCanvasDeg - 217) < 1e-8));
   const firstPair = result.modules.filter((module) => module.blockKey === "r0:c0");
   assert.equal(firstPair.length, 2);
   const difference = normalizeDifference(firstPair[1].faceAzimuthDeg - firstPair[0].faceAzimuthDeg);
   assert.equal(difference, 180);
+  assert.equal(normalizeDifference(firstPair[1].angleDeg - firstPair[0].angleDeg), 180);
+  assert.equal(
+    normalizeDifference(
+      resolvePanelLocalArrowAzimuth(firstPair[1].angleDeg)! -
+      resolvePanelLocalArrowAzimuth(firstPair[0].angleDeg)!,
+    ),
+    180,
+  );
 });
 
 function normalizeDifference(value: number) {

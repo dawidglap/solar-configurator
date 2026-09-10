@@ -58,7 +58,6 @@ import {
   type MarqueePanelCandidate,
 } from "../modules/panels/panelMarqueeSelection";
 import RoofShapesLayer from "./RoofShapesLayer";
-import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import RoofHudOverlay from "./RoofHudOverlay";
 import { useContainerSize } from "../canvas/hooks/useContainerSize";
 import { useBaseImage } from "../canvas/hooks/useBaseImage";
@@ -400,11 +399,6 @@ export default function CanvasStage() {
   const selectedRoofPlanning = selectedRoof
     ? resolveSurfacePlanning(selectedRoof.surfacePlanning)
     : undefined;
-  const selectedRoofFallAzimuth = selectedRoofPlanning?.status === "supported-advanced"
-    ? selectedRoofPlanning.config.surface.fallAzimuthDeg ?? (selectedRoof ? resolveRoofFallAzimuth(selectedRoof) : undefined)
-    : selectedRoof
-      ? resolveRoofFallAzimuth(selectedRoof)
-      : undefined;
   const showPanelsInBuilding = usePlannerV2Store(
     (state) => state.ui.showPanelsInBuilding,
   );
@@ -1476,7 +1470,6 @@ export default function CanvasStage() {
                       polygon={selectedRoof.points}
                       mppImage={snap.mppImage}
                       azimuthDeg={gridDeg}
-                      moduleFallAzimuthDeg={selectedRoofFallAzimuth}
                       orientation={standardPreviewModules.orientation}
                       panelSizeM={{ w: standardPreviewPanel.widthM, h: standardPreviewPanel.heightM }}
                       spacingM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).x}
