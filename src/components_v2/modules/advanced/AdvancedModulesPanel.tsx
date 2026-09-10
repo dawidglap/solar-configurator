@@ -36,6 +36,7 @@ import {
 } from "./advancedPlanningApplication";
 import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
 import { buildGuidedPlanningResult } from "./guidedPlanningPresentation";
+import DirectLayoutControl from "../panels/DirectLayoutControl";
 
 const inputClass =
   "glass-input h-8 w-full rounded-lg px-2 text-[11px] focus:ring-1 focus:ring-primary/40";
@@ -117,29 +118,12 @@ export default function AdvancedModulesPanel({
   const [confirmReplace, setConfirmReplace] = React.useState(false);
   const [modulePickerOpen, setModulePickerOpen] = React.useState(false);
   const [fineTuningOpen, setFineTuningOpen] = React.useState(false);
-  const manualOrientationInputRef = React.useRef<HTMLInputElement>(null);
-  const focusManualOrientationRef = React.useRef(false);
-  const focusManualOrientation = React.useCallback(() => {
-    manualOrientationInputRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
-    });
-    manualOrientationInputRef.current?.focus({ preventScroll: true });
-    manualOrientationInputRef.current?.select();
-  }, []);
 
   React.useEffect(() => {
     setModulePickerOpen(false);
     setFineTuningOpen(false);
     setConfirmReplace(false);
   }, [roof.id]);
-
-  React.useEffect(() => {
-    if (!fineTuningOpen || !focusManualOrientationRef.current) return;
-    focusManualOrientationRef.current = false;
-    const frame = window.requestAnimationFrame(focusManualOrientation);
-    return () => window.cancelAnimationFrame(frame);
-  }, [fineTuningOpen, focusManualOrientation]);
 
   const update = React.useCallback(
     (next: AdvancedSurfacePlanningV1) => {
@@ -320,17 +304,6 @@ export default function AdvancedModulesPanel({
     apply();
   };
 
-  const patchLayout = (
-    patch: Partial<AdvancedSurfacePlanningV1["advanced"]["layout"]>,
-  ) =>
-    update({
-      ...config,
-      advanced: {
-        ...config.advanced,
-        layout: { ...config.advanced.layout, ...patch },
-      },
-    });
-
   const patchThermalLimits = (patch: Partial<Extract<ThermalFieldLimits, { kind: "flat-block" }>>) => {
     const next = { ...thermalLimits, ...patch, kind: "flat-block" as const };
     update({ ...config, thermalFieldLimits: next });
@@ -352,11 +325,6 @@ export default function AdvancedModulesPanel({
   };
 
   const openManualOrientation = () => {
-    if (fineTuningOpen) {
-      window.requestAnimationFrame(focusManualOrientation);
-      return;
-    }
-    focusManualOrientationRef.current = true;
     setFineTuningOpen(true);
   };
 
@@ -532,38 +500,7 @@ export default function AdvancedModulesPanel({
             <span>Feinjustierung</span><span aria-hidden="true">{fineTuningOpen ? "▴" : "▾"}</span>
           </button>
           {fineTuningOpen && <div className="space-y-3 border-t border-border/60 p-3">
-            <label className="block space-y-1 text-muted-foreground">
-              Ausrichtung manuell
-              <span className="flex items-center gap-2">
-                <input
-                  ref={manualOrientationInputRef}
-                  className={inputClass}
-                  type="number"
-                  min={0}
-                  max={359.99}
-                  step={0.01}
-                  value={Number(azimuth.toFixed(2))}
-                  onChange={(event) => patchDefaultSystemNumber("azimuth", Math.round(Number(event.target.value) * 100) / 100)}
-                />
-                <span>°</span>
-              </span>
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {(["phaseX", "phaseY"] as const).map((field) => (
-                <label key={field} className="space-y-1 text-muted-foreground">
-                  {field === "phaseX" ? "Horizontal verschieben" : "Vertikal verschieben"}
-                  <input className={inputClass} type="number" min={0} max={0.999} step={0.05} value={config.advanced.layout[field]} onChange={(event) => patchLayout({ [field]: Number(event.target.value) })} />
-                </label>
-              ))}
-              {(["anchorX", "anchorY"] as const).map((field) => (
-                <label key={field} className="space-y-1 text-muted-foreground">
-                  {field === "anchorX" ? "Horizontal ausrichten" : "Vertikal ausrichten"}
-                  <select className={inputClass} value={config.advanced.layout[field]} onChange={(event) => patchLayout({ [field]: event.target.value as "start" | "center" | "end" })}>
-                    <option value="start">Start</option><option value="center">Mitte</option><option value="end">Ende</option>
-                  </select>
-                </label>
-              ))}
-            </div>
+            <DirectLayoutControl roofId={roof.id} />
             <div className="border-t border-border/60 pt-2 text-muted-foreground"><p>System: Standardsystem</p></div>
             {preview.warnings.some((warning) => warning.code.includes("block-size")) && (
               <p className="text-amber-700 dark:text-amber-300">Die K2 Blockgrösse überschreitet die dokumentierte Systemgrenze.</p>

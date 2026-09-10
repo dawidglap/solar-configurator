@@ -5,6 +5,10 @@ import React from 'react';
 import { Image as KonvaImage, Rect } from 'react-konva';
 import { plannerTheme } from '../../theme/plannerTheme';
 import ModuleSlopeArrow from './ModuleSlopeArrow';
+import {
+  getTransientPanelGeometry,
+  subscribeTransientPanelGeometry,
+} from './transientPanelGeometry';
 
 export type PanelItemProps = {
   id: string;
@@ -26,6 +30,14 @@ const INTERACTIVE_NAME = 'interactive-panel';
 
 export const PanelItem: React.FC<PanelItemProps> = React.memo(
   ({ id, cx, cy, wPx, hPx, rotationDeg, moduleFallAzimuthDeg, showSlopeArrow = true, selected, image, onStartDrag, onSelect }) => {
+    const transient = React.useSyncExternalStore(
+      React.useCallback((listener) => subscribeTransientPanelGeometry(id, listener), [id]),
+      React.useCallback(() => getTransientPanelGeometry(id), [id]),
+      () => undefined,
+    );
+    const visualCx = transient?.cx ?? cx;
+    const visualCy = transient?.cy ?? cy;
+    const visualRotationDeg = transient?.angleDeg ?? rotationDeg;
     const downRef = React.useRef<{ x: number; y: number; active: boolean } | null>(null);
     const didDragRef = React.useRef(false);
 
@@ -81,13 +93,13 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
 
     const base = {
       id: `panel-node-${id}`,
-      x: cx,
-      y: cy,
+      x: visualCx,
+      y: visualCy,
       width: wPx,
       height: hPx,
       offsetX: wPx / 2,
       offsetY: hPx / 2,
-      rotation: rotationDeg,
+      rotation: visualRotationDeg,
 
       // importante: contrassegna come interattivo per non far fare "clear" allo Stage
       name: INTERACTIVE_NAME,
@@ -138,8 +150,8 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
         {showSlopeArrow && (
           <ModuleSlopeArrow
             id={`panel-slope-arrow-${id}`}
-            cx={cx}
-            cy={cy}
+            cx={visualCx}
+            cy={visualCy}
             wPx={wPx}
             hPx={hPx}
             azimuthDeg={moduleFallAzimuthDeg}
@@ -149,13 +161,13 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
         {selected && (
           <Rect
             id={`panel-selection-${id}`}
-            x={cx}
-            y={cy}
+            x={visualCx}
+            y={visualCy}
             width={wPx}
             height={hPx}
             offsetX={wPx / 2}
             offsetY={hPx / 2}
-            rotation={rotationDeg}
+            rotation={visualRotationDeg}
             stroke={plannerTheme.panelSelected}
             strokeWidth={0.8}
             shadowColor={plannerTheme.primaryGlow}

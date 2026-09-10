@@ -12,7 +12,6 @@ import { nanoid } from "nanoid";
 import toast from "react-hot-toast";
 
 import {
-  resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutSpacingAxes,
 } from "../modules/legacyStandardApplicationPolicy";
 import {
@@ -56,6 +55,7 @@ import {
 } from "../modules/advanced/advancedPlanningApplication";
 import { withEffectiveAdvancedThermalLimits } from "../modules/advanced/advancedThermalDefaults";
 import ZonePropertiesControl from "../zones/ZonePropertiesControl";
+import DirectLayoutControl from "../modules/panels/DirectLayoutControl";
 
 type Pt = { x: number; y: number };
 
@@ -319,16 +319,6 @@ export default function ModulesPanel() {
     }
     patchStandardTilt({ mode: "custom", customTiltDeg: value });
   }, [displayedTilt.effectiveTiltDeg, moduleTiltText, patchStandardTilt]);
-  const displayedCanvasAngleDeg = selectedRoof
-    ? resolveStandardAutoLayoutCanvasAngle({
-        roofId: selectedRoof.id,
-        roofPolygon: selectedRoof.points,
-        legacyRoofAzimuthDeg: selectedRoof.azimuthDeg,
-        gridAngleDeg: displayedModules.gridAngleDeg,
-        perRoofAngles: displayedModules.perRoofAngles,
-        referenceEdgeIndex: selectedRoof.referenceEdgeIndex,
-      })
-    : 0;
   const standardThermalSteps = selSpec && displayedThermalLimits.kind === "pitched-grid"
     ? (() => {
         const widthM = displayedModules.orientation === "portrait" ? selSpec.widthM : selSpec.heightM;
@@ -1105,88 +1095,13 @@ export default function ModulesPanel() {
           </section>
 
           <section className="space-y-3 border-b border-border/60 pb-4">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className={labelSm}>Ausrichtung</h3>
-              <strong className="text-[10px]">{Number((((displayedCanvasAngleDeg % 360) + 360) % 360).toFixed(2))}°</strong>
-            </div>
+            <h3 className={labelSm}>Ausrichtung</h3>
             <details className="rounded-xl border border-border/60 text-[10px]">
               <summary className="cursor-pointer px-3 py-2.5 font-medium text-muted-foreground">
                 Feinjustierung
               </summary>
               <div className="space-y-3 border-t border-border/60 p-3">
-                <label className="block space-y-1 text-muted-foreground">
-                  Drehung
-                  <span className="flex items-center gap-2">
-                    <input
-                      className={inputBase}
-                      type="number"
-                      min={0}
-                      max={359.99}
-                      step={0.01}
-                      value={Number((((displayedCanvasAngleDeg % 360) + 360) % 360).toFixed(2))}
-                      onChange={(event) => {
-                        const angle = Number(event.target.value);
-                        if (!Number.isFinite(angle)) return;
-                        patchDisplayedModules({
-                          perRoofAngles: {
-                            ...(displayedModules.perRoofAngles ?? {}),
-                            [selectedRoof.id]: ((angle % 360) + 360) % 360,
-                          },
-                        });
-                      }}
-                    />
-                    <span>°</span>
-                  </span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["gridPhaseX", "gridPhaseY"] as const).map((field) => (
-                    <label key={field} className="space-y-1 text-muted-foreground">
-                      {field === "gridPhaseX" ? "Horizontal verschieben" : "Vertikal verschieben"}
-                      <input
-                        className={inputBase}
-                        type="number"
-                        min={0}
-                        max={0.999}
-                        step={0.05}
-                        value={displayedModules[field] ?? 0}
-                        onChange={(event) => patchDisplayedModules({ [field]: Number(event.target.value) })}
-                      />
-                    </label>
-                  ))}
-                  {(["gridAnchorX", "gridAnchorY"] as const).map((field) => (
-                    <label key={field} className="space-y-1 text-muted-foreground">
-                      {field === "gridAnchorX" ? "Horizontal ausrichten" : "Vertikal ausrichten"}
-                      <select
-                        className={inputBase}
-                        value={displayedModules[field] ?? "start"}
-                        onChange={(event) => patchDisplayedModules({ [field]: event.target.value as "start" | "center" | "end" })}
-                      >
-                        <option value="start">Start</option>
-                        <option value="center">Mitte</option>
-                        <option value="end">Ende</option>
-                      </select>
-                    </label>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className="text-[10px] font-medium text-primary hover:underline"
-                  onClick={() => {
-                    const perRoofAngles = { ...(displayedModules.perRoofAngles ?? {}) };
-                    delete perRoofAngles[selectedRoof.id];
-                    patchDisplayedModules({
-                      gridAngleDeg: 0,
-                      gridPhaseX: 0,
-                      gridPhaseY: 0,
-                      gridAnchorX: "start",
-                      gridAnchorY: "start",
-                      coverageRatio: 1,
-                      perRoofAngles,
-                    });
-                  }}
-                >
-                  Auf Standard zurücksetzen
-                </button>
+                <DirectLayoutControl roofId={selectedRoof.id} />
               </div>
             </details>
           </section>

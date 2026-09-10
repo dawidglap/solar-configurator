@@ -33,11 +33,11 @@ export default function PanelsLayer({
 const handleSelect = (id?: string, opts?: { additive?: boolean }) => {
   const additive = !!opts?.additive;
 
-  // Se seleziono un pannello -> deseleziono tetto + zona
+  // La falda resta selezionata: serve come scope canonico per marquee, D-pad
+  // e tutti gli edit diretti. Un eventuale Hindernis perde invece il focus.
   if (id) {
     const st = usePlannerV2Store.getState();
-    st.select?.(undefined);            // ⬅️ deseleziona falda
-    st.setSelectedZone?.(undefined);   // ⬅️ deseleziona eventuale zona
+    st.setSelectedZone?.(undefined);
 
     const blockIds = resolvePanelSelectionIds(st.panels, id);
 

@@ -85,6 +85,7 @@ import StucklisteScreen from "../steps/StucklisteScreen";
 import ReportScreen from "../steps/ReportScreen";
 import OfferScreen from "../steps/OfferScreen";
 import { plannerTheme } from "../theme/plannerTheme";
+import { setCurrentCanvasRotationDeg } from "./canvasRotationState";
 import PlannerEmptyState from "../layout/PlannerEmptyState";
 import type { Tool } from "@/types/planner";
 import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
@@ -686,6 +687,7 @@ export default function CanvasStage() {
   const [rotInput, setRotInput] = useState<string>("0");
   const rotateDegRef = useRef(rotateDeg);
   rotateDegRef.current = rotateDeg;
+  setCurrentCanvasRotationDeg(rotateDeg);
 
   // calcolo progress per lo slider (0–100)
   const sliderPct = useMemo(() => {
@@ -751,6 +753,7 @@ export default function CanvasStage() {
       });
       zoomControlRef.current?.setTransientScale(camera.scale);
       rotateDegRef.current = camera.rotationDeg;
+      setCurrentCanvasRotationDeg(camera.rotationDeg);
       revealCameraRef.current = camera;
     },
     [syncTransientView],
@@ -1722,14 +1725,6 @@ export default function CanvasStage() {
       <PanelHotkeys
         selectedPanelId={selectedPanelInstId}
         disabled={tool !== "select"}
-        nudgeFromScreenDelta={(sx, sy) => {
-          // usiamo il centro dello stage come punto di riferimento
-          const cx = size.w / 2;
-          const cy = size.h / 2;
-          const p0 = toImgCoords(cx, cy);
-          const p1 = toImgCoords(cx + sx, cy + sy);
-          return { dx: p1.x - p0.x, dy: p1.y - p0.y };
-        }}
         onDelete={(id) => {
           plannerHistory.push("delete panel");
           deletePanel(id);

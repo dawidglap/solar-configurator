@@ -157,6 +157,7 @@ function validate(input: {
 export function validateExistingPanelPlacement(input: {
   panel: PanelInstance;
   centerPx: Pt;
+  angleDeg?: number;
   roof: RoofArea;
   marginM: number;
   mppImage: number;
@@ -171,7 +172,7 @@ export function validateExistingPanelPlacement(input: {
       input.centerPx,
       input.panel.wPx,
       input.panel.hPx,
-      input.panel.angleDeg,
+      input.angleDeg ?? input.panel.angleDeg,
     ), adapter),
     roof: input.roof,
     marginM: input.marginM,
