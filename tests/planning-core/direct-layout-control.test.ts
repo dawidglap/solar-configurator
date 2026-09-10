@@ -209,3 +209,14 @@ test("translation is rigid and source lifecycle keeps holds transient until one 
   const layer = readFileSync("src/components_v2/modules/panels/PanelsLayer.tsx", "utf8");
   assert.doesNotMatch(layer, /st\.select\?\.\(undefined\)/);
 });
+
+test("consumed native Arrow repeats are prevented before the internal repeat guard", () => {
+  const source = readFileSync("src/components_v2/modules/panels/DirectLayoutControl.tsx", "utf8");
+  const handlerStart = source.indexOf("const onControllerKeyDown");
+  const handlerEnd = source.indexOf("const onControllerKeyUp", handlerStart);
+  const handler = source.slice(handlerStart, handlerEnd);
+
+  assert.ok(handler.includes("if (isInteractiveFormTarget(event.target)) return"));
+  assert.ok(handler.indexOf("event.preventDefault()") < handler.indexOf("if (event.repeat) return"));
+  assert.ok(handler.indexOf("if (!direction) return") < handler.indexOf("event.preventDefault()"));
+});

@@ -218,7 +218,7 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
   }, [finishGesture]);
 
   const onControllerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (isInteractiveFormTarget(event.target) || event.repeat) return;
+    if (isInteractiveFormTarget(event.target)) return;
     const direction = event.key === "ArrowUp" ? "up"
       : event.key === "ArrowDown" ? "down"
         : event.key === "ArrowLeft" ? "left"
@@ -227,6 +227,10 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
     if (!direction) return;
     event.preventDefault();
     event.stopPropagation();
+    // Browser key-repeat would otherwise scroll the sidebar. Movement repeat is
+    // owned by the gesture timer, so every consumed Arrow event must still have
+    // its native default prevented without starting a second gesture.
+    if (event.repeat) return;
     beginGesture({ kind: "move", direction, fast: event.shiftKey });
   };
 
