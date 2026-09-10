@@ -49,6 +49,14 @@ import RightPropertiesPanelOverlay from "../layout/RightPropertiesPanelOverlay";
 import OverlayLeftToggle from "../layout/OverlayLeftToggle";
 import LeftLayersOverlay from "../layout/LeftLayersOverlay";
 import PanelsLayer from "../modules/panels/PanelsLayer";
+import { resolvePanelSelectionIds } from "../modules/panels/panelSelection";
+import PanelMarqueeOverlay, {
+  type PanelMarqueeOverlayHandle,
+} from "../modules/panels/PanelMarqueeOverlay";
+import {
+  createPanelMarqueeController,
+  type MarqueePanelCandidate,
+} from "../modules/panels/panelMarqueeSelection";
 import RoofShapesLayer from "./RoofShapesLayer";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import RoofHudOverlay from "./RoofHudOverlay";
@@ -148,6 +156,9 @@ declare global {
 export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
+  const marqueeOverlayRef = useRef<PanelMarqueeOverlayHandle>(null);
+  const marqueeControllerRef = useRef<ReturnType<typeof createPanelMarqueeController> | null>(null);
+  const suppressMarqueeClickRef = useRef(false);
   const zoomControlRef = useRef<MapZoomControlHandle>(null);
   const revealAnimationFrameRef = useRef<number | null>(null);
   const activeRevealRequestIdRef = useRef<string | null>(null);
@@ -426,6 +437,16 @@ export default function CanvasStage() {
       endManualPlacement();
     }
   }, [manualPlacementSession, selectedId, step]);
+
+  const marqueeEnabled = Boolean(
+    step === "modules" &&
+    tool === "select" &&
+    selectedRoof &&
+    !selectedPlanningDraft &&
+    !manualPlacementSession &&
+    !draggingVertex &&
+    !draggingPanel
+  );
 
   const baseGridDeg = selectedRoof
     ? resolveStandardAutoLayoutCanvasAngle({
@@ -884,6 +905,130 @@ export default function CanvasStage() {
       tool === "draw-reserved-rect" ||
       tool === "draw-snow-guard");
 
+  // Empty left-drag in Modulplanung belongs to transient panel marquee
+  // selection. Geometry is snapshotted once; raw moves are coalesced by rAF.
+  useEffect(() => {
+    const stage = stageRef.current?.getStage?.();
+    const container = stage?.container?.() as HTMLDivElement | undefined;
+    if (!stage || !container || !marqueeEnabled || !selectedId) {
+      marqueeControllerRef.current?.cancel();
+      marqueeControllerRef.current = null;
+      marqueeOverlayRef.current?.show(null);
+      return;
+    }
+
+    const controller = createPanelMarqueeController({
+      thresholdPx: 5,
+      onVisual: (visual) => marqueeOverlayRef.current?.show(visual),
+      onCommit: (ids) => usePlannerV2Store.getState().setSelectedPanels(ids),
+      onEmptyClick: () => usePlannerV2Store.getState().clearPanelSelection(),
+    });
+    marqueeControllerRef.current = controller;
+
+    const screenPoint = (event: MouseEvent) => {
+      const bounds = container.getBoundingClientRect();
+      return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+    };
+    const isEmptyPlanningTarget = (point: Pt) => {
+      const target = stage.getIntersection(point);
+      if (!target || target === stage) return true;
+      const id = typeof target.id === "function" ? target.id() : "";
+      const name = typeof target.name === "function" ? target.name() : "";
+      return name.split(/\s+/).includes("bg-catcher") || id === `roof-shape-${selectedId}`;
+    };
+    const snapshotCandidates = (): MarqueePanelCandidate[] => {
+      const roofPanels = allPanels.filter((panel) => panel.roofId === selectedId);
+      const roofPanelIds = new Set(roofPanels.map((panel) => panel.id));
+      const panelNodes = new Map<string, Konva.Node>(
+        stage.find(".interactive-panel").map((node: Konva.Node): [string, Konva.Node] => [
+          node.id().replace(/^panel-node-/, ""),
+          node,
+        ]),
+      );
+      return roofPanels
+        .flatMap((panel) => {
+          const node = panelNodes.get(panel.id);
+          if (!node?.getAbsoluteTransform) return [];
+          const transform = node.getAbsoluteTransform().copy();
+          const polygon = [
+            { x: 0, y: 0 },
+            { x: panel.wPx, y: 0 },
+            { x: panel.wPx, y: panel.hPx },
+            { x: 0, y: panel.hPx },
+          ].map((point) => transform.point(point));
+          return [{
+            id: panel.id,
+            polygon,
+            selectionIds: resolvePanelSelectionIds(allPanels, panel.id)
+              .filter((id) => roofPanelIds.has(id)),
+          }];
+        });
+    };
+    const suppressFollowingClick = () => {
+      suppressMarqueeClickRef.current = true;
+      requestAnimationFrame(() => {
+        suppressMarqueeClickRef.current = false;
+      });
+    };
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0 || controller.isActive()) return;
+      const point = screenPoint(event);
+      if (!isEmptyPlanningTarget(point)) return;
+      const store = usePlannerV2Store.getState();
+      controller.begin({
+        start: point,
+        additive: event.shiftKey,
+        initialIds: store.selectedPanelIds ?? [],
+        candidates: snapshotCandidates(),
+      });
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onMouseMove = (event: MouseEvent) => {
+      if (!controller.move(screenPoint(event))) return;
+      event.preventDefault();
+    };
+    const onMouseUp = (event: MouseEvent) => {
+      if (event.button !== 0 || !controller.end(screenPoint(event))) return;
+      suppressFollowingClick();
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onClickCapture = (event: MouseEvent) => {
+      if (!suppressMarqueeClickRef.current) return;
+      suppressMarqueeClickRef.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !controller.cancel()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onWindowBlur = () => controller.cancel();
+
+    container.addEventListener("mousedown", onMouseDown, { capture: true });
+    container.addEventListener("click", onClickCapture, { capture: true });
+    window.addEventListener("mousemove", onMouseMove, { capture: true });
+    window.addEventListener("mouseup", onMouseUp, { capture: true });
+    window.addEventListener("keydown", onEscape, { capture: true });
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      container.removeEventListener("mousedown", onMouseDown, { capture: true });
+      container.removeEventListener("click", onClickCapture, { capture: true });
+      window.removeEventListener("mousemove", onMouseMove, { capture: true });
+      window.removeEventListener("mouseup", onMouseUp, { capture: true });
+      window.removeEventListener("keydown", onEscape, { capture: true });
+      window.removeEventListener("blur", onWindowBlur);
+      controller.cancel();
+      if (marqueeControllerRef.current === controller) marqueeControllerRef.current = null;
+    };
+  }, [allPanels, marqueeEnabled, selectedId]);
+
   // hook disegno tetto/zone (solo building)
   const {
     drawingPoly,
@@ -1188,6 +1333,7 @@ export default function CanvasStage() {
             y={view.offsetY || 0}
             draggable={
               (canDrag || revealAnimating) &&
+              !marqueeEnabled &&
               !drawingCapturesPointer &&
               !isRightPanning &&
               !draggingVertex &&
@@ -1548,6 +1694,7 @@ export default function CanvasStage() {
               </Group>
             </Layer>
           </Stage>
+          <PanelMarqueeOverlay ref={marqueeOverlayRef} />
           <ScreenGrid
             visible={showUiGrid} // o true
             step={36}

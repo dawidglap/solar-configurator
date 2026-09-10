@@ -681,6 +681,11 @@ const startMultiDrag = React.useCallback((e: any) => {
 
 const startPanelDrag = React.useCallback((panelId: string, e: any) => {
   const panel = panels.find((item) => item.id === panelId);
+  if (panel && selectedSet.has(panelId) && selectedPanels.length > 1) {
+    e.cancelBubble = true;
+    beginGroupDrag(e, selectedPanels);
+    return;
+  }
   const blockKey = panel?.advanced?.blockKey;
   if (blockKey) {
     const blockPanels = panels.filter((item) => item.advanced?.blockKey === blockKey);
@@ -692,7 +697,7 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
     }
   }
   startDrag(panelId, e);
-}, [beginGroupDrag, panels, setSelectedPanels, startDrag]);
+}, [beginGroupDrag, panels, selectedPanels, selectedSet, setSelectedPanels, startDrag]);
 
 
   // ======================= RENDER =======================

@@ -14,11 +14,14 @@ export function resolvePanelSelectionIds(
     return [clickedId];
   }
   return panels
-    .filter((panel) => panel.advanced?.blockKey === clicked.advanced?.blockKey)
+    .filter((panel) =>
+      panel.roofId === clicked.roofId &&
+      panel.advanced?.systemId === K2_D_DOME_SYSTEM_ID &&
+      panel.advanced?.blockKey === clicked.advanced?.blockKey,
+    )
     .sort((first, second) =>
       (first.advanced?.slotIndex ?? 0) - (second.advanced?.slotIndex ?? 0) ||
       first.id.localeCompare(second.id),
     )
     .map((panel) => panel.id);
 }
-
