@@ -44,6 +44,7 @@ import {
   computeStandardDraftPanels,
   hasCommittedPanelsForRoof,
   resolveStandardTiltInput,
+  resolveInitialSonnendachRoofType,
   resolveRoofPlanningMode,
 } from "../modules/advanced/advancedPlanningApplication";
 import ZonePropertiesControl from "../zones/ZonePropertiesControl";
@@ -141,13 +142,44 @@ export default function ModulesPanel() {
   const displayMode = resolveRoofPlanningMode({
     persisted: selectedRoof?.surfacePlanning,
     draft: selectedDraft,
+    roof: selectedRoof,
   });
-  const advancedConfig =
+  const selectedAdvancedConfig =
     selectedDraft?.targetMode === "advanced"
       ? selectedDraft.config
       : persistedPlanning.status === "supported-advanced"
         ? persistedPlanning.config
         : undefined;
+  const inferredSonnendachRoofType = resolveInitialSonnendachRoofType(selectedRoof);
+  const implicitFlatConfig = React.useMemo(() => {
+    if (
+      !selectedRoof ||
+      !selSpec ||
+      selectedRoof.surfacePlanning !== undefined ||
+      selectedDraft ||
+      inferredSonnendachRoofType !== "flat"
+    ) {
+      return undefined;
+    }
+    const limits = resolveCompanyThermalFieldLimits({
+      company: companyPlannerDefaults,
+      roofKind: "flat",
+      mountingOrientation: "east-west",
+    });
+    return createInitialAdvancedPlanning({
+      panel: selSpec,
+      standardModules: modulesWithRoofEdgeMargin(selectedRoof, modules),
+      thermalFieldLimits: limits.kind === "flat-block" ? limits : undefined,
+    });
+  }, [
+    companyPlannerDefaults,
+    inferredSonnendachRoofType,
+    modules,
+    selSpec,
+    selectedDraft,
+    selectedRoof,
+  ]);
+  const advancedConfig = selectedAdvancedConfig ?? implicitFlatConfig;
   const standardDraft =
     selectedDraft?.targetMode === "standard" ? selectedDraft : undefined;
   const displayedModules = standardDraft?.modules ?? modules;
@@ -185,7 +217,9 @@ export default function ModulesPanel() {
   const customerRoofType =
     displayMode === "standard"
       ? "pitched"
-      : advancedConfig?.surface.kind === "flat"
+      : advancedConfig?.surface.kind === "flat" ||
+          (selectedRoof?.surfacePlanning === undefined &&
+            inferredSonnendachRoofType === "flat")
         ? "flat"
         : "preserved-green";
   const selectedRoofKind = customerRoofType === "pitched"
@@ -372,7 +406,6 @@ export default function ModulesPanel() {
         surfacePlanning: nextConfig,
       });
       updateRoof(selectedRoof.id, {
-        tiltDeg: 0,
         referenceEdgeIndex: resolveRoofReferenceEdgeIndex({
           points: selectedRoof.points,
           roofKind: "flat",
@@ -382,7 +415,11 @@ export default function ModulesPanel() {
       commitRoofLayout({
         roofId: selectedRoof.id,
         panels: [],
-        surfacePlanning: undefined,
+        surfacePlanning: buildStandardSurfacePlanning({
+          roof: selectedRoof,
+          moduleTilt: { mode: "inherit-roof" },
+          thermalFieldLimits: displayedThermalLimits,
+        }),
       });
       updateRoof(selectedRoof.id, { referenceEdgeIndex: 0 });
     }
@@ -390,7 +427,7 @@ export default function ModulesPanel() {
     setPendingRoofType(null);
     setConfirmStandardReplace(false);
     toast.success("Dachtyp geändert. Die Dachfläche kann neu geplant werden.");
-  }, [commitRoofLayout, companyPlannerDefaults, modules, pendingRoofType, selSpec, selectedRoof, updateRoof]);
+  }, [commitRoofLayout, companyPlannerDefaults, displayedThermalLimits, modules, pendingRoofType, selSpec, selectedRoof, updateRoof]);
 
   React.useEffect(() => {
     setPendingRoofType(null);
@@ -906,7 +943,11 @@ export default function ModulesPanel() {
           <AdvancedModulesPanel
             roof={selectedRoof}
             config={advancedConfig as AdvancedSurfacePlanningV1}
-            isDraft={selectedDraft?.targetMode === "advanced"}
+            isDraft={
+              selectedDraft?.targetMode === "advanced" ||
+              implicitFlatConfig !== undefined
+            }
+            isImplicitInitialConfig={implicitFlatConfig !== undefined}
           />
         )}
 

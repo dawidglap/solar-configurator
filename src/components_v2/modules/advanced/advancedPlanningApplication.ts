@@ -815,9 +815,33 @@ export function alignAdvancedLayoutParallelToRoofEdge(input: {
 export function resolveRoofPlanningMode(input: {
   persisted: unknown;
   draft?: RoofPlanningDraft;
+  roof?: Pick<RoofArea, "source" | "tiltDeg">;
 }): "standard" | "advanced" {
   if (input.draft) return input.draft.targetMode;
-  return resolveSurfacePlanning(input.persisted).effectiveMode ?? "standard";
+  const persisted = resolveSurfacePlanning(input.persisted);
+  if (persisted.status === "legacy-standard") {
+    return resolveInitialSonnendachRoofType(input.roof) === "flat"
+      ? "advanced"
+      : "standard";
+  }
+  if (persisted.effectiveMode) return persisted.effectiveMode;
+  return "standard";
+}
+
+/**
+ * Initial customer-facing roof type for unclassified Sonnendach surfaces.
+ * This resolver is deliberately read-only: it never mutates or persists the
+ * imported source data. Explicit surfacePlanning remains authoritative.
+ */
+export function resolveInitialSonnendachRoofType(
+  roof?: Pick<RoofArea, "source" | "tiltDeg">,
+): "flat" | "pitched" | undefined {
+  if (roof?.source !== "sonnendach") return undefined;
+  const slopeDeg = roof.tiltDeg;
+  if (!Number.isFinite(slopeDeg) || slopeDeg === undefined || slopeDeg < 0) {
+    return undefined;
+  }
+  return slopeDeg < 1 ? "flat" : "pitched";
 }
 
 function imageAdapterForRoof(roof: RoofArea, mppImage: number): ImageMetricAdapter {

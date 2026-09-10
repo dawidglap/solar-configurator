@@ -9,6 +9,7 @@ import {
 } from "../../src/lib/planning-core/advanced";
 import {
   applyRoofLayoutTransaction,
+  buildStandardSurfacePlanning,
   computeAdvancedPlanningPreview,
   createInitialAdvancedPlanning,
   createStandardPlanningDraft,
@@ -16,6 +17,7 @@ import {
   hasCommittedPanelsForRoof,
   materializeAdvancedPanels,
   replaceAdvancedDraftModule,
+  resolveInitialSonnendachRoofType,
   resolveRoofPlanningMode,
   setAdvancedMountingOrientation,
   updateDefaultFlatSystem,
@@ -91,6 +93,72 @@ function oldPanel(roofId: string, id: string): PanelInstance {
 test("A: a legacy roof resolves as Standard without creating persisted metadata", () => {
   assert.equal(resolveRoofPlanningMode({ persisted: undefined }), "standard");
   assert.equal(resolveSurfacePlanning(roof().surfacePlanning).status, "legacy-standard");
+});
+
+test("A1: unclassified Sonnendach roofs use the canonical one-degree type threshold", () => {
+  const cases = [
+    { slopeDeg: 0, expectedType: "flat", expectedMode: "advanced" },
+    { slopeDeg: 0.5, expectedType: "flat", expectedMode: "advanced" },
+    { slopeDeg: 1, expectedType: "pitched", expectedMode: "standard" },
+    { slopeDeg: 20, expectedType: "pitched", expectedMode: "standard" },
+  ] as const;
+
+  for (const item of cases) {
+    const imported = { source: "sonnendach" as const, tiltDeg: item.slopeDeg };
+    assert.equal(resolveInitialSonnendachRoofType(imported), item.expectedType);
+    assert.equal(
+      resolveRoofPlanningMode({ persisted: undefined, roof: imported }),
+      item.expectedMode,
+    );
+  }
+});
+
+test("A2: missing or invalid Sonnendach slope and manual roofs retain the legacy fallback", () => {
+  for (const imported of [
+    { source: "sonnendach" as const },
+    { source: "sonnendach" as const, tiltDeg: Number.NaN },
+    { source: "sonnendach" as const, tiltDeg: -1 },
+    { source: "manual" as const, tiltDeg: 0 },
+  ]) {
+    assert.equal(resolveInitialSonnendachRoofType(imported), undefined);
+    assert.equal(
+      resolveRoofPlanningMode({ persisted: undefined, roof: imported }),
+      "standard",
+    );
+  }
+});
+
+test("A3: explicit manual roof type wins over Sonnendach inference and survives JSON roundtrip", () => {
+  const importedFlat = { ...roof(), source: "sonnendach" as const, tiltDeg: 0.5 };
+  const explicitPitched = buildStandardSurfacePlanning({
+    roof: importedFlat,
+    moduleTilt: { mode: "inherit-roof" },
+  });
+  const reloadedPitched = JSON.parse(JSON.stringify(explicitPitched));
+  assert.equal(
+    resolveRoofPlanningMode({ persisted: reloadedPitched, roof: importedFlat }),
+    "standard",
+  );
+
+  const importedPitched = { ...roof(), source: "sonnendach" as const, tiltDeg: 20 };
+  const explicitFlat = JSON.parse(JSON.stringify(advancedConfig()));
+  assert.equal(
+    resolveRoofPlanningMode({ persisted: explicitFlat, roof: importedPitched }),
+    "advanced",
+  );
+  assert.equal(importedPitched.tiltDeg, 20);
+});
+
+test("A4: Sonnendach type resolution is isolated per roof", () => {
+  const roofs = [
+    { source: "sonnendach" as const, tiltDeg: 0 },
+    { source: "sonnendach" as const, tiltDeg: 1 },
+    { source: "sonnendach" as const, tiltDeg: 12 },
+  ];
+  assert.deepEqual(
+    roofs.map((item) => resolveRoofPlanningMode({ persisted: undefined, roof: item })),
+    ["advanced", "standard", "standard"],
+  );
 });
 
 test("B/C: entering Advanced creates only a landscape D-Dome draft with valid K2 row space", () => {

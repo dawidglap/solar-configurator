@@ -75,9 +75,15 @@ type Props = {
   roof: RoofArea;
   config: AdvancedSurfacePlanningV1;
   isDraft: boolean;
+  isImplicitInitialConfig?: boolean;
 };
 
-export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
+export default function AdvancedModulesPanel({
+  roof,
+  config,
+  isDraft,
+  isImplicitInitialConfig = false,
+}: Props) {
   const mppImage = usePlannerV2Store((state) => state.snapshot.mppImage);
   const zones = usePlannerV2Store((state) => state.zones);
   const snowGuards = usePlannerV2Store((state) => state.snowGuards);
@@ -247,8 +253,14 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
     const latest = usePlannerV2Store.getState();
     const latestRoof = latest.layers.find((item) => item.id === roof.id);
     const latestDraft = latest.roofPlanningDrafts[roof.id];
-    if (!latestRoof || latestDraft?.targetMode !== "advanced") return;
-    const latestConfig = withEffectiveAdvancedThermalLimits(latestDraft.config, latest.companyPlannerDefaults);
+    if (!latestRoof) return;
+    const unappliedConfig = latestDraft?.targetMode === "advanced"
+      ? latestDraft.config
+      : isImplicitInitialConfig
+        ? config
+        : undefined;
+    if (!unappliedConfig) return;
+    const latestConfig = withEffectiveAdvancedThermalLimits(unappliedConfig, latest.companyPlannerDefaults);
     const latestPreview = computeAdvancedPlanningPreview({
       roof: latestRoof,
       config: latestConfig,
@@ -273,7 +285,7 @@ export default function AdvancedModulesPanel({ roof, config, isDraft }: Props) {
     });
     setConfirmReplace(false);
     toast.success("Layout angewendet");
-  }, [commitRoofLayout, roof.id]);
+  }, [commitRoofLayout, config, isImplicitInitialConfig, roof.id]);
 
   const requestApply = () => {
     if (!canApply) return;
