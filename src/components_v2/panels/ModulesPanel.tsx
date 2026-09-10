@@ -24,6 +24,7 @@ import {
 import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
 import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
+import LayoutRegenerationDialog from "./LayoutRegenerationDialog";
 import PitchedRoofSlopeControl from "./PitchedRoofSlopeControl";
 import { formatRoofSlopeDirection, resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import { modulesWithRoofEdgeMargin } from "@/lib/planning/roofProperties";
@@ -1204,22 +1205,18 @@ export default function ModulesPanel() {
         onCancel={() => setPendingRoofType(null)}
         onConfirm={confirmRoofTypeChange}
       />
-      {pendingRegeneration && (
-        <div className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="regenerate-layout-title">
-          <div className="w-full max-w-sm rounded-xl border border-border bg-background p-4 shadow-xl">
-            <h2 id="regenerate-layout-title" className="text-sm font-semibold">Layout neu erstellen?</h2>
-            <p className="mt-2 text-xs text-muted-foreground">Manuelle Änderungen werden dabei ersetzt.</p>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" className="h-9 rounded-lg border border-border text-xs" onClick={() => setPendingRegeneration(null)}>Abbrechen</button>
-              <button type="button" className="h-9 rounded-lg bg-primary text-xs font-semibold text-primary-foreground" onClick={() => {
-                const pending = pendingRegeneration;
-                if (pending.kind === "standard") generateStandardMode(pending.mode);
-                else generateAdvancedMode(pending.mode);
-              }}>Neu erstellen</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LayoutRegenerationDialog
+        open={pendingRegeneration !== null}
+        roofLabel={selectedRoof?.name}
+        moduleCount={selectedRoof ? panels.filter((panel) => panel.roofId === selectedRoof.id).length : 0}
+        onCancel={() => setPendingRegeneration(null)}
+        onConfirm={() => {
+          const pending = pendingRegeneration;
+          if (!pending) return;
+          if (pending.kind === "standard") generateStandardMode(pending.mode);
+          else generateAdvancedMode(pending.mode);
+        }}
+      />
     </div>
   );
 }

@@ -210,8 +210,7 @@ test("customer UI is mode-explicit, direct and free of obsolete full-layout cont
   const toolbar = readFileSync(new URL("../../src/components_v2/layout/TopToolbar.tsx", import.meta.url), "utf8");
 
   assert.ok(modulesPanel.includes("requestModuleMode(orientation)"));
-  assert.ok(modulesPanel.includes("Layout neu erstellen?"));
-  assert.ok(modulesPanel.includes("Manuelle Änderungen werden dabei ersetzt."));
+  assert.ok(modulesPanel.includes("<LayoutRegenerationDialog"));
   assert.equal(modulesPanel.includes("Vorschau als Module platzieren"), false);
   assert.equal(modulesPanel.includes(">Belegung<"), false);
   assert.equal(modulesPanel.includes("Parallel zum First"), false);

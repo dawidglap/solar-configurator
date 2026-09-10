@@ -23,6 +23,7 @@ import { IoIosSave } from "react-icons/io";
 import ProjectStatsBar from "../ui/ProjectStatsBar";
 import TopbarAddressSearch from "./TopbarAddressSearch";
 import PlannerHelpDialog from "./PlannerHelpDialog";
+import LayoutRegenerationDialog from "../panels/LayoutRegenerationDialog";
 import {
   K2_D_DOME_SYSTEM_ID,
   resolveSurfacePlanning,
@@ -35,7 +36,6 @@ import {
 import {
   buildDirectAdvancedRoofLayout,
   buildDirectStandardRoofLayout,
-  hasManualRoofLayoutChanges,
   resolveInitialSonnendachRoofType,
   resolveRoofModuleMode,
   resolveStandardTiltInput,
@@ -281,6 +281,7 @@ export default function TopToolbar() {
   // ── Schneefang: Popup & Segmente (nur TopToolbar, lokal)
   const [isSnowDialogOpen, setIsSnowDialogOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [regenerationPending, setRegenerationPending] = useState(false);
   const [snowSegments, setSnowSegments] = useState<SnowSegment[]>([
     // di base un segmento da 10 m, giusto per non partire vuoto
     { id: "sg_init", lengthM: 0 },
@@ -494,6 +495,16 @@ export default function TopToolbar() {
       return false;
     }
 
+    if (!st.getSelectedPanel()) {
+      toast.error("Wähle ein Solarmodell aus dem Katalog aus.");
+      return false;
+    }
+
+    if (!st.snapshot?.mppImage) {
+      toast.error("Maßstab fehlt (mppImage im Snapshot).");
+      return false;
+    }
+
     const roof = st.layers.find((item) => item.id === st.selectedId);
     const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: st.panels });
     if (!mode) {
@@ -565,11 +576,6 @@ export default function TopToolbar() {
     const currentState = usePlannerV2Store.getState();
     const mode = resolveRoofModuleMode({ roof, roofId: selectedId, panels: currentState.panels });
     if (!mode) return;
-    if (
-      currentState.panels.some((panel) => panel.roofId === selectedId) &&
-      hasManualRoofLayoutChanges({ roof, panels: currentState.panels }) &&
-      !window.confirm("Layout neu erstellen?\n\nManuelle Änderungen werden dabei ersetzt.")
-    ) return;
     const runId = nanoid();
     if (mode === "portrait" || mode === "landscape") {
       const standardDraft = selectedPlanningDraft?.targetMode === "standard" ? selectedPlanningDraft : undefined;
@@ -596,6 +602,7 @@ export default function TopToolbar() {
         createPanelId: (index) => `${selectedId}_p_${runId}_${index}`,
       });
       if (!generated) return;
+      history.push("Layout neu erstellen");
       commitRoofLayout({ roofId: selectedId, panels: generated.panels, surfacePlanning: generated.config });
       setSelectedPanel(standardPanel.id);
       setModules(generated.modules);
@@ -612,12 +619,23 @@ export default function TopToolbar() {
         createPanelId: (index) => `${selectedId}_advanced_${runId}_${index}`,
       });
       if (!generated) return;
+      history.push("Layout neu erstellen");
       commitRoofLayout({ roofId: selectedId, panels: generated.panels, surfacePlanning: generated.config });
     }
 
     // torna allo strumento selezione
     setTool("select" as any);
     toast.success("Layout neu erstellt");
+  }
+
+  function requestLayoutRegeneration() {
+    if (!ensureModulesPrereqsForU()) return;
+    const state = usePlannerV2Store.getState();
+    if (state.panels.some((panel) => panel.roofId === state.selectedId)) {
+      setRegenerationPending(true);
+      return;
+    }
+    handleConvertToModules();
   }
 
   return (
@@ -679,9 +697,7 @@ export default function TopToolbar() {
         {/* Module-only */}
         <ActionBtn
           actionId="planner-regenerate-layout"
-          onClick={() => {
-            if (ensureModulesPrereqsForU()) handleConvertToModules();
-          }}
+          onClick={requestLayoutRegeneration}
           Icon={MdViewModule}
           label=""
           disabled={!canUseModulesTools || !selectedId}
@@ -693,7 +709,9 @@ export default function TopToolbar() {
           actionId="planner-fill-layout"
           active={false}
           onClick={() => {
-            if (ensureModulesPrereqsForF()) handleConvertToModules();
+            if (!ensureModulesPrereqsForF()) return;
+            endManualPlacement();
+            setTool(tool === "fill-area" ? "select" : "fill-area");
           }}
           Icon={MdBorderStyle}
           label=""
@@ -861,6 +879,17 @@ export default function TopToolbar() {
           onChooseTool={(nextTool) => setTool(nextTool)}
         />
       </div>
+      <LayoutRegenerationDialog
+        open={regenerationPending}
+        roofLabel={selectedRoof?.name}
+        moduleCount={panels.filter((panel) => panel.roofId === selectedId).length}
+        returnFocusId="planner-regenerate-layout"
+        onCancel={() => setRegenerationPending(false)}
+        onConfirm={() => {
+          setRegenerationPending(false);
+          handleConvertToModules();
+        }}
+      />
     </div>
   );
 }

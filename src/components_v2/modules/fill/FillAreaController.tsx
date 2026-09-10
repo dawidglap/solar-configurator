@@ -2,11 +2,21 @@
 
 import { useEffect, useRef } from 'react';
 import { nanoid } from 'nanoid';
+import toast from 'react-hot-toast';
 import { usePlannerV2Store } from '@/components_v2/state/plannerV2Store';
 import type { Pt, PanelInstance } from '@/types/planner';
 import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
+import { resolveSurfacePlanning } from '@/lib/planning-core/advanced';
+import { history } from '@/components_v2/state/history';
+import {
+  buildDirectAdvancedRoofLayout,
+  buildDirectStandardRoofLayout,
+  resolveRoofModuleMode,
+  resolveStandardTiltInput,
+  setAdvancedQuantityMode,
+} from '../advanced/advancedPlanningApplication';
+import { selectAdditiveFillPanels } from './additiveFill';
 
-import { overlapsReservedRect, overlapsSnowGuard } from '../../zones/utils';
 import { isPrimaryPointerButton } from '../../canvas/interactionPolicy';
 
 
@@ -54,16 +64,17 @@ function longestEdgeAngleDeg(pts: Pt[] | null | undefined) {
   return (best * 180) / Math.PI;
 }
 
-/* --------------------------- anti-float + fit --------------------------- */
-const EPS = 1e-6;
-
-/** Quanti pannelli (larghezza cell=panel, separati da gap) entrano in len,
- *  SENZA gap dopo l’ultimo. Esempi: len=panel -> 1; len=panel+gap+panel -> 2.
- */
-function fitCount(lenPx: number, panelPx: number, gapPx: number) {
-  if (lenPx + EPS < panelPx) return 0;
-  return 1 + Math.floor((lenPx - panelPx + EPS) / (panelPx + gapPx));
+function axisAlignedRect(a: Pt, b: Pt): Pt[] {
+  return [
+    { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) },
+    { x: Math.max(a.x, b.x), y: Math.min(a.y, b.y) },
+    { x: Math.max(a.x, b.x), y: Math.max(a.y, b.y) },
+    { x: Math.min(a.x, b.x), y: Math.max(a.y, b.y) },
+  ];
 }
+
+/* --------------------------- anti-float --------------------------- */
+const EPS = 1e-6;
 
 /* --------------------------- griglia condivisa --------------------------- */
 function gridBasics(angleDeg: number) {
@@ -156,74 +167,6 @@ function rectPolyFromAB(aW: Pt, bW: Pt, basics: ReturnType<typeof gridBasics>) {
   return [p1, p2, p3, p4];
 }
 
-/* --------------------------- riempimento stabile --------------------------- */
-function rectsForSelection(poly: Pt[], basics: ReturnType<typeof gridBasics>): ModRect[] {
-  if (!basics) return [];
-  const {
-    roof, panelW, panelH, gapX, gapY, cellW, cellH,
-    theta, O, minX, minY, maxX, maxY, startX, startY, angleDeg
-  } = basics;
-
-  // bbox (locale) del rettangolo selezionato (espresso come bordi modulo)
-  const L = poly.map((p) => worldToLocal(p, O, theta));
-  const x0 = Math.min(...L.map((p) => p.x));
-  const x1 = Math.max(...L.map((p) => p.x));
-  const y0 = Math.min(...L.map((p) => p.y));
-  const y1 = Math.max(...L.map((p) => p.y));
-
-  const selW = x1 - x0;
-  const selH = y1 - y0;
-
-  // ✅ conteggio che non “mangia” un gap dopo l’ultimo modulo
-  const nCols = fitCount(selW, panelW, gapX);
-  const nRows = fitCount(selH, panelH, gapY);
-  if (nCols <= 0 || nRows <= 0) return [];
-
-  // primo indice rail (centri) allineato al lato min, rispetto ai rail globali
-  const k0 = Math.ceil(((x0 + panelW / 2) - startX - EPS) / cellW);
-  const r0 = Math.ceil(((y0 + panelH / 2) - startY - EPS) / cellH);
-
-  const res: ModRect[] = [];
-  for (let r = 0; r < nRows; r++) {
-    const cyL = startY + (r0 + r) * cellH;
-    if (cyL < minY + panelH / 2 - EPS || cyL > maxY - panelH / 2 + EPS) continue;
-
-    for (let k = 0; k < nCols; k++) {
-      const cxL = startX + (k0 + k) * cellW;
-      if (cxL < minX + panelW / 2 - EPS || cxL > maxX - panelW / 2 + EPS) continue;
-
-      const Cw = localToWorld({ x: cxL, y: cyL }, O, theta);
-
-       // 1) Hindernisse / zone riservate
-      if (
-        overlapsReservedRect(
-          { cx: Cw.x, cy: Cw.y, w: panelW, h: panelH, angleDeg },
-          roof.id,
-          1
-        )
-      ) {
-        continue;
-      }
-
-      // 2) Schneefang / linea neve
-      if (
-        overlapsSnowGuard(
-          { cx: Cw.x, cy: Cw.y, wPx: panelW, hPx: panelH, angleDeg },
-          roof.id,
-          1      // spessore virtuale della linea neve in px
-        )
-      ) {
-        continue;
-      }
-
-      // se passa entrambi i filtri → lo teniamo
-      res.push({ cx: Cw.x, cy: Cw.y, wPx: panelW, hPx: panelH, angleDeg });
-
-    }
-  }
-  return res;
-}
-
 /* -------------------------------- component -------------------------------- */
 export default function FillAreaController({ stageRef, toImgCoords, onDraftChange, cancelVersion = 0 }: Props) {
   const step = usePlannerV2Store((s) => s.step);
@@ -231,10 +174,11 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
   const layers = usePlannerV2Store((s) => s.layers);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
   const modules = usePlannerV2Store((s) => s.modules);
-  const addPanelsForRoof = usePlannerV2Store((s) => (s as any).addPanelsForRoof);
+  const appendPanelsToRoof = usePlannerV2Store((s) => s.appendPanelsToRoof);
 
   const draftRef = useRef<{ a: Pt; b: Pt } | null>(null);
   const drawingRef = useRef(false);
+  const candidatesRef = useRef<PanelInstance[]>([]);
 
   useEffect(() => {
     const st = stageRef.current?.getStage?.();
@@ -258,6 +202,84 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       return baseCanvasDeg + (modules.gridAngleDeg || 0);
     };
 
+    const buildCandidates = (): { mode: ReturnType<typeof resolveRoofModuleMode>; panels: PanelInstance[] } => {
+      const state = usePlannerV2Store.getState();
+      const roof = state.layers.find((candidate) => candidate.id === state.selectedId);
+      const mppImage = state.snapshot.mppImage;
+      const panel = state.getSelectedPanel();
+      const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: state.panels });
+      if (!roof || !mppImage || !panel || !mode) return { mode, panels: [] };
+      const runId = `fill-${nanoid()}`;
+      const draft = state.roofPlanningDrafts[roof.id];
+      const resolved = resolveSurfacePlanning(roof.surfacePlanning);
+
+      if (mode === 'portrait' || mode === 'landscape') {
+        const standardDraft = draft?.targetMode === 'standard' ? draft : undefined;
+        const selectedPanel = standardDraft
+          ? state.catalogPanels.find((candidate) => candidate.id === standardDraft.panelSpecId)
+          : panel;
+        if (!selectedPanel) return { mode, panels: [] };
+        const generated = buildDirectStandardRoofLayout({
+          roof,
+          panel: selectedPanel,
+          modules: standardDraft?.modules ?? state.modules,
+          orientation: mode,
+          moduleTilt: standardDraft?.moduleTilt ?? resolveStandardTiltInput(roof.surfacePlanning),
+          mppImage,
+          zones: state.zones,
+          snowGuards: state.snowGuards,
+          thermalFieldLimits: standardDraft?.thermalFieldLimits ??
+            (resolved.status === 'supported-standard' ? resolved.config.thermalFieldLimits : undefined),
+          createPanelId: (index) => `${roof.id}_${runId}_${index}`,
+        });
+        return { mode, panels: generated?.panels ?? [] };
+      }
+
+      const config = draft?.targetMode === 'advanced'
+        ? draft.config
+        : resolved.status === 'supported-advanced'
+          ? resolved.config
+          : undefined;
+      if (!config) return { mode, panels: [] };
+      const generated = buildDirectAdvancedRoofLayout({
+        roof,
+        // F fills available grid positions; a persisted fixed quantity must
+        // not artificially restrict the additive candidate pool.
+        config: setAdvancedQuantityMode({ config, mode: 'auto' }),
+        mppImage,
+        zones: state.zones,
+        snowGuards: state.snowGuards,
+        layoutRunId: runId,
+        createPanelId: (index) => `${roof.id}_${runId}_${index}`,
+      });
+      return { mode, panels: generated?.panels ?? [] };
+    };
+
+    const selectionFor = (a: Pt, b: Pt, mode: ReturnType<typeof resolveRoofModuleMode>) => {
+      if (mode === 'portrait' || mode === 'landscape') {
+        return rectPolyFromAB(a, b, gridBasics(getAngleDeg()));
+      }
+      return axisAlignedRect(a, b);
+    };
+
+    const additivePanelsFor = (a: Pt, b: Pt) => {
+      const state = usePlannerV2Store.getState();
+      const roofId = state.selectedId;
+      const roof = state.layers.find((candidate) => candidate.id === roofId);
+      const mode = resolveRoofModuleMode({ roof, roofId, panels: state.panels });
+      if (!roofId || !mode) return { poly: axisAlignedRect(a, b), panels: [] as PanelInstance[] };
+      const poly = selectionFor(a, b, mode);
+      return {
+        poly,
+        panels: selectAdditiveFillPanels({
+          roofId,
+          areaPolygon: poly,
+          candidates: candidatesRef.current,
+          existingPanels: state.panels,
+        }),
+      };
+    };
+
     const handleMouseMove = () => {
       if (!drawingRef.current || !draftRef.current) return;
       const p = getMouseImg();
@@ -267,9 +289,11 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       const b = p;
       draftRef.current = { a, b };
 
-      const basics = gridBasics(getAngleDeg());
-      const poly = rectPolyFromAB(a, b, basics);
-      const rects = rectsForSelection(poly, basics);
+      const next = additivePanelsFor(a, b);
+      const poly = next.poly;
+      const rects = next.panels.map((panel) => ({
+        cx: panel.cx, cy: panel.cy, wPx: panel.wPx, hPx: panel.hPx, angleDeg: panel.angleDeg,
+      }));
       onDraftChange?.({ a, b, poly, rects });
     };
 
@@ -282,10 +306,12 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       if (!drawingRef.current) {
         drawingRef.current = true;
         draftRef.current = { a: p, b: p };
-
-        const basics = gridBasics(getAngleDeg());
-        const poly = rectPolyFromAB(p, p, basics);
-        const rects = rectsForSelection(poly, basics);
+        candidatesRef.current = buildCandidates().panels;
+        const next = additivePanelsFor(p, p);
+        const poly = next.poly;
+        const rects = next.panels.map((panel) => ({
+          cx: panel.cx, cy: panel.cy, wPx: panel.wPx, hPx: panel.hPx, angleDeg: panel.angleDeg,
+        }));
         onDraftChange?.({ a: p, b: p, poly, rects });
         return;
       }
@@ -295,31 +321,22 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
         const a = draftRef.current.a;
         const b = draftRef.current.b;
 
-        const basics = gridBasics(getAngleDeg());
-        if (!basics) {
+        const state = usePlannerV2Store.getState();
+        const roofId = state.selectedId;
+        if (!roofId) {
           drawingRef.current = false;
           draftRef.current = null;
           onDraftChange?.(null);
           return;
         }
-
-        const poly = rectPolyFromAB(a, b, basics);
-        const rects = rectsForSelection(poly, basics);
-
-        const items: PanelInstance[] = rects.map((r) => ({
-          id: nanoid(),
-          roofId: basics.roof.id,
-          cx: r.cx,
-          cy: r.cy,
-          wPx: r.wPx,
-          hPx: r.hPx,
-          angleDeg: r.angleDeg,
-          orientation: basics.s.modules.orientation,
-          panelId: basics.panel!.id,
-          locked: false,
-        }));
-
-        addPanelsForRoof?.(basics.roof.id, items);
+        const items = additivePanelsFor(a, b).panels;
+        if (items.length > 0) {
+          history.push('Fläche füllen');
+          appendPanelsToRoof({ roofId, panels: items });
+          toast.success(`${items.length} ${items.length === 1 ? 'Modul hinzugefügt' : 'Module hinzugefügt'}`);
+        } else {
+          toast('In diesem Bereich können keine weiteren Module platziert werden.');
+        }
 
         // reset
         drawingRef.current = false;
@@ -335,9 +352,10 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       st.off(ns);
       drawingRef.current = false;
       draftRef.current = null;
+      candidatesRef.current = [];
       onDraftChange?.(null);
     };
-  }, [stageRef, step, tool, layers, selectedId, modules.gridAngleDeg, toImgCoords, onDraftChange, addPanelsForRoof, cancelVersion]);
+  }, [stageRef, step, tool, layers, selectedId, modules.gridAngleDeg, toImgCoords, onDraftChange, appendPanelsToRoof, cancelVersion]);
 
   return null;
 }

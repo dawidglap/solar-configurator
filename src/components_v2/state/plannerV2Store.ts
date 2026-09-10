@@ -262,6 +262,7 @@ type PlannerV2State = {
     panels: PanelInstance[];
     surfacePlanning?: SurfacePlanningV1;
   }) => void;
+  appendPanelsToRoof: (input: { roofId: string; panels: PanelInstance[] }) => void;
   regroupThermalFieldsForRoofs: (roofIds: string[]) => void;
 
   detectedRoofs: DetectedRoof[];
@@ -632,6 +633,35 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             ),
             roofPlanningDrafts,
           };
+        }),
+      appendPanelsToRoof: ({ roofId, panels: addedPanels }) =>
+        set((state) => {
+          if (addedPanels.length === 0) return state;
+          let panels = [
+            ...state.panels,
+            ...addedPanels.map((panel) => ({ ...panel, roofId })),
+          ];
+          const roof = state.layers.find((candidate) => candidate.id === roofId);
+          const planning = resolveSurfacePlanning(roof?.surfacePlanning);
+          if (roof && state.snapshot.mppImage && state.snapshot.mppImage > 0) {
+            if (planning.status === "supported-advanced") {
+              panels = regroupK2PanelsAfterManualAdd({
+                panels,
+                roof,
+                config: planning.config,
+                mppImage: state.snapshot.mppImage,
+              });
+            } else if (planning.status === "supported-standard" && planning.config.thermalFieldLimits) {
+              panels = regroupStandardPanelsAfterManualCommit({
+                panels,
+                roof,
+                modules: state.modules,
+                mppImage: state.snapshot.mppImage,
+                limits: planning.config.thermalFieldLimits,
+              });
+            }
+          }
+          return { panels };
         }),
 
       detectedRoofs: [],
