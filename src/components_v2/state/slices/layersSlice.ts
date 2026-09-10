@@ -41,7 +41,7 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
                 const planning = getRoofSurfacePlanning([next], next.id);
                 const roofKind = planning.status === 'supported-advanced'
                     ? planning.config.surface.kind
-                    : 'pitched';
+                    : next.roofKind ?? 'pitched';
                 const referenceEdgeIndex = resolveRoofReferenceEdgeIndex({
                     points: next.points,
                     requestedIndex: next.referenceEdgeIndex,

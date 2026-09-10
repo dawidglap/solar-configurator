@@ -66,6 +66,7 @@ import {
 import { resolveRoofFallAzimuth } from "../../roof/roofOrientation";
 
 export type AdvancedMountingOrientation = "south" | "east-west";
+export type RoofModuleMode = "portrait" | "landscape" | "south" | "east-west";
 
 export const DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG = { min: 8.5, max: 90 } as const;
 export const DEFAULT_FLAT_MODULE_GAP_M = 0.018;
@@ -345,6 +346,8 @@ export function resolveStandardTiltInput(
 export function buildStandardSurfacePlanning(input: {
   roof: RoofArea;
   moduleTilt: StandardModuleTiltInput;
+  moduleLayoutMode?: "portrait" | "landscape";
+  generatedLayoutFingerprint?: string;
   thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
 }): StandardSurfacePlanningV1 {
   return {
@@ -358,6 +361,10 @@ export function buildStandardSurfacePlanning(input: {
         : {}),
     },
     moduleTilt: input.moduleTilt,
+    ...(input.moduleLayoutMode ? { moduleLayoutMode: input.moduleLayoutMode } : {}),
+    ...(input.generatedLayoutFingerprint
+      ? { generatedLayoutFingerprint: input.generatedLayoutFingerprint }
+      : {}),
     ...(input.thermalFieldLimits ? { thermalFieldLimits: input.thermalFieldLimits } : {}),
   };
 }
@@ -815,11 +822,13 @@ export function alignAdvancedLayoutParallelToRoofEdge(input: {
 export function resolveRoofPlanningMode(input: {
   persisted: unknown;
   draft?: RoofPlanningDraft;
-  roof?: Pick<RoofArea, "source" | "tiltDeg">;
+  roof?: Pick<RoofArea, "source" | "tiltDeg" | "roofKind">;
 }): "standard" | "advanced" {
   if (input.draft) return input.draft.targetMode;
   const persisted = resolveSurfacePlanning(input.persisted);
   if (persisted.status === "legacy-standard") {
+    if (input.roof?.roofKind === "flat" || input.roof?.roofKind === "green") return "advanced";
+    if (input.roof?.roofKind === "pitched") return "standard";
     return resolveInitialSonnendachRoofType(input.roof) === "flat"
       ? "advanced"
       : "standard";
@@ -834,14 +843,89 @@ export function resolveRoofPlanningMode(input: {
  * imported source data. Explicit surfacePlanning remains authoritative.
  */
 export function resolveInitialSonnendachRoofType(
-  roof?: Pick<RoofArea, "source" | "tiltDeg">,
+  roof?: Pick<RoofArea, "source" | "tiltDeg" | "roofKind">,
 ): "flat" | "pitched" | undefined {
+  if (roof?.roofKind === "flat") return "flat";
+  if (roof?.roofKind === "pitched") return "pitched";
   if (roof?.source !== "sonnendach") return undefined;
   const slopeDeg = roof.tiltDeg;
   if (!Number.isFinite(slopeDeg) || slopeDeg === undefined || slopeDeg < 0) {
     return undefined;
   }
   return slopeDeg < 1 ? "flat" : "pitched";
+}
+
+/**
+ * Resolves only an explicitly persisted (or safely inferable legacy) module
+ * mode. An empty roof deliberately resolves to undefined, even though absence
+ * of surfacePlanning still means legacy Standard for geometry compatibility.
+ */
+export function resolveRoofModuleMode(input: {
+  roof?: Pick<RoofArea, "surfacePlanning">;
+  panels: readonly Pick<PanelInstance, "roofId" | "orientation" | "advanced">[];
+  roofId?: string;
+}): RoofModuleMode | undefined {
+  if (!input.roof || !input.roofId) return undefined;
+  const persisted = resolveSurfacePlanning(input.roof.surfacePlanning);
+  if (persisted.status === "supported-advanced") {
+    const systemId = persisted.config.advanced.system.systemId;
+    if (systemId === K2_S_DOME_SYSTEM_ID || systemId === GENERIC_SOUTH_SYSTEM_ID) return "south";
+    if (systemId === K2_D_DOME_SYSTEM_ID || systemId === GENERIC_EAST_WEST_SYSTEM_ID) return "east-west";
+    return undefined;
+  }
+  if (persisted.status === "supported-standard" && persisted.config.moduleLayoutMode) {
+    return persisted.config.moduleLayoutMode;
+  }
+  const roofPanels = input.panels.filter((panel) => panel.roofId === input.roofId);
+  if (!roofPanels.length || roofPanels.some((panel) => panel.advanced)) return undefined;
+  const orientations = new Set(roofPanels.map((panel) => panel.orientation));
+  return orientations.size === 1 ? roofPanels[0].orientation : undefined;
+}
+
+function stableNumber(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(6) : "invalid";
+}
+
+/** Compact deterministic audit signature; never used as geometry input. */
+export function fingerprintRoofPanels(
+  panels: readonly Pick<PanelInstance, "id" | "roofId" | "cx" | "cy" | "wPx" | "hPx" | "angleDeg" | "orientation" | "panelId" | "advanced">[],
+  roofId: string,
+): string {
+  const canonical = panels
+    .filter((panel) => panel.roofId === roofId)
+    .map((panel) => [
+      panel.id,
+      stableNumber(panel.cx),
+      stableNumber(panel.cy),
+      stableNumber(panel.wPx),
+      stableNumber(panel.hPx),
+      stableNumber(panel.angleDeg),
+      panel.orientation,
+      panel.panelId,
+      panel.advanced?.blockKey ?? "",
+      panel.advanced?.slotIndex ?? "",
+    ].join("|"))
+    .sort()
+    .join("\n");
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < canonical.length; index += 1) {
+    hash ^= canonical.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}:${canonical.length}`;
+}
+
+export function hasManualRoofLayoutChanges(input: {
+  roof: Pick<RoofArea, "id" | "surfacePlanning">;
+  panels: readonly PanelInstance[];
+}): boolean {
+  const resolved = resolveSurfacePlanning(input.roof.surfacePlanning);
+  const baseline = resolved.status === "supported-standard" || resolved.status === "supported-advanced"
+    ? resolved.config.generatedLayoutFingerprint
+    : undefined;
+  // Existing documents without a baseline are protected conservatively.
+  if (!baseline) return input.panels.some((panel) => panel.roofId === input.roof.id);
+  return baseline !== fingerprintRoofPanels(input.panels, input.roof.id);
 }
 
 function imageAdapterForRoof(roof: RoofArea, mppImage: number): ImageMetricAdapter {
@@ -1468,6 +1552,17 @@ export function applyRoofLayoutTransaction<T extends RoofArea>(input: {
   };
 }
 
+export function withGeneratedLayoutFingerprint<T extends SurfacePlanningV1>(input: {
+  config: T;
+  panels: readonly PanelInstance[];
+  roofId: string;
+}): T {
+  return {
+    ...input.config,
+    generatedLayoutFingerprint: fingerprintRoofPanels(input.panels, input.roofId),
+  };
+}
+
 export function hasCommittedPanelsForRoof(
   panels: readonly Pick<PanelInstance, "roofId">[],
   roofId: string,
@@ -1589,4 +1684,89 @@ export function computeStandardDraftPanels(input: {
         }
       : {}),
   }));
+}
+
+export function buildDirectStandardRoofLayout(input: {
+  roof: RoofArea;
+  panel: PanelSpec;
+  modules: ModulesConfig;
+  orientation: "portrait" | "landscape";
+  moduleTilt: StandardModuleTiltInput;
+  mppImage: number;
+  zones: Parameters<typeof selectLegacyStandardObstacles>[0];
+  snowGuards: Parameters<typeof selectLegacyStandardObstacles>[1];
+  thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
+  createPanelId: (index: number) => string;
+}): { panels: PanelInstance[]; config: StandardSurfacePlanningV1; modules: ModulesConfig } | null {
+  const modules = alignStandardModulesParallelToFirst({
+    modules: {
+      ...input.modules,
+      orientation: input.orientation,
+      coverageRatio: 1,
+      showGrid: false,
+    },
+    roofId: input.roof.id,
+  });
+  const panels = computeStandardDraftPanels({
+    roof: input.roof,
+    panel: input.panel,
+    modules,
+    mppImage: input.mppImage,
+    zones: input.zones,
+    snowGuards: input.snowGuards,
+    thermalFieldLimits: input.thermalFieldLimits,
+    panelMetadata: buildStandardPanelMetadata({
+      roofSlopeDeg: input.roof.tiltDeg,
+      moduleTilt: input.moduleTilt,
+    }),
+    createPanelId: input.createPanelId,
+  });
+  if (!panels.length) return null;
+  const config = withGeneratedLayoutFingerprint({
+    roofId: input.roof.id,
+    panels,
+    config: buildStandardSurfacePlanning({
+      roof: input.roof,
+      moduleTilt: input.moduleTilt,
+      moduleLayoutMode: input.orientation,
+      thermalFieldLimits: input.thermalFieldLimits,
+    }),
+  });
+  return { panels, config, modules };
+}
+
+export function buildDirectAdvancedRoofLayout(input: {
+  roof: RoofArea;
+  config: AdvancedSurfacePlanningV1;
+  mppImage: number;
+  zones: PreviewObstacleZone[];
+  snowGuards: PreviewSnowGuard[];
+  layoutRunId: string;
+  createPanelId: (index: number) => string;
+}): { panels: PanelInstance[]; config: AdvancedSurfacePlanningV1; preview: AdvancedPlanningPreview } | null {
+  const preview = computeAdvancedPlanningPreview({
+    roof: input.roof,
+    config: input.config,
+    mppImage: input.mppImage,
+    zones: input.zones,
+    snowGuards: input.snowGuards,
+  });
+  if (!preview.valid || preview.moduleCount === 0) return null;
+  const panels = materializeAdvancedPanels({
+    roofId: input.roof.id,
+    config: input.config,
+    preview,
+    layoutRunId: input.layoutRunId,
+    createPanelId: input.createPanelId,
+  });
+  if (!panels.length) return null;
+  return {
+    panels,
+    preview,
+    config: withGeneratedLayoutFingerprint({
+      roofId: input.roof.id,
+      panels,
+      config: input.config,
+    }),
+  };
 }

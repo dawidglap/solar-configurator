@@ -22,21 +22,20 @@ import {
   resolveCompanyThermalFieldLimits,
 } from "@/lib/planning/companyPlannerDefaults";
 import {
-  alignAdvancedLayoutParallelToRoofEdge,
   computeAdvancedPlanningPreview,
+  type AdvancedPlanningPreview,
   DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG,
   getAdvancedRowSpaceM,
   hasCommittedPanelsForRoof,
   materializeAdvancedPanels,
   replaceAdvancedDraftModule,
   setAdvancedFixedQuantity,
-  setAdvancedMountingOrientation,
   setAdvancedQuantityMode,
   updateDefaultFlatSystem,
+  withGeneratedLayoutFingerprint,
 } from "./advancedPlanningApplication";
 import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
 import { buildGuidedPlanningResult } from "./guidedPlanningPresentation";
-import ModulePreviewVisibilityToggle from "../ModulePreviewVisibilityToggle";
 
 const inputClass =
   "glass-input h-8 w-full rounded-lg px-2 text-[11px] focus:ring-1 focus:ring-primary/40";
@@ -50,6 +49,22 @@ const fmt = (value: number, digits = 2) =>
   }).format(value);
 
 const normalizeAzimuth = (value: number) => ((value % 360) + 360) % 360;
+
+const UNSELECTED_MODE_PREVIEW: AdvancedPlanningPreview = {
+  valid: false,
+  errors: [],
+  warnings: [],
+  blocks: [],
+  modules: [],
+  montageFields: [],
+  montageFieldCount: 0,
+  thermalFields: [],
+  thermalFieldCount: 0,
+  blockCount: 0,
+  moduleCount: 0,
+  derived: null,
+  quantity: null,
+};
 
 function MountingChoiceGraphic({ opposing }: { opposing: boolean }) {
   return (
@@ -76,6 +91,8 @@ type Props = {
   config: AdvancedSurfacePlanningV1;
   isDraft: boolean;
   isImplicitInitialConfig?: boolean;
+  activeMode?: "south" | "east-west";
+  onSelectMode: (mode: "south" | "east-west") => void;
 };
 
 export default function AdvancedModulesPanel({
@@ -83,6 +100,8 @@ export default function AdvancedModulesPanel({
   config,
   isDraft,
   isImplicitInitialConfig = false,
+  activeMode,
+  onSelectMode,
 }: Props) {
   const mppImage = usePlannerV2Store((state) => state.snapshot.mppImage);
   const zones = usePlannerV2Store((state) => state.zones);
@@ -163,15 +182,16 @@ export default function AdvancedModulesPanel({
     [companyPlannerDefaults, config],
   );
   const preview = React.useMemo(
-    () =>
-      computeAdvancedPlanningPreview({
+    () => activeMode
+      ? computeAdvancedPlanningPreview({
         roof,
         config: effectiveConfig,
         mppImage: mppImage ?? 0,
         zones,
         snowGuards,
-      }),
-    [roof, effectiveConfig, mppImage, zones, snowGuards],
+      })
+      : UNSELECTED_MODE_PREVIEW,
+    [activeMode, roof, effectiveConfig, mppImage, zones, snowGuards],
   );
   const nominalTiltDeg = "nominalTiltDeg" in system ? system.nominalTiltDeg : 10;
   const moduleGapM = "moduleGapX" in system ? system.moduleGapX ?? 0.018 : 0.018;
@@ -281,7 +301,11 @@ export default function AdvancedModulesPanel({
     commitRoofLayout({
       roofId: roof.id,
       panels: nextPanels,
-      surfacePlanning: latestConfig,
+      surfacePlanning: withGeneratedLayoutFingerprint({
+        roofId: roof.id,
+        panels: nextPanels,
+        config: latestConfig,
+      }),
     });
     setConfirmReplace(false);
     toast.success("Layout angewendet");
@@ -344,6 +368,27 @@ export default function AdvancedModulesPanel({
     );
   }
 
+  if (!activeMode) {
+    return (
+      <div className="space-y-3">
+        <section className="space-y-2 border-b border-border/60 pb-4">
+          <h3 className={labelClass}>Aufständerung</h3>
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Aufständerung">
+            <button type="button" aria-pressed={false} className="flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border border-border/70 bg-muted/10 px-2 py-2 text-[11px] font-semibold text-muted-foreground hover:border-primary/40" onClick={() => onSelectMode("south")}>
+              <MountingChoiceGraphic opposing={false} /><span>Süd</span><span className="text-[9px] font-normal opacity-75">Standardsystem</span>
+            </button>
+            <button type="button" aria-pressed={false} className="flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border border-border/70 bg-muted/10 px-2 py-2 text-[11px] font-semibold text-muted-foreground hover:border-primary/40" onClick={() => onSelectMode("east-west")}>
+              <MountingChoiceGraphic opposing /><span>Ost-West</span><span className="text-[9px] font-normal opacity-75">Standardsystem</span>
+            </button>
+          </div>
+        </section>
+        <p className="rounded-lg border border-border/70 bg-muted/15 p-3 text-[10px] text-muted-foreground">
+          Wähle Süd oder Ost-West. Danach werden die Module direkt auf dieser Dachfläche platziert.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <section className="space-y-2 border-b border-border/60 pb-4">
@@ -351,19 +396,9 @@ export default function AdvancedModulesPanel({
         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Aufständerung">
           <button
             type="button"
-            aria-pressed={orientation === "south"}
-            className={`flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] font-semibold transition ${orientation === "south" ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/25" : "border-border/70 bg-muted/10 text-muted-foreground hover:border-primary/40"}`}
-            onClick={() => {
-              const next = setAdvancedMountingOrientation({ config, orientation: "south" });
-              update({
-                ...next,
-                thermalFieldLimits: {
-                  kind: "flat-block",
-                  maxRailDirectionM: thermalLimits.maxRailDirectionM,
-                  thermalSeparationGapM: thermalLimits.thermalSeparationGapM,
-                },
-              });
-            }}
+            aria-pressed={activeMode === "south"}
+            className={`flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] font-semibold transition ${activeMode === "south" ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/25" : "border-border/70 bg-muted/10 text-muted-foreground hover:border-primary/40"}`}
+            onClick={() => onSelectMode("south")}
           >
             <MountingChoiceGraphic opposing={false} />
             <span>Süd</span>
@@ -371,22 +406,9 @@ export default function AdvancedModulesPanel({
           </button>
           <button
             type="button"
-            aria-pressed={orientation === "east-west"}
-            className={`flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] font-semibold transition ${orientation === "east-west" ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/25" : "border-border/70 bg-muted/10 text-muted-foreground hover:border-primary/40"}`}
-            onClick={() => {
-              const next = setAdvancedMountingOrientation({ config, orientation: "east-west" });
-              update({
-                ...next,
-                thermalFieldLimits: {
-                  kind: "flat-block",
-                  maxRailDirectionM: thermalLimits.maxRailDirectionM,
-                  thermalSeparationGapM: thermalLimits.thermalSeparationGapM,
-                  maxModuleLongSideDirectionM:
-                    thermalLimits.maxModuleLongSideDirectionM ??
-                    companyPlannerDefaults.thermalSeparations.flatEastWest.maxSecondaryFieldLengthM,
-                },
-              });
-            }}
+            aria-pressed={activeMode === "east-west"}
+            className={`flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] font-semibold transition ${activeMode === "east-west" ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/25" : "border-border/70 bg-muted/10 text-muted-foreground hover:border-primary/40"}`}
+            onClick={() => onSelectMode("east-west")}
           >
             <MountingChoiceGraphic opposing />
             <span>Ost-West</span>
@@ -440,14 +462,6 @@ export default function AdvancedModulesPanel({
             </label>
           )}
         </div>
-      </section>
-
-      <section className="space-y-2 border-b border-border/60 pb-4">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className={labelClass}>Layout</h3>
-          <span className="text-[10px] text-muted-foreground">Querformat · System</span>
-        </div>
-        <ModulePreviewVisibilityToggle />
       </section>
 
       <section className="space-y-3 border-b border-border/60 pb-4">
@@ -509,13 +523,6 @@ export default function AdvancedModulesPanel({
           <h3 className={labelClass}>Ausrichtung</h3>
           <button type="button" className="text-[10px] font-medium text-primary hover:underline" onClick={openManualOrientation}>Manuell</button>
         </div>
-        <button
-          type="button"
-          className="h-10 w-full rounded-xl border border-primary/40 bg-primary/5 text-[11px] font-semibold text-primary hover:bg-primary/10"
-          onClick={() => update(alignAdvancedLayoutParallelToRoofEdge({ config, roof, mppImage: mppImage ?? 0 }))}
-        >
-          Parallel zur Dachkante
-        </button>
         <div className="flex items-center justify-between rounded-lg bg-muted/15 px-3 py-2 text-[10px]">
           <span className="text-muted-foreground">Modulausrichtung</span>
           <strong>{isOpposingSystem ? `${fmt(azimuth, 0)}° / ${fmt(normalizeAzimuth(azimuth + 180), 0)}°` : `${fmt(azimuth, 0)}°`}</strong>

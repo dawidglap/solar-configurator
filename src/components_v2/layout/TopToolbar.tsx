@@ -33,12 +33,16 @@ import {
   useManualPlacementSession,
 } from "../modules/manualPlacementSession";
 import {
-  buildStandardPanelMetadata,
-  buildStandardSurfacePlanning,
-  computeStandardDraftPanels,
+  buildDirectAdvancedRoofLayout,
+  buildDirectStandardRoofLayout,
+  hasManualRoofLayoutChanges,
+  resolveInitialSonnendachRoofType,
+  resolveRoofModuleMode,
   resolveStandardTiltInput,
 } from "../modules/advanced/advancedPlanningApplication";
 import { resolveCompanyThermalFieldLimits } from "@/lib/planning/companyPlannerDefaults";
+import { withEffectiveAdvancedThermalLimits } from "../modules/advanced/advancedThermalDefaults";
+import { nanoid } from "nanoid";
 
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
@@ -141,6 +145,7 @@ export default function TopToolbar() {
   const layers = usePlannerV2Store((s) => s.layers);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
   const modules = usePlannerV2Store((s) => s.modules);
+  const panels = usePlannerV2Store((s) => s.panels);
   const setModules = usePlannerV2Store((s) => s.setModules);
   const commitRoofLayout = usePlannerV2Store((s) => s.commitRoofLayout);
   const snapshot = usePlannerV2Store((s) => s.snapshot);
@@ -167,14 +172,23 @@ export default function TopToolbar() {
           persistedSurfacePlanning.status === "supported-advanced"
         ? persistedSurfacePlanning.config
         : undefined;
+  const activeModuleMode = resolveRoofModuleMode({
+    roof: selectedRoof,
+    roofId: selectedId,
+    panels,
+  });
   const manualPlacementKind = displayedAdvancedConfig
+    && (activeModuleMode === "south" || activeModuleMode === "east-west")
     ? "advanced-block"
-    : selectedPlanningDraft?.targetMode === "standard" ||
-        persistedSurfacePlanning.effectiveMode === "standard"
+    : activeModuleMode === "portrait" || activeModuleMode === "landscape"
       ? "standard-module"
       : undefined;
   const manualPlacementLabel =
-    displayedAdvancedConfig?.advanced.system.systemId === K2_D_DOME_SYSTEM_ID
+    !activeModuleMode
+      ? selectedRoof && resolveInitialSonnendachRoofType(selectedRoof) === "flat"
+        ? "Zuerst Süd oder Ost-West wählen"
+        : "Zuerst Hochformat oder Querformat wählen"
+      : displayedAdvancedConfig?.advanced.system.systemId === K2_D_DOME_SYSTEM_ID
       ? "Einzelnen K2 Block platzieren"
       : "Einzelnes Modul platzieren";
   const manualPlacementActive = Boolean(
@@ -291,6 +305,7 @@ export default function TopToolbar() {
     disabled,
     tooltipLabel,
     tooltipKeys,
+    actionId,
   }: {
     active?: boolean;
     onClick: () => void;
@@ -299,6 +314,7 @@ export default function TopToolbar() {
     disabled?: boolean;
     tooltipLabel?: string;
     tooltipKeys?: (string | React.ReactNode)[];
+    actionId?: string;
   }) {
     const ref = useRef<HTMLButtonElement>(null);
     const { visible, pos, show, hide } = useBottomTooltip(ref);
@@ -330,6 +346,7 @@ export default function TopToolbar() {
     return (
       <>
         <button
+          id={actionId}
           ref={ref}
           type="button"
           onMouseEnter={tooltipLabel ? show : undefined}
@@ -449,6 +466,15 @@ export default function TopToolbar() {
       return false;
     }
 
+    const roof = st.layers.find((item) => item.id === st.selectedId);
+    const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: st.panels });
+    if (!mode) {
+      toast.error(resolveInitialSonnendachRoofType(roof) === "flat"
+        ? "Zuerst Süd oder Ost-West wählen"
+        : "Zuerst Hochformat oder Querformat wählen");
+      return false;
+    }
+
     return true;
   }
 
@@ -465,6 +491,15 @@ export default function TopToolbar() {
       toast.error(
         "Wähle zuerst eine Dachfläche aus, bevor du eine Fläche füllst.",
       );
+      return false;
+    }
+
+    const roof = st.layers.find((item) => item.id === st.selectedId);
+    const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: st.panels });
+    if (!mode) {
+      toast.error(resolveInitialSonnendachRoofType(roof) === "flat"
+        ? "Zuerst Süd oder Ost-West wählen"
+        : "Zuerst Hochformat oder Querformat wählen");
       return false;
     }
 
@@ -489,7 +524,9 @@ export default function TopToolbar() {
       return;
     }
     if (!manualPlacementKind) {
-      toast.error("Diese Dachkonfiguration unterstützt keine manuelle Platzierung.");
+      toast.error(resolveInitialSonnendachRoofType(selectedRoof) === "flat"
+        ? "Zuerst Süd oder Ost-West wählen"
+        : "Zuerst Hochformat oder Querformat wählen");
       return;
     }
     if (
@@ -525,47 +562,62 @@ export default function TopToolbar() {
 
     const roof = layers.find((l) => l.id === selectedId);
     if (!roof?.points?.length) return;
-    const standardDraft = selectedPlanningDraft?.targetMode === "standard"
-      ? selectedPlanningDraft
-      : undefined;
-    const standardModules = standardDraft?.modules ?? modules;
-    const standardPanel = standardDraft
-      ? catalogPanels.find((panel) => panel.id === standardDraft.panelSpecId)
-      : selSpec;
-    if (!standardPanel) return;
-
     const currentState = usePlannerV2Store.getState();
-    const now = Date.now().toString(36);
-    const moduleTilt = standardDraft?.moduleTilt ?? resolveStandardTiltInput(roof.surfacePlanning);
-    const persistedStandard = resolveSurfacePlanning(roof.surfacePlanning);
-    const companyLimits = resolveCompanyThermalFieldLimits({ company: currentState.companyPlannerDefaults, roofKind: "pitched" });
-    const thermalFieldLimits = standardDraft?.thermalFieldLimits ??
-      (persistedStandard.status === "supported-standard" ? persistedStandard.config.thermalFieldLimits : undefined) ??
-      (companyLimits.kind === "pitched-grid" ? companyLimits : undefined);
-    const standardMetadata = buildStandardPanelMetadata({ roofSlopeDeg: roof.tiltDeg, moduleTilt });
-    const instances = computeStandardDraftPanels({
-      roof,
-      panel: standardPanel,
-      modules: standardModules,
-      mppImage: snapshot.mppImage,
-      zones: currentState.zones,
-      snowGuards: currentState.snowGuards,
-      thermalFieldLimits,
-      panelMetadata: standardMetadata,
-      createPanelId: (index) => `${selectedId}_p_${now}_${index}`,
-    });
-    if (!instances.length) return;
-
-    commitRoofLayout({
-      roofId: selectedId,
-      panels: instances,
-      surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt, thermalFieldLimits }),
-    });
-    setSelectedPanel(standardPanel.id);
-    setModules({ ...standardModules, showGrid: false });
+    const mode = resolveRoofModuleMode({ roof, roofId: selectedId, panels: currentState.panels });
+    if (!mode) return;
+    if (
+      currentState.panels.some((panel) => panel.roofId === selectedId) &&
+      hasManualRoofLayoutChanges({ roof, panels: currentState.panels }) &&
+      !window.confirm("Layout neu erstellen?\n\nManuelle Änderungen werden dabei ersetzt.")
+    ) return;
+    const runId = nanoid();
+    if (mode === "portrait" || mode === "landscape") {
+      const standardDraft = selectedPlanningDraft?.targetMode === "standard" ? selectedPlanningDraft : undefined;
+      const standardModules = standardDraft?.modules ?? modules;
+      const standardPanel = standardDraft
+        ? catalogPanels.find((panel) => panel.id === standardDraft.panelSpecId)
+        : selSpec;
+      if (!standardPanel) return;
+      const moduleTilt = standardDraft?.moduleTilt ?? resolveStandardTiltInput(roof.surfacePlanning);
+      const companyLimits = resolveCompanyThermalFieldLimits({ company: currentState.companyPlannerDefaults, roofKind: "pitched" });
+      const thermalFieldLimits = standardDraft?.thermalFieldLimits ??
+        (persistedSurfacePlanning.status === "supported-standard" ? persistedSurfacePlanning.config.thermalFieldLimits : undefined) ??
+        (companyLimits.kind === "pitched-grid" ? companyLimits : undefined);
+      const generated = buildDirectStandardRoofLayout({
+        roof,
+        panel: standardPanel,
+        modules: standardModules,
+        orientation: mode,
+        moduleTilt,
+        mppImage: snapshot.mppImage,
+        zones: currentState.zones,
+        snowGuards: currentState.snowGuards,
+        thermalFieldLimits,
+        createPanelId: (index) => `${selectedId}_p_${runId}_${index}`,
+      });
+      if (!generated) return;
+      commitRoofLayout({ roofId: selectedId, panels: generated.panels, surfacePlanning: generated.config });
+      setSelectedPanel(standardPanel.id);
+      setModules(generated.modules);
+    } else {
+      if (!displayedAdvancedConfig) return;
+      const config = withEffectiveAdvancedThermalLimits(displayedAdvancedConfig, currentState.companyPlannerDefaults);
+      const generated = buildDirectAdvancedRoofLayout({
+        roof,
+        config,
+        mppImage: snapshot.mppImage,
+        zones: currentState.zones,
+        snowGuards: currentState.snowGuards,
+        layoutRunId: runId,
+        createPanelId: (index) => `${selectedId}_advanced_${runId}_${index}`,
+      });
+      if (!generated) return;
+      commitRoofLayout({ roofId: selectedId, panels: generated.panels, surfacePlanning: generated.config });
+    }
 
     // torna allo strumento selezione
     setTool("select" as any);
+    toast.success("Layout neu erstellt");
   }
 
   return (
@@ -626,25 +678,27 @@ export default function TopToolbar() {
 
         {/* Module-only */}
         <ActionBtn
+          actionId="planner-regenerate-layout"
           onClick={() => {
             if (ensureModulesPrereqsForU()) handleConvertToModules();
           }}
           Icon={MdViewModule}
           label=""
-          disabled={!canUseModulesTools}
-          tooltipLabel="Autolayout umwandeln"
+          disabled={!canUseModulesTools || !selectedId}
+          tooltipLabel={activeModuleMode ? "Layout neu erstellen" : manualPlacementLabel}
           tooltipKeys={["U"]}
         />
 
         <ActionBtn
-          active={tool === "fill-area"}
+          actionId="planner-fill-layout"
+          active={false}
           onClick={() => {
-            if (ensureModulesPrereqsForF()) go("fill-area" as any);
+            if (ensureModulesPrereqsForF()) handleConvertToModules();
           }}
           Icon={MdBorderStyle}
           label=""
-          disabled={!canUseModulesTools}
-          tooltipLabel="Fläche füllen"
+          disabled={!canUseModulesTools || !selectedId}
+          tooltipLabel={activeModuleMode ? "Dachfläche füllen" : manualPlacementLabel}
           tooltipKeys={["F"]}
         />
 

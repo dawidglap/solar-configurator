@@ -152,6 +152,10 @@ export type StandardSurfacePlanningV1 = {
   surface: SurfacePhysicalProperties;
   /** Missing on legacy documents and resolves to inherit-roof without migration. */
   moduleTilt?: StandardModuleTiltInput;
+  /** Explicit customer choice. Missing means that no safe mode was persisted. */
+  moduleLayoutMode?: "portrait" | "landscape";
+  /** Audit baseline used only to protect generated layouts from destructive replacement. */
+  generatedLayoutFingerprint?: string;
   /** Applied roof-local thermal limits. Missing on legacy documents. */
   thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
 };
@@ -161,6 +165,8 @@ export type AdvancedSurfacePlanningV1 = {
   mode: "advanced";
   surface: SurfacePhysicalProperties;
   advanced: AdvancedPlanningInputsV1;
+  /** Audit baseline used only to protect generated layouts from destructive replacement. */
+  generatedLayoutFingerprint?: string;
   /** Applied mounting-system-local thermal limits. Missing on legacy documents. */
   thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "flat-block" }>;
 };
@@ -581,6 +587,13 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
     const moduleTiltIssues: SurfacePlanningIssue[] = [];
     const moduleTilt = readStandardModuleTilt(value.moduleTilt, moduleTiltIssues);
     const thermalFieldLimits = readThermalFieldLimits(value.thermalFieldLimits, "pitched-grid", moduleTiltIssues);
+    const moduleLayoutMode = value.moduleLayoutMode;
+    if (moduleLayoutMode !== undefined && moduleLayoutMode !== "portrait" && moduleLayoutMode !== "landscape") {
+      moduleTiltIssues.push(issue("moduleLayoutMode", "invalid-module-layout-mode", "Module layout mode is invalid."));
+    }
+    if (value.generatedLayoutFingerprint !== undefined && typeof value.generatedLayoutFingerprint !== "string") {
+      moduleTiltIssues.push(issue("generatedLayoutFingerprint", "invalid-layout-fingerprint", "Layout fingerprint must be a string."));
+    }
     if (moduleTiltIssues.length) {
       return { status: "invalid-document", effectiveMode: undefined, raw: value, issues: moduleTiltIssues };
     }
@@ -592,6 +605,12 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
         mode: "standard",
         surface,
         ...(moduleTilt ? { moduleTilt } : {}),
+        ...(moduleLayoutMode === "portrait" || moduleLayoutMode === "landscape"
+          ? { moduleLayoutMode }
+          : {}),
+        ...(typeof value.generatedLayoutFingerprint === "string"
+          ? { generatedLayoutFingerprint: value.generatedLayoutFingerprint }
+          : {}),
         ...(thermalFieldLimits ? { thermalFieldLimits: thermalFieldLimits as Extract<ThermalFieldLimits, { kind: "pitched-grid" }> } : {}),
       },
       issues: [],
@@ -617,6 +636,9 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
     return { status: "unsupported-advanced", effectiveMode: "advanced", raw: value, issues: systemResult.issues };
   }
   const advancedIssues: SurfacePlanningIssue[] = [];
+  if (value.generatedLayoutFingerprint !== undefined && typeof value.generatedLayoutFingerprint !== "string") {
+    advancedIssues.push(issue("generatedLayoutFingerprint", "invalid-layout-fingerprint", "Layout fingerprint must be a string."));
+  }
   const thermalFieldLimits = readThermalFieldLimits(value.thermalFieldLimits, "flat-block", advancedIssues);
   const undersideClearanceM = value.advanced.undersideClearanceM;
   if (
@@ -648,6 +670,9 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
       mode: "advanced",
       surface,
       ...(thermalFieldLimits ? { thermalFieldLimits: thermalFieldLimits as Extract<ThermalFieldLimits, { kind: "flat-block" }> } : {}),
+      ...(typeof value.generatedLayoutFingerprint === "string"
+        ? { generatedLayoutFingerprint: value.generatedLayoutFingerprint }
+        : {}),
       advanced: {
         inputSchemaVersion: ADVANCED_INPUT_SCHEMA_VERSION,
         advancedEngineVersion: ADVANCED_BLOCK_ENGINE_VERSION,

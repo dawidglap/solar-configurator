@@ -63,6 +63,8 @@ export type RoofArea = {
     /** Canonical geographic downhill direction. Absent legacy Sonnendach roofs resolve azimuthDeg. */
     fallAzimuthDeg?: number;
     source?: 'manual' | 'sonnendach';
+    /** Explicit physical roof classification, independent from module-layout selection. */
+    roofKind?: 'pitched' | 'flat' | 'green';
 
     /** Canonical physical edge used as First (pitched) or Referenzkante (flat). */
     referenceEdgeIndex?: number;

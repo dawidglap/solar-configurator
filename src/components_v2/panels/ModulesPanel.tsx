@@ -38,17 +38,24 @@ import {
 import {
   createInitialAdvancedPlanning,
   createStandardPlanningDraft,
-  alignStandardModulesParallelToFirst,
   buildStandardPanelMetadata,
+  buildDirectAdvancedRoofLayout,
+  buildDirectStandardRoofLayout,
   buildStandardSurfacePlanning,
   computeStandardDraftPanels,
   hasCommittedPanelsForRoof,
+  hasManualRoofLayoutChanges,
   resolveStandardTiltInput,
   resolveInitialSonnendachRoofType,
   resolveRoofPlanningMode,
+  resolveRoofModuleMode,
+  setAdvancedMountingOrientation,
+  setAdvancedQuantityMode,
+  alignAdvancedLayoutParallelToRoofEdge,
+  withGeneratedLayoutFingerprint,
 } from "../modules/advanced/advancedPlanningApplication";
+import { withEffectiveAdvancedThermalLimits } from "../modules/advanced/advancedThermalDefaults";
 import ZonePropertiesControl from "../zones/ZonePropertiesControl";
-import ModulePreviewVisibilityToggle from "../modules/ModulePreviewVisibilityToggle";
 
 type Pt = { x: number; y: number };
 
@@ -130,12 +137,22 @@ export default function ModulesPanel() {
     "pitched" | "flat" | null
   >(null);
   const [moduleTiltText, setModuleTiltText] = React.useState("");
+  const [pendingRegeneration, setPendingRegeneration] = React.useState<
+    | { kind: "standard"; mode: "portrait" | "landscape" }
+    | { kind: "advanced"; mode: "south" | "east-west" }
+    | null
+  >(null);
 
   const selectedRoof = React.useMemo(
     () => layers.find((roof) => roof.id === selectedId),
     [layers, selectedId],
   );
   const selectedDraft = selectedId ? roofPlanningDrafts[selectedId] : undefined;
+  const activeModuleMode = resolveRoofModuleMode({
+    roof: selectedRoof,
+    roofId: selectedRoof?.id,
+    panels,
+  });
   const persistedPlanning = resolveSurfacePlanning(
     selectedRoof?.surfacePlanning,
   );
@@ -215,7 +232,11 @@ export default function ModulesPanel() {
     };
   }, [companyPlannerDefaults, selectedRoof?.surfacePlanning, standardDraft?.thermalFieldLimits]);
   const customerRoofType =
-    displayMode === "standard"
+    selectedRoof?.roofKind === "pitched"
+      ? "pitched"
+      : selectedRoof?.roofKind === "flat"
+        ? "flat"
+        : displayMode === "standard"
       ? "pitched"
       : advancedConfig?.surface.kind === "flat" ||
           (selectedRoof?.surfacePlanning === undefined &&
@@ -318,16 +339,6 @@ export default function ModulesPanel() {
         };
       })()
     : null;
-  const alignStandardParallelToFirst = React.useCallback(() => {
-    if (!selectedRoof) return;
-    patchDisplayedModules(
-      alignStandardModulesParallelToFirst({
-        modules: displayedModules,
-        roofId: selectedRoof.id,
-      }),
-    );
-  }, [displayedModules, patchDisplayedModules, selectedRoof]);
-
   const applyStandardDraft = React.useCallback(() => {
     if (!selectedRoof || !standardDraft) return;
     const panel = catalogPanels.find(
@@ -351,14 +362,20 @@ export default function ModulesPanel() {
       thermalFieldLimits: standardDraft.thermalFieldLimits,
     });
     if (!nextPanels.length) return;
+    const surfacePlanning = withGeneratedLayoutFingerprint({
+      roofId: selectedRoof.id,
+      panels: nextPanels,
+      config: buildStandardSurfacePlanning({
+        roof: selectedRoof,
+        moduleTilt: standardDraft.moduleTilt,
+        moduleLayoutMode: standardDraft.modules.orientation,
+        thermalFieldLimits: standardDraft.thermalFieldLimits,
+      }),
+    });
     commitRoofLayout({
       roofId: selectedRoof.id,
       panels: nextPanels,
-      surfacePlanning: buildStandardSurfacePlanning({
-        roof: selectedRoof,
-        moduleTilt: standardDraft.moduleTilt,
-        thermalFieldLimits: standardDraft.thermalFieldLimits,
-      }),
+      surfacePlanning,
     });
     setSelectedPanel(panel.id);
     setModules(standardDraft.modules);
@@ -385,49 +402,19 @@ export default function ModulesPanel() {
 
   const confirmRoofTypeChange = React.useCallback(() => {
     if (!selectedRoof || !pendingRoofType) return;
-
-    if (pendingRoofType === "flat") {
-      if (!selSpec) return;
-      const nextConfig = createInitialAdvancedPlanning({
-        panel: selSpec,
-        standardModules: modulesWithRoofEdgeMargin(selectedRoof, modules),
-        thermalFieldLimits: (() => {
-          const limits = resolveCompanyThermalFieldLimits({
-            company: companyPlannerDefaults,
-            roofKind: "flat",
-            mountingOrientation: "east-west",
-          });
-          return limits.kind === "flat-block" ? limits : undefined;
-        })(),
-      });
-      commitRoofLayout({
-        roofId: selectedRoof.id,
-        panels: [],
-        surfacePlanning: nextConfig,
-      });
-      updateRoof(selectedRoof.id, {
-        referenceEdgeIndex: resolveRoofReferenceEdgeIndex({
-          points: selectedRoof.points,
-          roofKind: "flat",
-        }),
-      });
-    } else {
-      commitRoofLayout({
-        roofId: selectedRoof.id,
-        panels: [],
-        surfacePlanning: buildStandardSurfacePlanning({
-          roof: selectedRoof,
-          moduleTilt: { mode: "inherit-roof" },
-          thermalFieldLimits: displayedThermalLimits,
-        }),
-      });
-      updateRoof(selectedRoof.id, { referenceEdgeIndex: 0 });
-    }
+    commitRoofLayout({ roofId: selectedRoof.id, panels: [] });
+    updateRoof(selectedRoof.id, {
+      roofKind: pendingRoofType,
+      ...(pendingRoofType === "flat" ? { tiltDeg: 0 } : {}),
+      referenceEdgeIndex: pendingRoofType === "flat"
+        ? resolveRoofReferenceEdgeIndex({ points: selectedRoof.points, roofKind: "flat" })
+        : 0,
+    });
 
     setPendingRoofType(null);
     setConfirmStandardReplace(false);
     toast.success("Dachtyp geändert. Die Dachfläche kann neu geplant werden.");
-  }, [commitRoofLayout, companyPlannerDefaults, displayedThermalLimits, modules, pendingRoofType, selSpec, selectedRoof, updateRoof]);
+  }, [commitRoofLayout, pendingRoofType, selectedRoof, updateRoof]);
 
   React.useEffect(() => {
     setPendingRoofType(null);
@@ -463,9 +450,8 @@ export default function ModulesPanel() {
     [tempVal, updateRoof],
   );
 
-  /** Materializza la preview Standard corrente sulla falda selezionata. */
-  const relayoutSelectedRoof = useCallback(
-    (nextOrientation?: "portrait" | "landscape") => {
+  const generateStandardMode = useCallback(
+    (orientation: "portrait" | "landscape") => {
       if (!selectedId || !selSpec || !snapshot?.mppImage) return false;
 
       const roof = layers.find((l) => l.id === selectedId);
@@ -476,42 +462,42 @@ export default function ModulesPanel() {
         spacingXM: modules.spacingXM,
         spacingYM: modules.spacingYM,
       });
-      const orientation = (nextOrientation ?? modules.orientation) as
-        "portrait" | "landscape";
-
-      const now = Date.now().toString(36);
+      const runId = nanoid();
       const moduleTilt = resolveStandardTiltInput(roof.surfacePlanning);
-      const standardMetadata = buildStandardPanelMetadata({
-        roofSlopeDeg: roof.tiltDeg,
-        moduleTilt,
-      });
       const thermalLimits = displayedThermalLimits.kind === "pitched-grid"
         ? displayedThermalLimits
         : undefined;
       const currentState = usePlannerV2Store.getState();
-      const instances = computeStandardDraftPanels({
+      const generated = buildDirectStandardRoofLayout({
         roof,
         panel: selSpec,
         modules: {
           ...modules,
-          orientation,
           spacingM: spacing.x,
           spacingXM: spacing.x,
           spacingYM: spacing.y,
         },
+        orientation,
+        moduleTilt,
         mppImage: snapshot.mppImage,
         zones: currentState.zones,
         snowGuards: currentState.snowGuards,
         thermalFieldLimits: thermalLimits,
-        panelMetadata: standardMetadata,
-        createPanelId: (index) => `${selectedId}_p_${now}_${index}`,
+        createPanelId: (index) => `${selectedId}_p_${runId}_${index}`,
       });
-      if (!instances.length) return false;
+      if (!generated) {
+        toast.error("Für diese Dachfläche konnte kein gültiges Layout erstellt werden.");
+        return false;
+      }
       commitRoofLayout({
         roofId: selectedId,
-        panels: instances,
-        surfacePlanning: buildStandardSurfacePlanning({ roof, moduleTilt, thermalFieldLimits: thermalLimits }),
+        panels: generated.panels,
+        surfacePlanning: generated.config,
       });
+      setModules(generated.modules);
+      clearRoofPlanningDraft(selectedId);
+      setPendingRegeneration(null);
+      toast.success("Module platziert");
       return true;
     },
     [
@@ -522,8 +508,77 @@ export default function ModulesPanel() {
       modules,
       displayedThermalLimits,
       commitRoofLayout,
+      clearRoofPlanningDraft,
+      setModules,
     ],
   );
+
+  const generateAdvancedMode = useCallback(
+    (mode: "south" | "east-west") => {
+      if (!selectedRoof || !selSpec || !snapshot.mppImage) return false;
+      const state = usePlannerV2Store.getState();
+      const companyLimits = resolveCompanyThermalFieldLimits({
+        company: state.companyPlannerDefaults,
+        roofKind: "flat",
+        mountingOrientation: mode,
+      });
+      let config = selectedAdvancedConfig ?? createInitialAdvancedPlanning({
+        panel: selSpec,
+        standardModules: modulesWithRoofEdgeMargin(selectedRoof, modules),
+      });
+      config = setAdvancedMountingOrientation({ config, orientation: mode });
+      config = setAdvancedQuantityMode({ config, mode: "auto" });
+      config = {
+        ...config,
+        ...(companyLimits.kind === "flat-block" ? { thermalFieldLimits: companyLimits } : {}),
+      };
+      config = alignAdvancedLayoutParallelToRoofEdge({
+        config,
+        roof: selectedRoof,
+        mppImage: snapshot.mppImage,
+      });
+      config = withEffectiveAdvancedThermalLimits(config, state.companyPlannerDefaults);
+      const runId = nanoid();
+      const generated = buildDirectAdvancedRoofLayout({
+        roof: selectedRoof,
+        config,
+        mppImage: snapshot.mppImage,
+        zones: state.zones,
+        snowGuards: state.snowGuards,
+        layoutRunId: runId,
+        createPanelId: (index) => `${selectedRoof.id}_advanced_${runId}_${index}`,
+      });
+      if (!generated) {
+        toast.error("Für diese Dachfläche konnte kein gültiges Layout erstellt werden.");
+        return false;
+      }
+      commitRoofLayout({
+        roofId: selectedRoof.id,
+        panels: generated.panels,
+        surfacePlanning: generated.config,
+      });
+      clearRoofPlanningDraft(selectedRoof.id);
+      setPendingRegeneration(null);
+      toast.success("Module platziert");
+      return true;
+    },
+    [clearRoofPlanningDraft, commitRoofLayout, modules, selSpec, selectedAdvancedConfig, selectedRoof, snapshot.mppImage],
+  );
+
+  const requestModuleMode = useCallback((mode: "portrait" | "landscape" | "south" | "east-west") => {
+    if (!selectedRoof || activeModuleMode === mode) return;
+    const hasPanels = panels.some((panel) => panel.roofId === selectedRoof.id);
+    const needsConfirmation = hasPanels && hasManualRoofLayoutChanges({ roof: selectedRoof, panels });
+    const next = mode === "portrait" || mode === "landscape"
+      ? { kind: "standard" as const, mode }
+      : { kind: "advanced" as const, mode };
+    if (needsConfirmation) {
+      setPendingRegeneration(next);
+      return;
+    }
+    if (next.kind === "standard") generateStandardMode(next.mode);
+    else generateAdvancedMode(next.mode);
+  }, [activeModuleMode, generateAdvancedMode, generateStandardMode, panels, selectedRoof]);
 
   return (
     <div className="w-full max-w-[240px] space-y-4 p-2 text-foreground">
@@ -943,6 +998,8 @@ export default function ModulesPanel() {
           <AdvancedModulesPanel
             roof={selectedRoof}
             config={advancedConfig as AdvancedSurfacePlanningV1}
+            activeMode={activeModuleMode === "south" || activeModuleMode === "east-west" ? activeModuleMode : undefined}
+            onSelectMode={(mode) => requestModuleMode(mode)}
             isDraft={
               selectedDraft?.targetMode === "advanced" ||
               implicitFlatConfig !== undefined
@@ -990,14 +1047,14 @@ export default function ModulesPanel() {
                 <button
                   key={orientation}
                   type="button"
-                  onClick={() => patchDisplayedModules({ orientation })}
-                  className={`h-9 rounded-lg text-[10px] font-medium ${displayedModules.orientation === orientation ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                  onClick={() => requestModuleMode(orientation)}
+                  aria-pressed={activeModuleMode === orientation}
+                  className={`h-9 rounded-lg text-[10px] font-medium ${activeModuleMode === orientation ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
                 >
                   {orientation === "portrait" ? "Hochformat" : "Querformat"}
                 </button>
               ))}
             </div>
-            <ModulePreviewVisibilityToggle />
           </section>
 
           <section className="space-y-2 border-b border-border/60 pb-4">
@@ -1052,14 +1109,6 @@ export default function ModulesPanel() {
               <h3 className={labelSm}>Ausrichtung</h3>
               <strong className="text-[10px]">{Number((((displayedCanvasAngleDeg % 360) + 360) % 360).toFixed(2))}°</strong>
             </div>
-            <button
-              type="button"
-              className="h-10 w-full rounded-xl border border-primary/40 bg-primary/5 text-[11px] font-semibold text-primary hover:bg-primary/10"
-              onClick={alignStandardParallelToFirst}
-            >
-              Parallel zum First
-            </button>
-
             <details className="rounded-xl border border-border/60 text-[10px]">
               <summary className="cursor-pointer px-3 py-2.5 font-medium text-muted-foreground">
                 Feinjustierung
@@ -1119,18 +1168,6 @@ export default function ModulesPanel() {
                     </label>
                   ))}
                 </div>
-                <label className="block space-y-1 text-muted-foreground">
-                  Belegung
-                  <select
-                    className={inputBase}
-                    value={displayedModules.coverageRatio ?? 1}
-                    onChange={(event) => patchDisplayedModules({ coverageRatio: Number(event.target.value) })}
-                  >
-                    <option value={0.5}>50 %</option>
-                    <option value={0.75}>75 %</option>
-                    <option value={1}>100 %</option>
-                  </select>
-                </label>
                 <button
                   type="button"
                   className="text-[10px] font-medium text-primary hover:underline"
@@ -1306,23 +1343,10 @@ export default function ModulesPanel() {
             </section>
           )}
 
-          {!standardDraft && (
-            <button
-              type="button"
-              className="h-9 w-full rounded-lg bg-primary text-[11px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={!selectedRoof || !selSpec || !snapshot.mppImage}
-              onClick={() => {
-                if (relayoutSelectedRoof()) toast.success("Module platziert");
-              }}
-            >
-              Vorschau als Module platzieren
-            </button>
-          )}
-
           {standardDraft && (
             <section className="sticky bottom-0 -mx-2 space-y-2 border-y border-primary/25 bg-background/95 p-3 backdrop-blur">
               <p className="text-[11px] font-semibold text-primary">
-                Standard-Layout Vorschau
+                Layout-Änderungen
               </p>
               {confirmStandardReplace && (
                 <p className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-2 text-[10px]">
@@ -1358,7 +1382,7 @@ export default function ModulesPanel() {
                 >
                   {confirmStandardReplace
                     ? "Ersetzen bestätigen"
-                    : "Vorschau als Module platzieren"}
+                    : "Änderungen übernehmen"}
                 </button>
               </div>
             </section>
@@ -1378,6 +1402,22 @@ export default function ModulesPanel() {
         onCancel={() => setPendingRoofType(null)}
         onConfirm={confirmRoofTypeChange}
       />
+      {pendingRegeneration && (
+        <div className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="regenerate-layout-title">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-background p-4 shadow-xl">
+            <h2 id="regenerate-layout-title" className="text-sm font-semibold">Layout neu erstellen?</h2>
+            <p className="mt-2 text-xs text-muted-foreground">Manuelle Änderungen werden dabei ersetzt.</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button type="button" className="h-9 rounded-lg border border-border text-xs" onClick={() => setPendingRegeneration(null)}>Abbrechen</button>
+              <button type="button" className="h-9 rounded-lg bg-primary text-xs font-semibold text-primary-foreground" onClick={() => {
+                const pending = pendingRegeneration;
+                if (pending.kind === "standard") generateStandardMode(pending.mode);
+                else generateAdvancedMode(pending.mode);
+              }}>Neu erstellen</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -34,7 +34,7 @@ export default function RoofReferenceEdgeLayer() {
   if (!roof || step !== "building") return null;
   const roofKind = planning.status === "supported-advanced"
     ? planning.config.surface.kind
-    : "pitched";
+    : roof.roofKind ?? "pitched";
   const edgeIndex = resolveRoofReferenceEdgeIndex({
     points: roof.points,
     requestedIndex: selectedZone?.edgeReference?.edgeIndex ?? roof.referenceEdgeIndex,

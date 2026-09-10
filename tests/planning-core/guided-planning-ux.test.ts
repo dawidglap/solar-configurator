@@ -74,7 +74,8 @@ test("guided sidebar exposes primary choices and keeps fine tuning collapsed by 
 
   assert.ok(advancedPanel.includes("MountingChoiceGraphic"));
   assert.ok(advancedPanel.includes("Modul ändern"));
-  assert.ok(advancedPanel.includes("Parallel zur Dachkante"));
+  assert.equal(advancedPanel.includes("Parallel zur Dachkante"), false);
+  assert.ok(advancedPanel.includes("Wähle Süd oder Ost-West"));
   assert.ok(presentation.includes("Planung passt"));
   assert.ok(presentation.includes("Anordnung passt nicht vollständig"));
   assert.ok(advancedPanel.includes("Nicht angewendete Änderungen"));
