@@ -379,6 +379,43 @@ test("Parallel zur Dachkante aligns a rotated 37 degree rectangle and preserves 
   );
 });
 
+test("opposite flat-roof Referenzkanten generate opposite inward panel arrows", () => {
+  for (const system of ["s-dome", "d-dome"] as const) {
+    const topRoof = { ...rectangleRoof(), referenceEdgeIndex: 0 };
+    const bottomRoof = { ...rectangleRoof(), referenceEdgeIndex: 2 };
+    const topConfig = alignAdvancedLayoutParallelToRoofEdge({
+      config: fixedConfig(system),
+      roof: topRoof,
+      mppImage: 0.1,
+    });
+    const bottomConfig = alignAdvancedLayoutParallelToRoofEdge({
+      config: fixedConfig(system),
+      roof: bottomRoof,
+      mppImage: 0.1,
+    });
+    const top = preview(topConfig, topRoof);
+    const bottom = preview(bottomConfig, bottomRoof);
+    assert.equal(top.valid, true);
+    assert.equal(bottom.valid, true);
+    if (!top.valid || !bottom.valid) continue;
+
+    assert.equal(resolvePanelLocalArrowAzimuth(top.modules[0].angleDeg), 180);
+    assert.equal(resolvePanelLocalArrowAzimuth(bottom.modules[0].angleDeg), 0);
+    assert.equal(
+      normalizeDifference(top.modules[0].angleDeg - bottom.modules[0].angleDeg),
+      180,
+    );
+    if (system === "d-dome") {
+      const topPair = top.modules.filter((module) => module.blockKey === "r0:c0");
+      assert.equal(topPair.length, 2);
+      assert.equal(
+        normalizeDifference(topPair[1].angleDeg - topPair[0].angleDeg),
+        180,
+      );
+    }
+  }
+});
+
 function normalizeDifference(value: number) {
   return ((value % 360) + 360) % 360;
 }
