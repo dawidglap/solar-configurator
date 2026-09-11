@@ -262,7 +262,11 @@ type PlannerV2State = {
     panels: PanelInstance[];
     surfacePlanning?: SurfacePlanningV1;
   }) => void;
-  appendPanelsToRoof: (input: { roofId: string; panels: PanelInstance[] }) => void;
+  appendPanelsToRoof: (input: {
+    roofId: string;
+    panels: PanelInstance[];
+    selectAdded?: boolean;
+  }) => void;
   regroupThermalFieldsForRoofs: (roofIds: string[]) => void;
 
   detectedRoofs: DetectedRoof[];
@@ -634,7 +638,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             roofPlanningDrafts,
           };
         }),
-      appendPanelsToRoof: ({ roofId, panels: addedPanels }) =>
+      appendPanelsToRoof: ({ roofId, panels: addedPanels, selectAdded = false }) =>
         set((state) => {
           if (addedPanels.length === 0) return state;
           let panels = [
@@ -661,7 +665,12 @@ export const usePlannerV2Store = create<PlannerV2State>()(
               });
             }
           }
-          return { panels };
+          return {
+            panels,
+            ...(selectAdded
+              ? { selectedPanelIds: addedPanels.map((panel) => panel.id) }
+              : {}),
+          };
         }),
 
       detectedRoofs: [],

@@ -73,7 +73,6 @@ import FillAreaController from "../modules/fill/FillAreaController";
 import ToolHotkeys from "../layout/ToolHotkeys";
 import { history as plannerHistory } from "../state/history";
 import ProjectStatsBar from "../ui/ProjectStatsBar";
-import CanvasHotkeys from "./CanvasHotekeys";
 import ModuleSprite from "../modules/ModuleSprite";
 import ScreenGrid from "./ScreenGrid";
 import CompassHUD from "../compassHUD";
@@ -1803,8 +1802,6 @@ export default function CanvasStage() {
           downloadDisabledReason={thermalFieldsArePreview ? "Bitte Änderungen zuerst anwenden." : undefined}
         />
       )}
-
-      <CanvasHotkeys />
 
       <RoofHudOverlay
         selectedRoof={selectedRoof}

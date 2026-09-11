@@ -2,6 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import { usePlannerV2Store } from "./state/plannerV2Store";
+import {
+  copyRoofToPlannerClipboard,
+  readPlannerObjectClipboard,
+} from "./canvas/plannerObjectClipboard";
 
 function isTypingInField() {
   const el = document.activeElement as HTMLElement | null;
@@ -18,7 +22,6 @@ export default function RoofHotkeys() {
   const duplicateRoof = usePlannerV2Store((s) => s.duplicateRoof);
   const select = usePlannerV2Store((s) => s.select);
 
-  const copiedRoofIdRef = useRef<string | undefined>(undefined);
   const selectedRef = useRef<string | undefined>(selectedId);
 
   useEffect(() => {
@@ -43,16 +46,16 @@ export default function RoofHotkeys() {
         const id = selectedRef.current;
         if (!id) return;
         ev.preventDefault();
-        copiedRoofIdRef.current = id;
+        copyRoofToPlannerClipboard(id);
         return;
       }
 
       // CTRL/CMD + V → duplica falda copiata
       if (key === "v") {
-        const srcId = copiedRoofIdRef.current;
-        if (!srcId) return;
+        const clipboard = readPlannerObjectClipboard();
+        if (clipboard?.type !== "roof") return;
         ev.preventDefault();
-        const newId = duplicateRoof(srcId);
+        const newId = duplicateRoof(clipboard.sourceRoofId);
         if (newId) {
           select(newId);
         }

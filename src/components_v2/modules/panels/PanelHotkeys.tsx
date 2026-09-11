@@ -2,7 +2,24 @@
 'use client';
 
 import { useEffect, useMemo } from 'react';
+import { nanoid } from 'nanoid';
+import toast from 'react-hot-toast';
+
+import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
+import {
+  copyPanelsToPlannerClipboard,
+  markPanelClipboardPaste,
+  readPlannerObjectClipboard,
+} from '../../canvas/plannerObjectClipboard';
 import { usePlannerV2Store } from '../../state/plannerV2Store';
+import { history as plannerHistory } from '../../state/history';
+import { validateExistingPanelPlacement } from '../manualPlacement';
+import { resolveDirectLayoutTargets } from './directLayoutGeometry';
+import {
+  createPanelPasteGroup,
+  offsetPanelPasteGroup,
+  panelPasteOffsetCandidates,
+} from './panelClipboardGeometry';
 
 type Props = {
   disabled: any;
@@ -11,9 +28,6 @@ type Props = {
   onDelete?: (id: string) => void;
   onDuplicate?: (id: string) => void;
 };
-
-/** Clipboard interna (ids dei pannelli copiati) */
-let PANEL_CLIPBOARD: string[] = [];
 
 /**
  * Registra hotkeys per pannelli.
@@ -59,12 +73,7 @@ export default function PanelHotkeys(props: Props) {
   useEffect(() => {
     const isTextTarget = (t: EventTarget | null) => {
       const el = t as HTMLElement | null;
-      return (
-        !!el &&
-        (el.tagName === 'INPUT' ||
-          el.tagName === 'TEXTAREA' ||
-          (el as any).isContentEditable)
-      );
+      return Boolean(el?.closest("input, textarea, select, [contenteditable='true']"));
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -86,25 +95,77 @@ export default function PanelHotkeys(props: Props) {
       if (step && step !== 'modules') return;
       if (tool && tool !== 'select') return;
 
+      // Copy/paste is always owned by the active planner context. In
+      // Modulplanung it never delegates to roof duplication.
+      if ((e.metaKey || e.ctrlKey) && key.toLowerCase() === 'c') {
+        const state = usePlannerV2Store.getState();
+        const roofId = state.selectedId;
+        if (!roofId || state.selectedPanelIds.length === 0) return;
+        const selected = resolveDirectLayoutTargets({
+          panels: state.panels,
+          selectedPanelIds: state.selectedPanelIds,
+          roofId,
+        });
+        if (!selected.length) return;
+        e.preventDefault();
+        e.stopPropagation();
+        copyPanelsToPlannerClipboard({ sourceRoofId: roofId, panels: selected });
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && key.toLowerCase() === 'v') {
+        const clipboard = readPlannerObjectClipboard();
+        const state = usePlannerV2Store.getState();
+        const roofId = state.selectedId;
+        // Cross-context and cross-roof paste are intentionally rejected.
+        if (clipboard?.type !== 'panels' || !roofId || clipboard.sourceRoofId !== roofId) return;
+        const roof = state.layers.find((candidate) => candidate.id === roofId);
+        const mppImage = state.snapshot.mppImage ?? 0;
+        if (!roof || !(mppImage > 0)) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        const pasteGroup = createPanelPasteGroup({
+          source: clipboard.panels,
+          roofId,
+          createPanelId: () => `panel-copy-${nanoid()}`,
+          createBlockKey: () => `${roofId}:copy-block:${nanoid()}`,
+          layoutRunId: `${roofId}:manual-copy:${nanoid()}`,
+        });
+        const marginM = resolveRoofEdgeMarginM(roof, state.modules.marginM);
+        const pasted = panelPasteOffsetCandidates(clipboard.pasteCount)
+          .map((offset) => offsetPanelPasteGroup({ panels: pasteGroup, offset, mppImage }))
+          .find((candidates) => candidates.every((candidate) =>
+            validateExistingPanelPlacement({
+              panel: candidate,
+              centerPx: { x: candidate.cx, y: candidate.cy },
+              angleDeg: candidate.angleDeg,
+              roof,
+              marginM,
+              mppImage,
+              zones: state.zones,
+              snowGuards: state.snowGuards,
+              panels: state.panels,
+              excludePanelIds: new Set(),
+            }).valid,
+          ));
+
+        if (!pasted) {
+          toast('Keine freie Position zum Einfügen gefunden.');
+          return;
+        }
+
+        plannerHistory.push('paste panels');
+        state.appendPanelsToRoof({ roofId, panels: pasted, selectAdded: true });
+        markPanelClipboardPaste();
+        return;
+      }
+
       // ===== Modalità CONTROLLATA (singolo pannello via props) =====
       if (useControlled) {
         const id = selectedPanelId!;
         const panel = panelById.get(id);
         if (!panel) return;
-
-        // Copy
-        if ((e.metaKey || e.ctrlKey) && key.toLowerCase() === 'c') {
-          e.preventDefault();
-          PANEL_CLIPBOARD = [id];
-          return;
-        }
-
-        // Paste → duplica il corrente
-        if ((e.metaKey || e.ctrlKey) && key.toLowerCase() === 'v') {
-          e.preventDefault();
-          onDuplicate!(id);
-          return;
-        }
 
         // Delete / Backspace
         if (key === 'Delete' || key === 'Backspace') {
@@ -140,34 +201,6 @@ export default function PanelHotkeys(props: Props) {
           .map((p) => p.id);
 
         setSelectedPanels(ids);
-        return;
-      }
-
-      // Cmd/Ctrl + C → copia
-      if ((e.metaKey || e.ctrlKey) && key.toLowerCase() === 'c') {
-        if (!selectedIds?.length) return;
-        e.preventDefault();
-        PANEL_CLIPBOARD = [...selectedIds];
-        return;
-      }
-
-      // Cmd/Ctrl + V → incolla / duplica
-      if ((e.metaKey || e.ctrlKey) && key.toLowerCase() === 'v') {
-        e.preventDefault();
-        const toPaste = (PANEL_CLIPBOARD ?? []).filter((id) => panelById.has(id));
-        if (!toPaste.length && selectedIds.length) {
-          toPaste.push(...selectedIds);
-        }
-        if (!toPaste.length) return;
-
-        const newIds: string[] = [];
-        let k = 0;
-        for (const id of toPaste) {
-          const nid = duplicatePanelInStore(id, 18 * (k + 1));
-          if (nid) newIds.push(nid);
-          k++;
-        }
-        if (newIds.length) setSelectedPanels(newIds);
         return;
       }
 
