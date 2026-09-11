@@ -1619,6 +1619,7 @@ export default function CanvasStage() {
                           S.setSelectedPanels(id ? [id] : []);
                       }}
                       stageToImg={toImgCoords}
+                      canvasRotationDeg={rotateDeg}
                     />
                   </Group>
                 )}

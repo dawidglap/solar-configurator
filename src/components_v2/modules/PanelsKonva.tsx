@@ -2,7 +2,7 @@
 'use client';
 
 import React from 'react';
-import { Group, Rect, Line } from 'react-konva';
+import { Group } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 
 import type { Pt } from './panels/math';
@@ -12,7 +12,6 @@ import { PanelItem } from './panels/PanelItem';
 import { Guides } from './panels/Guides';
 import { isInReservedZone } from '../zones/utils';
 import { legacyPointInPolygon } from '@/lib/planning-core/legacy-standard/collision';
-import { plannerTheme } from '../theme/plannerTheme';
 import { createLatestFrameScheduler, type FrameScheduler } from '../canvas/performance/latestFrameScheduler';
 import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
 import type { PanelInstance } from '@/types/planner';
@@ -25,10 +24,11 @@ import {
   snapAdvancedManualCenter,
   validateExistingPanelPlacement,
 } from './manualPlacement';
+import MultiSelectionDragHandle from './panels/MultiSelectionDragHandle';
+import { resolveDirectLayoutTargets } from './panels/directLayoutGeometry';
 
 const SNAP_STAGE_PX = 10;           // magnetic activation radius (screen px)
-const HANDLE_STAGE_PX = 24;         // lato handle (px schermo)
-const HANDLE_GAP_STAGE_PX = 12;     // distanza sotto al gruppo (px schermo)
+const HANDLE_GAP_STAGE_PX = 28;     // distanza sotto al gruppo (px schermo)
 
 type PanelInst = HookPanel & PanelInstance;
 
@@ -43,6 +43,7 @@ export default function PanelsKonva(props: {
   onDragStart?: () => void;
   onDragEnd?: () => void;
   stageToImg?: (x: number, y: number) => Pt; // Stage → Img
+  canvasRotationDeg: number;
 }) {
   const {
     roofId,
@@ -53,6 +54,7 @@ export default function PanelsKonva(props: {
     onDragStart,
     onDragEnd,
     stageToImg,
+    canvasRotationDeg,
   } = props;
 
   // --- store
@@ -273,8 +275,13 @@ export default function PanelsKonva(props: {
     (!selectedIds || selectedIds.length === 0) && typeof selectedPanelId === 'string';
   const selectedPanels = React.useMemo(() => {
     if (useLegacySingle) return panels.filter((p) => p.id === selectedPanelId);
-    return panels.filter((p) => selectedSet.has(p.id));
-  }, [panels, selectedSet, useLegacySingle, selectedPanelId]);
+    if (!selectedIds.length) return [];
+    return resolveDirectLayoutTargets({
+      panels,
+      selectedPanelIds: selectedIds,
+      roofId,
+    }) as PanelInst[];
+  }, [panels, roofId, selectedIds, useLegacySingle, selectedPanelId]);
 
   // bbox gruppo (per handle)
   const groupBBox = React.useMemo(() => {
@@ -392,6 +399,7 @@ export default function PanelsKonva(props: {
   // hint lines per il drag di gruppo
   const [groupHintU, setGroupHintU] = React.useState<number[] | null>(null);
   const [groupHintV, setGroupHintV] = React.useState<number[] | null>(null);
+  const [groupDragActive, setGroupDragActive] = React.useState(false);
 
   // stato drag di gruppo
   const dragStateRef = React.useRef<{
@@ -405,6 +413,12 @@ export default function PanelsKonva(props: {
     nodes: Map<string, any>;
     selectionNodes: Map<string, any>;
     slopeArrowNodes: Map<string, any>;
+    handleNode: any | null;
+    handleInitial: Pt | null;
+    captureTarget: Element | null;
+    pointerId: number | null;
+    onLostPointerCapture: (() => void) | null;
+    onWindowBlur: (() => void) | null;
     final: { id: string; cx: number; cy: number }[] | null;
     advancedSnap: {
       definition: NonNullable<typeof committedAdvancedDefinition>;
@@ -414,23 +428,47 @@ export default function PanelsKonva(props: {
     frame: FrameScheduler<{ point: Pt; disableSnap: boolean }>;
   } | null>(null);
 
+  const detachGroupDragInput = React.useCallback((state: NonNullable<typeof dragStateRef.current>) => {
+    state.stage.off('.groupDrag');
+    if (state.captureTarget && state.onLostPointerCapture) {
+      state.captureTarget.removeEventListener('lostpointercapture', state.onLostPointerCapture);
+    }
+    if (state.onWindowBlur) window.removeEventListener('blur', state.onWindowBlur);
+    if (
+      state.captureTarget &&
+      state.pointerId != null &&
+      'hasPointerCapture' in state.captureTarget &&
+      'releasePointerCapture' in state.captureTarget
+    ) {
+      const target = state.captureTarget as Element & {
+        hasPointerCapture(pointerId: number): boolean;
+        releasePointerCapture(pointerId: number): void;
+      };
+      if (target.hasPointerCapture(state.pointerId)) target.releasePointerCapture(state.pointerId);
+    }
+  }, []);
+
   const cancelGroupDrag = React.useCallback(() => {
     const state = dragStateRef.current;
     if (!state) return false;
-    state.stage.off('.groupDrag');
+    detachGroupDragInput(state);
     state.frame.cancel();
     state.init.forEach((initial) => {
       state.nodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
       state.selectionNodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
       state.slopeArrowNodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
     });
+    if (state.handleNode && state.handleInitial) state.handleNode.position(state.handleInitial);
     state.nodes.values().next().value?.getLayer?.()?.batchDraw?.();
     dragStateRef.current = null;
     setGroupHintU(null);
     setGroupHintV(null);
+    setGroupDragActive(false);
+    const container = state.stage.container?.();
+    if (container) container.style.cursor = 'default';
     onDragEnd?.();
     return true;
-  }, [onDragEnd]);
+  }, [detachGroupDragInput, onDragEnd]);
 
   React.useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
@@ -439,21 +477,43 @@ export default function PanelsKonva(props: {
       event.stopPropagation();
       event.stopImmediatePropagation();
     };
+    const onWindowBlur = () => cancelGroupDrag();
     window.addEventListener('keydown', onEscape, { capture: true });
+    window.addEventListener('blur', onWindowBlur);
     return () => {
       window.removeEventListener('keydown', onEscape, { capture: true });
+      window.removeEventListener('blur', onWindowBlur);
       cancelGroupDrag();
     };
   }, [cancelGroupDrag]);
 
-  const beginGroupDrag = React.useCallback((e: any, movingPanels: PanelInst[] = selectedPanels) => {
+  const beginGroupDrag = React.useCallback((
+    e: any,
+    movingPanels: PanelInst[] = selectedPanels,
+    handleNode: any | null = null,
+  ) => {
     if (movingPanels.length < 2 || !stageToImg) return;
 
     const stage = e.target.getStage?.();
     const pos = stage?.getPointerPosition?.();
     if (!stage || !pos) return;
+    const activeHandleNode = handleNode ?? stage.findOne('.panel-selection-drag-handle') ?? null;
 
     const startImg = stageToImg(pos.x, pos.y);
+    const nativeEvent = e?.evt as PointerEvent | undefined;
+    nativeEvent?.preventDefault?.();
+    const eventTarget = nativeEvent?.target;
+    const captureTarget = eventTarget instanceof Element && 'setPointerCapture' in eventTarget
+      ? eventTarget
+      : stage.container?.() ?? null;
+    const pointerId = typeof nativeEvent?.pointerId === 'number' ? nativeEvent.pointerId : null;
+    if (captureTarget && pointerId != null && 'setPointerCapture' in captureTarget) {
+      try {
+        (captureTarget as Element & { setPointerCapture(pointerId: number): void }).setPointerCapture(pointerId);
+      } catch {
+        // Konva continues receiving pointer events even when capture is unavailable.
+      }
+    }
 
     // ancora = primo selezionato
     const anchor = movingPanels[0];
@@ -570,6 +630,15 @@ export default function PanelsKonva(props: {
         st.selectionNodes.get(position.id)?.position({ x: position.cx, y: position.cy });
         st.slopeArrowNodes.get(position.id)?.position({ x: position.cx, y: position.cy });
       });
+      if (st.handleNode && st.handleInitial) {
+        const anchorPosition = proposed.find((position) => position.id === st.anchorId);
+        if (anchorPosition) {
+          st.handleNode.position({
+            x: st.handleInitial.x + anchorPosition.cx - anchorInit.cx,
+            y: st.handleInitial.y + anchorPosition.cy - anchorInit.cy,
+          });
+        }
+      }
       st.nodes.values().next().value?.getLayer?.()?.batchDraw?.();
     };
 
@@ -588,6 +657,14 @@ export default function PanelsKonva(props: {
       nodes,
       selectionNodes,
       slopeArrowNodes,
+      handleNode: activeHandleNode,
+      handleInitial: activeHandleNode
+        ? { x: activeHandleNode.x(), y: activeHandleNode.y() }
+        : null,
+      captureTarget,
+      pointerId,
+      onLostPointerCapture: null,
+      onWindowBlur: null,
       final: null,
       advancedSnap,
       frame,
@@ -613,10 +690,7 @@ export default function PanelsKonva(props: {
       if (!st) return;
       st.frame.flush();
       st.inProgress = false;
-      st.stage.off('mousemove' + ns);
-      st.stage.off('touchmove' + ns);
-      st.stage.off('mouseup' + ns);
-      st.stage.off('touchend' + ns);
+      detachGroupDragInput(st);
       if (st.final) {
         const patches = Object.fromEntries(
           st.final.map((position) => [position.id, { cx: position.cx, cy: position.cy }]),
@@ -626,18 +700,35 @@ export default function PanelsKonva(props: {
       st.frame.cancel();
       dragStateRef.current = null;
       setGroupHintU(null); setGroupHintV(null);
+      setGroupDragActive(false);
+      const container = st.stage.container?.();
+      if (container) container.style.cursor = 'default';
       onDragEnd?.();
     };
 
-    stage.on('mousemove' + ns + ' touchmove' + ns, onMove);
-    stage.on('mouseup' + ns + ' touchend' + ns, onEnd);
+    const onCancel = () => cancelGroupDrag();
+    const onLostPointerCapture = () => cancelGroupDrag();
+    const onWindowBlur = () => cancelGroupDrag();
+    const state = dragStateRef.current;
+    if (state) {
+      state.onLostPointerCapture = onLostPointerCapture;
+      state.onWindowBlur = onWindowBlur;
+    }
+    captureTarget?.addEventListener('lostpointercapture', onLostPointerCapture, { once: true });
+    window.addEventListener('blur', onWindowBlur, { once: true });
+    stage.on('pointermove' + ns + ' mousemove' + ns + ' touchmove' + ns, onMove);
+    stage.on('pointerup' + ns + ' mouseup' + ns + ' touchend' + ns, onEnd);
+    stage.on('pointercancel' + ns + ' touchcancel' + ns, onCancel);
+    setGroupDragActive(true);
+    const container = stage.container?.();
+    if (container) container.style.cursor = 'grabbing';
     onDragStart?.();
   }, [
     selectedPanels, stageToImg, allPanels, roofId,
     defaultAngleDeg, project, uvBounds, edgeMarginPx, snapPxImg,
     fromUV, panels, isInsideBounds, anyOverlapWithNonSelected,
     updatePanelsBulk, onDragStart, onDragEnd,
-    committedAdvancedDefinition, mpp,
+    committedAdvancedDefinition, mpp, cancelGroupDrag, detachGroupDragInput,
   ]);
 
   
@@ -645,8 +736,8 @@ export default function PanelsKonva(props: {
 const startMultiDrag = React.useCallback((e: any) => {
   if (!groupBBox || selectedPanels.length < 2) return;
   e.cancelBubble = true;      // blocca il pan dello Stage
-  beginGroupDrag(e);          // riusa la logica già pronta
-}, [groupBBox, selectedPanels.length, beginGroupDrag]);
+  beginGroupDrag(e, selectedPanels, e.currentTarget); // riusa la logica già pronta
+}, [groupBBox, selectedPanels, beginGroupDrag]);
 
 const startPanelDrag = React.useCallback((panelId: string, e: any) => {
   const panel = panels.find((item) => item.id === panelId);
@@ -713,42 +804,16 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
 
     </Group>
 
-    {/* --- UNCLIPPED OVERLAY: handle multiselect sempre visibile --- */}
+    {/* --- UNCLIPPED OVERLAY: drag handle della selezione multipla --- */}
     {groupBBox && (
-      <Group
+      <MultiSelectionDragHandle
         x={groupBBox.x + groupBBox.w / 2}
         y={groupBBox.y + groupBBox.h + HANDLE_GAP_STAGE_PX * invScale}
-         listening={true}                 // ← era false
-    onMouseDown={startMultiDrag}     // ← AGGIUNTO
-    onTouchStart={startMultiDrag}   // se hai la versione “draggable”, sposta qui gli handlers
-      >
-        <Rect
-          x={-(HANDLE_STAGE_PX * invScale) / 2}
-          y={-(HANDLE_STAGE_PX * invScale) / 2}
-          width={HANDLE_STAGE_PX * invScale}
-          height={HANDLE_STAGE_PX * invScale}
-          cornerRadius={8 * invScale}
-          fill={plannerTheme.textLight}
-          stroke={plannerTheme.panelStroke}
-          strokeWidth={1 * invScale}
-          shadowColor={plannerTheme.primaryGlow}
-          shadowBlur={12 * invScale}
-          shadowOpacity={0.18}
-          shadowOffsetY={2 * invScale}
-        />
-        <Line
-          points={[ -(6 * invScale), 0, (6 * invScale), 0 ]}
-          stroke={plannerTheme.panelFill}
-          strokeWidth={1.5 * invScale}
-          listening={false}
-        />
-        <Line
-          points={[ 0, -(6 * invScale), 0, (6 * invScale) ]}
-          stroke={plannerTheme.panelFill}
-          strokeWidth={1.5 * invScale}
-          listening={false}
-        />
-      </Group>
+        inverseScale={invScale}
+        canvasRotationDeg={canvasRotationDeg}
+        active={groupDragActive}
+        onStart={startMultiDrag}
+      />
     )}
   </>
 );

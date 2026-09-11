@@ -14,6 +14,7 @@ export default function PanelsLayer({
   textureUrl,
   selectedPanelId,   // compat legacy
   stageToImg,
+  canvasRotationDeg,
   onAnyDragStart,
   onAnyDragEnd,
 }: {
@@ -22,6 +23,7 @@ export default function PanelsLayer({
   selectedPanelId?: string;
   onSelect?: (id?: string) => void;
   stageToImg?: (x: number, y: number) => Pt;
+  canvasRotationDeg: number;
   onAnyDragStart?: () => void;
   onAnyDragEnd?: () => void;
 }) {
@@ -72,6 +74,7 @@ const handleSelect = (id?: string, opts?: { additive?: boolean }) => {
           onDragStart={onAnyDragStart}
           onDragEnd={onAnyDragEnd}
           stageToImg={stageToImg}
+          canvasRotationDeg={canvasRotationDeg}
         />
       ))}
     </>
