@@ -34,7 +34,7 @@ import {
   resolveStandardTiltInput,
 } from "./advanced/advancedPlanningApplication";
 import {
-  endManualPlacement,
+  exitManualPlacementToSelect,
   useManualPlacementSession,
 } from "./manualPlacementSession";
 
@@ -72,6 +72,7 @@ export default function ManualPlacementLayer({
   const setSelectedPanels = usePlannerV2Store((state) => state.setSelectedPanels);
   const setSelectedPanel = usePlannerV2Store((state) => state.setSelectedPanel);
   const setModules = usePlannerV2Store((state) => state.setModules);
+  const setTool = usePlannerV2Store((state) => state.setTool);
   const stageScale = usePlannerV2Store((state) => state.view.scale || state.view.fitScale || 1);
   const [candidate, setCandidate] = React.useState<ManualPlacementCandidate | null>(null);
   const latestPointer = React.useRef<{ x: number; y: number; disableSnap: boolean } | null>(null);
@@ -185,13 +186,20 @@ export default function ManualPlacementLayer({
     if (!session) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (frameRef.current != null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      latestPointer.current = null;
+      setCandidate(null);
+      exitManualPlacementToSelect(setTool);
       event.preventDefault();
       event.stopPropagation();
-      endManualPlacement();
+      event.stopImmediatePropagation();
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [session]);
+  }, [session, setTool]);
 
   if (!session || !roof) return null;
 
@@ -374,7 +382,7 @@ export default function ManualPlacementLayer({
                 listening={false}
               />
               <Text
-                text={`${helperText}\nEsc zum Beenden`}
+                text={`${helperText}\nEsc → Auswählen`}
                 fill={plannerTheme.textLight}
                 fontSize={11 * inverseScale}
                 lineHeight={1.15}

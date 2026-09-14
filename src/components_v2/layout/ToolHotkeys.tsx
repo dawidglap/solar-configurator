@@ -7,6 +7,7 @@ import { history } from '../state/history';
 import { shouldIgnorePlannerHotkeyTarget } from '../canvas/interactionPolicy';
 import { resolvePlannerStepForTool, resolvePlannerToolHotkey } from './toolHotkeyPolicy';
 import type { Tool } from '@/types/planner';
+import { exitManualPlacementToSelect } from '../modules/manualPlacementSession';
 
 
 
@@ -21,7 +22,8 @@ export default function ToolHotkeys() {
     if (e) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); }
     const target = resolvePlannerStepForTool(t, step);
     if (target !== step) setStep(target);
-    setTool(t);
+    if (t === 'select') exitManualPlacementToSelect(setTool);
+    else setTool(t);
   }, [setStep, setTool, step]);
 
   const convertSelectedRoofToModules = useCallback(() => {

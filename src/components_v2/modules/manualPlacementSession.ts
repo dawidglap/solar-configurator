@@ -27,6 +27,14 @@ export function endManualPlacement(): void {
   emit();
 }
 
+/** Canonical exit shared by Escape, shortcut A and the Auswählen toolbar action. */
+export function exitManualPlacementToSelect(
+  setTool: (tool: "select") => void,
+): void {
+  endManualPlacement();
+  setTool("select");
+}
+
 export function getManualPlacementSession(): ManualPlacementSession | null {
   return current;
 }
@@ -43,4 +51,3 @@ export function useManualPlacementSession(): ManualPlacementSession | null {
     () => null,
   );
 }
-

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -22,6 +23,11 @@ import {
 import type { ModulesConfig, PanelInstance, PanelSpec, RoofArea } from "../../src/types/planner";
 import { buildGuidedPlanningResult } from "../../src/components_v2/modules/advanced/guidedPlanningPresentation";
 import { resolvePanelSelectionIds } from "../../src/components_v2/modules/panels/panelSelection";
+import {
+  beginManualPlacement,
+  exitManualPlacementToSelect,
+  getManualPlacementSession,
+} from "../../src/components_v2/modules/manualPlacementSession";
 
 const PANEL: PanelSpec = {
   id: "module-440",
@@ -56,6 +62,38 @@ const ROOF: RoofArea = {
 };
 
 const BASE = { roof: ROOF, mppImage: 0.1, zones: [], snowGuards: [], panels: [] } as const;
+
+test("Escape/A canonical exit discards module and block sessions and activates Auswählen", () => {
+  for (const kind of ["standard-module", "advanced-block"] as const) {
+    beginManualPlacement({ roofId: ROOF.id, kind });
+    let activeTool = "manual";
+
+    exitManualPlacementToSelect((tool) => {
+      activeTool = tool;
+    });
+
+    assert.equal(getManualPlacementSession(), null);
+    assert.equal(activeTool, "select");
+  }
+});
+
+test("single-placement Escape owns cleanup without committing or clearing selections", () => {
+  const layer = readFileSync(
+    new URL("../../src/components_v2/modules/ManualPlacementLayer.tsx", import.meta.url),
+    "utf8",
+  );
+  const hotkeys = readFileSync(
+    new URL("../../src/components_v2/layout/ToolHotkeys.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(layer, /exitManualPlacementToSelect\(setTool\)/);
+  assert.match(layer, /setCandidate\(null\)/);
+  assert.match(layer, /stopImmediatePropagation\(\)/);
+  assert.match(layer, /Esc → Auswählen/);
+  assert.doesNotMatch(layer, /Esc zum Beenden/);
+  assert.match(hotkeys, /t === 'select'\) exitManualPlacementToSelect\(setTool\)/);
+});
 
 test("Standard manual add creates one correctly oriented candidate and rejects margin/overlap", () => {
   const valid = buildStandardManualCandidate({
