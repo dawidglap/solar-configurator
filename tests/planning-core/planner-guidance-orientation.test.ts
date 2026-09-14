@@ -42,7 +42,7 @@ test("Sonnendach normal is converted once to the geographic roof fall direction"
   assert.equal(resolveRoofFallAzimuth({ azimuthDeg: 76, source: "manual" }), 76);
 });
 
-test("contextual help and pitched-roof slope controls remain visible in source", () => {
+test("contextual help and compact roof-list property controls remain visible in source", () => {
   const toolbar = readFileSync(
     new URL("../../src/components_v2/layout/TopToolbar.tsx", import.meta.url),
     "utf8",
@@ -67,8 +67,8 @@ test("contextual help and pitched-roof slope controls remain visible in source",
     new URL("../../src/components_v2/panels/RoofDimensionsControl.tsx", import.meta.url),
     "utf8",
   );
-  const slopeControl = readFileSync(
-    new URL("../../src/components_v2/panels/PitchedRoofSlopeControl.tsx", import.meta.url),
+  const marginControl = readFileSync(
+    new URL("../../src/components_v2/panels/RoofMarginControl.tsx", import.meta.url),
     "utf8",
   );
 
@@ -77,7 +77,15 @@ test("contextual help and pitched-roof slope controls remain visible in source",
   assert.ok(help.includes("Modulplanung – Hilfe"));
   assert.ok(help.includes("Rechteck zeichnen"));
   assert.ok(help.includes("Hindernis zeichnen"));
-  assert.ok(panel.includes("PitchedRoofSlopeControl"));
+  assert.ok(panel.includes("RoofMarginControl"));
+  assert.ok(panel.includes("<div>Dach</div>"));
+  assert.ok(panel.includes(">Fläche</div>"));
+  assert.ok(panel.includes(">Neigung</div>"));
+  assert.ok(panel.includes(">Ausrichtung</div>"));
+  assert.ok(panel.includes("Benutzerdefiniert…"));
+  assert.ok(panel.includes("ROOF_DIRECTION_CHOICES.map"));
+  assert.ok(panel.includes('inputMode="decimal"'));
+  assert.equal(panel.includes("PitchedRoofSlopeControl"), false);
   assert.ok(panel.includes("resolveRoofFallAzimuth"));
   assert.ok(panel.includes("Bestehende Module"));
   assert.ok(canvas.includes("showPanelsInBuilding"));
@@ -86,12 +94,9 @@ test("contextual help and pitched-roof slope controls remain visible in source",
   assert.equal(panel.includes("Vorschau als Module platzieren"), false);
   assert.ok(canvas.includes("RoofAnnotationsLayer"));
   assert.ok(panel.includes("formatRoofSlopeDirection"));
-  assert.ok(slopeControl.includes("Benutzerdefiniert…"));
-  assert.ok(slopeControl.includes("resolveDirectionPreset"));
-  assert.equal(
-    slopeControl.includes('{!selectedPreset && <option value="custom">'),
-    false,
-  );
+  assert.ok(marginControl.includes("Randabstand"));
+  assert.equal(marginControl.includes("Dachneigung"), false);
+  assert.equal(marginControl.includes("Gefällerichtung"), false);
   assert.ok(dimensions.includes("NumericFieldWithSuffix"));
   assert.ok(dimensions.includes(">Kanten</p>"));
   assert.ok(dimensions.includes("getCanonicalRoofEdges"));

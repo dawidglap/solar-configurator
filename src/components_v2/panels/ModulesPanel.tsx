@@ -6,7 +6,6 @@ import { usePlannerV2Store } from "../state/plannerV2Store";
 import RoofAreaInfo from "../ui/RoofAreaInfo";
 import DetectedRoofsImport from "../panels/DetectedRoofsImport";
 import { MdViewModule } from "react-icons/md";
-import { LuCompass } from "react-icons/lu";
 import { Eye, EyeOff } from "lucide-react";
 import { nanoid } from "nanoid";
 import toast from "react-hot-toast";
@@ -25,8 +24,13 @@ import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
 import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
 import LayoutRegenerationDialog from "./LayoutRegenerationDialog";
-import PitchedRoofSlopeControl from "./PitchedRoofSlopeControl";
+import RoofMarginControl from "./RoofMarginControl";
 import { formatRoofSlopeDirection, resolveRoofFallAzimuth } from "../roof/roofOrientation";
+import {
+  normalizeRoofAzimuthDeg,
+  ROOF_DIRECTION_CHOICES,
+  roofAzimuthCardinal,
+} from "../roof/roofOrientation";
 import { modulesWithRoofEdgeMargin } from "@/lib/planning/roofProperties";
 import { resolveRoofReferenceEdgeIndex } from "@/lib/planning-core/geometry-v2";
 import {
@@ -65,29 +69,6 @@ const inputBase =
 
 const labelSm =
   "block text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
-
-// Piccola icona "tilt": triangolo + arco di angolo
-function IconTilt(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
-      {/* triangolo (stroke corrente) */}
-      <path
-        d="M4 18 L18 18 L18 4 Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      {/* arco dell’angolo in basso a sinistra */}
-      <path
-        d="M6 18 A2 2 0 0 1 8 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
 
 export default function ModulesPanel() {
   // --- Layers / selezione tetto ---
@@ -131,6 +112,8 @@ export default function ModulesPanel() {
     field: "tilt" | "az";
   } | null>(null);
   const [tempVal, setTempVal] = React.useState<string>("");
+  const [azimuthMode, setAzimuthMode] = React.useState<"preset" | "custom">("custom");
+  const lastCustomAzimuthByRoofRef = React.useRef<Map<string, number>>(new Map());
   const [confirmStandardReplace, setConfirmStandardReplace] =
     React.useState(false);
   const [pendingRoofType, setPendingRoofType] = React.useState<
@@ -391,26 +374,84 @@ export default function ModulesPanel() {
   };
 
   const commitInline = React.useCallback(
-    (roofId: string, field: "tilt" | "az") => {
-      const raw = Number(tempVal);
+    (roofId: string, field: "tilt" | "az", rawText = tempVal) => {
+      const raw = Number(rawText.replace(",", "."));
       if (!Number.isFinite(raw)) {
         setEditing(null);
         return;
       }
 
+      const roof = layers.find((candidate) => candidate.id === roofId);
+      if (!roof) {
+        setEditing(null);
+        return;
+      }
+      const planning = resolveSurfacePlanning(roof.surfacePlanning);
       if (field === "tilt") {
-        const v = Math.max(0, Math.min(60, raw));
-        updateRoof(roofId, { tiltDeg: v, source: "manual" });
+        const v = Math.max(0, Math.min(80, raw));
+        const surfacePlanning = planning.status === "supported-standard" || planning.status === "supported-advanced"
+          ? {
+              ...planning.config,
+              surface: { ...planning.config.surface, slopeDeg: v },
+            }
+          : roof.surfacePlanning;
+        updateRoof(roofId, { tiltDeg: v, surfacePlanning });
+        const draft = roofPlanningDrafts[roofId];
+        if (draft?.targetMode === "advanced") {
+          setRoofPlanningDraft(roofId, {
+            ...draft,
+            config: {
+              ...draft.config,
+              surface: { ...draft.config.surface, slopeDeg: v },
+            },
+          });
+        }
       } else {
-        const display = Math.round(raw); // valore inserito in UI (0° = N)
-        const stored = ((display % 360) + 360) % 360;
-        updateRoof(roofId, { fallAzimuthDeg: stored });
+        const stored = normalizeRoofAzimuthDeg(raw);
+        const surfacePlanning = planning.status === "supported-standard" || planning.status === "supported-advanced"
+          ? {
+              ...planning.config,
+              surface: { ...planning.config.surface, fallAzimuthDeg: stored },
+            }
+          : roof.surfacePlanning;
+        updateRoof(roofId, { fallAzimuthDeg: stored, surfacePlanning });
+        const draft = roofPlanningDrafts[roofId];
+        if (draft?.targetMode === "advanced") {
+          setRoofPlanningDraft(roofId, {
+            ...draft,
+            config: {
+              ...draft.config,
+              surface: { ...draft.config.surface, fallAzimuthDeg: stored },
+            },
+          });
+        }
       }
 
       setEditing(null);
     },
-    [tempVal, updateRoof],
+    [layers, roofPlanningDrafts, setRoofPlanningDraft, tempVal, updateRoof],
   );
+
+  const openInlineEditor = React.useCallback((input: {
+    roofId: string;
+    field: "tilt" | "az";
+    value?: number;
+    disabled?: boolean;
+  }) => {
+    if (input.disabled) return;
+    select(input.roofId);
+    setTempVal(input.value == null ? "" : String(Math.round(input.value * 100) / 100));
+    if (input.field === "az") {
+      const isPreset = ROOF_DIRECTION_CHOICES.some(
+        (choice) => input.value != null && Math.abs(choice.azimuthDeg - input.value) < 0.01,
+      );
+      setAzimuthMode(isPreset ? "preset" : "custom");
+      if (!isPreset && input.value != null) {
+        lastCustomAzimuthByRoofRef.current.set(input.roofId, input.value);
+      }
+    }
+    setEditing({ id: input.roofId, field: input.field });
+  }, [select]);
 
   const generateStandardMode = useCallback(
     (orientation: "portrait" | "landscape") => {
@@ -566,21 +607,11 @@ export default function ModulesPanel() {
         ) : (
           <div className="text-[10px]">
             {step === "building" ? (
-              <div className="grid h-6 grid-cols-[28px_52px_38px_58px_32px] items-center px-1 text-[10px] text-muted-foreground">
-                <div className="font-medium">D</div>
-                <div className="text-right font-medium">m²</div>
-                <div
-                  className="flex items-center justify-center"
-                  title="Neigung (°)"
-                >
-                  <IconTilt className="h-3.5 w-3.5 opacity-90" />
-                </div>
-                <div
-                  className="flex items-center justify-center"
-                  title="Ausrichtung (° vs N)"
-                >
-                  <LuCompass className="h-4 w-4 opacity-90" />
-                </div>
+              <div className="grid h-8 grid-cols-[28px_42px_48px_minmax(70px,1fr)_32px] items-end px-1 pb-1 text-[8px] font-medium leading-none text-muted-foreground">
+                <div>Dach</div>
+                <div className="text-right">Fläche</div>
+                <div className="text-center">Neigung</div>
+                <div className="text-center">Ausrichtung</div>
                 <div />
               </div>
             ) : (
@@ -603,12 +634,6 @@ export default function ModulesPanel() {
                 const count = panels.filter((p) => p.roofId === roofId).length;
                 const kWp = selSpec ? (selSpec.wp / 1000) * count : 0;
 
-                // helpers compatti
-                const norm360 = (d: number) => ((d % 360) + 360) % 360;
-                const toCard8 = (az: number) =>
-                  ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][
-                    Math.round(norm360(az) / 45) % 8
-                  ];
                 const fmtDe2 = new Intl.NumberFormat("de-DE", {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
@@ -630,10 +655,10 @@ export default function ModulesPanel() {
                   ? formatRoofSlopeDirection(tilt, az)
                   : undefined;
 
-                const tiltShort = tilt != null ? Math.round(tilt) : undefined;
+                const tiltShort = tilt != null ? Math.round(tilt * 100) / 100 : undefined;
 
                 const azView = az;
-                const azShort = azView != null ? Math.round(azView) : undefined; // <-- ricalcola qui
+                const azShort = azView != null ? Math.round(azView * 100) / 100 : undefined;
 
                 const src = l.source;
                 const srcBadge =
@@ -641,9 +666,10 @@ export default function ModulesPanel() {
                 return (
                   <li key={roofId}>
                     <div
+                      onClick={() => select(roofId)}
                       className={[
                         step === "building"
-                          ? "grid h-8 grid-cols-[28px_52px_38px_58px_32px] items-center px-1"
+                          ? "grid min-h-9 grid-cols-[28px_42px_48px_minmax(70px,1fr)_32px] items-center px-1"
                           : "grid min-h-10 grid-cols-[1fr_58px_70px] items-center px-1 py-1",
                         active
                           ? "bg-primary/15 text-primary ring-1 ring-primary/30"
@@ -694,130 +720,65 @@ export default function ModulesPanel() {
                               correctForTilt
                             />
                           </div>
-                          <div
-                            className="tabular-nums text-center opacity-80"
-                            title="Neigung (°)"
-                            onClick={() => {
-                              if (
-                                editing?.id === roofId &&
-                                editing.field === "tilt"
-                              )
-                                return;
-                              setEditing({ id: roofId, field: "tilt" });
-                              setTempVal(
-                                tiltShort != null ? String(tiltShort) : "",
-                              );
-                            }}
-                          >
+                          <div className="flex justify-center px-0.5">
                             {editing?.id === roofId &&
                             editing.field === "tilt" ? (
-                              <input
-                                autoFocus
-                                type="number"
-                                min={0}
-                                max={60}
-                                step={1}
-                                value={tempVal}
-                                onChange={(e) => setTempVal(e.target.value)}
-                                onBlur={() => commitInline(roofId, "tilt")}
-                                data-stop-hotkeys="true"
-                                onKeyDownCapture={stopHotkeysCapture} // ⬅️ blocca i listener globali
-                                onKeyDown={(e) => {
-                                  // gestiamo noi i tasti principali
-                                  if (e.key === "Enter") {
-                                    commitInline(roofId, "tilt");
-                                    return;
-                                  }
-                                  if (e.key === "Escape") {
-                                    setEditing(null);
-                                    return;
-                                  }
-                                  // Delete / Backspace: svuota il campo ma NON propagare
-                                  if (
-                                    e.key === "Delete" ||
-                                    e.key === "Backspace"
-                                  ) {
-                                    e.preventDefault();
+                              <span className="flex h-7 w-[44px] items-center rounded-md border border-primary bg-background/70 px-1 ring-1 ring-primary/30">
+                                <input
+                                  autoFocus
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={tempVal}
+                                  onChange={(e) => setTempVal(e.target.value)}
+                                  onBlur={() => commitInline(roofId, "tilt")}
+                                  data-stop-hotkeys="true"
+                                  onKeyDown={(e) => {
                                     e.stopPropagation();
-                                    if (e.nativeEvent?.stopImmediatePropagation)
-                                      e.nativeEvent.stopImmediatePropagation();
-                                    setTempVal("");
-                                    return;
-                                  }
-                                }}
-                                className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
-                                style={{ padding: 0 }}
-                              />
-                            ) : (
-                              <span>
-                                {tiltShort != null ? `${tiltShort}°` : "—"}
+                                    if (e.key === "Enter") {
+                                      e.currentTarget.blur();
+                                      return;
+                                    }
+                                    if (e.key === "Escape") {
+                                      setEditing(null);
+                                      return;
+                                    }
+                                  }}
+                                  aria-label={`Dachneigung für D${i + 1}`}
+                                  className="min-w-0 flex-1 bg-transparent text-right text-[9px] tabular-nums outline-none"
+                                />
+                                <span className="text-[9px] text-muted-foreground">°</span>
                               </span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={rowKind === "flat"}
+                                onClick={() => openInlineEditor({
+                                  roofId,
+                                  field: "tilt",
+                                  value: tiltShort,
+                                  disabled: rowKind === "flat",
+                                })}
+                                title={rowKind === "flat" ? "Flachdach: Neigung 0°" : "Dachneigung bearbeiten"}
+                                aria-label={`Dachneigung für D${i + 1} bearbeiten`}
+                                className="flex h-7 w-[44px] items-center justify-center rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums transition hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-55"
+                              >
+                                {tiltShort != null ? `${tiltShort}°` : "—"}
+                              </button>
                             )}
                           </div>
 
-                          <div
-                            className="tabular-nums text-center opacity-80"
-                            title={
-                              azView != null
-                                ? `${Math.round(azView)}° ${toCard8(azView)}`
-                                : "Ausrichtung"
-                            }
-                            onClick={() => {
-                              if (
-                                editing?.id === roofId &&
-                                editing.field === "az"
-                              )
-                                return;
-                              setEditing({ id: roofId, field: "az" });
-                              setTempVal(
-                                azShort != null ? String(azShort) : "",
-                              );
-                            }}
-                          >
-                            {editing?.id === roofId &&
-                            editing.field === "az" ? (
-                              <input
-                                autoFocus
-                                type="number"
-                                min={0}
-                                max={359}
-                                step={1}
-                                value={tempVal}
-                                onChange={(e) => setTempVal(e.target.value)}
-                                onBlur={() => commitInline(roofId, "az")}
-                                data-stop-hotkeys="true"
-                                onKeyDownCapture={stopHotkeysCapture} // ⬅️ blocca i listener globali
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    commitInline(roofId, "az");
-                                    return;
-                                  }
-                                  if (e.key === "Escape") {
-                                    setEditing(null);
-                                    return;
-                                  }
-                                  if (
-                                    e.key === "Delete" ||
-                                    e.key === "Backspace"
-                                  ) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    if (e.nativeEvent?.stopImmediatePropagation)
-                                      e.nativeEvent.stopImmediatePropagation();
-                                    setTempVal("");
-                                    return;
-                                  }
-                                }}
-                                className="w-full h-5 text-[10px] text-center bg-transparent outline-none border-b border-current/30"
-                                style={{ padding: 0 }}
-                              />
-                            ) : (
-                              <span>
-                                {azShort != null
-                                  ? `${toCard8(azShort)} ${azShort}°`
-                                  : "—"}
-                              </span>
-                            )}
+                          <div className="px-0.5">
+                            <button
+                              type="button"
+                              onClick={() => openInlineEditor({ roofId, field: "az", value: azShort })}
+                              title="Gefällerichtung bearbeiten"
+                              aria-label={`Ausrichtung für D${i + 1} bearbeiten`}
+                              className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums transition hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                            >
+                              {azShort != null
+                                ? `${roofAzimuthCardinal(azShort)} · ${azShort}°`
+                                : "Festlegen"}
+                            </button>
                           </div>
 
                           <div className="flex items-center justify-end gap-1">
@@ -837,7 +798,10 @@ export default function ModulesPanel() {
                               </span>
                             )}
                             <button
-                              onClick={() => delLayer(roofId)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                delLayer(roofId);
+                              }}
                               title="Dachfläche löschen"
                               aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
                               className={[
@@ -853,6 +817,78 @@ export default function ModulesPanel() {
                         </>
                       )}
                     </div>
+                    {step === "building" && editing?.id === roofId && editing.field === "az" && (
+                      <div
+                        className="space-y-2 border-x border-b border-primary/30 bg-background/80 p-2"
+                        onBlur={(event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget)) setEditing(null);
+                        }}
+                      >
+                        <label className="block text-[8px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Ausrichtung
+                          <select
+                            autoFocus
+                            value={azimuthMode === "custom" ? "custom" : String(azShort)}
+                            onChange={(event) => {
+                              if (event.target.value === "custom") {
+                                setAzimuthMode("custom");
+                                const lastCustom = lastCustomAzimuthByRoofRef.current.get(roofId);
+                                if (lastCustom != null) setTempVal(String(lastCustom));
+                                return;
+                              }
+                              setAzimuthMode("preset");
+                              commitInline(roofId, "az", event.target.value);
+                            }}
+                            onKeyDown={(event) => {
+                              event.stopPropagation();
+                              if (event.key === "Escape") setEditing(null);
+                            }}
+                            data-stop-hotkeys="true"
+                            className="mt-1 h-8 w-full rounded-lg border border-border/70 bg-background/70 px-2 text-[10px] font-normal normal-case tracking-normal text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                          >
+                            {ROOF_DIRECTION_CHOICES.map((choice) => (
+                              <option key={choice.azimuthDeg} value={choice.azimuthDeg}>
+                                {choice.label} · {choice.azimuthDeg}°
+                              </option>
+                            ))}
+                            <option value="custom">Benutzerdefiniert…</option>
+                          </select>
+                        </label>
+                        {azimuthMode === "custom" && (
+                          <label className="block text-[8px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Exakter Winkel
+                            <span className="mt-1 flex h-8 items-center rounded-lg border border-border/70 bg-background/70 px-2 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/30">
+                              <input
+                                autoFocus
+                                type="text"
+                                inputMode="decimal"
+                                value={tempVal}
+                                onChange={(event) => setTempVal(event.target.value)}
+                                onBlur={() => {
+                                  const customValue = Number(tempVal.replace(",", "."));
+                                  if (Number.isFinite(customValue)) {
+                                    lastCustomAzimuthByRoofRef.current.set(
+                                      roofId,
+                                      normalizeRoofAzimuthDeg(customValue),
+                                    );
+                                  }
+                                  commitInline(roofId, "az");
+                                }}
+                                onKeyDown={(event) => {
+                                  event.stopPropagation();
+                                  if (event.key === "Enter") event.currentTarget.blur();
+                                  if (event.key === "Escape") setEditing(null);
+                                }}
+                                data-stop-hotkeys="true"
+                                aria-label={`Exakter Ausrichtungswinkel für D${i + 1}`}
+                                className="min-w-0 flex-1 bg-transparent text-[10px] font-normal normal-case tracking-normal text-foreground outline-none"
+                              />
+                              <span className="text-[10px] font-normal text-muted-foreground">°</span>
+                            </span>
+                          </label>
+                        )}
+                      </div>
+                    )}
                   </li>
                 );
               })}
@@ -942,7 +978,7 @@ export default function ModulesPanel() {
       )}
 
       {step === "building" && selectedRoof && (
-        <PitchedRoofSlopeControl roof={selectedRoof} roofKind={selectedRoofKind} />
+        <RoofMarginControl roof={selectedRoof} />
       )}
 
       {step === "building" && selectedRoof && (
