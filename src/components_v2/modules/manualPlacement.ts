@@ -170,6 +170,7 @@ export function createPanelPastePlacementValidator(input: {
   zones: readonly ObstacleZone[];
   snowGuards: readonly SnowGuard[];
   panels: readonly PanelInstance[];
+  excludePanelIds?: ReadonlySet<string>;
 }): (panels: readonly PanelInstance[]) => boolean {
   const adapter = imageAdapter(input.roof, input.mppImage);
   const usableRoof = computeUsableRoof({
@@ -194,6 +195,7 @@ export function createPanelPastePlacementValidator(input: {
     input.panels,
     input.roof.id,
     adapter,
+    input.excludePanelIds,
   ).map((polygon) => ({ polygon, bounds: polygonBounds(polygon) }));
 
   return (panels) => {

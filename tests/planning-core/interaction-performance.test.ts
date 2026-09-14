@@ -70,10 +70,10 @@ test("raw pointer bursts coalesce to the latest animation frame value", () => {
     () => {},
   );
 
-  for (let value = 0; value < 100; value++) scheduler.schedule(value);
+  for (let value = 0; value < 600; value++) scheduler.schedule(value);
   assert.equal(callbacks.length, 1);
   callbacks[0](0);
-  assert.deepEqual(values, [99]);
+  assert.deepEqual(values, [599]);
 });
 
 test("flush processes the final pointer candidate before drag-end commit", () => {
@@ -134,6 +134,44 @@ test("panel drag projects static panels once and preserves overlap resolution", 
   assert.equal(projections, 399, "no projection is repeated during pointer frames");
 });
 
+test("50, 200 and 400 panel fixtures keep static projection outside 600 pointer frames", () => {
+  for (const panelCount of [50, 200, 400]) {
+    let projections = 0;
+    const panels: PanelInst[] = Array.from({ length: panelCount }, (_, index) => ({
+      id: `fixture-${panelCount}-${index}`,
+      roofId: "roof-a",
+      cx: (index % 20) * 14,
+      cy: Math.floor(index / 20) * 24,
+      wPx: 10,
+      hPx: 20,
+      angleDeg: 0,
+    }));
+    const staticPanels = buildPanelDragStaticGeometry({
+      allPanels: panels,
+      roofId: "roof-a",
+      excludeId: panels[0].id,
+      defaultAngleDeg: 0,
+      project: ({ x, y }) => {
+        projections++;
+        return { u: x, v: y };
+      },
+    });
+    const projectionsAtStart = projections;
+    for (let move = 0; move < 600; move++) {
+      hasPanelOverlapCached({
+        u: move / 10,
+        v: move / 20,
+        hw: 5,
+        hh: 10,
+        gapPx: 1,
+        panels: staticPanels,
+      });
+    }
+    assert.equal(projectionsAtStart, panelCount - 1);
+    assert.equal(projections, projectionsAtStart, `${panelCount}: no static reprojection per move`);
+  }
+});
+
 test("continuous interactions keep global commits at gesture boundaries", () => {
   const panelSource = readFileSync(
     new URL("../../src/components_v2/modules/panels/usePanelDragSnap.ts", import.meta.url),
@@ -147,13 +185,74 @@ test("continuous interactions keep global commits at gesture boundaries", () => 
     new URL("../../src/components_v2/canvas/hooks/useStagePanZoom.ts", import.meta.url),
     "utf8",
   );
+  const panelsLayerSource = readFileSync(
+    new URL("../../src/components_v2/modules/PanelsKonva.tsx", import.meta.url),
+    "utf8",
+  );
+  const roofHandleSource = readFileSync(
+    new URL("../../src/components_v2/canvas/RoofHandlesKonva.tsx", import.meta.url),
+    "utf8",
+  );
+  const roofLayerSource = readFileSync(
+    new URL("../../src/components_v2/canvas/RoofShapesLayer.tsx", import.meta.url),
+    "utf8",
+  );
+  const canvasSource = readFileSync(
+    new URL("../../src/components_v2/canvas/CanvasStage.tsx", import.meta.url),
+    "utf8",
+  );
 
-  assert.equal(panelSource.match(/updatePanel\(/g)?.length, 1);
+  assert.equal(panelSource.includes("updatePanel("), false);
+  assert.equal(panelSource.match(/commitPanel\(/g)?.length, 1);
   assert.equal(zoneSource.match(/onChange\(/g)?.length, 1);
   assert.ok(panelSource.includes("node.position"));
   assert.ok(panelSource.includes("endDrag(false)"));
-  assert.ok(zoneSource.includes("setLivePoints"));
+  assert.equal(zoneSource.includes("setLivePoints"), false);
+  assert.equal(zoneSource.includes("setDragValid"), false);
+  assert.equal(roofHandleSource.includes("setLivePoints"), false);
+  assert.equal(panelsLayerSource.includes("setGroupHint"), false);
+  assert.ok(panelsLayerSource.includes("updatePanelsBulk(patches)"));
+  assert.ok(roofLayerSource.includes("updateRoofsBulk(patches)"));
+  assert.equal(canvasSource.includes("setFillDraft"), false);
   assert.equal(panSource.includes("setView({ offsetX: cl.x, offsetY: cl.y })"), false);
+});
+
+test("600 pointer moves can end in exactly one canonical commit", () => {
+  const callbacks: FrameRequestCallback[] = [];
+  let visualFrames = 0;
+  let commits = 0;
+  let finalVisual = -1;
+  const scheduler = createLatestFrameScheduler(
+    (value: number) => {
+      visualFrames++;
+      finalVisual = value;
+    },
+    (callback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    },
+    () => {},
+  );
+
+  for (let index = 0; index < 600; index++) scheduler.schedule(index);
+  assert.equal(commits, 0, "pointer frames never commit canonical state");
+  scheduler.flush();
+  commits++;
+  assert.equal(visualFrames, 1);
+  assert.equal(finalVisual, 599);
+  assert.equal(commits, 1);
+});
+
+test("cancelled 600-move gesture performs zero canonical commits", () => {
+  const commits = 0;
+  const scheduler = createLatestFrameScheduler(
+    () => {},
+    () => 1,
+    () => {},
+  );
+  for (let index = 0; index < 600; index++) scheduler.schedule(index);
+  scheduler.cancel();
+  assert.equal(commits, 0);
 });
 
 test("cancelled frame work never reaches the visual callback", () => {

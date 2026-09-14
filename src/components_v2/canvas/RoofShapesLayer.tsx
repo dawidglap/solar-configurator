@@ -21,6 +21,7 @@ import {
   clearTransientRoofAnnotationPoints,
   publishTransientRoofAnnotationPoints,
 } from "./performance/transientRoofAnnotations";
+import { createLatestFrameScheduler } from "./performance/latestFrameScheduler";
 
 type Pt = { x: number; y: number };
 type LayerRoof = {
@@ -279,6 +280,7 @@ export default function RoofShapesLayer({
 }) {
   // store actions
   const updateRoof = usePlannerV2Store((s) => s.updateRoof);
+  const updateRoofsBulk = usePlannerV2Store((s) => s.updateRoofsBulk);
   const removeRoof = usePlannerV2Store((s) => s.removeRoof);
   const step = usePlannerV2Store((s) => s.step);
   const roofsLocked = step === "modules";
@@ -323,7 +325,12 @@ export default function RoofShapesLayer({
       cancel();
     };
     window.addEventListener("keydown", onEscape, { capture: true });
-    return () => window.removeEventListener("keydown", onEscape, { capture: true });
+    const onWindowBlur = () => cancelRoofGestureRef.current?.();
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", onEscape, { capture: true });
+      window.removeEventListener("blur", onWindowBlur);
+    };
   }, []);
 
   const hasPrimarySelection = useMemo(
@@ -558,7 +565,6 @@ export default function RoofShapesLayer({
                       ev.cancelBubble = true;
                       const st = ev.target.getStage();
                       if (!st) return;
-                      plannerHistory.push("move roof");
                       const ns = `.roof-edge-${k}`;
                       st.off(ns);
 
@@ -571,16 +577,8 @@ export default function RoofShapesLayer({
                       if (!pos) return;
                       moveStartPtrImgRef.current = toImg(pos.x, pos.y);
 
-                      st.on("mousemove" + ns + " touchmove" + ns, () => {
-                        const cur = st.getPointerPosition();
-                        if (
-                          !cur ||
-                          !moveStartPtsRef.current ||
-                          !moveStartPtrImgRef.current
-                        )
-                          return;
-                        const curImg = toImg(cur.x, cur.y);
-
+                      const frame = createLatestFrameScheduler((curImg: Pt) => {
+                        if (!moveStartPtsRef.current || !moveStartPtrImgRef.current) return;
                         const dx = curImg.x - moveStartPtrImgRef.current.x;
                         const dy = curImg.y - moveStartPtrImgRef.current.y;
 
@@ -599,10 +597,21 @@ export default function RoofShapesLayer({
                         shape?.getLayer()?.batchDraw();
                       });
 
+                      st.on("mousemove" + ns + " touchmove" + ns, () => {
+                        const cur = st.getPointerPosition();
+                        if (!cur) return;
+                        frame.schedule(toImg(cur.x, cur.y));
+                      });
+
                       const end = (commit = true) => {
+                        if (commit) frame.flush();
+                        frame.cancel();
                         st.off(ns);
                         const finalPoints = finalRoofPointsRef.current[r.id];
-                        if (commit && finalPoints) updateRoof(r.id, { points: finalPoints });
+                        if (commit && finalPoints) {
+                          plannerHistory.push("move roof");
+                          updateRoof(r.id, { points: finalPoints });
+                        }
                         if (!commit && moveStartPtsRef.current) {
                           const shape = st.findOne(`#roof-shape-${r.id}`) as Konva.Line | undefined;
                           shape?.points(toFlat(moveStartPtsRef.current));
@@ -628,6 +637,7 @@ export default function RoofShapesLayer({
                           ns,
                         () => end(true),
                       );
+                      st.on("pointercancel" + ns + " touchcancel" + ns, () => end(false));
                     }}
                   />
                 </KonvaGroup>
@@ -702,8 +712,6 @@ export default function RoofShapesLayer({
                 e.cancelBubble = true;
                 const st = e.target.getStage();
                 if (!st) return;
-                plannerHistory.push("offset edge");
-
                 const forceAll = !!(
                   e?.evt?.altKey ||
                   e?.evt?.metaKey ||
@@ -736,14 +744,12 @@ export default function RoofShapesLayer({
                   if (!p0) return;
                   moveStartPtrImgRef.current = toImg(p0.x, p0.y);
 
-                  st.on("mousemove" + ns + " touchmove" + ns, (ev: any) => {
-                    const pos = st.getPointerPosition();
-                    if (!pos || !moveStartPtrImgRef.current) return;
-                    const cur = toImg(pos.x, pos.y);
+                  const frame = createLatestFrameScheduler(({ cur, shiftKey }: { cur: Pt; shiftKey: boolean }) => {
+                    if (!moveStartPtrImgRef.current) return;
                     let dx = cur.x - moveStartPtrImgRef.current.x;
                     let dy = cur.y - moveStartPtrImgRef.current.y;
 
-                    if (ev?.evt?.shiftKey) {
+                    if (shiftKey) {
                       if (Math.abs(dx) > Math.abs(dy)) dy = 0;
                       else dx = 0;
                     }
@@ -756,19 +762,31 @@ export default function RoofShapesLayer({
                     e.target.getLayer()?.batchDraw();
                   });
 
+                  st.on("mousemove" + ns + " touchmove" + ns, (ev: any) => {
+                    const pos = st.getPointerPosition();
+                    if (!pos) return;
+                    frame.schedule({ cur: toImg(pos.x, pos.y), shiftKey: Boolean(ev?.evt?.shiftKey) });
+                  });
+
                   const end = (commit = true) => {
+                    if (commit) frame.flush();
+                    frame.cancel();
                     st.off(ns);
                     const delta = moveDeltaRef.current;
-                    const update = usePlannerV2Store.getState().updateRoof;
+                    const patches: Record<string, { points: Pt[] }> = {};
                     idsToMove.forEach((id) => {
                       const startPts = groupStartPtsRef.current[id];
                       if (!startPts) return;
                       moveGroupsRef.current[id]?.position({ x: 0, y: 0 });
                       moveAnnotationGroupsRef.current[id]?.position({ x: 0, y: 0 });
-                      if (commit) update(id, {
+                      if (commit) patches[id] = {
                         points: translateInteractionPoints(startPts, delta),
-                      });
+                      };
                     });
+                    if (commit && Object.keys(patches).length > 0) {
+                      plannerHistory.push("offset edge");
+                      updateRoofsBulk(patches);
+                    }
                     moveStartPtrImgRef.current = null;
                     groupStartPtsRef.current = {};
                     moveGroupsRef.current = {};
@@ -791,6 +809,7 @@ export default function RoofShapesLayer({
                       ns,
                     () => end(true),
                   );
+                  st.on("pointercancel" + ns + " touchcancel" + ns, () => end(false));
                   return;
                 }
 
@@ -824,14 +843,12 @@ export default function RoofShapesLayer({
                 if (!p0) return;
                 moveStartPtrImgRef.current = toImg(p0.x, p0.y);
 
-                st.on("mousemove" + ns + " touchmove" + ns, (ev: any) => {
-                  const pos = st.getPointerPosition();
-                  if (!pos || !moveStartPtrImgRef.current) return;
-                  const cur = toImg(pos.x, pos.y);
+                const frame = createLatestFrameScheduler(({ cur, shiftKey }: { cur: Pt; shiftKey: boolean }) => {
+                  if (!moveStartPtrImgRef.current) return;
                   let dx = cur.x - moveStartPtrImgRef.current.x;
                   let dy = cur.y - moveStartPtrImgRef.current.y;
 
-                  if (ev?.evt?.shiftKey) {
+                  if (shiftKey) {
                     if (Math.abs(dx) > Math.abs(dy)) dy = 0;
                     else dx = 0;
                   }
@@ -844,18 +861,31 @@ export default function RoofShapesLayer({
                   e.target.getLayer()?.batchDraw();
                 });
 
+                st.on("mousemove" + ns + " touchmove" + ns, (ev: any) => {
+                  const pos = st.getPointerPosition();
+                  if (!pos) return;
+                  frame.schedule({ cur: toImg(pos.x, pos.y), shiftKey: Boolean(ev?.evt?.shiftKey) });
+                });
+
                 const end = (commit = true) => {
+                  if (commit) frame.flush();
+                  frame.cancel();
                   st.off(ns);
                   const delta = moveDeltaRef.current;
+                  const patches: Record<string, { points: Pt[] }> = {};
                   idsToMove.forEach((id) => {
                     const startPts = groupStartPtsRef.current[id];
                     if (!startPts) return;
                     moveGroupsRef.current[id]?.position({ x: 0, y: 0 });
                     moveAnnotationGroupsRef.current[id]?.position({ x: 0, y: 0 });
-                    if (commit) updateRoof(id, {
+                    if (commit) patches[id] = {
                       points: translateInteractionPoints(startPts, delta),
-                    });
+                    };
                   });
+                  if (commit && Object.keys(patches).length > 0) {
+                    plannerHistory.push("offset edge");
+                    updateRoofsBulk(patches);
+                  }
                   moveStartPtrImgRef.current = null;
                   groupStartPtsRef.current = {};
                   moveGroupsRef.current = {};
@@ -877,6 +907,7 @@ export default function RoofShapesLayer({
                     ns,
                   () => end(true),
                 );
+                st.on("pointercancel" + ns + " touchcancel" + ns, () => end(false));
               }}
             />
 
@@ -996,6 +1027,7 @@ export default function RoofShapesLayer({
                       if (!st) return;
                       const ns = ".roof-rotate";
                       st.off(ns);
+                      onHandlesDragStart();
                       setIsTransformingRoof(true);
 
                       // snapshot iniziale (usa le refs già dichiarate nel file)
@@ -1016,16 +1048,12 @@ export default function RoofShapesLayer({
                       const roofGroup = st.findOne(`#roof-group-${r.id}`) as Konva.Group | undefined;
                       const annotationGroup = st.findOne(`#roof-annotation-transform-${r.id}`) as Konva.Group | undefined;
 
-                      st.on("mousemove" + ns + " touchmove" + ns, (ev: any) => {
-                        const cur = st.getPointerPosition();
-                        if (
-                          !cur ||
-                          !startPtsRef.current ||
-                          !startPivotRef.current
-                        )
-                          return;
-
-                        const qImg = toImg(cur.x, cur.y);
+                      const frame = createLatestFrameScheduler(({ qImg, altKey, shiftKey }: {
+                        qImg: Pt;
+                        altKey: boolean;
+                        shiftKey: boolean;
+                      }) => {
+                        if (!startPtsRef.current || !startPivotRef.current) return;
                         const a = Math.atan2(
                           qImg.y - startPivotRef.current.y,
                           qImg.x - startPivotRef.current.x,
@@ -1033,10 +1061,10 @@ export default function RoofShapesLayer({
 
                         let deltaDeg =
                           (a - dragStartAngleRef.current) * (180 / Math.PI);
-                        if (ev?.evt?.altKey) deltaDeg *= 0.2; // rotazione fine
+                        if (altKey) deltaDeg *= 0.2; // rotazione fine
 
                         const raw = dragStartDegRef.current + deltaDeg;
-                        const nextDeg = ev?.evt?.shiftKey
+                        const nextDeg = shiftKey
                           ? Math.round(raw / 15) * 15
                           : raw;
 
@@ -1061,7 +1089,19 @@ export default function RoofShapesLayer({
                         roofGroup?.getLayer()?.batchDraw();
                       });
 
+                      st.on("mousemove" + ns + " touchmove" + ns, (ev: any) => {
+                        const cur = st.getPointerPosition();
+                        if (!cur) return;
+                        frame.schedule({
+                          qImg: toImg(cur.x, cur.y),
+                          altKey: Boolean(ev?.evt?.altKey),
+                          shiftKey: Boolean(ev?.evt?.shiftKey),
+                        });
+                      });
+
                       const end = (commit = true) => {
+                        if (commit) frame.flush();
+                        frame.cancel();
                         st.off(ns);
                         const delta =
                           lastNextDegRef.current -
@@ -1085,6 +1125,7 @@ export default function RoofShapesLayer({
                           annotationGroup.rotation(0);
                         }
                         if (commit) {
+                          plannerHistory.push("rotate roof");
                           updateRoof(r.id, {
                             points: finalRoofPointsRef.current[r.id] ?? r.points,
                             azimuthDeg: newAz,
@@ -1097,6 +1138,7 @@ export default function RoofShapesLayer({
                         setRoofRotDeg(0);
                         setIsTransformingRoof(false);
                         cancelRoofGestureRef.current = null;
+                        onHandlesDragEnd();
                       };
                       cancelRoofGestureRef.current = () => end(false);
                       st.on(
@@ -1110,6 +1152,7 @@ export default function RoofShapesLayer({
                           ns,
                         () => end(true),
                       );
+                      st.on("pointercancel" + ns + " touchcancel" + ns, () => end(false));
                     }}
                   >
                     {/* Cerchio bianco contenitore (dimensione costante visivamente grazie a HANDLE_SZ calcolato con toImgPx) */}
@@ -1169,7 +1212,10 @@ export default function RoofShapesLayer({
                 snapRadiusImg={snapRadiusImg}
                 onDragStart={onHandlesDragStart}
                 onDragEnd={onHandlesDragEnd}
-                onChange={(next) => updateRoof(r.id, { points: next })}
+                onChange={(next) => {
+                  plannerHistory.push("move roof vertex");
+                  updateRoof(r.id, { points: next });
+                }}
               />
             )}
           </KonvaGroup>

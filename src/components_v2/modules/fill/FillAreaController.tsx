@@ -30,19 +30,19 @@ import {
   isPrimaryPointerButton,
   shouldIgnorePlannerHotkeyTarget,
 } from '../../canvas/interactionPolicy';
+import type { TransientFillDraftChannel } from './transientFillDraft';
 
-type ModRect = { cx: number; cy: number; wPx: number; hPx: number; angleDeg: number };
 type FillDraft = { a: Pt; b: Pt; poly: Pt[]; panels: PanelInstance[] };
 
 type Props = {
   stageRef: React.RefObject<Konva.Stage | null>;
   toImgCoords: (x: number, y: number) => Pt;
-  onDraftChange?: (draft: { a: Pt; b: Pt; poly: Pt[]; rects: ModRect[] } | null) => void;
+  draftChannel: TransientFillDraftChannel;
   cancelVersion?: number;
 };
 
 /* -------------------------------- component -------------------------------- */
-export default function FillAreaController({ stageRef, toImgCoords, onDraftChange, cancelVersion = 0 }: Props) {
+export default function FillAreaController({ stageRef, toImgCoords, draftChannel, cancelVersion = 0 }: Props) {
   const step = usePlannerV2Store((s) => s.step);
   const tool = usePlannerV2Store((s) => s.tool);
   const layers = usePlannerV2Store((s) => s.layers);
@@ -148,7 +148,7 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
         hPx: panel.hPx,
         angleDeg: panel.angleDeg,
       }));
-      onDraftChange?.({ a, b, poly: next.poly, rects });
+      draftChannel.publish({ a, b, poly: next.poly, rects });
     };
     let dragActivated = false;
     let activePointerId: number | null = null;
@@ -158,7 +158,7 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       onVisual: (visual) => {
         if (!visual) {
           draftRef.current = null;
-          onDraftChange?.(null);
+          draftChannel.clear();
           return;
         }
         dragActivated = true;
@@ -322,7 +322,7 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       window.removeEventListener('blur', cancelGesture);
       cancelGesture();
     };
-  }, [stageRef, step, tool, layers, selectedId, toImgCoords, onDraftChange, cancelVersion]);
+  }, [stageRef, step, tool, layers, selectedId, toImgCoords, draftChannel, cancelVersion]);
 
   return null;
 }

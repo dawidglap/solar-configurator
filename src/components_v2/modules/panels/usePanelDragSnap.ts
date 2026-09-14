@@ -36,8 +36,9 @@ type Args = {
 
     // IO
     stageToImg?: (x: number, y: number) => Pt;
-    updatePanel: (id: string, patch: Partial<PanelInst>) => void;
+    commitPanel: (id: string, patch: Partial<PanelInst>) => void;
     normalizeCandidate?: (id: string, cx: number, cy: number) => Pt | null;
+    prepareNormalizeCandidate?: (id: string) => ((cx: number, cy: number) => Pt | null) | undefined;
 
     // UX
     onSelect?: (id?: string) => void;
@@ -122,12 +123,17 @@ export function hasPanelOverlapCached(input: {
 export function buildPanelDragStaticGeometry(input: {
     allPanels: PanelInst[];
     roofId: string;
-    excludeId: string;
+    excludeId?: string;
+    excludeIds?: ReadonlySet<string>;
     defaultAngleDeg: number;
     project: ProjectFn;
 }): StaticPanelUV[] {
     return input.allPanels.flatMap((panel) => {
-        if (panel.roofId !== input.roofId || panel.id === input.excludeId) return [];
+        if (
+            panel.roofId !== input.roofId ||
+            panel.id === input.excludeId ||
+            input.excludeIds?.has(panel.id)
+        ) return [];
         const angle = (typeof panel.angleDeg === 'number' ? panel.angleDeg : input.defaultAngleDeg) || 0;
         if (!isParallel(angle, input.defaultAngleDeg)) return [];
         const uv = input.project({ x: panel.cx, y: panel.cy });
@@ -180,7 +186,7 @@ export function usePanelDragSnap({
     allPanels,
     roofId,
     stageToImg,
-    updatePanel,
+    commitPanel,
     onSelect,
     onDragStart,
     onDragEnd,
@@ -191,6 +197,7 @@ export function usePanelDragSnap({
     gapYPx,
     reservedGuard,
     normalizeCandidate,
+    prepareNormalizeCandidate,
 }: Args) {
     // Refs stato drag
     const stageRef = React.useRef<any>(null);
@@ -202,6 +209,7 @@ export function usePanelDragSnap({
     const draggedSlopeArrowNodeRef = React.useRef<Konva.Node | null>(null);
     const dragStartPanelRef = React.useRef<PanelInst | null>(null);
     const finalPositionRef = React.useRef<Pt | null>(null);
+    const preparedNormalizerRef = React.useRef<((cx: number, cy: number) => Pt | null) | null>(null);
     const frameRef = React.useRef<FrameScheduler<{ point: Pt; disableSnap: boolean }> | null>(null);
 
     // Guide calcolate (altri pannelli + bordi tetto)
@@ -270,7 +278,7 @@ export function usePanelDragSnap({
         const st = stageRef.current;
         if (st) st.off('.paneldrag');
         if (commit && draggingIdRef.current && finalPositionRef.current) {
-            updatePanel(draggingIdRef.current, {
+            commitPanel(draggingIdRef.current, {
                 cx: finalPositionRef.current.x,
                 cy: finalPositionRef.current.y,
             });
@@ -298,9 +306,10 @@ export function usePanelDragSnap({
         draggedSlopeArrowNodeRef.current = null;
         dragStartPanelRef.current = null;
         finalPositionRef.current = null;
+        preparedNormalizerRef.current = null;
         clearHints();
         onDragEnd?.();
-    }, [onDragEnd, clearHints, updatePanel]);
+    }, [onDragEnd, clearHints, commitPanel]);
 
     const startDrag = React.useCallback(
         (panelId: string, e: any) => {
@@ -327,6 +336,7 @@ export function usePanelDragSnap({
             draggedSlopeArrowNodeRef.current = st.findOne(`#panel-slope-arrow-${panelId}`) ?? null;
             dragStartPanelRef.current = { ...p };
             finalPositionRef.current = { x: p.cx, y: p.cy };
+            preparedNormalizerRef.current = prepareNormalizeCandidate?.(panelId) ?? null;
 
             staticPanelsRef.current = buildPanelDragStaticGeometry({
                 allPanels,
@@ -430,10 +440,14 @@ export function usePanelDragSnap({
                 } else setGuide(hintVRef, null);
 
                 const snapped = fromUV(bestU, bestV);
-                if (reservedGuard && !reservedGuard(snapped.x, snapped.y)) return;
-                const normalized = normalizeCandidate
-                    ? normalizeCandidate(id, snapped.x, snapped.y)
-                    : snapped;
+                // The prepared validator owns the frozen obstacle snapshot;
+                // avoid rescanning zones on every frame when it is available.
+                if (!preparedNormalizerRef.current && reservedGuard && !reservedGuard(snapped.x, snapped.y)) return;
+                const normalized = preparedNormalizerRef.current
+                    ? preparedNormalizerRef.current(snapped.x, snapped.y)
+                    : normalizeCandidate
+                      ? normalizeCandidate(id, snapped.x, snapped.y)
+                      : snapped;
                 if (!normalized) return;
 
                 finalPositionRef.current = normalized;
@@ -458,6 +472,7 @@ export function usePanelDragSnap({
             });
 
             st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns, () => endDrag(true));
+            st.on('pointercancel' + ns + ' touchcancel' + ns, () => endDrag(false));
             st.on('mouseleave' + ns, () => endDrag(true));
         },
         [
@@ -466,7 +481,7 @@ export function usePanelDragSnap({
             onDragStart,
             endDrag,
             stageToImg,
-            updatePanel,
+            prepareNormalizeCandidate,
             project,
             fromUV,
             uvBounds,
@@ -492,11 +507,14 @@ export function usePanelDragSnap({
             event.stopImmediatePropagation();
             endDrag(false);
         };
+        const onBlur = () => endDrag(false);
         window.addEventListener('keydown', onKeyDown, { capture: true });
+        window.addEventListener('blur', onBlur);
         return () => {
             frameRef.current?.cancel();
             try { stageRef.current?.off('.paneldrag'); } catch { }
             window.removeEventListener('keydown', onKeyDown, { capture: true });
+            window.removeEventListener('blur', onBlur);
         };
     }, [endDrag]);
 

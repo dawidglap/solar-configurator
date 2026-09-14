@@ -7,10 +7,16 @@ import { usePlannerV2Store } from '../state/plannerV2Store';
 
 import type { Pt } from './panels/math';
 import { longestEdgeAngle, angleDiffDeg } from './panels/math';
-import { usePanelDragSnap, buildGuidesCommon, snapUVToGuides, type PanelInst as HookPanel } from '../modules/panels/usePanelDragSnap';
+import {
+  usePanelDragSnap,
+  buildGuidesCommon,
+  buildPanelDragStaticGeometry,
+  hasPanelOverlapCached,
+  snapUVToGuides,
+  type PanelInst as HookPanel,
+} from '../modules/panels/usePanelDragSnap';
 import { PanelItem } from './panels/PanelItem';
 import { Guides } from './panels/Guides';
-import { isInReservedZone } from '../zones/utils';
 import { legacyPointInPolygon } from '@/lib/planning-core/legacy-standard/collision';
 import { createLatestFrameScheduler, type FrameScheduler } from '../canvas/performance/latestFrameScheduler';
 import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
@@ -19,11 +25,12 @@ import {
   resolveSurfacePlanning,
 } from '@/lib/planning-core/advanced';
 import {
-  buildAdvancedManualCandidate,
+  createPanelPastePlacementValidator,
   resolveManualAdvancedBlockDefinition,
   snapAdvancedManualCenter,
   validateExistingPanelPlacement,
 } from './manualPlacement';
+import { history as plannerHistory } from '../state/history';
 import MultiSelectionDragHandle from './panels/MultiSelectionDragHandle';
 import { resolveDirectLayoutTargets } from './panels/directLayoutGeometry';
 
@@ -60,7 +67,6 @@ export default function PanelsKonva(props: {
   // --- store
   const allPanels = usePlannerV2Store((s) => s.panels) as PanelInst[];
   const hasPlanningDraft = usePlannerV2Store((s) => Boolean(s.roofPlanningDrafts[roofId]));
-  const rawUpdatePanel = usePlannerV2Store((s) => s.updatePanel);
   const updatePanelsBulk = usePlannerV2Store((s) => s.updatePanelsBulk);
   const setSelectedPanels = usePlannerV2Store((s) => s.setSelectedPanels);
   const allZones = usePlannerV2Store((s) => s.zones);
@@ -225,13 +231,41 @@ export default function PanelsKonva(props: {
     [allPanels, allZones, edgeMarginPx, fromUV, isReservedCenter, marginM, mpp, project, roof, snowGuards, uvBounds]
   );
 
-  const updatePanel = React.useCallback(
+  const preparePanelNormalizer = React.useCallback((id: string) => {
+    const panel = allPanels.find((candidate) => candidate.id === id);
+    if (!panel || !roof) return undefined;
+    const placementIsValid = createPanelPastePlacementValidator({
+      roof,
+      marginM,
+      mppImage: mpp,
+      zones: allZones,
+      snowGuards,
+      panels: allPanels,
+      excludePanelIds: new Set([id]),
+    });
+    return (proposedCx: number, proposedCy: number): Pt | null => {
+      const uv = project({ x: proposedCx, y: proposedCy });
+      const hw = panel.wPx / 2;
+      const hh = panel.hPx / 2;
+      const u = Math.max(uvBounds.minU + edgeMarginPx + hw, Math.min(
+        uvBounds.maxU - edgeMarginPx - hw,
+        uv.u,
+      ));
+      const v = Math.max(uvBounds.minV + edgeMarginPx + hh, Math.min(
+        uvBounds.maxV - edgeMarginPx - hh,
+        uv.v,
+      ));
+      const corrected = fromUV(u, v);
+      return placementIsValid([{ ...panel, cx: corrected.x, cy: corrected.y }])
+        ? corrected
+        : null;
+    };
+  }, [allPanels, allZones, edgeMarginPx, fromUV, marginM, mpp, project, roof, snowGuards, uvBounds]);
+
+  const commitPanel = React.useCallback(
     (id: string, patch: Partial<PanelInst>) => {
       const panel = allPanels.find((p) => p.id === id);
-      if (!panel) {
-        rawUpdatePanel(id, patch as any);
-        return;
-      }
+      if (!panel) return;
 
       const normalized = normalizePanelCandidate(
         id,
@@ -240,9 +274,12 @@ export default function PanelsKonva(props: {
       );
       if (!normalized) return;
 
-      rawUpdatePanel(id, { ...patch, cx: normalized.x, cy: normalized.y } as any);
+      plannerHistory.push('move panel');
+      updatePanelsBulk({
+        [id]: { ...patch, cx: normalized.x, cy: normalized.y },
+      });
     },
-    [allPanels, rawUpdatePanel, normalizePanelCandidate]
+    [allPanels, normalizePanelCandidate, updatePanelsBulk]
   );
 
 
@@ -256,7 +293,7 @@ export default function PanelsKonva(props: {
     allPanels,
     roofId,
     stageToImg,
-    updatePanel,
+    commitPanel,
     onSelect,
     onDragStart,
     onDragEnd,
@@ -267,6 +304,7 @@ export default function PanelsKonva(props: {
     gapYPx,
     reservedGuard: (cx, cy) => !isReservedCenter(cx, cy),
     normalizeCandidate: normalizePanelCandidate,
+    prepareNormalizeCandidate: preparePanelNormalizer,
   });
 
 
@@ -306,99 +344,20 @@ export default function PanelsKonva(props: {
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   }, [selectedPanels, defaultAngleDeg]);
 
-  // helpers
-  const isInsideBounds = React.useCallback(
-    (p: PanelInst, cx: number, cy: number) => {
-      const uv = project({ x: cx, y: cy });
-      const hw = p.wPx / 2;
-      const hh = p.hPx / 2;
-      const m = edgeMarginPx;
-
-      const minU = uvBounds.minU + m + hw;
-      const maxU = uvBounds.maxU - m - hw;
-      const minV = uvBounds.minV + m + hh;
-      const maxV = uvBounds.maxV - m - hh;
-
-      if (uv.u < minU || uv.u > maxU) return false;
-      if (uv.v < minV || uv.v > maxV) return false;
-      if (isInReservedZone({ x: cx, y: cy }, roofId)) return false;
-      return true;
-    },
-    [edgeMarginPx, project, uvBounds, roofId]
-  );
-
-
-  const anyOverlapWithNonSelected = React.useCallback((cand: { id: string; cx: number; cy: number }[]) => {
-    if (!roof) return true;
-    const movingIds = new Set(cand.map((candidate) => candidate.id));
-    const movingPanels = cand.map((candidate) => panels.find((panel) => panel.id === candidate.id))
-      .filter((panel): panel is PanelInst => Boolean(panel));
-    const advancedBlockKey = movingPanels[0]?.advanced?.blockKey;
-    const isOneCompleteAdvancedBlock = Boolean(
-      advancedBlockKey &&
-      movingPanels.length > 0 &&
-      movingPanels.every((panel) => panel.advanced?.blockKey === advancedBlockKey) &&
-      panels.filter((panel) => panel.advanced?.blockKey === advancedBlockKey).length === movingPanels.length,
-    );
-    if (isOneCompleteAdvancedBlock) {
-      const persisted = resolveSurfacePlanning(roof.surfacePlanning);
-      if (persisted.status === 'supported-advanced') {
-        const centerPx = {
-          x: cand.reduce((sum, candidate) => sum + candidate.cx, 0) / cand.length,
-          y: cand.reduce((sum, candidate) => sum + candidate.cy, 0) / cand.length,
-        };
-        const blockCandidate = buildAdvancedManualCandidate({
-          centerPx,
-          roof,
-          config: persisted.config,
-          mppImage: mpp,
-          zones: allZones,
-          snowGuards,
-          panels: allPanels.filter((panel) => !movingIds.has(panel.id)),
-        });
-        if (!blockCandidate.valid) return true;
-      }
-    }
-    // controlla overlap rettangoli paralleli su U/V con gap
-    const nonSel = panels.filter(p => !movingIds.has(p.id));
-    for (const c of cand) {
-      const me = panels.find(p => p.id === c.id)!;
-      if (!validateExistingPanelPlacement({
-        panel: me,
-        centerPx: { x: c.cx, y: c.cy },
-        roof,
-        marginM,
-        mppImage: mpp,
-        zones: allZones,
-        snowGuards,
-        panels: allPanels,
-        excludePanelIds: movingIds,
-      }).valid) return true;
-      const meUV = project({ x: c.cx, y: c.cy });
-      const meHW = me.wPx / 2, meHH = me.hPx / 2;
-
-      for (const t of nonSel) {
-        const tAngle = (typeof t.angleDeg === 'number' ? t.angleDeg : defaultAngleDeg) || 0;
-        // considera snap solo per pannelli paralleli (come nel singolo)
-        if (Math.min(angleDiffDeg(tAngle, defaultAngleDeg), Math.abs(angleDiffDeg(tAngle, defaultAngleDeg) - 180)) > 5) continue;
-
-        const tUV = project({ x: t.cx, y: t.cy });
-        const thw = t.wPx / 2, thh = t.hPx / 2;
-
-        const minU = meHW + thw + gapXPx;
-        const minV = meHH + thh + gapYPx;
-
-        const du = Math.abs(meUV.u - tUV.u);
-        const dv = Math.abs(meUV.v - tUV.v);
-        if (du < minU && dv < minV) return true; // overlap
-      }
-    }
-    return false;
-  }, [allPanels, allZones, defaultAngleDeg, gapXPx, gapYPx, marginM, mpp, panels, project, roof, snowGuards]);
-
-  // hint lines per il drag di gruppo
-  const [groupHintU, setGroupHintU] = React.useState<number[] | null>(null);
-  const [groupHintV, setGroupHintV] = React.useState<number[] | null>(null);
+  // Guide imperative: nessun render React durante il drag di gruppo.
+  const groupHintURef = React.useRef<import('konva/lib/shapes/Line').Line | null>(null);
+  const groupHintVRef = React.useRef<import('konva/lib/shapes/Line').Line | null>(null);
+  const setGroupGuide = React.useCallback((
+    ref: React.MutableRefObject<import('konva/lib/shapes/Line').Line | null>,
+    points: number[] | null,
+  ) => {
+    ref.current?.points(points ?? []);
+    ref.current?.visible(Boolean(points));
+  }, []);
+  const clearGroupGuides = React.useCallback(() => {
+    setGroupGuide(groupHintURef, null);
+    setGroupGuide(groupHintVRef, null);
+  }, [setGroupGuide]);
   const [groupDragActive, setGroupDragActive] = React.useState(false);
 
   // stato drag di gruppo
@@ -425,6 +384,8 @@ export default function PanelsKonva(props: {
       initialCenter: Pt;
       otherPanels: PanelInst[];
     } | null;
+    placementIsValid: (panels: readonly PanelInstance[]) => boolean;
+    staticPanelsUV: ReturnType<typeof buildPanelDragStaticGeometry>;
     frame: FrameScheduler<{ point: Pt; disableSnap: boolean }>;
   } | null>(null);
 
@@ -461,14 +422,13 @@ export default function PanelsKonva(props: {
     if (state.handleNode && state.handleInitial) state.handleNode.position(state.handleInitial);
     state.nodes.values().next().value?.getLayer?.()?.batchDraw?.();
     dragStateRef.current = null;
-    setGroupHintU(null);
-    setGroupHintV(null);
+    clearGroupGuides();
     setGroupDragActive(false);
     const container = state.stage.container?.();
     if (container) container.style.cursor = 'default';
     onDragEnd?.();
     return true;
-  }, [detachGroupDragInput, onDragEnd]);
+  }, [clearGroupGuides, detachGroupDragInput, onDragEnd]);
 
   React.useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
@@ -545,6 +505,24 @@ export default function PanelsKonva(props: {
     });
 
     const movingIds = new Set(movingPanels.map((panel) => panel.id));
+    const placementIsValid = roof
+      ? createPanelPastePlacementValidator({
+          roof,
+          marginM,
+          mppImage: mpp,
+          zones: allZones,
+          snowGuards,
+          panels: allPanels,
+          excludePanelIds: movingIds,
+        })
+      : () => false;
+    const staticPanelsUV = buildPanelDragStaticGeometry({
+      allPanels,
+      roofId,
+      excludeIds: movingIds,
+      defaultAngleDeg,
+      project,
+    });
     const movingBlockKey = movingPanels[0]?.advanced?.blockKey;
     const isCompleteAdvancedBlock = Boolean(
       movingBlockKey &&
@@ -608,8 +586,8 @@ export default function PanelsKonva(props: {
             uvBounds,
           });
 
-      setGroupHintU(snapped.hintU);
-      setGroupHintV(snapped.hintV);
+      setGroupGuide(groupHintURef, snapped.hintU);
+      setGroupGuide(groupHintVRef, snapped.hintV);
 
       const dU = snapped.bestU - st.anchorInitUV.u;
       const dV = snapped.bestV - st.anchorInitUV.v;
@@ -618,11 +596,24 @@ export default function PanelsKonva(props: {
         return { id: i.id, cx: pNew.x, cy: pNew.y };
       });
 
-      for (const q of proposed) {
-        const pp = panels.find(x => x.id === q.id)!;
-        if (!isInsideBounds(pp, q.cx, q.cy)) return;
+      const proposedPanels = proposed.map((position) => {
+        const panel = panels.find((candidate) => candidate.id === position.id)!;
+        return { ...panel, cx: position.cx, cy: position.cy };
+      });
+      if (!st.placementIsValid(proposedPanels)) return;
+      for (const candidate of proposedPanels) {
+        const uv = project({ x: candidate.cx, y: candidate.cy });
+        if (hasPanelOverlapCached({
+          u: uv.u,
+          v: uv.v,
+          hw: candidate.wPx / 2,
+          hh: candidate.hPx / 2,
+          gapPx,
+          gapXPx,
+          gapYPx,
+          panels: st.staticPanelsUV,
+        })) return;
       }
-      if (anyOverlapWithNonSelected(proposed)) return;
 
       st.final = proposed;
       proposed.forEach((position) => {
@@ -667,11 +658,13 @@ export default function PanelsKonva(props: {
       onWindowBlur: null,
       final: null,
       advancedSnap,
+      placementIsValid,
+      staticPanelsUV,
       frame,
     };
 
     const ns = '.groupDrag';
-    setGroupHintU(null); setGroupHintV(null);
+    clearGroupGuides();
 
     const onMove = (event: any) => {
       const st = dragStateRef.current;
@@ -695,11 +688,12 @@ export default function PanelsKonva(props: {
         const patches = Object.fromEntries(
           st.final.map((position) => [position.id, { cx: position.cx, cy: position.cy }]),
         );
+        plannerHistory.push('move panels');
         updatePanelsBulk(patches);
       }
       st.frame.cancel();
       dragStateRef.current = null;
-      setGroupHintU(null); setGroupHintV(null);
+      clearGroupGuides();
       setGroupDragActive(false);
       const container = st.stage.container?.();
       if (container) container.style.cursor = 'default';
@@ -726,9 +720,11 @@ export default function PanelsKonva(props: {
   }, [
     selectedPanels, stageToImg, allPanels, roofId,
     defaultAngleDeg, project, uvBounds, edgeMarginPx, snapPxImg,
-    fromUV, panels, isInsideBounds, anyOverlapWithNonSelected,
+    fromUV, panels,
     updatePanelsBulk, onDragStart, onDragEnd,
-    committedAdvancedDefinition, mpp, cancelGroupDrag, detachGroupDragInput,
+    committedAdvancedDefinition, mpp, marginM, allZones, snowGuards,
+    gapPx, gapXPx, gapYPx, cancelGroupDrag, detachGroupDragInput,
+    clearGroupGuides, setGroupGuide, roof,
   ]);
 
   
@@ -796,11 +792,8 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
         );
       })}
 
-      {groupHintU || groupHintV ? (
-        <Guides hintU={groupHintU} hintV={groupHintV} />
-      ) : (
-        <Guides hintURef={hintURef} hintVRef={hintVRef} />
-      )}
+      <Guides hintURef={hintURef} hintVRef={hintVRef} />
+      <Guides hintURef={groupHintURef} hintVRef={groupHintVRef} />
 
     </Group>
 

@@ -70,10 +70,11 @@ import PanelHotkeys from "../modules/panels/PanelHotkeys";
 import { nanoid } from "nanoid";
 import ZonesLayer from "../zones/ZonesLayer";
 import FillAreaController from "../modules/fill/FillAreaController";
+import FillAreaPreviewLayer from "../modules/fill/FillAreaPreviewLayer";
+import { createTransientFillDraftChannel } from "../modules/fill/transientFillDraft";
 import ToolHotkeys from "../layout/ToolHotkeys";
 import { history as plannerHistory } from "../state/history";
 import ProjectStatsBar from "../ui/ProjectStatsBar";
-import ModuleSprite from "../modules/ModuleSprite";
 import ScreenGrid from "./ScreenGrid";
 import CompassHUD from "../compassHUD";
 import RoofHotkeys from "../RoofHotkeys";
@@ -376,19 +377,9 @@ export default function CanvasStage() {
       window.removeEventListener("keydown", onKey, { capture: true } as any);
   }, []);
 
-  // draft del riempi-area
-  const [fillDraft, setFillDraft] = useState<{
-    a: Pt;
-    b: Pt;
-    poly: Pt[];
-    rects: {
-      cx: number;
-      cy: number;
-      wPx: number;
-      hPx: number;
-      angleDeg: number;
-    }[];
-  } | null>(null);
+  // Il draft visuale non appartiene al planner store né allo state di CanvasStage.
+  const fillDraftChannel = useMemo(() => createTransientFillDraftChannel(), []);
+  useEffect(() => () => fillDraftChannel.destroy(), [fillDraftChannel]);
   const [fillCancelVersion, setFillCancelVersion] = useState(0);
 
   const selectedRoof = useMemo(
@@ -1129,8 +1120,6 @@ export default function CanvasStage() {
     };
   }, [img, size.w, size.h, beginRightPan, moveRightPan, endRightPan, cancelBuildingReveal]);
 
-  const hasFillDraft = Boolean(fillDraft);
-
   // Un solo owner per ESC: draft, pannelli, zona, Schneefang, falda.
   useEffect(() => {
     type EscapeKeyboardEvent = KeyboardEvent & {
@@ -1145,7 +1134,7 @@ export default function CanvasStage() {
         ignoredTarget:
           shouldIgnorePlannerHotkeyTarget(event.target) ||
           shouldIgnorePlannerHotkeyTarget(document.activeElement),
-        hasDraft: hasDrawingDraft || hasFillDraft,
+        hasDraft: hasDrawingDraft || Boolean(fillDraftChannel.getSnapshot()),
         selectedPanelCount: store.selectedPanelIds?.length ?? 0,
         hasSelectedZone: Boolean(store.selectedZoneId),
         hasSelectedSnowGuard: Boolean(store.selectedSnowGuardId),
@@ -1155,9 +1144,9 @@ export default function CanvasStage() {
       switch (action) {
         case "cancel-draft":
           cancelDrawingDraft();
-          if (hasFillDraft) {
+          if (fillDraftChannel.getSnapshot()) {
             setFillCancelVersion((version) => version + 1);
-            setFillDraft(null);
+            fillDraftChannel.clear();
           }
           break;
         case "clear-panels":
@@ -1184,7 +1173,7 @@ export default function CanvasStage() {
     window.addEventListener("keydown", onEscape, { capture: true });
     return () =>
       window.removeEventListener("keydown", onEscape, { capture: true });
-  }, [hasDrawingDraft, hasFillDraft, cancelDrawingDraft]);
+  }, [hasDrawingDraft, cancelDrawingDraft, fillDraftChannel]);
 
   // stile tetti
   const stroke = plannerTheme.roofStroke;
@@ -1387,7 +1376,7 @@ export default function CanvasStage() {
                   // click fuori da ogni falda:
                   // - dimentichiamo qualsiasi anteprima
                   // - torniamo subito ad "Auswählen"
-                  setFillDraft(null);
+                  fillDraftChannel.clear();
                   setTool("select");
                 }
                 // in ogni caso, non facciamo nient'altro qui
@@ -1567,38 +1556,7 @@ export default function CanvasStage() {
                   );
                 })}
 
-                {/* Draft visivo per fill-area */}
-                {tool === "fill-area" && fillDraft && (
-                  <Group listening={false}>
-                    {/* opzionale: contorno dell’area che stai riempiendo */}
-                    {fillDraft.poly?.length >= 3 && (
-                      <Line
-                        points={fillDraft.poly.flatMap((p) => [p.x, p.y])}
-                        closed
-                        stroke={plannerTheme.guideLine}
-                        strokeWidth={0.8}
-                        dash={[6, 4]}
-                        opacity={0.6}
-                        listening={false}
-                      />
-                    )}
-
-                    {/* preview con i moduli REALI al 50% */}
-                    <Group opacity={0.5} listening={false}>
-                      {fillDraft.rects.map((r, i) => (
-                        <ModuleSprite
-                          key={i}
-                          x={r.cx}
-                          y={r.cy}
-                          w={r.wPx}
-                          h={r.hPx}
-                          rotationDeg={r.angleDeg}
-                          textureUrl="/images/panel.webp" // o il tuo textureUrl
-                        />
-                      ))}
-                    </Group>
-                  </Group>
-                )}
+                {tool === "fill-area" && <FillAreaPreviewLayer channel={fillDraftChannel} />}
 
                 {(step === "modules" ||
                   (step === "building" && showPanelsInBuilding)) && (
@@ -1710,7 +1668,7 @@ export default function CanvasStage() {
         <FillAreaController
           stageRef={stageRef}
           toImgCoords={toImgCoords}
-          onDraftChange={setFillDraft}
+          draftChannel={fillDraftChannel}
           cancelVersion={fillCancelVersion}
         />
       )}

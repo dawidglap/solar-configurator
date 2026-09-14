@@ -14,6 +14,7 @@ export type LayersSlice = {
     layers: RoofArea[];
     addRoof: (r: RoofArea) => void;
     updateRoof: (id: string, patch: Partial<RoofArea>) => void;
+    updateRoofsBulk: (patches: Readonly<Record<string, Partial<RoofArea>>>) => void;
     getSurfacePlanning: (roofId: string) => SurfacePlanningResolution;
     setCommittedSurfacePlanning: (roofId: string, config: SurfacePlanningV1) => void;
     clearSurfacePlanning: (roofId: string) => void;
@@ -34,29 +35,12 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
 
     updateRoof: (id, patch) =>
         set((st) => ({
-            layers: st.layers.map((l) => {
-                if (l.id !== id) return l;
-                const next = { ...l, ...patch };
-                if (!patch.points) return next;
-                // Absence means automatic reference-edge resolution. Keep it
-                // absent so geometry edits can re-resolve the northern edge
-                // without silently turning the fallback into persisted input.
-                if (next.referenceEdgeIndex == null) return next;
-                const planning = getRoofSurfacePlanning([next], next.id);
-                const roofKind = next.roofKind ?? (
-                    planning.status === 'supported-advanced'
-                        ? planning.config.surface.kind
-                        : 'pitched'
-                );
-                const referenceEdgeIndex = resolveRoofReferenceEdgeIndex({
-                    points: next.points,
-                    requestedIndex: next.referenceEdgeIndex,
-                    roofKind,
-                });
-                return referenceEdgeIndex == null
-                    ? next
-                    : { ...next, referenceEdgeIndex };
-            }),
+            layers: st.layers.map((l) => normalizeRoofPatch(l, l.id === id ? patch : undefined)),
+        })),
+
+    updateRoofsBulk: (patches) =>
+        set((st) => ({
+            layers: st.layers.map((l) => normalizeRoofPatch(l, patches[l.id])),
         })),
 
     getSurfacePlanning: (roofId) => getRoofSurfacePlanning(get().layers, roofId),
@@ -87,3 +71,26 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
     selectedId: undefined,
     select: (id) => set({ selectedId: id }),
 });
+
+function normalizeRoofPatch(roof: RoofArea, patch: Partial<RoofArea> | undefined): RoofArea {
+    if (!patch) return roof;
+    const next = { ...roof, ...patch };
+    if (!patch.points) return next;
+    // Absence means automatic reference-edge resolution. Keep it absent so
+    // geometry edits do not silently turn the fallback into persisted input.
+    if (next.referenceEdgeIndex == null) return next;
+    const planning = getRoofSurfacePlanning([next], next.id);
+    const roofKind = next.roofKind ?? (
+        planning.status === 'supported-advanced'
+            ? planning.config.surface.kind
+            : 'pitched'
+    );
+    const referenceEdgeIndex = resolveRoofReferenceEdgeIndex({
+        points: next.points,
+        requestedIndex: next.referenceEdgeIndex,
+        roofKind,
+    });
+    return referenceEdgeIndex == null
+        ? next
+        : { ...next, referenceEdgeIndex };
+}

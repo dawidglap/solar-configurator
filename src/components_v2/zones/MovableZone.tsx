@@ -78,6 +78,7 @@ export default function MovableZone({
   const movingRef = React.useRef(false);
 
   const endMove = React.useCallback((commit: boolean) => {
+    if (!movingRef.current) return;
     frameRef.current?.flush();
     stageRef.current?.off(".zone-move");
     const group = groupRef.current;
@@ -134,6 +135,7 @@ export default function MovableZone({
       frameRef.current?.schedule(toImg(pointerPosition.x, pointerPosition.y));
     });
     stage.on("mouseup.zone-move touchend.zone-move pointerup.zone-move", () => endMove(true));
+    stage.on("pointercancel.zone-move touchcancel.zone-move", () => endMove(false));
     stage.on("mouseleave.zone-move", () => endMove(true));
   }, [endMove, interactive, onSelect, ownerRoofPoints, toImg, zone.points]);
 
@@ -145,9 +147,12 @@ export default function MovableZone({
       event.stopImmediatePropagation();
       endMove(false);
     };
+    const onBlur = () => endMove(false);
     window.addEventListener("keydown", onEscape, { capture: true });
+    window.addEventListener("blur", onBlur);
     return () => {
       window.removeEventListener("keydown", onEscape, { capture: true });
+      window.removeEventListener("blur", onBlur);
       frameRef.current?.cancel();
       stageRef.current?.off(".zone-move");
     };

@@ -1,7 +1,8 @@
 // src/components_v2/canvas/RoofHandlesKonva.tsx
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import type Konva from 'konva';
 import { Circle as KonvaCircle, Line as KonvaLine } from 'react-konva';
 import { plannerTheme } from '../theme/plannerTheme';
 import { createLatestFrameScheduler, type FrameScheduler } from './performance/latestFrameScheduler';
@@ -32,17 +33,15 @@ export default function RoofHandlesKonva({
   onDragEnd?: () => void;
 }) {
   // --- stato/refs base
-  const [active, setActive] = useState<number | null>(null);
-  const [livePoints, setLivePoints] = useState<Pt[] | null>(null);
   const activeRef = useRef<number | null>(null);
   const stageRef = useRef<import('konva/lib/Stage').Stage | null>(null);
-  const ptsRef = useRef(points);
-  ptsRef.current = livePoints ?? points;
   const livePointsRef = useRef<Pt[] | null>(null);
   const frameRef = useRef<FrameScheduler<{ x: number; y: number }> | null>(null);
+  const polygonRef = useRef<Konva.Line | null>(null);
+  const snapRef = useRef<Konva.Circle | null>(null);
+  const handleRefs = useRef<Array<Konva.Circle | null>>([]);
 
   // --- stato per highlight snap
-  const [hoverSnap, setHoverSnap] = useState<{ x: number; y: number } | null>(null);
   const activeRoofIdRef = useRef<string>(roofId);
   useEffect(() => {
     activeRoofIdRef.current = roofId;
@@ -51,7 +50,7 @@ export default function RoofHandlesKonva({
   // --- utils
   const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
-  function nearestTarget(imgX: number, imgY: number, activeIndex: number) {
+  const nearestTarget = useCallback((imgX: number, imgY: number, activeIndex: number) => {
     const cand = getSnapTargets();
     let best: null | { x: number; y: number; d: number } = null;
     for (const t of cand) {
@@ -63,7 +62,7 @@ export default function RoofHandlesKonva({
       if (d <= snapRadiusImg && (!best || d < best.d)) best = { x: t.x, y: t.y, d };
     }
     return best;
-  }
+  }, [getSnapTargets, snapRadiusImg]);
 
   // ── Deduplica vertici coincidenti entro una soglia ε (px immagine)
 function dedupCoincident(pts: Pt[], eps: number): Pt[] {
@@ -79,6 +78,7 @@ function dedupCoincident(pts: Pt[], eps: number): Pt[] {
 
 
 const endDrag = useCallback((commit = true) => {
+  if (activeRef.current === null) return;
   frameRef.current?.flush();
   const st = stageRef.current;
   if (st) st.off('.roofdrag');
@@ -88,12 +88,15 @@ const endDrag = useCallback((commit = true) => {
   const deduped = dedupCoincident(src, eps);
   if (commit) onChange(deduped);
 
+  const restored = commit ? deduped : points;
+  restored.forEach((point, index) => handleRefs.current[index]?.position(point));
+  polygonRef.current?.visible(false);
+  snapRef.current?.visible(false);
+  polygonRef.current?.getLayer()?.batchDraw();
+
   frameRef.current?.cancel();
   livePointsRef.current = null;
-  setLivePoints(null);
   activeRef.current = null;
-  setActive(null);
-  setHoverSnap(null); // pulisci highlight
   onDragEnd?.();
 }, [onDragEnd, snapRadiusImg, onChange, points]);
 
@@ -101,11 +104,11 @@ const endDrag = useCallback((commit = true) => {
   const startDrag = useCallback(
     (i: number, e: any) => {
       e.cancelBubble = true; // non propagare al poligono
-      setActive(i);
       activeRef.current = i;
       const initial = points.map((point) => ({ ...point }));
       livePointsRef.current = initial;
-      setLivePoints(initial);
+      polygonRef.current?.points(initial.flatMap((point) => [point.x, point.y]));
+      polygonRef.current?.visible(true);
       onDragStart?.();
 
       const st = e.target.getStage();
@@ -124,17 +127,16 @@ const endDrag = useCallback((commit = true) => {
 
         // SNAP VERTEX-VERTEX (se c'è hit, usiamo le coords del target)
         const hit = nearestTarget(nx, ny, idx);
-        if (hit) {
-          setHoverSnap({ x: hit.x, y: hit.y });
-          const snapped = src.map((pt, j) => (j === idx ? { x: hit.x, y: hit.y } : pt));
-          livePointsRef.current = snapped;
-          setLivePoints(snapped);
-        } else {
-          setHoverSnap(null);
-          const next = src.map((pt, j) => (j === idx ? { x: nx, y: ny } : pt));
-          livePointsRef.current = next;
-          setLivePoints(next);
+        const point = hit ? { x: hit.x, y: hit.y } : { x: nx, y: ny };
+        const next = src.map((pt, j) => (j === idx ? point : pt));
+        livePointsRef.current = next;
+        handleRefs.current[idx]?.position(point);
+        polygonRef.current?.points(next.flatMap((candidate) => [candidate.x, candidate.y]));
+        if (snapRef.current) {
+          snapRef.current.position(point);
+          snapRef.current.visible(Boolean(hit));
         }
+        polygonRef.current?.getLayer()?.batchDraw();
       });
 
       st.on('mousemove' + ns + ' touchmove' + ns, () => {
@@ -144,9 +146,10 @@ const endDrag = useCallback((commit = true) => {
       });
 
       st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns, () => endDrag(true));
+      st.on('pointercancel' + ns + ' touchcancel' + ns, () => endDrag(false));
       st.on('mouseleave' + ns, () => endDrag(true));
     },
-    [imgW, imgH, toImg, onDragStart, endDrag, points]
+    [imgW, imgH, toImg, onDragStart, endDrag, nearestTarget, points]
   );
 
   // cleanup
@@ -158,32 +161,34 @@ const endDrag = useCallback((commit = true) => {
       event.stopImmediatePropagation();
       endDrag(false);
     };
+    const onBlur = () => endDrag(false);
     window.addEventListener('keydown', onEscape, { capture: true });
+    window.addEventListener('blur', onBlur);
     return () => {
       frameRef.current?.cancel();
       stageRef.current?.off('.roofdrag');
       window.removeEventListener('keydown', onEscape, { capture: true });
+      window.removeEventListener('blur', onBlur);
     };
   }, [endDrag]);
 
-  const displayedPoints = livePoints ?? points;
-
   return (
     <>
-      {livePoints && (
-        <KonvaLine
-          points={livePoints.flatMap((point) => [point.x, point.y])}
-          closed
-          stroke={plannerTheme.primary}
-          strokeWidth={1}
-          listening={false}
-          perfectDrawEnabled={false}
-        />
-      )}
+      <KonvaLine
+        ref={polygonRef}
+        points={[]}
+        closed
+        stroke={plannerTheme.primary}
+        strokeWidth={1}
+        listening={false}
+        visible={false}
+        perfectDrawEnabled={false}
+      />
       {/* maniglie vertici */}
-      {displayedPoints.map((p, i) => (
+      {points.map((p, i) => (
         <KonvaCircle
           key={i}
+          ref={(node) => { handleRefs.current[i] = node; }}
           x={p.x}
           y={p.y}
           radius={3}
@@ -199,7 +204,7 @@ const endDrag = useCallback((commit = true) => {
             st?.container()?.style.setProperty('cursor', 'pointer');
           }}
           onMouseLeave={(e) => {
-            if (active !== null) return;
+            if (activeRef.current !== null) return;
             const st = e.target.getStage();
             st?.container()?.style.setProperty('cursor', 'default');
           }}
@@ -207,17 +212,17 @@ const endDrag = useCallback((commit = true) => {
       ))}
 
       {/* highlight target di snap */}
-      {hoverSnap && (
-        <KonvaCircle
-          x={hoverSnap.x}
-          y={hoverSnap.y}
-          radius={6}
-          stroke="#10b981"
-          strokeWidth={2}
-          fill="rgba(16,185,129,0.15)"
-          listening={false}
-        />
-      )}
+      <KonvaCircle
+        ref={snapRef}
+        x={0}
+        y={0}
+        radius={6}
+        stroke="#10b981"
+        strokeWidth={2}
+        fill="rgba(16,185,129,0.15)"
+        listening={false}
+        visible={false}
+      />
     </>
   );
 }

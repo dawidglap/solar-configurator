@@ -23,7 +23,11 @@ test("canvas auto-layout proposals exist only for explicit roof drafts", () => {
   assert.ok(canvas.includes('selectedPlanningDraft?.targetMode === "standard"'));
   assert.ok(canvas.includes('selectedPlanningDraft?.targetMode === "advanced"'));
   assert.ok(canvas.includes("<PanelsLayer"), "committed working panels remain independent");
-  assert.ok(canvas.includes('tool === "fill-area" && fillDraft'), "transient interaction ghost remains");
+  assert.ok(
+    canvas.includes('tool === "fill-area" && <FillAreaPreviewLayer'),
+    "isolated transient interaction ghost remains",
+  );
+  assert.equal(canvas.includes("setFillDraft"), false);
   assert.equal(canvas.includes("showModulePreview &&"), false);
 });
 

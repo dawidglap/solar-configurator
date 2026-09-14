@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KonvaEventObject } from 'konva/lib/Node';
+import type Konva from 'konva';
 import { Circle as KonvaCircle, Line as KonvaLine } from 'react-konva';
 import { plannerTheme } from '../theme/plannerTheme';
 import { moveZoneVertex } from './zoneVertexEditing';
@@ -32,19 +33,19 @@ export default function ZoneHandlesKonva({
 }) {
   const [active, setActive] = useState<number | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
-  const [dragValid, setDragValid] = useState(true);
-  const [livePoints, setLivePoints] = useState<Pt[] | null>(null);
   const activeRef = useRef<number | null>(null);
   const stageRef = useRef<import('konva/lib/Stage').Stage | null>(null);
-  const ptsRef = useRef(points);
-  ptsRef.current = livePoints ?? points;
   const dragStartPointsRef = useRef<Pt[] | null>(null);
   const frameRef = useRef<FrameScheduler<{ point: Pt; disableSnap: boolean }> | null>(null);
   const livePointsRef = useRef<Pt[] | null>(null);
+  const polygonRef = useRef<Konva.Line | null>(null);
+  const activeLineRef = useRef<Konva.Line | null>(null);
+  const handleRefs = useRef<Array<Konva.Circle | null>>([]);
 
   const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
   const endDrag = useCallback((commit = true) => {
+    if (activeRef.current === null) return;
     frameRef.current?.flush();
     const st = stageRef.current;
     if (st) st.off('.zonedrag');
@@ -52,12 +53,19 @@ export default function ZoneHandlesKonva({
     frameRef.current?.cancel();
     activeRef.current = null;
     setActive(null);
-    setDragValid(true);
     dragStartPointsRef.current = null;
+    const restored = commit && livePointsRef.current ? livePointsRef.current : points;
+    restored.forEach((point, index) => {
+      handleRefs.current[index]?.position(point);
+      handleRefs.current[index]?.fill(plannerTheme.textLight);
+    });
+    polygonRef.current?.points(restored.flatMap((point) => [point.x, point.y]));
+    activeLineRef.current?.visible(false);
+    activeLineRef.current?.stroke(plannerTheme.primary);
+    polygonRef.current?.getLayer()?.batchDraw();
     livePointsRef.current = null;
-    setLivePoints(null);
     onDragEnd?.();
-  }, [onDragEnd, onChange]);
+  }, [onDragEnd, onChange, points]);
 
   const startDrag = useCallback((i: number, e: KonvaEventObject<MouseEvent | TouchEvent>) => {
     if ('button' in e.evt && e.evt.button !== 0) return;
@@ -67,8 +75,7 @@ export default function ZoneHandlesKonva({
     const initial = points.map((point) => ({ ...point }));
     dragStartPointsRef.current = initial;
     livePointsRef.current = initial;
-    setLivePoints(initial);
-    setDragValid(true);
+    polygonRef.current?.points(initial.flatMap((point) => [point.x, point.y]));
     onDragStart?.();
 
     const st = e.target.getStage();
@@ -93,11 +100,20 @@ export default function ZoneHandlesKonva({
         disableSnap,
         minAdjacentDistancePx: 1,
       });
-      setDragValid(result.accepted);
+      const activeHandle = handleRefs.current[idx];
+      activeHandle?.fill(result.accepted ? plannerTheme.textLight : plannerTheme.warning);
+      activeLineRef.current?.stroke(result.accepted ? plannerTheme.primary : plannerTheme.warning);
       if (result.accepted) {
         livePointsRef.current = result.points;
-        setLivePoints(result.points);
+        const point = result.points[idx];
+        activeHandle?.position(point);
+        polygonRef.current?.points(result.points.flatMap((candidate) => [candidate.x, candidate.y]));
+        const previous = result.points[(idx - 1 + result.points.length) % result.points.length];
+        const next = result.points[(idx + 1) % result.points.length];
+        activeLineRef.current?.points([previous.x, previous.y, point.x, point.y, next.x, next.y]);
+        activeLineRef.current?.visible(true);
       }
+      polygonRef.current?.getLayer()?.batchDraw();
     });
 
     st.on('mousemove' + ns + ' touchmove' + ns, (event: KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -110,6 +126,7 @@ export default function ZoneHandlesKonva({
     });
 
     st.on('mouseup' + ns + ' touchend' + ns + ' pointerup' + ns, () => endDrag(true));
+    st.on('pointercancel' + ns + ' touchcancel' + ns, () => endDrag(false));
     st.on('mouseleave' + ns, () => endDrag(true));
   }, [imgW, imgH, toImg, onDragStart, ownerRoofPoints, snapRadiusImg, points, endDrag]);
 
@@ -121,51 +138,49 @@ export default function ZoneHandlesKonva({
       event.stopImmediatePropagation();
       endDrag(false);
     };
+    const onBlur = () => endDrag(false);
     window.addEventListener('keydown', onKeyDown, { capture: true });
+    window.addEventListener('blur', onBlur);
     return () => {
       frameRef.current?.cancel();
       stageRef.current?.off('.zonedrag');
       window.removeEventListener('keydown', onKeyDown, { capture: true });
+      window.removeEventListener('blur', onBlur);
     };
   }, [endDrag, onChange]);
 
-  const displayedPoints = livePoints ?? points;
-  const flat = displayedPoints.flatMap(p => [p.x, p.y]);
+  const flat = points.flatMap(p => [p.x, p.y]);
 
   return (
     <>
       {/* bordo tratteggiato come feedback, opzionale */}
       <KonvaLine
+        ref={polygonRef}
         points={flat}
         closed
-        fill={livePoints ? plannerTheme.dangerSoft : undefined}
+        fill={plannerTheme.dangerSoft}
         stroke={plannerTheme.danger}
         strokeWidth={1}
         dash={[6, 6]}
         listening={false}
       />
-      {active !== null && displayedPoints.length >= 3 && (
-        <KonvaLine
-          points={[
-            displayedPoints[(active - 1 + displayedPoints.length) % displayedPoints.length].x,
-            displayedPoints[(active - 1 + displayedPoints.length) % displayedPoints.length].y,
-            displayedPoints[active].x,
-            displayedPoints[active].y,
-            displayedPoints[(active + 1) % displayedPoints.length].x,
-            displayedPoints[(active + 1) % displayedPoints.length].y,
-          ]}
-          stroke={dragValid ? plannerTheme.primary : plannerTheme.warning}
-          strokeWidth={2}
-          listening={false}
-        />
-      )}
-      {displayedPoints.map((p, i) => (
+      <KonvaLine
+        ref={activeLineRef}
+        points={[]}
+        stroke={plannerTheme.primary}
+        strokeWidth={2}
+        listening={false}
+        visible={false}
+        perfectDrawEnabled={false}
+      />
+      {points.map((p, i) => (
         <KonvaCircle
           key={i}
+          ref={(node) => { handleRefs.current[i] = node; }}
           x={p.x}
           y={p.y}
           radius={active === i || hovered === i ? 4.5 : 4}
-          fill={active === i && !dragValid ? plannerTheme.warning : hovered === i ? plannerTheme.primarySoft : plannerTheme.textLight}
+          fill={hovered === i ? plannerTheme.primarySoft : plannerTheme.textLight}
           stroke={plannerTheme.danger}
           strokeWidth={1}
           onMouseDown={(e) => startDrag(i, e)}
