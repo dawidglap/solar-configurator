@@ -6,20 +6,24 @@ import { nanoid } from 'nanoid';
 import toast from 'react-hot-toast';
 import { usePlannerV2Store } from '@/components_v2/state/plannerV2Store';
 import type { Pt, PanelInstance } from '@/types/planner';
-import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
 import { resolveSurfacePlanning } from '@/lib/planning-core/advanced';
 import { history } from '@/components_v2/state/history';
 import {
   buildDirectAdvancedRoofLayout,
   buildDirectStandardRoofLayout,
   buildStandardSurfacePlanning,
+  resolveInitialSonnendachRoofType,
   resolveRoofModuleMode,
   resolveStandardTiltInput,
   setAdvancedQuantityMode,
 } from '../advanced/advancedPlanningApplication';
 import { selectAdditiveFillPanels } from './additiveFill';
-import { resolveStandardAutoLayoutCanvasAngle } from '../legacyStandardApplicationPolicy';
 import { createFillAreaDragGesture } from './fillAreaDragGesture';
+import {
+  buildOrientedFillAreaPolygon,
+  resolveFillAreaReferenceFrame,
+  type FillAreaReferenceFrame,
+} from './fillAreaGeometry';
 
 import {
   findRoofAtPoint,
@@ -28,6 +32,7 @@ import {
 } from '../../canvas/interactionPolicy';
 
 type ModRect = { cx: number; cy: number; wPx: number; hPx: number; angleDeg: number };
+type FillDraft = { a: Pt; b: Pt; poly: Pt[]; panels: PanelInstance[] };
 
 type Props = {
   stageRef: React.RefObject<Konva.Stage | null>;
@@ -36,152 +41,20 @@ type Props = {
   cancelVersion?: number;
 };
 
-/* --------------------------- helpers geometrici --------------------------- */
-const deg2rad = (d: number) => (d * Math.PI) / 180;
-
-function centroid(pts: Pt[]) {
-  let x = 0, y = 0;
-  for (const p of pts) { x += p.x; y += p.y; }
-  const n = Math.max(1, pts.length);
-  return { x: x / n, y: y / n };
-}
-function worldToLocal(p: Pt, O: Pt, theta: number): Pt {
-  const c = Math.cos(-theta), s = Math.sin(-theta);
-  const dx = p.x - O.x, dy = p.y - O.y;
-  return { x: dx * c - dy * s, y: dx * s + dy * c };
-}
-function localToWorld(p: Pt, O: Pt, theta: number): Pt {
-  const c = Math.cos(theta), s = Math.sin(theta);
-  return { x: p.x * c - p.y * s + O.x, y: p.x * s + p.y * c + O.y };
-}
-function axisAlignedRect(a: Pt, b: Pt): Pt[] {
-  return [
-    { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) },
-    { x: Math.max(a.x, b.x), y: Math.min(a.y, b.y) },
-    { x: Math.max(a.x, b.x), y: Math.max(a.y, b.y) },
-    { x: Math.min(a.x, b.x), y: Math.max(a.y, b.y) },
-  ];
-}
-
-/* --------------------------- griglia condivisa --------------------------- */
-function gridBasics(angleDeg: number) {
-  const s = usePlannerV2Store.getState();
-  const roof = s.layers.find((l) => l.id === s.selectedId);
-  const mpp = s.snapshot.mppImage;
-  const panel = s.getSelectedPanel?.();
-  const orientation = s.modules.orientation;
-  if (!roof || !mpp || !panel) return null;
-
-  const px = (m: number) => m / mpp;
-
-  // dimensioni modulo in px (portrait/landscape) + gap in px
-  let panelW = px(orientation === 'portrait' ? panel.widthM : panel.heightM);
-  let panelH = px(orientation === 'portrait' ? panel.heightM : panel.widthM);
-  let gapX   = px(s.modules.spacingXM ?? s.modules.spacingM);
-  let gapY   = px(s.modules.spacingYM ?? s.modules.spacingM);
-
-  // (opzionale) micro-snap per stabilità numerica
-  const snap = (v: number) => Math.round(v * 10) / 10; // 0.1px
-  panelW = snap(panelW);
-  panelH = snap(panelH);
-  gapX   = snap(gapX);
-  gapY   = snap(gapY);
-
-  const cellW = panelW + gapX;
-  const cellH = panelH + gapY;
-
-  const theta = deg2rad(angleDeg);
-  const O = centroid(roof.points);
-
-  // bounding in locale della falda, insettata dal Randabstand
-  const marginPx = px(resolveRoofEdgeMarginM(roof, s.modules.marginM));
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of roof.points.map((p) => worldToLocal(p, O, theta))) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-  }
-  minX += marginPx; minY += marginPx;
-  maxX -= marginPx; maxY -= marginPx;
-
-  // rail dei CENTRI: bordo valido + metà pannello
-  const startX = minX + panelW / 2;
-  const startY = minY + panelH / 2;
-
-  return {
-    s, roof, panel,
-    panelW, panelH, gapX, gapY, cellW, cellH,
-    theta, O, minX, minY, maxX, maxY, startX, startY,
-    angleDeg,
-  };
-}
-
-function snapRail(v: number, start: number, step: number) {
-  return Math.round((v - start) / step) * step + start;
-}
-
-// Rettangolo A→B, agganciato ai rail dei **centri**, ma espresso sui **bordi modulo**
-function rectPolyFromAB(aW: Pt, bW: Pt, basics: ReturnType<typeof gridBasics>) {
-  if (!basics) return [aW, bW, bW, aW];
-  const { panelW, panelH, cellW, cellH, theta, O, minX, minY, maxX, maxY, startX, startY } = basics;
-
-  const aL = worldToLocal(aW, O, theta);
-  const bL = worldToLocal(bW, O, theta);
-
-  const minCX = minX + panelW / 2, maxCX = maxX - panelW / 2;
-  const minCY = minY + panelH / 2, maxCY = maxY - panelH / 2;
-
-  const aC = {
-    x: Math.min(maxCX, Math.max(minCX, snapRail(aL.x, startX, cellW))),
-    y: Math.min(maxCY, Math.max(minCY, snapRail(aL.y, startY, cellH))),
-  };
-  const bC = {
-    x: Math.min(maxCX, Math.max(minCX, snapRail(bL.x, startX, cellW))),
-    y: Math.min(maxCY, Math.max(minCY, snapRail(bL.y, startY, cellH))),
-  };
-
-  // rettangolo in coordinate "bordi modulo"
-  const x0e = Math.max(minX, Math.min(aC.x, bC.x) - panelW / 2);
-  const x1e = Math.min(maxX, Math.max(aC.x, bC.x) + panelW / 2);
-  const y0e = Math.max(minY, Math.min(aC.y, bC.y) - panelH / 2);
-  const y1e = Math.min(maxY, Math.max(aC.y, bC.y) + panelH / 2);
-
-  const p1 = localToWorld({ x: x0e, y: y0e }, O, theta);
-  const p2 = localToWorld({ x: x1e, y: y0e }, O, theta);
-  const p3 = localToWorld({ x: x1e, y: y1e }, O, theta);
-  const p4 = localToWorld({ x: x0e, y: y1e }, O, theta);
-  return [p1, p2, p3, p4];
-}
-
 /* -------------------------------- component -------------------------------- */
 export default function FillAreaController({ stageRef, toImgCoords, onDraftChange, cancelVersion = 0 }: Props) {
   const step = usePlannerV2Store((s) => s.step);
   const tool = usePlannerV2Store((s) => s.tool);
   const layers = usePlannerV2Store((s) => s.layers);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
-  const modules = usePlannerV2Store((s) => s.modules);
-
-  const draftRef = useRef<{ a: Pt; b: Pt } | null>(null);
+  const draftRef = useRef<FillDraft | null>(null);
+  const frameRef = useRef<FillAreaReferenceFrame | null>(null);
   const drawingRef = useRef(false);
   const candidatesRef = useRef<PanelInstance[]>([]);
 
   useEffect(() => {
     const st = stageRef.current?.getStage?.();
     if (!st || step !== 'modules' || tool !== 'fill-area') return;
-
-    const getAngleDeg = () => {
-      const roof = layers.find((l) => l.id === selectedId);
-      if (!roof) return 0;
-      return resolveStandardAutoLayoutCanvasAngle({
-        roofId: roof.id,
-        roofPolygon: roof.points,
-        legacyRoofAzimuthDeg: roof.azimuthDeg,
-        gridAngleDeg: modules.gridAngleDeg,
-        perRoofAngles: modules.perRoofAngles,
-        referenceEdgeIndex: roof.referenceEdgeIndex,
-      });
-    };
 
     const buildCandidates = (): { mode: ReturnType<typeof resolveRoofModuleMode>; panels: PanelInstance[] } => {
       const state = usePlannerV2Store.getState();
@@ -237,28 +110,26 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       return { mode, panels: generated?.panels ?? [] };
     };
 
-    const selectionFor = (a: Pt, b: Pt, mode: ReturnType<typeof resolveRoofModuleMode>) => {
-      if (mode === 'portrait' || mode === 'landscape') {
-        return rectPolyFromAB(a, b, gridBasics(getAngleDeg()));
-      }
-      return axisAlignedRect(a, b);
-    };
-
-    const additivePanelsFor = (a: Pt, b: Pt) => {
+    const additivePanelsFor = (poly: Pt[]) => {
       const state = usePlannerV2Store.getState();
       const roofId = state.selectedId;
-      const roof = state.layers.find((candidate) => candidate.id === roofId);
-      const mode = resolveRoofModuleMode({ roof, roofId, panels: state.panels, draft: roofId ? state.roofPlanningDrafts[roofId] : undefined });
-      if (!roofId || !mode) return { poly: axisAlignedRect(a, b), panels: [] as PanelInstance[] };
-      const poly = selectionFor(a, b, mode);
+      if (!roofId) return [] as PanelInstance[];
+      return selectAdditiveFillPanels({
+        roofId,
+        areaPolygon: poly,
+        candidates: candidatesRef.current,
+        existingPanels: state.panels,
+      });
+    };
+    const renderDraft = (a: Pt, b: Pt) => {
+      const frame = frameRef.current;
+      if (!frame) return;
+      const poly = buildOrientedFillAreaPolygon({ start: a, end: b, frame });
+      const panels = additivePanelsFor(poly);
+      draftRef.current = { a, b, poly, panels };
       return {
         poly,
-        panels: selectAdditiveFillPanels({
-          roofId,
-          areaPolygon: poly,
-          candidates: candidatesRef.current,
-          existingPanels: state.panels,
-        }),
+        panels,
       };
     };
 
@@ -267,9 +138,9 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       const bounds = container.getBoundingClientRect();
       return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
     };
-    const renderDraft = (a: Pt, b: Pt) => {
-      draftRef.current = { a, b };
-      const next = additivePanelsFor(a, b);
+    const publishDraft = (a: Pt, b: Pt) => {
+      const next = renderDraft(a, b);
+      if (!next) return;
       const rects = next.panels.map((panel) => ({
         cx: panel.cx,
         cy: panel.cy,
@@ -291,18 +162,18 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
           return;
         }
         dragActivated = true;
-        renderDraft(
+        publishDraft(
           toImgCoords(visual.start.x, visual.start.y),
           toImgCoords(visual.end.x, visual.end.y),
         );
       },
-      onCommit: (visual) => {
-        const a = toImgCoords(visual.start.x, visual.start.y);
-        const b = toImgCoords(visual.end.x, visual.end.y);
+      onCommit: () => {
         const state = usePlannerV2Store.getState();
         const roofId = state.selectedId;
         if (!roofId) return;
-        const items = additivePanelsFor(a, b).panels;
+        // Pointer-up flushes the final visual first. Commit therefore consumes
+        // the exact same canonical polygon/panels that the dashed overlay used.
+        const items = draftRef.current?.panels ?? [];
         if (items.length > 0) {
           history.push('Manuell füllen');
           state.appendPanelsToRoof({ roofId, panels: items });
@@ -341,6 +212,7 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       drawingRef.current = false;
       dragActivated = false;
       candidatesRef.current = [];
+      frameRef.current = null;
       const cancelled = gesture.cancel();
       releasePointerCapture(pointerId);
       return cancelled;
@@ -349,12 +221,28 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       if (!isPrimaryPointerButton(event.button) || event.isPrimary === false) return;
       const startScreen = screenPoint(event);
       const startImage = toImgCoords(startScreen.x, startScreen.y);
-      const roof = layers.find((candidate) => candidate.id === selectedId);
+      const state = usePlannerV2Store.getState();
+      const roof = state.layers.find((candidate) => candidate.id === state.selectedId);
       if (!roof || findRoofAtPoint(startImage, [roof])?.id !== roof.id) return;
       const candidates = buildCandidates();
       if (!candidates.mode) return;
+      const resolved = resolveSurfacePlanning(roof.surfacePlanning);
+      const activeDraft = state.roofPlanningDrafts[roof.id];
+      const roofKind = activeDraft?.targetMode === 'advanced'
+        ? activeDraft.config.surface.kind
+        : resolved.status === 'supported-advanced'
+          ? resolved.config.surface.kind
+          : roof.roofKind ?? resolveInitialSonnendachRoofType(roof) ??
+            (candidates.mode === 'portrait' || candidates.mode === 'landscape' ? 'pitched' : 'flat');
+      const frame = resolveFillAreaReferenceFrame({
+        roofPoints: roof.points,
+        referenceEdgeIndex: roof.referenceEdgeIndex,
+        roofKind,
+      });
+      if (!frame) return;
 
       candidatesRef.current = candidates.panels;
+      frameRef.current = frame;
       drawingRef.current = true;
       dragActivated = false;
       activePointerId = event.pointerId;
@@ -433,7 +321,7 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       window.removeEventListener('blur', cancelGesture);
       cancelGesture();
     };
-  }, [stageRef, step, tool, layers, selectedId, modules.gridAngleDeg, modules.perRoofAngles, toImgCoords, onDraftChange, cancelVersion]);
+  }, [stageRef, step, tool, layers, selectedId, toImgCoords, onDraftChange, cancelVersion]);
 
   return null;
 }

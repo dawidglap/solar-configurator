@@ -65,10 +65,10 @@ export function createFillAreaDragGesture(options: FillAreaDragGestureOptions) {
       const completed = session;
       session = null;
       scheduler.cancel();
-      options.onVisual(null);
       if (completed.activated) {
         options.onCommit({ start: completed.start, end: completed.end });
       }
+      options.onVisual(null);
       return true;
     },
     cancel() {
