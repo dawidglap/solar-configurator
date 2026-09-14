@@ -3,31 +3,9 @@
 import React from "react";
 import { Group, Line, Rect, Text } from "react-konva";
 
-import { resolveCanonicalRoofReferenceEdge } from "@/lib/planning-core/geometry-v2";
 import type { Pt } from "@/types/planner";
 import { plannerTheme } from "../theme/plannerTheme";
-
-function isPointInsidePolygon(point: Pt, polygon: readonly Pt[]) {
-  let inside = false;
-  for (
-    let index = 0, previousIndex = polygon.length - 1;
-    index < polygon.length;
-    previousIndex = index, index += 1
-  ) {
-    const current = polygon[index];
-    const previous = polygon[previousIndex];
-    if (
-      current.y > point.y !== previous.y > point.y &&
-      point.x <
-        ((previous.x - current.x) * (point.y - current.y)) /
-          (previous.y - current.y || 1e-9) +
-          current.x
-    ) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
+import { buildRoofReferenceEdgePresentation } from "./roofReferenceEdgePresentation";
 
 type Props = {
   points: readonly Pt[];
@@ -47,30 +25,20 @@ export default function RoofReferenceEdgeLayer({
   canvasRotationDeg,
   subdued = false,
 }: Props) {
-  const edge = resolveCanonicalRoofReferenceEdge({
+  const presentation = buildRoofReferenceEdgePresentation({
     points,
-    requestedIndex: referenceEdgeIndex,
     roofKind,
+    referenceEdgeIndex,
+    scale,
+    canvasRotationDeg,
   });
-  if (!edge || roofKind === "green") return null;
+  if (!presentation) return null;
 
+  const { edge, label, center, screenRotationDeg, widthPx, heightPx, fontSizePx } = presentation;
   const inverseScale = 1 / Math.max(scale, 0.01);
-  const leftNormal = { x: -edge.direction.y, y: edge.direction.x };
-  const leftSample = {
-    x: edge.midpoint.x + leftNormal.x * 0.75,
-    y: edge.midpoint.y + leftNormal.y * 0.75,
-  };
-  const outward = isPointInsidePolygon(leftSample, points)
-    ? { x: -leftNormal.x, y: -leftNormal.y }
-    : leftNormal;
-  const label = roofKind === "pitched" ? "FIRST" : "REFERENZKANTE";
-  const labelCenter = {
-    x: edge.midpoint.x + outward.x * 38 * inverseScale,
-    y: edge.midpoint.y + outward.y * 38 * inverseScale,
-  };
-  const labelWidth = Math.max(58, label.length * 8 + 20) * inverseScale;
-  const labelHeight = 22 * inverseScale;
-  const opacity = subdued ? 0.78 : 1;
+  const labelWidth = widthPx * inverseScale;
+  const labelHeight = heightPx * inverseScale;
+  const opacity = subdued ? 0.86 : 1;
 
   return (
     <Group listening={false} opacity={opacity}>
@@ -90,9 +58,9 @@ export default function RoofReferenceEdgeLayer({
         listening={false}
       />
       <Group
-        x={labelCenter.x}
-        y={labelCenter.y}
-        rotation={-canvasRotationDeg}
+        x={center.x}
+        y={center.y}
+        rotation={screenRotationDeg}
         listening={false}
       >
         <Rect
@@ -100,23 +68,24 @@ export default function RoofReferenceEdgeLayer({
           y={-labelHeight / 2}
           width={labelWidth}
           height={labelHeight}
-          fill="rgba(11, 16, 28, 0.94)"
+          fill="rgba(255, 255, 255, 0.96)"
           stroke={plannerTheme.referenceEdge}
           strokeWidth={1.25 * inverseScale}
-          cornerRadius={7 * inverseScale}
-          shadowColor={plannerTheme.referenceEdgeGlow}
-          shadowBlur={5 * inverseScale}
-          shadowOpacity={0.65}
+          cornerRadius={labelHeight / 2}
+          shadowColor="#000"
+          shadowBlur={6 * inverseScale}
+          shadowOpacity={0.42}
+          shadowOffsetY={1.5 * inverseScale}
           listening={false}
         />
         <Text
           x={-labelWidth / 2}
-          y={-6.5 * inverseScale}
+          y={-(fontSizePx * 0.58) * inverseScale}
           width={labelWidth}
           text={label}
           align="center"
-          fill={plannerTheme.textLight}
-          fontSize={11 * inverseScale}
+          fill="#111827"
+          fontSize={fontSizePx * inverseScale}
           fontStyle="bold"
           listening={false}
         />

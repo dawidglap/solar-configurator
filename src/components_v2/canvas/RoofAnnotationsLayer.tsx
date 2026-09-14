@@ -176,7 +176,7 @@ export default function RoofAnnotationsLayer({ canvasRotationDeg = 0 }: {
           y: edge.end.y + edge.outward.y * offset,
         };
         const displayLabel = edge.isReference && !selectedZone
-          ? `KANTE ${edge.edgeIndex + 1} · ${edge.lengthM.toFixed(2)} m`
+          ? `${edge.lengthM.toFixed(2)} m`
           : edge.label;
         return (
           <Group key={edge.edgeIndex} listening={false}>

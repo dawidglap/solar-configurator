@@ -272,13 +272,14 @@ test("customer UI is mode-explicit, direct and free of obsolete full-layout cont
 test("reference-edge hierarchy and generation triggers keep their intended alignment semantics", () => {
   const annotations = readFileSync(new URL("../../src/components_v2/canvas/RoofAnnotationsLayer.tsx", import.meta.url), "utf8");
   const referenceLayer = readFileSync(new URL("../../src/components_v2/canvas/RoofReferenceEdgeLayer.tsx", import.meta.url), "utf8");
+  const referencePresentation = readFileSync(new URL("../../src/components_v2/canvas/roofReferenceEdgePresentation.ts", import.meta.url), "utf8");
   const toolbar = readFileSync(new URL("../../src/components_v2/layout/TopToolbar.tsx", import.meta.url), "utf8");
   const fill = readFileSync(new URL("../../src/components_v2/modules/fill/FillAreaController.tsx", import.meta.url), "utf8");
 
   assert.ok(annotations.includes("<RoofReferenceEdgeLayer"));
   assert.ok(annotations.includes('subdued={step === "modules"}'));
-  assert.ok(referenceLayer.includes('roofKind === "pitched" ? "FIRST" : "REFERENZKANTE"'));
-  assert.ok(referenceLayer.includes("rotation={-canvasRotationDeg}"));
+  assert.ok(referencePresentation.includes('input.roofKind === "pitched" ? "FIRST" : "REFERENZKANTE"'));
+  assert.ok(referencePresentation.includes("screenRotationDeg: -input.canvasRotationDeg"));
   assert.ok(referenceLayer.includes("plannerTheme.referenceEdge"));
   assert.ok(referenceLayer.includes("listening={false}"));
   assert.ok(toolbar.includes("alignAdvancedLayoutParallelToRoofEdge"));
