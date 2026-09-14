@@ -57,8 +57,8 @@ export default function RoofTypeChangeDialog({
         >
           {currentLabel} wird zu {nextLabel}.{" "}
           {moduleCount > 0
-            ? `Alle ${moduleCount} Module auf dieser Dachfläche werden gelöscht.`
-            : "Die bisherige Planung dieser Dachfläche wird zurückgesetzt."}{" "}
+            ? `Alle ${moduleCount} Module, Hindernisse und Planungseinstellungen auf dieser Dachfläche werden gelöscht.`
+            : "Hindernisse und Planungseinstellungen dieser Dachfläche werden zurückgesetzt."}{" "}
           Danach beginnt die Planung für diese Dachfläche neu.
         </p>
         <div className="mt-5 grid grid-cols-2 gap-3">

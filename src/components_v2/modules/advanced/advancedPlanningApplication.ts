@@ -828,6 +828,13 @@ export function resolveRoofPlanningMode(input: {
   draft?: RoofPlanningDraft;
   roof?: Pick<RoofArea, "source" | "tiltDeg" | "roofKind">;
 }): "standard" | "advanced" {
+  // Once the customer has classified a roof, that physical classification is
+  // authoritative. Layout drafts and stale persisted layout metadata must
+  // never be able to flip the customer-facing roof type on a later render.
+  if (input.roof?.roofKind === "flat" || input.roof?.roofKind === "green") {
+    return "advanced";
+  }
+  if (input.roof?.roofKind === "pitched") return "standard";
   if (input.draft) return input.draft.targetMode;
   const persisted = resolveSurfacePlanning(input.persisted);
   if (persisted.status === "legacy-standard") {
@@ -841,10 +848,95 @@ export function resolveRoofPlanningMode(input: {
   return "standard";
 }
 
+type RoofOwnedRecord = { roofId: string };
+
+export function applyConfirmedRoofKindChange<
+  T extends RoofArea,
+  Z extends RoofOwnedRecord,
+  S extends RoofOwnedRecord,
+>(input: {
+  roofs: readonly T[];
+  panels: readonly PanelInstance[];
+  zones: readonly Z[];
+  snowGuards: readonly S[];
+  roofPlanningDrafts: Readonly<Record<string, RoofPlanningDraft>>;
+  selectedPanelIds: readonly string[];
+  selectedZoneId?: string;
+  selectedSnowGuardId?: string;
+  modules: ModulesConfig;
+  roofId: string;
+  nextRoofKind: "pitched" | "flat";
+}): {
+  roofs: T[];
+  panels: PanelInstance[];
+  zones: Z[];
+  snowGuards: S[];
+  roofPlanningDrafts: Record<string, RoofPlanningDraft>;
+  selectedPanelIds: string[];
+  selectedZoneId?: string;
+  selectedSnowGuardId?: string;
+  modules: ModulesConfig;
+} {
+  const removedPanelIds = new Set(
+    input.panels
+      .filter((panel) => panel.roofId === input.roofId)
+      .map((panel) => panel.id),
+  );
+  const removedZoneIds = new Set(
+    input.zones
+      .filter((zone) => zone.roofId === input.roofId)
+      .map((zone) => (zone as Z & { id?: string }).id)
+      .filter((id): id is string => typeof id === "string"),
+  );
+  const removedSnowGuardIds = new Set(
+    input.snowGuards
+      .filter((guard) => guard.roofId === input.roofId)
+      .map((guard) => (guard as S & { id?: string }).id)
+      .filter((id): id is string => typeof id === "string"),
+  );
+  const roofPlanningDrafts = { ...input.roofPlanningDrafts };
+  delete roofPlanningDrafts[input.roofId];
+  const perRoofAngles = { ...(input.modules.perRoofAngles ?? {}) };
+  delete perRoofAngles[input.roofId];
+
+  return {
+    roofs: input.roofs.map((roof) => {
+      if (roof.id !== input.roofId) return roof;
+      const resetRoof = { ...roof };
+      delete resetRoof.surfacePlanning;
+      delete resetRoof.referenceEdgeIndex;
+      delete resetRoof.edgeMarginM;
+      delete resetRoof.exclusions;
+      return {
+        ...resetRoof,
+        roofKind: input.nextRoofKind,
+        ...(input.nextRoofKind === "flat" ? { tiltDeg: 0 } : {}),
+      } as T;
+    }),
+    panels: input.panels.filter((panel) => panel.roofId !== input.roofId),
+    zones: input.zones.filter((zone) => zone.roofId !== input.roofId),
+    snowGuards: input.snowGuards.filter((guard) => guard.roofId !== input.roofId),
+    roofPlanningDrafts,
+    selectedPanelIds: input.selectedPanelIds.filter((id) => !removedPanelIds.has(id)),
+    selectedZoneId: input.selectedZoneId && removedZoneIds.has(input.selectedZoneId)
+      ? undefined
+      : input.selectedZoneId,
+    selectedSnowGuardId:
+      input.selectedSnowGuardId && removedSnowGuardIds.has(input.selectedSnowGuardId)
+        ? undefined
+        : input.selectedSnowGuardId,
+    modules: {
+      ...input.modules,
+      placingSingle: false,
+      perRoofAngles,
+    },
+  };
+}
+
 /**
  * Initial customer-facing roof type for unclassified Sonnendach surfaces.
  * This resolver is deliberately read-only: it never mutates or persists the
- * imported source data. Explicit surfacePlanning remains authoritative.
+ * imported source data. Explicit roofKind remains authoritative.
  */
 export function resolveInitialSonnendachRoofType(
   roof?: Pick<RoofArea, "source" | "tiltDeg" | "roofKind">,
@@ -865,32 +957,38 @@ export function resolveInitialSonnendachRoofType(
  * of surfacePlanning still means legacy Standard for geometry compatibility.
  */
 export function resolveRoofModuleMode(input: {
-  roof?: Pick<RoofArea, "surfacePlanning">;
+  roof?: Pick<RoofArea, "surfacePlanning" | "roofKind">;
   draft?: RoofPlanningDraft;
   panels: readonly Pick<PanelInstance, "roofId" | "orientation" | "advanced">[];
   roofId?: string;
 }): RoofModuleMode | undefined {
   if (!input.roof || !input.roofId) return undefined;
-  if (input.draft?.targetMode === "advanced") {
+  const explicitMode = input.roof.roofKind === "pitched"
+    ? "standard"
+    : input.roof.roofKind === "flat" || input.roof.roofKind === "green"
+      ? "advanced"
+      : undefined;
+  if (input.draft?.targetMode === "advanced" && explicitMode !== "standard") {
     const systemId = input.draft.config.advanced.system.systemId;
     if (systemId === K2_S_DOME_SYSTEM_ID || systemId === GENERIC_SOUTH_SYSTEM_ID) return "south";
     if (systemId === K2_D_DOME_SYSTEM_ID || systemId === GENERIC_EAST_WEST_SYSTEM_ID) return "east-west";
   }
-  if (input.draft?.targetMode === "standard") {
+  if (input.draft?.targetMode === "standard" && explicitMode !== "advanced") {
     return input.draft.modules.orientation;
   }
   const persisted = resolveSurfacePlanning(input.roof.surfacePlanning);
-  if (persisted.status === "supported-advanced") {
+  if (persisted.status === "supported-advanced" && explicitMode !== "standard") {
     const systemId = persisted.config.advanced.system.systemId;
     if (systemId === K2_S_DOME_SYSTEM_ID || systemId === GENERIC_SOUTH_SYSTEM_ID) return "south";
     if (systemId === K2_D_DOME_SYSTEM_ID || systemId === GENERIC_EAST_WEST_SYSTEM_ID) return "east-west";
     return undefined;
   }
-  if (persisted.status === "supported-standard" && persisted.config.moduleLayoutMode) {
+  if (persisted.status === "supported-standard" && explicitMode !== "advanced" && persisted.config.moduleLayoutMode) {
     return persisted.config.moduleLayoutMode;
   }
   const roofPanels = input.panels.filter((panel) => panel.roofId === input.roofId);
   if (!roofPanels.length || roofPanels.some((panel) => panel.advanced)) return undefined;
+  if (explicitMode === "advanced") return undefined;
   const orientations = new Set(roofPanels.map((panel) => panel.orientation));
   return orientations.size === 1 ? roofPanels[0].orientation : undefined;
 }

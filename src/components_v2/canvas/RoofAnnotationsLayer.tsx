@@ -96,9 +96,9 @@ export default function RoofAnnotationsLayer() {
     : !draft && persisted.status === "supported-advanced"
       ? persisted.config
       : undefined;
-  const roofKind = draft?.targetMode === "standard"
+  const roofKind = roof.roofKind ?? (draft?.targetMode === "standard"
     ? "pitched"
-    : advancedConfig?.surface.kind ?? roof.roofKind ?? "pitched";
+    : advancedConfig?.surface.kind ?? "pitched");
   const tiltDeg = roofKind === "flat"
     ? 0
     : advancedConfig?.surface.slopeDeg ?? roof.tiltDeg;

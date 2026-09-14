@@ -228,12 +228,13 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       if (!candidates.mode) return;
       const resolved = resolveSurfacePlanning(roof.surfacePlanning);
       const activeDraft = state.roofPlanningDrafts[roof.id];
-      const roofKind = activeDraft?.targetMode === 'advanced'
+      const roofKind = roof.roofKind ?? (activeDraft?.targetMode === 'advanced'
         ? activeDraft.config.surface.kind
         : resolved.status === 'supported-advanced'
           ? resolved.config.surface.kind
-          : roof.roofKind ?? resolveInitialSonnendachRoofType(roof) ??
-            (candidates.mode === 'portrait' || candidates.mode === 'landscape' ? 'pitched' : 'flat');
+          : resolveInitialSonnendachRoofType(roof) ??
+            (candidates.mode === 'portrait' || candidates.mode === 'landscape' ? 'pitched' : 'flat')
+      );
       const frame = resolveFillAreaReferenceFrame({
         roofPoints: roof.points,
         referenceEdgeIndex: roof.referenceEdgeIndex,

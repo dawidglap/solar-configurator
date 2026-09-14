@@ -44,6 +44,7 @@ type RoofAreaLike = {
     points: Pt[];
     azimuthDeg?: number;
     source?: string;
+    roofKind?: RoofKind;
     referenceEdgeIndex?: number;
     surfacePlanning?: unknown;
 };
@@ -217,7 +218,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
 
         history.push('add roof (free)'); // snapshot PRIMA
 
-        addRoof({ id, name, points: pts } as T);
+        addRoof({ id, name, points: pts, source: 'manual', roofKind: 'pitched' } as unknown as T);
         select(id);
         setDrawingPoly(null);
         polyRedoRef.current = [];
@@ -237,9 +238,11 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         history.push('add reserved zone'); // snapshot PRIMA
         const targetRoof = layers.find((roof) => roof.id === targetRoofId) as T | undefined;
         const planning = resolveSurfacePlanning(targetRoof?.surfacePlanning);
-        const roofKind: RoofKind = planning.status === 'supported-advanced'
-            ? planning.config.surface.kind
-            : 'pitched';
+        const roofKind: RoofKind = targetRoof?.roofKind ?? (
+            planning.status === 'supported-advanced'
+                ? planning.config.surface.kind
+                : 'pitched'
+        );
         const edgeIndex = targetRoof
             ? resolveRoofReferenceEdgeIndex({
                 points: targetRoof.points,
@@ -271,9 +274,11 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         const roof = layers.find((candidate) => candidate.id === target.targetRoofId) as T | undefined;
         if (!roof) return;
         const planning = resolveSurfacePlanning(roof.surfacePlanning);
-        const roofKind: RoofKind = planning.status === 'supported-advanced'
-            ? planning.config.surface.kind
-            : 'pitched';
+        const roofKind: RoofKind = roof.roofKind ?? (
+            planning.status === 'supported-advanced'
+                ? planning.config.surface.kind
+                : 'pitched'
+        );
         const referenceEdgeIndex = resolveRoofReferenceEdgeIndex({
             points: roof.points,
             requestedIndex: roof.referenceEdgeIndex,
@@ -415,7 +420,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
 
             history.push('add roof (rect)'); // snapshot PRIMA
 
-            addRoof({ id, name, points: poly, azimuthDeg, source: 'manual' } as T);
+            addRoof({ id, name, points: poly, azimuthDeg, source: 'manual', roofKind: 'pitched' } as unknown as T);
             select(id);
             setRectDraft(null);
             rectRedoRef.current = [];

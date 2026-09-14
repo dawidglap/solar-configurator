@@ -308,11 +308,17 @@ test("configuration-only drafts resolve the active mode without materialized pan
     }),
   };
   assert.equal(resolveRoofModuleMode({
-    roof: ROOF,
+    roof: { ...ROOF, roofKind: "flat" },
     roofId: ROOF.id,
     panels: [],
     draft: advancedDraft,
   }), "east-west");
+  assert.equal(resolveRoofModuleMode({
+    roof: ROOF,
+    roofId: ROOF.id,
+    panels: [],
+    draft: advancedDraft,
+  }), undefined);
 });
 
 test("reference-edge hierarchy and generation triggers keep their intended alignment semantics", () => {

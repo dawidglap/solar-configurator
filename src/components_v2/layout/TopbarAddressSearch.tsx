@@ -27,6 +27,7 @@ import {
 } from "../planner/plannerSessionPolicy";
 import { dispatchBuildingRevealRequest } from "../canvas/buildingRevealEvent";
 import type { SonnendachRevealRoof } from "@/lib/planning/viewport/buildingReveal";
+import { resolveInitialSonnendachRoofType } from "../modules/advanced/advancedPlanningApplication";
 
 function stripHtml(input: string) {
   return input.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -354,6 +355,10 @@ export default function TopbarAddressSearch() {
             tiltDeg: p.tiltDeg,
             azimuthDeg: p.azimuthDeg,
             source: "sonnendach",
+            roofKind: resolveInitialSonnendachRoofType({
+              source: "sonnendach",
+              tiltDeg: p.tiltDeg,
+            }),
           });
           return { ...p, id, sourceIndex: i };
         });

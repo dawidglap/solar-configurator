@@ -17,7 +17,7 @@ export default function RoofMarginControl({ roof }: { roof: RoofArea }) {
   const setPlanningDraft = usePlannerV2Store((state) => state.setRoofPlanningDraft);
   const standardMarginM = usePlannerV2Store((state) => state.modules.marginM);
   const resolvedPlanning = resolveSurfacePlanning(roof.surfacePlanning);
-  const advancedConfig = resolvedPlanning.status === "supported-advanced"
+  const advancedConfig = resolvedPlanning.status === "supported-advanced" && roof.roofKind !== "pitched"
     ? resolvedPlanning.config
     : undefined;
   const marginM = resolveRoofEdgeMarginM(roof, standardMarginM);

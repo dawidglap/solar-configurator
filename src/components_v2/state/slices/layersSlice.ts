@@ -43,9 +43,11 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
                 // without silently turning the fallback into persisted input.
                 if (next.referenceEdgeIndex == null) return next;
                 const planning = getRoofSurfacePlanning([next], next.id);
-                const roofKind = planning.status === 'supported-advanced'
-                    ? planning.config.surface.kind
-                    : next.roofKind ?? 'pitched';
+                const roofKind = next.roofKind ?? (
+                    planning.status === 'supported-advanced'
+                        ? planning.config.surface.kind
+                        : 'pitched'
+                );
                 const referenceEdgeIndex = resolveRoofReferenceEdgeIndex({
                     points: next.points,
                     requestedIndex: next.referenceEdgeIndex,

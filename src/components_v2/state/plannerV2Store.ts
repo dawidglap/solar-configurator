@@ -6,6 +6,7 @@ import { isToolAllowed, defaultToolFor } from './capabilities';
 import { ALLOWED_TOOLS, DEFAULT_TOOL } from '../../constants/stepTools';
 import { nanoid } from 'nanoid';
 import {
+  applyConfirmedRoofKindChange,
   applyRoofLayoutTransaction,
   type RoofPlanningDraft,
 } from '@/components_v2/modules/advanced/advancedPlanningApplication';
@@ -261,6 +262,10 @@ type PlannerV2State = {
     roofId: string;
     panels: PanelInstance[];
     surfacePlanning?: SurfacePlanningV1;
+  }) => void;
+  confirmRoofKindChange: (input: {
+    roofId: string;
+    nextRoofKind: "pitched" | "flat";
   }) => void;
   appendPanelsToRoof: (input: {
     roofId: string;
@@ -638,6 +643,38 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             roofPlanningDrafts,
           };
         }),
+      confirmRoofKindChange: ({ roofId, nextRoofKind }) => {
+        const currentRoof = get().layers.find((roof) => roof.id === roofId);
+        if (!currentRoof || currentRoof.roofKind === nextRoofKind) return;
+        history.push("change roof kind");
+        set((state) => {
+          const changed = applyConfirmedRoofKindChange({
+            roofs: state.layers,
+            panels: state.panels,
+            zones: state.zones,
+            snowGuards: state.snowGuards,
+            roofPlanningDrafts: state.roofPlanningDrafts,
+            selectedPanelIds: state.selectedPanelIds,
+            selectedZoneId: state.selectedZoneId,
+            selectedSnowGuardId: state.selectedSnowGuardId,
+            modules: state.modules,
+            roofId,
+            nextRoofKind,
+          });
+          return {
+            layers: changed.roofs,
+            panels: changed.panels,
+            zones: changed.zones,
+            snowGuards: changed.snowGuards,
+            roofPlanningDrafts: changed.roofPlanningDrafts,
+            selectedPanelIds: changed.selectedPanelIds,
+            selectedZoneId: changed.selectedZoneId,
+            selectedSnowGuardId: changed.selectedSnowGuardId,
+            modules: changed.modules,
+            tool: "select",
+          };
+        });
+      },
       appendPanelsToRoof: ({ roofId, panels: addedPanels, selectAdded = false }) =>
         set((state) => {
           if (addedPanels.length === 0) return state;

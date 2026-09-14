@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
+import { resolveInitialSonnendachRoofType } from '../modules/advanced/advancedPlanningApplication';
 
 function areaM2(points: { x: number; y: number }[], mpp?: number) {
   if (!mpp || points.length < 3) return undefined;
@@ -70,6 +71,10 @@ export default function DetectedRoofsImport() {
         tiltDeg: d.tiltDeg,
         azimuthDeg: d.azimuthDeg,
         source: 'sonnendach',
+        roofKind: resolveInitialSonnendachRoofType({
+          source: 'sonnendach',
+          tiltDeg: d.tiltDeg,
+        }),
       });
       addedIds.push(id);
       idx++;

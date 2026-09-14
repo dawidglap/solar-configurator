@@ -50,8 +50,12 @@ export default function CompassHUD({
       : persistedPlanning.status === "supported-advanced"
         ? persistedPlanning.config
         : undefined;
-  const isFlat = advancedConfig?.surface.kind === "flat" ||
-    resolveInitialSonnendachRoofType(roof) === "flat";
+  const isFlat = roof.roofKind === "flat" || (
+    roof.roofKind === undefined && (
+      advancedConfig?.surface.kind === "flat" ||
+      resolveInitialSonnendachRoofType(roof) === "flat"
+    )
+  );
   const system = advancedConfig?.advanced.system;
   const primaryModuleAzimuthDeg = system?.systemId === K2_S_DOME_SYSTEM_ID ||
       system?.systemId === GENERIC_SOUTH_SYSTEM_ID

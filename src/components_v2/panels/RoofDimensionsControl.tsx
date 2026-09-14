@@ -55,13 +55,16 @@ export default function RoofDimensionsControl({
   const panels = usePlannerV2Store((state) => state.panels);
   const updateRoof = usePlannerV2Store((state) => state.updateRoof);
   const planning = resolveSurfacePlanning(roof.surfacePlanning);
+  const planningMatchesRoofKind =
+    (planning.status === "supported-advanced" || planning.status === "supported-standard") &&
+    planning.config.surface.kind === roofKind;
   const measurementTiltDeg = resolveRoofSlopeForKind(
     roofKind,
-    planning.status === "supported-advanced"
+    planningMatchesRoofKind
       ? planning.config.surface.slopeDeg ?? roof.tiltDeg
       : roof.tiltDeg,
   );
-  const fallAzimuthDeg = planning.status === "supported-advanced"
+  const fallAzimuthDeg = planningMatchesRoofKind
     ? planning.config.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(roof)
     : resolveRoofFallAzimuth(roof);
   const analysis = React.useMemo(

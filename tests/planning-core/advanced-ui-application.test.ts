@@ -8,6 +8,7 @@ import {
   resolveSurfacePlanning,
 } from "../../src/lib/planning-core/advanced";
 import {
+  applyConfirmedRoofKindChange,
   applyRoofLayoutTransaction,
   buildStandardSurfacePlanning,
   computeAdvancedPlanningPreview,
@@ -159,6 +160,90 @@ test("A4: Sonnendach type resolution is isolated per roof", () => {
     roofs.map((item) => resolveRoofPlanningMode({ persisted: undefined, roof: item })),
     ["advanced", "standard", "standard"],
   );
+});
+
+test("A5: explicit roofKind remains authoritative over slope, persisted mode and drafts", () => {
+  const flat = { ...roof(), roofKind: "flat" as const, tiltDeg: 35 };
+  const pitched = { ...roof(), roofKind: "pitched" as const, tiltDeg: 0 };
+  const advancedDraft = { targetMode: "advanced" as const, config: advancedConfig() };
+  const standardDraft = createStandardPlanningDraft({
+    panelSpecId: MODULE.id,
+    modules: STANDARD_MODULES,
+  });
+
+  assert.equal(resolveInitialSonnendachRoofType(flat), "flat");
+  assert.equal(resolveRoofPlanningMode({ persisted: undefined, roof: flat, draft: standardDraft }), "advanced");
+  assert.equal(resolveRoofPlanningMode({ persisted: advancedConfig(), roof: pitched, draft: advancedDraft }), "standard");
+  assert.equal(resolveInitialSonnendachRoofType(pitched), "pitched");
+});
+
+test("A6: confirmed roof kind change is deterministic, destructive only for the target roof and does not move geometry", () => {
+  const target = {
+    ...roof("roof-a"),
+    roofKind: "pitched" as const,
+    tiltDeg: 24,
+    referenceEdgeIndex: 2,
+    edgeMarginM: 0.4,
+    exclusions: [[{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 1, y: 2 }]],
+    surfacePlanning: buildStandardSurfacePlanning({
+      roof: { ...roof("roof-a"), tiltDeg: 24 },
+      moduleTilt: { mode: "inherit-roof" },
+    }),
+  };
+  const other = { ...roof("roof-b"), roofKind: "pitched" as const };
+  const targetPoints = structuredClone(target.points);
+  const targetPanel = oldPanel("roof-a", "panel-a");
+  const otherPanel = oldPanel("roof-b", "panel-b");
+  const targetDraft = createStandardPlanningDraft({ panelSpecId: MODULE.id, modules: STANDARD_MODULES });
+  const otherDraft = createStandardPlanningDraft({ panelSpecId: MODULE.id, modules: STANDARD_MODULES });
+
+  const result = applyConfirmedRoofKindChange({
+    roofs: [target, other],
+    panels: [targetPanel, otherPanel],
+    zones: [
+      { id: "zone-a", roofId: "roof-a" },
+      { id: "zone-b", roofId: "roof-b" },
+    ],
+    snowGuards: [
+      { id: "snow-a", roofId: "roof-a" },
+      { id: "snow-b", roofId: "roof-b" },
+    ],
+    roofPlanningDrafts: { "roof-a": targetDraft, "roof-b": otherDraft },
+    selectedPanelIds: ["panel-a", "panel-b"],
+    selectedZoneId: "zone-a",
+    selectedSnowGuardId: "snow-a",
+    modules: { ...STANDARD_MODULES, placingSingle: true, perRoofAngles: { "roof-a": 12, "roof-b": 18 } },
+    roofId: "roof-a",
+    nextRoofKind: "flat",
+  });
+
+  assert.deepEqual(result.roofs[0].points, targetPoints);
+  assert.equal(result.roofs[0].roofKind, "flat");
+  assert.equal(result.roofs[0].tiltDeg, 0);
+  assert.equal(result.roofs[0].surfacePlanning, undefined);
+  assert.equal(result.roofs[0].referenceEdgeIndex, undefined);
+  assert.equal(result.roofs[0].edgeMarginM, undefined);
+  assert.equal(result.roofs[0].exclusions, undefined);
+  assert.equal(result.roofs[1], other);
+  assert.deepEqual(result.panels.map((panel) => panel.id), ["panel-b"]);
+  assert.deepEqual(result.zones.map((zone) => zone.id), ["zone-b"]);
+  assert.deepEqual(result.snowGuards.map((guard) => guard.id), ["snow-b"]);
+  assert.deepEqual(Object.keys(result.roofPlanningDrafts), ["roof-b"]);
+  assert.deepEqual(result.selectedPanelIds, ["panel-b"]);
+  assert.equal(result.selectedZoneId, undefined);
+  assert.equal(result.selectedSnowGuardId, undefined);
+  assert.equal(result.modules.placingSingle, false);
+  assert.deepEqual(result.modules.perRoofAngles, { "roof-b": 18 });
+});
+
+test("A7: changing to pitched never invents a slope", () => {
+  const flat = { ...roof(), roofKind: "flat" as const, tiltDeg: 0 };
+  const result = applyConfirmedRoofKindChange({
+    roofs: [flat], panels: [], zones: [], snowGuards: [], roofPlanningDrafts: {},
+    selectedPanelIds: [], modules: STANDARD_MODULES, roofId: flat.id, nextRoofKind: "pitched",
+  });
+  assert.equal(result.roofs[0].roofKind, "pitched");
+  assert.equal(result.roofs[0].tiltDeg, 0);
 });
 
 test("B/C: entering Advanced creates only a landscape D-Dome draft with valid K2 row space", () => {
@@ -372,8 +457,9 @@ test("S/T: Advanced to Standard is a draft until atomic legacy apply clears only
   assert.equal(result.panels.some((panel) => panel.id === "other"), true);
 });
 
-test("roof type confirmation resets only the selected roof and clears its transient draft", async () => {
+test("roof type store command commits the complete reset in one undoable action", async () => {
   const { usePlannerV2Store } = await import("../../src/components_v2/state/plannerV2Store");
+  const { history } = await import("../../src/components_v2/state/history");
   usePlannerV2Store.getState().resetPlanner();
 
   const roofA = roof("roof-a");
@@ -393,10 +479,15 @@ test("roof type confirmation resets only the selected roof and clears its transi
     roofPlanningDrafts: { "roof-a": draft },
   });
 
-  usePlannerV2Store.getState().commitRoofLayout({
+  usePlannerV2Store.setState({
+    zones: [{ id: "zone-a", roofId: "roof-a", type: "riservata", points: [] }],
+    snowGuards: [{ id: "snow-a", roofId: "roof-a", p1: { x: 0, y: 0 }, p2: { x: 1, y: 1 } }],
+    selectedZoneId: "zone-a",
+    selectedSnowGuardId: "snow-a",
+  });
+  usePlannerV2Store.getState().confirmRoofKindChange({
     roofId: "roof-a",
-    panels: [],
-    surfacePlanning: advancedConfig(),
+    nextRoofKind: "flat",
   });
 
   const state = usePlannerV2Store.getState();
@@ -405,8 +496,22 @@ test("roof type confirmation resets only the selected roof and clears its transi
   assert.equal(state.selectedPanelIds.includes("a-1"), false);
   assert.equal(state.selectedPanelIds.includes("b-1"), true);
   assert.equal(state.roofPlanningDrafts["roof-a"], undefined);
-  assert.equal(resolveSurfacePlanning(state.layers[0].surfacePlanning).status, "supported-advanced");
+  assert.equal(state.layers[0].roofKind, "flat");
+  assert.equal(state.layers[0].tiltDeg, 0);
+  assert.equal(state.layers[0].surfacePlanning, undefined);
+  assert.equal(state.zones.length, 0);
+  assert.equal(state.snowGuards.length, 0);
+  assert.equal(state.selectedZoneId, undefined);
+  assert.equal(state.selectedSnowGuardId, undefined);
   assert.deepEqual(state.layers[1].surfacePlanning, roofB.surfacePlanning);
+  assert.equal(history.canUndo(), true);
+
+  history.undo();
+  const restored = usePlannerV2Store.getState();
+  assert.deepEqual(restored.panels.map((panel) => panel.id), ["a-1", "a-2", "b-1"]);
+  assert.equal(restored.zones[0]?.id, "zone-a");
+  assert.equal(restored.snowGuards[0]?.id, "snow-a");
+  assert.equal(restored.roofPlanningDrafts["roof-a"]?.targetMode, "standard");
 
   usePlannerV2Store.getState().resetPlanner();
 });

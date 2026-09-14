@@ -13,8 +13,13 @@ const ALLOWED_KEYS = [
     'layers',     // tetti
     'selectedId', // selezione tetto
     'panels',     // pannelli
+    'selectedPanelIds',
     'modules',    // opzioni griglia
     'zones',      // hindernis / reserved
+    'selectedZoneId',
+    'snowGuards',
+    'selectedSnowGuardId',
+    'roofPlanningDrafts',
     'ui',         // pannelli aperti/chiusi etc.
     'roofAlign',  // pivot/rotazione UI
 ];

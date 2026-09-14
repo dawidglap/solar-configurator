@@ -45,6 +45,7 @@ import {
 } from "../modules/advanced/advancedPlanningApplication";
 import ZonePropertiesControl from "../zones/ZonePropertiesControl";
 import DirectLayoutControl from "../modules/panels/DirectLayoutControl";
+import { endManualPlacement } from "../modules/manualPlacementSession";
 
 type Pt = { x: number; y: number };
 
@@ -87,7 +88,7 @@ export default function ModulesPanel() {
   const clearRoofPlanningDraft = usePlannerV2Store(
     (s) => s.clearRoofPlanningDraft,
   );
-  const commitRoofLayout = usePlannerV2Store((s) => s.commitRoofLayout);
+  const confirmRoofKindChange = usePlannerV2Store((s) => s.confirmRoofKindChange);
 
   // --- Edit inline tilt/az (spostato sotto per evitare TDZ) ---
   const updateRoof = usePlannerV2Store((s) => s.updateRoof);
@@ -272,18 +273,14 @@ export default function ModulesPanel() {
 
   const confirmRoofTypeChange = React.useCallback(() => {
     if (!selectedRoof || !pendingRoofType) return;
-    commitRoofLayout({ roofId: selectedRoof.id, panels: [] });
-    updateRoof(selectedRoof.id, {
-      roofKind: pendingRoofType,
-      ...(pendingRoofType === "flat" ? { tiltDeg: 0 } : {}),
-      // Undefined is the canonical auto mode for flat roofs. The northernmost
-      // edge is resolved from geometry until the operator chooses explicitly.
-      referenceEdgeIndex: pendingRoofType === "flat" ? undefined : 0,
+    endManualPlacement();
+    confirmRoofKindChange({
+      roofId: selectedRoof.id,
+      nextRoofKind: pendingRoofType,
     });
-
     setPendingRoofType(null);
     toast.success("Dachtyp geändert. Die Dachfläche kann neu geplant werden.");
-  }, [commitRoofLayout, pendingRoofType, selectedRoof, updateRoof]);
+  }, [confirmRoofKindChange, pendingRoofType, selectedRoof]);
 
   React.useEffect(() => {
     setPendingRoofType(null);
@@ -478,9 +475,11 @@ export default function ModulesPanel() {
                 });
 
                 const rowPlanning = resolveSurfacePlanning(l.surfacePlanning);
-                const rowKind = rowPlanning.status === "supported-advanced"
-                  ? rowPlanning.config.surface.kind
-                  : l.roofKind ?? resolveInitialSonnendachRoofType(l) ?? "pitched";
+                const rowKind = l.roofKind ?? (
+                  rowPlanning.status === "supported-advanced" || rowPlanning.status === "supported-standard"
+                    ? rowPlanning.config.surface.kind
+                    : resolveInitialSonnendachRoofType(l) ?? "pitched"
+                );
                 const az = rowPlanning.status === "supported-advanced"
                   ? rowPlanning.config.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(l)
                   : resolveRoofFallAzimuth(l);
