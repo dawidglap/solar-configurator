@@ -73,7 +73,12 @@ test("guided sidebar exposes primary choices and keeps fine tuning collapsed by 
   assert.ok(modulesPanel.includes("Feinjustierung"));
 
   assert.ok(advancedPanel.includes("MountingChoiceGraphic"));
-  assert.ok(advancedPanel.includes("Modul ändern"));
+  assert.equal(advancedPanel.includes("Modul ändern"), false);
+  assert.equal(advancedPanel.includes("Modul auswählen"), false);
+  assert.equal(advancedPanel.includes("modulePickerOpen"), false);
+  assert.match(advancedPanel, /aria-label="Modul wählen"/);
+  assert.match(advancedPanel, /replaceAdvancedDraftModule\(\{ config, panel \}\)/);
+  assert.match(advancedPanel, /className=\{`\$\{inputClass\} min-w-0 truncate`\}/);
   assert.equal(advancedPanel.includes("Parallel zur Dachkante"), false);
   assert.ok(advancedPanel.includes("Wähle Süd oder Ost-West"));
   assert.ok(presentation.includes("Planung passt"));

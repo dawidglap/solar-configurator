@@ -105,11 +105,9 @@ export default function AdvancedModulesPanel({
     (state) => state.companyPlannerDefaults,
   );
   const clearDraft = usePlannerV2Store((state) => state.clearRoofPlanningDraft);
-  const [modulePickerOpen, setModulePickerOpen] = React.useState(false);
   const [fineTuningOpen, setFineTuningOpen] = React.useState(false);
 
   React.useEffect(() => {
-    setModulePickerOpen(false);
     setFineTuningOpen(false);
   }, [roof.id]);
 
@@ -274,49 +272,25 @@ export default function AdvancedModulesPanel({
 
       <section className="space-y-2 border-b border-border/60 pb-4">
         <h3 className={labelClass}>Modul</h3>
-        <div className="rounded-xl border border-border/70 bg-muted/10 p-3">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="truncate text-[11px] font-semibold text-foreground">
-                {selectedCatalogPanel
-                  ? `${selectedCatalogPanel.brand} ${selectedCatalogPanel.model}`
-                  : "PV Modul auswählen"}
-              </p>
-              <p className="mt-1 text-[10px] text-muted-foreground">
-                {config.advanced.module.powerW != null ? `${fmt(config.advanced.module.powerW, 0)} W · ` : ""}
-                {fmt(config.advanced.module.heightM * 1000, 0)} × {fmt(config.advanced.module.widthM * 1000, 0)} mm
-              </p>
-            </div>
-            <button
-              type="button"
-              className="shrink-0 rounded-lg border border-border px-2 py-1.5 text-[10px] font-medium hover:border-primary/50"
-              onClick={() => setModulePickerOpen((open) => !open)}
-              aria-expanded={modulePickerOpen}
-            >
-              Modul ändern
-            </button>
-          </div>
-          {modulePickerOpen && (
-            <label className="mt-3 block space-y-1 text-[10px] text-muted-foreground" htmlFor={`advanced-module-${roof.id}`}>
-              Modul auswählen
-              <select
-                id={`advanced-module-${roof.id}`}
-                className={inputClass}
-                value={moduleId}
-                onChange={(event) => {
-                  const panel = catalogPanels.find((item) => item.id === event.target.value);
-                  if (panel) update(replaceAdvancedDraftModule({ config, panel }));
-                }}
-              >
-                {catalogPanels.map((panel) => (
-                  <option key={panel.id} value={panel.id}>
-                    {panel.brand} {panel.model} — {panel.wp} W
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </div>
+        <select
+          id={`advanced-module-${roof.id}`}
+          aria-label="Modul wählen"
+          title={selectedCatalogPanel
+            ? `${selectedCatalogPanel.brand} ${selectedCatalogPanel.model} — ${selectedCatalogPanel.wp} W`
+            : undefined}
+          className={`${inputClass} min-w-0 truncate`}
+          value={moduleId}
+          onChange={(event) => {
+            const panel = catalogPanels.find((item) => item.id === event.target.value);
+            if (panel) update(replaceAdvancedDraftModule({ config, panel }));
+          }}
+        >
+          {catalogPanels.map((panel) => (
+            <option key={panel.id} value={panel.id}>
+              {panel.brand} {panel.model} — {panel.wp} W
+            </option>
+          ))}
+        </select>
       </section>
 
       <section className="space-y-3 border-b border-border/60 pb-4">
