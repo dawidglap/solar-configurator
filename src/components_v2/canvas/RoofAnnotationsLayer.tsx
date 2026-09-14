@@ -73,9 +73,7 @@ function SmallFallArrow({ center, azimuthDeg, scale }: {
   );
 }
 
-export default function RoofAnnotationsLayer({ canvasRotationDeg = 0 }: {
-  canvasRotationDeg?: number;
-}) {
+export default function RoofAnnotationsLayer() {
   const selectedId = usePlannerV2Store((state) => state.selectedId);
   const selectedZone = usePlannerV2Store((state) =>
     state.zones.find((zone) => zone.id === state.selectedZoneId),
@@ -175,9 +173,7 @@ export default function RoofAnnotationsLayer({ canvasRotationDeg = 0 }: {
           x: edge.end.x + edge.outward.x * offset,
           y: edge.end.y + edge.outward.y * offset,
         };
-        const displayLabel = edge.isReference && !selectedZone
-          ? `${edge.lengthM.toFixed(2)} m`
-          : edge.label;
+        const displayLabel = edge.label;
         return (
           <Group key={edge.edgeIndex} listening={false}>
             {edge.isReference && selectedZone && (
@@ -229,14 +225,15 @@ export default function RoofAnnotationsLayer({ canvasRotationDeg = 0 }: {
           </Group>
         );
       })}
-      <RoofReferenceEdgeLayer
-        points={points}
-        roofKind={roofKind}
-        referenceEdgeIndex={roof.referenceEdgeIndex}
-        scale={scale}
-        canvasRotationDeg={canvasRotationDeg}
-        subdued={step === "modules"}
-      />
+      {!selectedZone && (
+        <RoofReferenceEdgeLayer
+          points={points}
+          roofKind={roofKind}
+          referenceEdgeIndex={roof.referenceEdgeIndex}
+          scale={scale}
+          subdued={step === "modules"}
+        />
+      )}
     </Group>
   );
 }

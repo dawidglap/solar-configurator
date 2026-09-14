@@ -287,7 +287,7 @@ test("panel-local arrow resolution has no sampling limit", () => {
   }
 });
 
-test("roof annotation model derives four semantic pitched edges without a phantom closing edge", () => {
+test("roof annotation model derives one semantic pitched edge without a phantom closing edge", () => {
   const model = buildRoofAnnotationModel({
     points: [...rectangle, rectangle[0]],
     mppImage: 0.1,
@@ -298,7 +298,7 @@ test("roof annotation model derives four semantic pitched edges without a phanto
   });
   assert.equal(model.edges.length, 4);
   assert.deepEqual(model.edges.map((edge) => edge.label.split(" · ")[0]), [
-    "FIRST", "ORTGANG RECHTS", "TRAUFE", "ORTGANG LINKS",
+    "FIRST", "KANTE 2", "KANTE 3", "KANTE 4",
   ]);
   assert.equal(model.edges.filter((edge) => edge.isReference).length, 1);
 });

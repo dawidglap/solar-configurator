@@ -1,7 +1,7 @@
 import {
   getCanonicalRoofEdges,
   getPitchedRoofEdgeRoles,
-  resolveRoofReferenceEdgeIndex,
+  resolveCanonicalRoofReferenceEdge,
   roofSegmentLengthM,
   type PitchedRoofEdgeRole,
 } from "@/lib/planning-core/geometry-v2";
@@ -26,13 +26,6 @@ export type RoofAnnotationModel = {
   center: Pt;
   edges: RoofEdgeAnnotation[];
   referenceEdgeIndex?: number;
-};
-
-const ROLE_LABELS: Partial<Record<PitchedRoofEdgeRole, string>> = {
-  first: "FIRST",
-  eaves: "TRAUFE",
-  "gable-left": "ORTGANG LINKS",
-  "gable-right": "ORTGANG RECHTS",
 };
 
 function pointInPolygon(point: Pt, polygon: readonly Pt[]): boolean {
@@ -70,11 +63,12 @@ export function buildRoofAnnotationModel(input: {
     (sum, point) => ({ x: sum.x + point.x / Math.max(1, points.length), y: sum.y + point.y / Math.max(1, points.length) }),
     { x: 0, y: 0 },
   );
-  const referenceEdgeIndex = resolveRoofReferenceEdgeIndex({
+  const referenceEdge = resolveCanonicalRoofReferenceEdge({
     points,
     requestedIndex: input.referenceEdgeIndex,
     roofKind: input.roofKind,
   });
+  const referenceEdgeIndex = referenceEdge?.edgeIndex;
   const roles = input.roofKind === "pitched"
     ? getPitchedRoofEdgeRoles({ points, referenceEdgeIndex })
     : new Map<number, PitchedRoofEdgeRole>();
@@ -98,9 +92,11 @@ export function buildRoofAnnotationModel(input: {
     const isReference = edge.edgeIndex === referenceEdgeIndex;
     const semanticLabel = input.referenceLabel && isReference
       ? input.referenceLabel
-      : input.roofKind === "flat" && isReference
-        ? "REFERENZKANTE"
-        : ROLE_LABELS[role] ?? `KANTE ${edge.edgeIndex + 1}`;
+      : isReference && input.roofKind === "pitched"
+        ? "FIRST"
+        : isReference && input.roofKind === "flat"
+          ? "REFERENZKANTE"
+          : `KANTE ${edge.edgeIndex + 1}`;
     return {
       edgeIndex: edge.edgeIndex,
       role,

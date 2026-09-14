@@ -1650,7 +1650,7 @@ export default function CanvasStage() {
                   />
                 )}
 
-                <RoofAnnotationsLayer canvasRotationDeg={rotateDeg} />
+                <RoofAnnotationsLayer />
 
               </Group>
             </Layer>
