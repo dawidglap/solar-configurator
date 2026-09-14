@@ -1697,16 +1697,21 @@ export function buildDirectStandardRoofLayout(input: {
   snowGuards: Parameters<typeof selectLegacyStandardObstacles>[1];
   thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
   createPanelId: (index: number) => string;
+  /** Canonical for initial/U generation; current preserves an explicit working rotation for F. */
+  alignmentMode?: "canonical" | "current";
 }): { panels: PanelInstance[]; config: StandardSurfacePlanningV1; modules: ModulesConfig } | null {
-  const modules = alignStandardModulesParallelToFirst({
-    modules: {
+  const requestedModules = {
       ...input.modules,
       orientation: input.orientation,
       coverageRatio: 1,
       showGrid: false,
-    },
-    roofId: input.roof.id,
-  });
+  };
+  const modules = input.alignmentMode === "current"
+    ? requestedModules
+    : alignStandardModulesParallelToFirst({
+        modules: requestedModules,
+        roofId: input.roof.id,
+      });
   const panels = computeStandardDraftPanels({
     roof: input.roof,
     panel: input.panel,

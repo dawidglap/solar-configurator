@@ -7,8 +7,7 @@ import type {
 import { resolveLegacyStandardCanvasAngle } from "@/lib/planning-core/legacy-standard";
 import {
   getCanonicalLeftEndOfEdge,
-  getCanonicalRoofEdges,
-  resolveRoofReferenceEdgeIndex,
+  resolveCanonicalRoofReferenceEdge,
 } from "@/lib/planning-core/geometry-v2";
 
 export const STANDARD_AUTO_LAYOUT_SPACING_M = 0.02;
@@ -82,13 +81,11 @@ export function resolveStandardAutoLayoutCanvasAngle(input: {
   const roofOverrideDeg = input.perRoofAngles?.[input.roofId];
   if (typeof roofOverrideDeg === "number") return roofOverrideDeg;
 
-  const edges = getCanonicalRoofEdges(input.roofPolygon);
-  const referenceIndex = resolveRoofReferenceEdgeIndex({
+  const edge = resolveCanonicalRoofReferenceEdge({
     points: input.roofPolygon,
     requestedIndex: input.referenceEdgeIndex,
     roofKind: "pitched",
   });
-  const edge = referenceIndex == null ? undefined : edges[referenceIndex];
   if (edge) {
     const left = getCanonicalLeftEndOfEdge(edge);
     const right = left === edge.start ? edge.end : edge.start;
@@ -121,13 +118,11 @@ export function resolveStandardAutoLayoutReferenceFrame(input: {
   referenceEdgeIndex?: number;
   fallAzimuthDeg?: number;
 }): StandardAutoLayoutReferenceFrame | undefined {
-  const edges = getCanonicalRoofEdges(input.roofPolygon);
-  const referenceIndex = resolveRoofReferenceEdgeIndex({
+  const edge = resolveCanonicalRoofReferenceEdge({
     points: input.roofPolygon,
     requestedIndex: input.referenceEdgeIndex,
     roofKind: "pitched",
   });
-  const edge = referenceIndex == null ? undefined : edges[referenceIndex];
   if (!edge) return undefined;
 
   const origin = getCanonicalLeftEndOfEdge(edge);

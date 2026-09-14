@@ -17,6 +17,7 @@ import {
   setAdvancedQuantityMode,
 } from '../advanced/advancedPlanningApplication';
 import { selectAdditiveFillPanels } from './additiveFill';
+import { resolveStandardAutoLayoutCanvasAngle } from '../legacyStandardApplicationPolicy';
 
 import { isPrimaryPointerButton } from '../../canvas/interactionPolicy';
 
@@ -48,23 +49,6 @@ function localToWorld(p: Pt, O: Pt, theta: number): Pt {
   const c = Math.cos(theta), s = Math.sin(theta);
   return { x: p.x * c - p.y * s + O.x, y: p.x * s + p.y * c + O.y };
 }
-function normDeg(d: number) { const x = d % 360; return x < 0 ? x + 360 : x; }
-function angleDiffDeg(a: number, b: number) {
-  const d = Math.abs(normDeg(a) - normDeg(b));
-  return d > 180 ? 360 - d : d;
-}
-function longestEdgeAngleDeg(pts: Pt[] | null | undefined) {
-  if (!pts || pts.length < 2) return 0;
-  let best = 0, maxLen2 = -1;
-  for (let i = 0; i < pts.length; i++) {
-    const j = (i + 1) % pts.length;
-    const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y;
-    const len2 = dx * dx + dy * dy;
-    if (len2 > maxLen2) { maxLen2 = len2; best = Math.atan2(dy, dx); }
-  }
-  return (best * 180) / Math.PI;
-}
-
 function axisAlignedRect(a: Pt, b: Pt): Pt[] {
   return [
     { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) },
@@ -194,10 +178,14 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
     const getAngleDeg = () => {
       const roof = layers.find((l) => l.id === selectedId);
       if (!roof) return 0;
-      const eavesCanvasDeg = -(roof.azimuthDeg ?? 0) + 90;
-      const polyDeg = longestEdgeAngleDeg(roof.points);
-      const baseCanvasDeg = angleDiffDeg(eavesCanvasDeg, polyDeg) > 5 ? polyDeg : eavesCanvasDeg;
-      return baseCanvasDeg + (modules.gridAngleDeg || 0);
+      return resolveStandardAutoLayoutCanvasAngle({
+        roofId: roof.id,
+        roofPolygon: roof.points,
+        legacyRoofAzimuthDeg: roof.azimuthDeg,
+        gridAngleDeg: modules.gridAngleDeg,
+        perRoofAngles: modules.perRoofAngles,
+        referenceEdgeIndex: roof.referenceEdgeIndex,
+      });
     };
 
     const buildCandidates = (): { mode: ReturnType<typeof resolveRoofModuleMode>; panels: PanelInstance[] } => {
@@ -229,6 +217,7 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
           thermalFieldLimits: standardDraft?.thermalFieldLimits ??
             (resolved.status === 'supported-standard' ? resolved.config.thermalFieldLimits : undefined),
           createPanelId: (index) => `${roof.id}_${runId}_${index}`,
+          alignmentMode: 'current',
         });
         return { mode, panels: generated?.panels ?? [] };
       }
@@ -353,7 +342,7 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       candidatesRef.current = [];
       onDraftChange?.(null);
     };
-  }, [stageRef, step, tool, layers, selectedId, modules.gridAngleDeg, toImgCoords, onDraftChange, appendPanelsToRoof, cancelVersion]);
+  }, [stageRef, step, tool, layers, selectedId, modules.gridAngleDeg, modules.perRoofAngles, toImgCoords, onDraftChange, appendPanelsToRoof, cancelVersion]);
 
   return null;
 }

@@ -21,6 +21,9 @@ export const plannerTheme = {
   warning: '#f7b733',
   marginBand: 'rgba(247, 183, 51, 0.28)',
 
+  referenceEdge: '#a78bfa',
+  referenceEdgeGlow: 'rgba(167, 139, 250, 0.60)',
+
   textLight: '#eaf6ff',
   textMuted: 'rgba(234, 246, 255, 0.62)',
 };

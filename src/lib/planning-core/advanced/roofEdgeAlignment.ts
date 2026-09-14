@@ -2,6 +2,7 @@ import {
   analyzeRectangularRoof,
   getCanonicalRoofEdges,
   pointPolygonRelation,
+  resolveCanonicalRoofReferenceEdge,
 } from "../geometry-v2";
 import type { CanonicalRoofEdge, MetricPoint } from "../geometry-v2";
 import { normalizeGeographicAzimuth } from "./moduleGeometry";
@@ -115,7 +116,12 @@ export function resolveK2ParallelRoofEdgeAlignment(input: {
     (input.referenceEdgeIndex as number) >= 0 &&
     (input.referenceEdgeIndex as number) < canonicalEdges.length
   ) {
-    const edge = canonicalEdges[input.referenceEdgeIndex as number];
+    const edge = resolveCanonicalRoofReferenceEdge({
+      points: input.roofPointsPx,
+      requestedIndex: input.referenceEdgeIndex,
+      roofKind: "flat",
+    });
+    if (!edge) return null;
     return alignmentForEdge({
       roofPoints: input.roofPointsPx,
       edge,

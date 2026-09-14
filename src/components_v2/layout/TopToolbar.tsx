@@ -36,6 +36,7 @@ import {
 import {
   buildDirectAdvancedRoofLayout,
   buildDirectStandardRoofLayout,
+  alignAdvancedLayoutParallelToRoofEdge,
   resolveInitialSonnendachRoofType,
   resolveRoofModuleMode,
   resolveStandardTiltInput,
@@ -608,7 +609,14 @@ export default function TopToolbar() {
       setModules(generated.modules);
     } else {
       if (!displayedAdvancedConfig) return;
-      const config = withEffectiveAdvancedThermalLimits(displayedAdvancedConfig, currentState.companyPlannerDefaults);
+      const config = alignAdvancedLayoutParallelToRoofEdge({
+        config: withEffectiveAdvancedThermalLimits(
+          displayedAdvancedConfig,
+          currentState.companyPlannerDefaults,
+        ),
+        roof,
+        mppImage: snapshot.mppImage,
+      });
       const generated = buildDirectAdvancedRoofLayout({
         roof,
         config,

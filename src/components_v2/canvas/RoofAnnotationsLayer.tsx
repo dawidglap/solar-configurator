@@ -17,6 +17,7 @@ import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import RoofAzimuthArrows from "./RoofAzimuthArrows";
 import { RoofMarginBand } from "../modules/panels/RoofMarginBand";
 import { buildRoofAnnotationModel } from "./roofAnnotationModel";
+import RoofReferenceEdgeLayer from "./RoofReferenceEdgeLayer";
 import {
   getTransientRoofAnnotationPoints,
   subscribeTransientRoofAnnotationPoints,
@@ -72,7 +73,9 @@ function SmallFallArrow({ center, azimuthDeg, scale }: {
   );
 }
 
-export default function RoofAnnotationsLayer() {
+export default function RoofAnnotationsLayer({ canvasRotationDeg = 0 }: {
+  canvasRotationDeg?: number;
+}) {
   const selectedId = usePlannerV2Store((state) => state.selectedId);
   const selectedZone = usePlannerV2Store((state) =>
     state.zones.find((zone) => zone.id === state.selectedZoneId),
@@ -172,9 +175,12 @@ export default function RoofAnnotationsLayer() {
           x: edge.end.x + edge.outward.x * offset,
           y: edge.end.y + edge.outward.y * offset,
         };
+        const displayLabel = edge.isReference && !selectedZone
+          ? `KANTE ${edge.edgeIndex + 1} · ${edge.lengthM.toFixed(2)} m`
+          : edge.label;
         return (
           <Group key={edge.edgeIndex} listening={false}>
-            {edge.isReference && (
+            {edge.isReference && selectedZone && (
               <Line
                 points={[edge.start.x, edge.start.y, edge.end.x, edge.end.y]}
                 stroke={plannerTheme.primary}
@@ -208,13 +214,13 @@ export default function RoofAnnotationsLayer() {
             <Text
               x={labelPoint.x}
               y={labelPoint.y}
-              text={edge.label}
+              text={displayLabel}
               rotation={edge.readableAngleDeg}
-              offsetX={edge.label.length * fontSize * 0.27}
+              offsetX={displayLabel.length * fontSize * 0.27}
               offsetY={fontSize + 1.5 * inverseScale}
-              fill={edge.isReference ? plannerTheme.primary : plannerTheme.textLight}
+              fill={edge.isReference && selectedZone ? plannerTheme.primary : plannerTheme.textLight}
               fontSize={fontSize}
-              fontStyle={edge.isReference ? "bold" : "normal"}
+              fontStyle={edge.isReference && selectedZone ? "bold" : "normal"}
               shadowColor="#000"
               shadowBlur={2 * inverseScale}
               shadowOpacity={0.85}
@@ -223,6 +229,14 @@ export default function RoofAnnotationsLayer() {
           </Group>
         );
       })}
+      <RoofReferenceEdgeLayer
+        points={points}
+        roofKind={roofKind}
+        referenceEdgeIndex={roof.referenceEdgeIndex}
+        scale={scale}
+        canvasRotationDeg={canvasRotationDeg}
+        subdued={step === "modules"}
+      />
     </Group>
   );
 }

@@ -5,6 +5,7 @@ import {
   getCanonicalLeftEndOfEdge,
   getCanonicalRoofEdges,
   getPitchedRoofEdgeRoles,
+  resolveCanonicalRoofReferenceEdge,
   resolveRoofReferenceEdgeIndex,
   resizeRectangularRoof,
 } from "../../src/lib/planning-core/geometry-v2";
@@ -84,6 +85,26 @@ test("reference edge fallback is edge zero for pitched and longest real edge for
   assert.equal(resolveRoofReferenceEdgeIndex({ points: rectangle, roofKind: "flat" }), 0);
   assert.equal(resolveRoofReferenceEdgeIndex({ points: rectangle, roofKind: "flat", requestedIndex: 2 }), 2);
   assert.equal(resolveRoofReferenceEdgeIndex({ points: rectangle, roofKind: "flat", requestedIndex: 8 }), 0);
+});
+
+test("the canonical edge resolver returns the selected physical edge and updates deterministically", () => {
+  const first = resolveCanonicalRoofReferenceEdge({
+    points: rectangle,
+    requestedIndex: 0,
+    roofKind: "pitched",
+  });
+  const changed = resolveCanonicalRoofReferenceEdge({
+    points: rectangle,
+    requestedIndex: 2,
+    roofKind: "pitched",
+  });
+  assert.equal(first?.edgeIndex, 0);
+  assert.deepEqual(first?.start, rectangle[0]);
+  assert.deepEqual(first?.end, rectangle[1]);
+  assert.equal(changed?.edgeIndex, 2);
+  assert.deepEqual(changed?.start, rectangle[2]);
+  assert.deepEqual(changed?.end, rectangle[3]);
+  assert.notDeepEqual(changed?.midpoint, first?.midpoint);
 });
 
 test("topology-preserving rectangle resize keeps edge identity and never creates crossing or closure edge", () => {

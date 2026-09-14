@@ -16,6 +16,7 @@ import {
   resolveRoofModuleMode,
   setAdvancedMountingOrientation,
 } from "../../src/components_v2/modules/advanced/advancedPlanningApplication";
+import { resolveStandardAutoLayoutCanvasAngle } from "../../src/components_v2/modules/legacyStandardApplicationPolicy";
 import type {
   ModulesConfig,
   PanelInstance,
@@ -109,6 +110,51 @@ test("first pitched mode selection creates real maximum-valid panels aligned to 
     roof: { ...ROOF, surfacePlanning: generated.config },
     panels: generated.panels,
   }), false);
+});
+
+test("canonical Standard generation resets manual rotation while additive generation preserves it", () => {
+  const canonical = buildDirectStandardRoofLayout({
+    roof: ROOF,
+    panel: PANEL,
+    modules: MODULES,
+    orientation: "portrait",
+    moduleTilt: { mode: "inherit-roof" },
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    createPanelId: (index) => `canonical-${index}`,
+  });
+  const additive = buildDirectStandardRoofLayout({
+    roof: ROOF,
+    panel: PANEL,
+    modules: MODULES,
+    orientation: "portrait",
+    moduleTilt: { mode: "inherit-roof" },
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    createPanelId: (index) => `additive-${index}`,
+    alignmentMode: "current",
+  });
+  assert.ok(canonical);
+  assert.ok(additive);
+
+  assert.equal(resolveStandardAutoLayoutCanvasAngle({
+    roofId: ROOF.id,
+    roofPolygon: ROOF.points,
+    referenceEdgeIndex: ROOF.referenceEdgeIndex,
+    gridAngleDeg: canonical.modules.gridAngleDeg,
+    perRoofAngles: canonical.modules.perRoofAngles,
+  }), 0);
+  assert.equal(canonical.panels[0]?.angleDeg, 0);
+  assert.equal(resolveStandardAutoLayoutCanvasAngle({
+    roofId: ROOF.id,
+    roofPolygon: ROOF.points,
+    referenceEdgeIndex: ROOF.referenceEdgeIndex,
+    gridAngleDeg: additive.modules.gridAngleDeg,
+    perRoofAngles: additive.modules.perRoofAngles,
+  }), 42);
+  assert.equal(additive.panels[0]?.angleDeg, 42);
 });
 
 test("flat South and East-West restore from the persisted system discriminator", () => {
@@ -221,4 +267,20 @@ test("customer UI is mode-explicit, direct and free of obsolete full-layout cont
   assert.ok(toolbar.includes('actionId="planner-regenerate-layout"'));
   assert.ok(toolbar.includes("Zuerst Hochformat oder Querformat wählen"));
   assert.ok(toolbar.includes("Zuerst Süd oder Ost-West wählen"));
+});
+
+test("reference-edge hierarchy and generation triggers keep their intended alignment semantics", () => {
+  const annotations = readFileSync(new URL("../../src/components_v2/canvas/RoofAnnotationsLayer.tsx", import.meta.url), "utf8");
+  const referenceLayer = readFileSync(new URL("../../src/components_v2/canvas/RoofReferenceEdgeLayer.tsx", import.meta.url), "utf8");
+  const toolbar = readFileSync(new URL("../../src/components_v2/layout/TopToolbar.tsx", import.meta.url), "utf8");
+  const fill = readFileSync(new URL("../../src/components_v2/modules/fill/FillAreaController.tsx", import.meta.url), "utf8");
+
+  assert.ok(annotations.includes("<RoofReferenceEdgeLayer"));
+  assert.ok(annotations.includes('subdued={step === "modules"}'));
+  assert.ok(referenceLayer.includes('roofKind === "pitched" ? "FIRST" : "REFERENZKANTE"'));
+  assert.ok(referenceLayer.includes("rotation={-canvasRotationDeg}"));
+  assert.ok(referenceLayer.includes("plannerTheme.referenceEdge"));
+  assert.ok(referenceLayer.includes("listening={false}"));
+  assert.ok(toolbar.includes("alignAdvancedLayoutParallelToRoofEdge"));
+  assert.match(fill, /alignmentMode:\s*["']current["']/);
 });

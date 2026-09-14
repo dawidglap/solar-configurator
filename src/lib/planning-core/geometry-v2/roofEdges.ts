@@ -101,6 +101,17 @@ export function resolveRoofReferenceEdgeIndex(input: {
   ).edgeIndex;
 }
 
+/** Resolves the complete canonical First/Referenzkante without screen state. */
+export function resolveCanonicalRoofReferenceEdge(input: {
+  points: readonly MetricPoint[];
+  requestedIndex?: number;
+  roofKind: "pitched" | "flat" | "green";
+}): CanonicalRoofEdge | undefined {
+  const edges = getCanonicalRoofEdges(input.points);
+  const edgeIndex = resolveRoofReferenceEdgeIndex(input);
+  return edgeIndex == null ? undefined : edges[edgeIndex];
+}
+
 export type PitchedRoofEdgeRole =
   | "first"
   | "eaves"
