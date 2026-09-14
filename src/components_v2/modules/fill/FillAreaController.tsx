@@ -18,9 +18,13 @@ import {
 } from '../advanced/advancedPlanningApplication';
 import { selectAdditiveFillPanels } from './additiveFill';
 import { resolveStandardAutoLayoutCanvasAngle } from '../legacyStandardApplicationPolicy';
+import { createFillAreaDragGesture } from './fillAreaDragGesture';
 
-import { isPrimaryPointerButton } from '../../canvas/interactionPolicy';
-
+import {
+  findRoofAtPoint,
+  isPrimaryPointerButton,
+  shouldIgnorePlannerHotkeyTarget,
+} from '../../canvas/interactionPolicy';
 
 type ModRect = { cx: number; cy: number; wPx: number; hPx: number; angleDeg: number };
 
@@ -156,7 +160,6 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
   const layers = usePlannerV2Store((s) => s.layers);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
   const modules = usePlannerV2Store((s) => s.modules);
-  const appendPanelsToRoof = usePlannerV2Store((s) => s.appendPanelsToRoof);
 
   const draftRef = useRef<{ a: Pt; b: Pt } | null>(null);
   const drawingRef = useRef(false);
@@ -165,15 +168,6 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
   useEffect(() => {
     const st = stageRef.current?.getStage?.();
     if (!st || step !== 'modules' || tool !== 'fill-area') return;
-
-    const ns = '.fill-area';
-    st.off(ns);
-
-    const getMouseImg = () => {
-      const pos = st.getPointerPosition();
-      if (!pos) return null;
-      return toImgCoords(pos.x, pos.y);
-    };
 
     const getAngleDeg = () => {
       const roof = layers.find((l) => l.id === selectedId);
@@ -267,82 +261,164 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       };
     };
 
-    const handleMouseMove = () => {
-      if (!drawingRef.current || !draftRef.current) return;
-      const p = getMouseImg();
-      if (!p) return;
-
-      const a = draftRef.current.a;
-      const b = p;
-      draftRef.current = { a, b };
-
-      const next = additivePanelsFor(a, b);
-      const poly = next.poly;
-      const rects = next.panels.map((panel) => ({
-        cx: panel.cx, cy: panel.cy, wPx: panel.wPx, hPx: panel.hPx, angleDeg: panel.angleDeg,
-      }));
-      onDraftChange?.({ a, b, poly, rects });
+    const container = st.container();
+    const screenPoint = (event: PointerEvent): Pt => {
+      const bounds = container.getBoundingClientRect();
+      return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
     };
-
-    const handleClick = (event: { evt?: { button?: number } }) => {
-      if (!isPrimaryPointerButton(event?.evt?.button)) return;
-      const p = getMouseImg();
-      if (!p) return;
-
-      // primo click → start
-      if (!drawingRef.current) {
-        drawingRef.current = true;
-        draftRef.current = { a: p, b: p };
-        candidatesRef.current = buildCandidates().panels;
-        const next = additivePanelsFor(p, p);
-        const poly = next.poly;
-        const rects = next.panels.map((panel) => ({
-          cx: panel.cx, cy: panel.cy, wPx: panel.wPx, hPx: panel.hPx, angleDeg: panel.angleDeg,
-        }));
-        onDraftChange?.({ a: p, b: p, poly, rects });
-        return;
-      }
-
-      // secondo click → commit
-      if (drawingRef.current && draftRef.current) {
-        const a = draftRef.current.a;
-        const b = draftRef.current.b;
-
-        const state = usePlannerV2Store.getState();
-        const roofId = state.selectedId;
-        if (!roofId) {
-          drawingRef.current = false;
+    const renderDraft = (a: Pt, b: Pt) => {
+      draftRef.current = { a, b };
+      const next = additivePanelsFor(a, b);
+      const rects = next.panels.map((panel) => ({
+        cx: panel.cx,
+        cy: panel.cy,
+        wPx: panel.wPx,
+        hPx: panel.hPx,
+        angleDeg: panel.angleDeg,
+      }));
+      onDraftChange?.({ a, b, poly: next.poly, rects });
+    };
+    let dragActivated = false;
+    let activePointerId: number | null = null;
+    let suppressNextClick = false;
+    const gesture = createFillAreaDragGesture({
+      thresholdPx: 5,
+      onVisual: (visual) => {
+        if (!visual) {
           draftRef.current = null;
           onDraftChange?.(null);
           return;
         }
+        dragActivated = true;
+        renderDraft(
+          toImgCoords(visual.start.x, visual.start.y),
+          toImgCoords(visual.end.x, visual.end.y),
+        );
+      },
+      onCommit: (visual) => {
+        const a = toImgCoords(visual.start.x, visual.start.y);
+        const b = toImgCoords(visual.end.x, visual.end.y);
+        const state = usePlannerV2Store.getState();
+        const roofId = state.selectedId;
+        if (!roofId) return;
         const items = additivePanelsFor(a, b).panels;
         if (items.length > 0) {
-          history.push('Fläche füllen');
-          appendPanelsToRoof({ roofId, panels: items });
+          history.push('Manuell füllen');
+          state.appendPanelsToRoof({ roofId, panels: items });
           toast.success(`${items.length} ${items.length === 1 ? 'Modul hinzugefügt' : 'Module hinzugefügt'}`);
         } else {
           toast('In diesem Bereich können keine weiteren Module platziert werden.');
         }
+      },
+    });
 
-        // reset
-        drawingRef.current = false;
-        draftRef.current = null;
-        onDraftChange?.(null);
+    const releasePointerCapture = (pointerId: number | null) => {
+      if (pointerId == null || !container.hasPointerCapture?.(pointerId)) return;
+      try {
+        container.releasePointerCapture(pointerId);
+      } catch {
+        // The gesture is already safely finalized even if capture was lost.
       }
     };
+    const cancelGesture = () => {
+      const pointerId = activePointerId;
+      activePointerId = null;
+      drawingRef.current = false;
+      dragActivated = false;
+      candidatesRef.current = [];
+      const cancelled = gesture.cancel();
+      releasePointerCapture(pointerId);
+      return cancelled;
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!isPrimaryPointerButton(event.button) || event.isPrimary === false) return;
+      const startScreen = screenPoint(event);
+      const startImage = toImgCoords(startScreen.x, startScreen.y);
+      const roof = layers.find((candidate) => candidate.id === selectedId);
+      if (!roof || findRoofAtPoint(startImage, [roof])?.id !== roof.id) return;
+      const candidates = buildCandidates();
+      if (!candidates.mode) return;
 
-    st.on('mousemove' + ns + ' touchmove' + ns, handleMouseMove);
-    st.on('click' + ns + ' touchstart' + ns, handleClick);
+      candidatesRef.current = candidates.panels;
+      drawingRef.current = true;
+      dragActivated = false;
+      activePointerId = event.pointerId;
+      gesture.begin(startScreen);
+      try {
+        container.setPointerCapture?.(event.pointerId);
+      } catch {
+        // Window listeners still complete/cancel the gesture without capture.
+      }
+      container.focus();
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== activePointerId || !gesture.move(screenPoint(event))) return;
+      event.preventDefault();
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== activePointerId) return;
+      const pointerId = activePointerId;
+      const shouldSuppressClick = dragActivated;
+      activePointerId = null;
+      gesture.end(screenPoint(event));
+      drawingRef.current = false;
+      candidatesRef.current = [];
+      suppressNextClick = shouldSuppressClick || dragActivated;
+      dragActivated = false;
+      releasePointerCapture(pointerId);
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const onPointerCancel = (event: PointerEvent) => {
+      if (event.pointerId !== activePointerId) return;
+      cancelGesture();
+    };
+    const onLostPointerCapture = (event: PointerEvent) => {
+      if (event.pointerId === activePointerId) cancelGesture();
+    };
+    const onClickCapture = (event: MouseEvent) => {
+      if (!suppressNextClick) return;
+      suppressNextClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (
+        event.key !== 'Escape' ||
+        shouldIgnorePlannerHotkeyTarget(event.target) ||
+        shouldIgnorePlannerHotkeyTarget(document.activeElement) ||
+        !cancelGesture()
+      ) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
+    container.addEventListener('pointerdown', onPointerDown, { capture: true });
+    container.addEventListener('click', onClickCapture, { capture: true });
+    container.addEventListener('lostpointercapture', onLostPointerCapture);
+    window.addEventListener('pointermove', onPointerMove, { capture: true });
+    window.addEventListener('pointerup', onPointerUp, { capture: true });
+    window.addEventListener('pointercancel', onPointerCancel, { capture: true });
+    window.addEventListener('keydown', onEscape, { capture: true });
+    window.addEventListener('blur', cancelGesture);
 
     return () => {
-      st.off(ns);
-      drawingRef.current = false;
-      draftRef.current = null;
-      candidatesRef.current = [];
-      onDraftChange?.(null);
+      container.removeEventListener('pointerdown', onPointerDown, { capture: true });
+      container.removeEventListener('click', onClickCapture, { capture: true });
+      container.removeEventListener('lostpointercapture', onLostPointerCapture);
+      window.removeEventListener('pointermove', onPointerMove, { capture: true });
+      window.removeEventListener('pointerup', onPointerUp, { capture: true });
+      window.removeEventListener('pointercancel', onPointerCancel, { capture: true });
+      window.removeEventListener('keydown', onEscape, { capture: true });
+      window.removeEventListener('blur', cancelGesture);
+      cancelGesture();
     };
-  }, [stageRef, step, tool, layers, selectedId, modules.gridAngleDeg, modules.perRoofAngles, toImgCoords, onDraftChange, appendPanelsToRoof, cancelVersion]);
+  }, [stageRef, step, tool, layers, selectedId, modules.gridAngleDeg, modules.perRoofAngles, toImgCoords, onDraftChange, cancelVersion]);
 
   return null;
 }

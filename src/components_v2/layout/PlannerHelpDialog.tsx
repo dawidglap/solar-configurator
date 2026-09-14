@@ -72,13 +72,13 @@ const MODULE_ITEMS: HelpItem[] = [
     Icon: MousePointer2,
   },
   {
-    title: "Automatisches Layout",
+    title: "Vollbelegung",
     shortcut: "U",
-    description: "Bei Schrägdächern werden die gültigen Modulpositionen der ausgewählten Dachfläche erzeugt.",
+    description: "Erzeugt die maximale gültige Belegung der ausgewählten Dachfläche. Ein bestehendes Layout wird erst nach Bestätigung ersetzt.",
     Icon: Grid2X2,
   },
   {
-    title: "Fläche füllen",
+    title: "Manuell füllen",
     shortcut: "F",
     description: "Eine Teilfläche aufziehen und mit Modulen füllen. Escape bricht den Entwurf ab.",
     tool: "fill-area",

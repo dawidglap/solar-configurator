@@ -22,10 +22,11 @@ export default function ModulesTopbarFillAreaButton() {
           ? 'bg-neutral-900 text-white border-neutral-900'
           : 'bg-white text-neutral-900 border-neutral-200 hover:bg-neutral-50'
       ].join(' ')}
-      title="Disegna rettangolo per riempire area"
+      title="Bereich aufziehen und manuell füllen"
+      aria-label="Manuell füllen"
       aria-pressed={active}
     >
-      Dachfläche füllen
+      Manuell füllen
     </button>
   );
 }

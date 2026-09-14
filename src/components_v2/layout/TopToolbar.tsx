@@ -709,13 +709,13 @@ export default function TopToolbar() {
           Icon={MdViewModule}
           label=""
           disabled={!canUseModulesTools || !selectedId}
-          tooltipLabel={activeModuleMode ? "Layout neu erstellen" : manualPlacementLabel}
+          tooltipLabel={activeModuleMode ? "Vollbelegung" : manualPlacementLabel}
           tooltipKeys={["U"]}
         />
 
         <ActionBtn
           actionId="planner-fill-layout"
-          active={false}
+          active={tool === "fill-area"}
           onClick={() => {
             if (!ensureModulesPrereqsForF()) return;
             endManualPlacement();
@@ -724,7 +724,7 @@ export default function TopToolbar() {
           Icon={MdBorderStyle}
           label=""
           disabled={!canUseModulesTools || !selectedId}
-          tooltipLabel={activeModuleMode ? "Dachfläche füllen" : manualPlacementLabel}
+          tooltipLabel={activeModuleMode ? "Manuell füllen" : manualPlacementLabel}
           tooltipKeys={["F"]}
         />
 
