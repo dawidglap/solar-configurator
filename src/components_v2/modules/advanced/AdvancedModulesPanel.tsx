@@ -1,8 +1,6 @@
 "use client";
 
 import React from "react";
-import { nanoid } from "nanoid";
-import toast from "react-hot-toast";
 
 import {
   GENERIC_EAST_WEST_SYSTEM_ID,
@@ -22,13 +20,10 @@ import {
   type AdvancedPlanningPreview,
   DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG,
   getAdvancedRowSpaceM,
-  hasCommittedPanelsForRoof,
-  materializeAdvancedPanels,
   replaceAdvancedDraftModule,
   setAdvancedFixedQuantity,
   setAdvancedQuantityMode,
   updateDefaultFlatSystem,
-  withGeneratedLayoutFingerprint,
 } from "./advancedPlanningApplication";
 import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
 import { buildGuidedPlanningResult } from "./guidedPlanningPresentation";
@@ -87,7 +82,7 @@ type Props = {
   roof: RoofArea;
   config: AdvancedSurfacePlanningV1;
   isDraft: boolean;
-  isImplicitInitialConfig?: boolean;
+  previewEnabled?: boolean;
   activeMode?: "south" | "east-west";
   onSelectMode: (mode: "south" | "east-west") => void;
 };
@@ -96,7 +91,7 @@ export default function AdvancedModulesPanel({
   roof,
   config,
   isDraft,
-  isImplicitInitialConfig = false,
+  previewEnabled = true,
   activeMode,
   onSelectMode,
 }: Props) {
@@ -110,21 +105,22 @@ export default function AdvancedModulesPanel({
     (state) => state.companyPlannerDefaults,
   );
   const clearDraft = usePlannerV2Store((state) => state.clearRoofPlanningDraft);
-  const commitRoofLayout = usePlannerV2Store((state) => state.commitRoofLayout);
-  const [confirmReplace, setConfirmReplace] = React.useState(false);
   const [modulePickerOpen, setModulePickerOpen] = React.useState(false);
   const [fineTuningOpen, setFineTuningOpen] = React.useState(false);
 
   React.useEffect(() => {
     setModulePickerOpen(false);
     setFineTuningOpen(false);
-    setConfirmReplace(false);
   }, [roof.id]);
 
   const update = React.useCallback(
     (next: AdvancedSurfacePlanningV1) => {
-      setConfirmReplace(false);
-      setDraft(roof.id, { targetMode: "advanced", config: next });
+      setDraft(roof.id, {
+        targetMode: "advanced",
+        // Configuration changes stay non-geometric until U/F/single placement.
+        previewEnabled: false,
+        config: next,
+      });
     },
     [roof.id, setDraft],
   );
@@ -150,7 +146,7 @@ export default function AdvancedModulesPanel({
     [companyPlannerDefaults, config],
   );
   const preview = React.useMemo(
-    () => activeMode
+    () => activeMode && previewEnabled
       ? computeAdvancedPlanningPreview({
         roof,
         config: effectiveConfig,
@@ -159,19 +155,11 @@ export default function AdvancedModulesPanel({
         snowGuards,
       })
       : UNSELECTED_MODE_PREVIEW,
-    [activeMode, roof, effectiveConfig, mppImage, zones, snowGuards],
+    [activeMode, previewEnabled, roof, effectiveConfig, mppImage, zones, snowGuards],
   );
   const nominalTiltDeg = "nominalTiltDeg" in system ? system.nominalTiltDeg : 10;
   const moduleGapM = "moduleGapX" in system ? system.moduleGapX ?? 0.018 : 0.018;
   const moduleId = config.advanced.module.panelSpecId ?? "";
-  const hasPanels = hasCommittedPanelsForRoof(panels, roof.id);
-  const canApply =
-    isDraft &&
-    config.surface.kind === "flat" &&
-    isSupportedSystem &&
-    preview.valid &&
-    preview.moduleCount > 0 &&
-    !!moduleId;
   const quantityMode = config.advanced.layout.quantityMode ?? "auto";
   const blocksPerRow = config.advanced.layout.blocksPerRow ?? 5;
   const rowCount = config.advanced.layout.rowCount ?? 3;
@@ -193,7 +181,7 @@ export default function AdvancedModulesPanel({
     panel.advanced?.layoutRunId?.startsWith("manual-") ||
     panel.advanced?.blockKey?.includes(":manual-"),
   );
-  const useCommittedResult = !isDraft && committedRoofPanels.length > 0;
+  const useCommittedResult = (!isDraft || !previewEnabled) && committedRoofPanels.length > 0;
   const result = buildGuidedPlanningResult({
     valid: preview.valid,
     quantityMode,
@@ -207,57 +195,6 @@ export default function AdvancedModulesPanel({
     montageFieldCount: useCommittedResult ? committedFieldKeys.size : preview.montageFieldCount,
     manuallyAdjusted: useCommittedResult && manuallyAdjusted,
   });
-
-  const apply = React.useCallback(() => {
-    const latest = usePlannerV2Store.getState();
-    const latestRoof = latest.layers.find((item) => item.id === roof.id);
-    const latestDraft = latest.roofPlanningDrafts[roof.id];
-    if (!latestRoof) return;
-    const unappliedConfig = latestDraft?.targetMode === "advanced"
-      ? latestDraft.config
-      : isImplicitInitialConfig
-        ? config
-        : undefined;
-    if (!unappliedConfig) return;
-    const latestConfig = withEffectiveAdvancedThermalLimits(unappliedConfig, latest.companyPlannerDefaults);
-    const latestPreview = computeAdvancedPlanningPreview({
-      roof: latestRoof,
-      config: latestConfig,
-      mppImage: latest.snapshot.mppImage ?? 0,
-      zones: latest.zones,
-      snowGuards: latest.snowGuards,
-    });
-    if (!latestPreview.valid || latestPreview.moduleCount === 0) return;
-    const layoutRunId = nanoid();
-    const nextPanels = materializeAdvancedPanels({
-      roofId: roof.id,
-      config: latestConfig,
-      preview: latestPreview,
-      layoutRunId,
-      createPanelId: (index) => `${roof.id}_advanced_${layoutRunId}_${index}`,
-    });
-    if (!nextPanels.length) return;
-    commitRoofLayout({
-      roofId: roof.id,
-      panels: nextPanels,
-      surfacePlanning: withGeneratedLayoutFingerprint({
-        roofId: roof.id,
-        panels: nextPanels,
-        config: latestConfig,
-      }),
-    });
-    setConfirmReplace(false);
-    toast.success("Layout angewendet");
-  }, [commitRoofLayout, config, isImplicitInitialConfig, roof.id]);
-
-  const requestApply = () => {
-    if (!canApply) return;
-    if (hasPanels && !confirmReplace) {
-      setConfirmReplace(true);
-      return;
-    }
-    apply();
-  };
 
   const patchDefaultSystemNumber = (
     field: "rowSpaceM" | "azimuth" | "nominalTiltDeg" | "moduleGapM",
@@ -561,38 +498,16 @@ export default function AdvancedModulesPanel({
         Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.
       </p>
 
-      {confirmReplace && (
-        <div className="space-y-2 rounded-lg border border-amber-500/35 bg-amber-500/5 p-2 text-[10px]">
-          <p className="font-semibold">Bestehendes Modullayout ersetzen?</p>
-          <p>Das aktuelle Layout dieser Fläche wird durch die neue Planung ersetzt.</p>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" className="h-8 rounded-lg border border-border" onClick={() => setConfirmReplace(false)}>Abbrechen</button>
-            <button type="button" className="h-8 rounded-lg bg-primary font-medium text-primary-foreground" onClick={apply}>Ersetzen</button>
-          </div>
-        </div>
-      )}
-
-      {!confirmReplace && (
-        <div className="sticky bottom-0 -mx-2 border-t border-border/70 bg-background/95 px-2 py-3 backdrop-blur">
-          {isDraft && <p className="mb-2 text-center text-[10px] text-muted-foreground">Nicht angewendete Änderungen</p>}
-          <div className="grid grid-cols-[0.8fr_1.2fr] gap-2">
+      {isDraft && (
+        <div className="space-y-2 border-t border-border/70 pt-3 text-[10px] text-muted-foreground">
+          <p>Konfiguration gewählt. Module werden erst mit U, F oder Einzelplatzierung erzeugt.</p>
           <button
             type="button"
-            disabled={!isDraft}
-            onClick={() => { clearDraft(roof.id); setConfirmReplace(false); }}
-            className="h-9 rounded-lg border border-border text-[11px] disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={() => clearDraft(roof.id)}
+            className="h-8 w-full rounded-lg border border-border text-[10px] text-foreground"
           >
-            Abbrechen
+            Auswahl zurücksetzen
           </button>
-          <button
-            type="button"
-            disabled={!canApply}
-            onClick={requestApply}
-            className="h-9 rounded-lg bg-primary px-2 text-[11px] font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Layout anwenden
-          </button>
-          </div>
         </div>
       )}
     </div>

@@ -78,7 +78,8 @@ test("guided sidebar exposes primary choices and keeps fine tuning collapsed by 
   assert.ok(advancedPanel.includes("Wähle Süd oder Ost-West"));
   assert.ok(presentation.includes("Planung passt"));
   assert.ok(presentation.includes("Anordnung passt nicht vollständig"));
-  assert.ok(advancedPanel.includes("Nicht angewendete Änderungen"));
+  assert.ok(advancedPanel.includes("Module werden erst mit U, F oder Einzelplatzierung erzeugt."));
+  assert.equal(advancedPanel.includes("Layout anwenden"), false);
   assert.ok(advancedPanel.includes("React.useState(false)"));
   assert.equal(advancedPanel.includes("Primäre Ausrichtung"), false);
 });

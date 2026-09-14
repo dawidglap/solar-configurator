@@ -9,6 +9,7 @@ import {
   analyzeRoofSegments,
   getCanonicalRoofEdges,
   getPitchedRoofEdgeRoles,
+  resolveRoofGeometricOrientationDeg,
   resolveRoofReferenceEdgeIndex,
   resizeRectangularRoof,
   resizeRoofSegment,
@@ -65,6 +66,10 @@ export default function RoofDimensionsControl({
     : resolveRoofFallAzimuth(roof);
   const analysis = React.useMemo(
     () => analyzeRectangularRoof(roof.points, mppImage ?? 0),
+    [mppImage, roof.points],
+  );
+  const geometricOrientationDeg = React.useMemo(
+    () => resolveRoofGeometricOrientationDeg(roof.points, mppImage ?? 0),
     [mppImage, roof.points],
   );
   const segments = React.useMemo(
@@ -346,7 +351,7 @@ export default function RoofDimensionsControl({
         <div className="flex items-center justify-between gap-3 text-[10px]">
           <span className="text-muted-foreground">Ausrichtung</span>
           <strong className="font-semibold tabular-nums text-foreground">
-            {orientationFormatter.format(analysis.dimensions.canvasAngleDeg)}°
+            {orientationFormatter.format(geometricOrientationDeg ?? 0)}°
           </strong>
         </div>
       </div>

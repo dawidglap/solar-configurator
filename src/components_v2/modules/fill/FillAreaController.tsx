@@ -12,6 +12,7 @@ import { history } from '@/components_v2/state/history';
 import {
   buildDirectAdvancedRoofLayout,
   buildDirectStandardRoofLayout,
+  buildStandardSurfacePlanning,
   resolveRoofModuleMode,
   resolveStandardTiltInput,
   setAdvancedQuantityMode,
@@ -187,7 +188,7 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       const roof = state.layers.find((candidate) => candidate.id === state.selectedId);
       const mppImage = state.snapshot.mppImage;
       const panel = state.getSelectedPanel();
-      const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: state.panels });
+      const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: state.panels, draft: roof ? state.roofPlanningDrafts[roof.id] : undefined });
       if (!roof || !mppImage || !panel || !mode) return { mode, panels: [] };
       const runId = `fill-${nanoid()}`;
       const draft = state.roofPlanningDrafts[roof.id];
@@ -247,7 +248,7 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
       const state = usePlannerV2Store.getState();
       const roofId = state.selectedId;
       const roof = state.layers.find((candidate) => candidate.id === roofId);
-      const mode = resolveRoofModuleMode({ roof, roofId, panels: state.panels });
+      const mode = resolveRoofModuleMode({ roof, roofId, panels: state.panels, draft: roofId ? state.roofPlanningDrafts[roofId] : undefined });
       if (!roofId || !mode) return { poly: axisAlignedRect(a, b), panels: [] as PanelInstance[] };
       const poly = selectionFor(a, b, mode);
       return {
@@ -305,6 +306,20 @@ export default function FillAreaController({ stageRef, toImgCoords, onDraftChang
         if (items.length > 0) {
           history.push('Manuell füllen');
           state.appendPanelsToRoof({ roofId, panels: items });
+          const activeDraft = state.roofPlanningDrafts[roofId];
+          const roof = state.layers.find((candidate) => candidate.id === roofId);
+          if (activeDraft?.targetMode === 'advanced') {
+            state.setCommittedSurfacePlanning(roofId, activeDraft.config);
+            state.clearRoofPlanningDraft(roofId);
+          } else if (activeDraft?.targetMode === 'standard' && roof) {
+            state.setCommittedSurfacePlanning(roofId, buildStandardSurfacePlanning({
+              roof,
+              moduleTilt: activeDraft.moduleTilt,
+              moduleLayoutMode: activeDraft.modules.orientation,
+              thermalFieldLimits: activeDraft.thermalFieldLimits,
+            }));
+            state.clearRoofPlanningDraft(roofId);
+          }
           toast.success(`${items.length} ${items.length === 1 ? 'Modul hinzugefügt' : 'Module hinzugefügt'}`);
         } else {
           toast('In diesem Bereich können keine weiteren Module platziert werden.');

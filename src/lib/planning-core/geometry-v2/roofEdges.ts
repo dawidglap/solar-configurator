@@ -3,6 +3,7 @@ import type { MetricPoint } from "./types";
 // Sub-pixel closing noise is not a physical roof edge. Sonnendach rings can
 // end a fraction of a pixel away from their first point after conversion.
 const DEFAULT_POINT_EPSILON = 0.5;
+const NORTH_EDGE_TIE_EPSILON_PX = 0.5;
 
 export type CanonicalRoofVertex = MetricPoint & {
   originalPointIndex: number;
@@ -96,6 +97,22 @@ export function resolveRoofReferenceEdgeIndex(input: {
     return input.requestedIndex;
   }
   if (input.roofKind === "pitched") return 0;
+  if (input.roofKind === "flat") {
+    return edges.reduce((best, edge) => {
+      // Canonical image coordinates are north-up, therefore the smallest
+      // midpoint Y is the side furthest toward geographic north.
+      const northDelta = best.midpoint.y - edge.midpoint.y;
+      if (northDelta > NORTH_EDGE_TIE_EPSILON_PX) return edge;
+      if (Math.abs(northDelta) <= NORTH_EDGE_TIE_EPSILON_PX) {
+        if (edge.lengthPx > best.lengthPx + 1e-9) return edge;
+        if (
+          Math.abs(edge.lengthPx - best.lengthPx) <= 1e-9 &&
+          edge.edgeIndex < best.edgeIndex
+        ) return edge;
+      }
+      return best;
+    }).edgeIndex;
+  }
   return edges.reduce((best, edge) =>
     edge.lengthPx > best.lengthPx ? edge : best,
   ).edgeIndex;

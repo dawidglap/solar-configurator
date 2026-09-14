@@ -7,12 +7,8 @@ import RoofAreaInfo from "../ui/RoofAreaInfo";
 import DetectedRoofsImport from "../panels/DetectedRoofsImport";
 import { MdViewModule } from "react-icons/md";
 import { Eye, EyeOff } from "lucide-react";
-import { nanoid } from "nanoid";
 import toast from "react-hot-toast";
 
-import {
-  resolveStandardAutoLayoutSpacingAxes,
-} from "../modules/legacyStandardApplicationPolicy";
 import {
   resolveSurfacePlanning,
   resolveStandardModuleTilt,
@@ -23,7 +19,6 @@ import {
 import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
 import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
-import LayoutRegenerationDialog from "./LayoutRegenerationDialog";
 import RoofMarginControl from "./RoofMarginControl";
 import { formatRoofSlopeDirection, resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import {
@@ -32,7 +27,7 @@ import {
   roofAzimuthCardinal,
 } from "../roof/roofOrientation";
 import { modulesWithRoofEdgeMargin } from "@/lib/planning/roofProperties";
-import { resolveRoofReferenceEdgeIndex } from "@/lib/planning-core/geometry-v2";
+import { resolveRoofGeometricOrientationDeg } from "@/lib/planning-core/geometry-v2";
 import {
   COMPANY_MODULE_SPACING_LIMITS_MM,
   isValidModuleSpacingMm,
@@ -41,23 +36,13 @@ import {
 import {
   createInitialAdvancedPlanning,
   createStandardPlanningDraft,
-  buildStandardPanelMetadata,
-  buildDirectAdvancedRoofLayout,
-  buildDirectStandardRoofLayout,
-  buildStandardSurfacePlanning,
-  computeStandardDraftPanels,
-  hasCommittedPanelsForRoof,
-  hasManualRoofLayoutChanges,
   resolveStandardTiltInput,
   resolveInitialSonnendachRoofType,
   resolveRoofPlanningMode,
   resolveRoofModuleMode,
   setAdvancedMountingOrientation,
-  setAdvancedQuantityMode,
   alignAdvancedLayoutParallelToRoofEdge,
-  withGeneratedLayoutFingerprint,
 } from "../modules/advanced/advancedPlanningApplication";
-import { withEffectiveAdvancedThermalLimits } from "../modules/advanced/advancedThermalDefaults";
 import ZonePropertiesControl from "../zones/ZonePropertiesControl";
 import DirectLayoutControl from "../modules/panels/DirectLayoutControl";
 
@@ -97,7 +82,6 @@ export default function ModulesPanel() {
   // --- Catalogo PV (spostato qui dalla topbar) ---
   const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
   const selectedPanelId = usePlannerV2Store((s) => s.selectedPanelId);
-  const setSelectedPanel = usePlannerV2Store((s) => s.setSelectedPanel);
   const roofPlanningDrafts = usePlannerV2Store((s) => s.roofPlanningDrafts);
   const setRoofPlanningDraft = usePlannerV2Store((s) => s.setRoofPlanningDraft);
   const clearRoofPlanningDraft = usePlannerV2Store(
@@ -114,17 +98,10 @@ export default function ModulesPanel() {
   const [tempVal, setTempVal] = React.useState<string>("");
   const [azimuthMode, setAzimuthMode] = React.useState<"preset" | "custom">("custom");
   const lastCustomAzimuthByRoofRef = React.useRef<Map<string, number>>(new Map());
-  const [confirmStandardReplace, setConfirmStandardReplace] =
-    React.useState(false);
   const [pendingRoofType, setPendingRoofType] = React.useState<
     "pitched" | "flat" | null
   >(null);
   const [moduleTiltText, setModuleTiltText] = React.useState("");
-  const [pendingRegeneration, setPendingRegeneration] = React.useState<
-    | { kind: "standard"; mode: "portrait" | "landscape" }
-    | { kind: "advanced"; mode: "south" | "east-west" }
-    | null
-  >(null);
 
   const selectedRoof = React.useMemo(
     () => layers.find((roof) => roof.id === selectedId),
@@ -135,6 +112,7 @@ export default function ModulesPanel() {
     roof: selectedRoof,
     roofId: selectedRoof?.id,
     panels,
+    draft: selectedDraft,
   });
   const persistedPlanning = resolveSurfacePlanning(
     selectedRoof?.surfacePlanning,
@@ -250,7 +228,6 @@ export default function ModulesPanel() {
           })),
           modules: { ...displayedModules, ...patch },
         });
-        setConfirmStandardReplace(false);
         return;
       }
       setModules(patch);
@@ -269,7 +246,6 @@ export default function ModulesPanel() {
       })),
       moduleTilt,
     });
-    setConfirmStandardReplace(false);
   }, [displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selectedRoof, setRoofPlanningDraft, standardDraft]);
 
   const commitModuleTiltText = React.useCallback(() => {
@@ -284,57 +260,6 @@ export default function ModulesPanel() {
     }
     patchStandardTilt({ mode: "custom", customTiltDeg: value });
   }, [displayedTilt.effectiveTiltDeg, moduleTiltText, patchStandardTilt]);
-  const applyStandardDraft = React.useCallback(() => {
-    if (!selectedRoof || !standardDraft) return;
-    const panel = catalogPanels.find(
-      (item) => item.id === standardDraft.panelSpecId,
-    );
-    if (!panel || !snapshot.mppImage) return;
-    const current = usePlannerV2Store.getState();
-    const runId = nanoid();
-    const nextPanels = computeStandardDraftPanels({
-      roof: selectedRoof,
-      panel,
-      modules: standardDraft.modules,
-      mppImage: snapshot.mppImage,
-      zones: current.zones,
-      snowGuards: current.snowGuards,
-      createPanelId: (index) => `${selectedRoof.id}_p_${runId}_${index}`,
-      panelMetadata: buildStandardPanelMetadata({
-        roofSlopeDeg: selectedRoof.tiltDeg,
-        moduleTilt: standardDraft.moduleTilt,
-      }),
-      thermalFieldLimits: standardDraft.thermalFieldLimits,
-    });
-    if (!nextPanels.length) return;
-    const surfacePlanning = withGeneratedLayoutFingerprint({
-      roofId: selectedRoof.id,
-      panels: nextPanels,
-      config: buildStandardSurfacePlanning({
-        roof: selectedRoof,
-        moduleTilt: standardDraft.moduleTilt,
-        moduleLayoutMode: standardDraft.modules.orientation,
-        thermalFieldLimits: standardDraft.thermalFieldLimits,
-      }),
-    });
-    commitRoofLayout({
-      roofId: selectedRoof.id,
-      panels: nextPanels,
-      surfacePlanning,
-    });
-    setSelectedPanel(panel.id);
-    setModules(standardDraft.modules);
-    setConfirmStandardReplace(false);
-    toast.success("Layout angewendet");
-  }, [
-    catalogPanels,
-    commitRoofLayout,
-    selectedRoof,
-    setModules,
-    setSelectedPanel,
-    snapshot.mppImage,
-    standardDraft,
-  ]);
 
   const requestRoofTypeChange = React.useCallback(
     (next: "pitched" | "flat") => {
@@ -351,13 +276,12 @@ export default function ModulesPanel() {
     updateRoof(selectedRoof.id, {
       roofKind: pendingRoofType,
       ...(pendingRoofType === "flat" ? { tiltDeg: 0 } : {}),
-      referenceEdgeIndex: pendingRoofType === "flat"
-        ? resolveRoofReferenceEdgeIndex({ points: selectedRoof.points, roofKind: "flat" })
-        : 0,
+      // Undefined is the canonical auto mode for flat roofs. The northernmost
+      // edge is resolved from geometry until the operator chooses explicitly.
+      referenceEdgeIndex: pendingRoofType === "flat" ? undefined : 0,
     });
 
     setPendingRoofType(null);
-    setConfirmStandardReplace(false);
     toast.success("Dachtyp geändert. Die Dachfläche kann neu geplant werden.");
   }, [commitRoofLayout, pendingRoofType, selectedRoof, updateRoof]);
 
@@ -453,135 +377,49 @@ export default function ModulesPanel() {
     setEditing({ id: input.roofId, field: input.field });
   }, [select]);
 
-  const generateStandardMode = useCallback(
-    (orientation: "portrait" | "landscape") => {
-      if (!selectedId || !selSpec || !snapshot?.mppImage) return false;
-
-      const roof = layers.find((l) => l.id === selectedId);
-      if (!roof?.points?.length) return false;
-
-      const spacing = resolveStandardAutoLayoutSpacingAxes({
-        spacingM: modules.spacingM,
-        spacingXM: modules.spacingXM,
-        spacingYM: modules.spacingYM,
+  const requestModuleMode = useCallback((mode: "portrait" | "landscape" | "south" | "east-west") => {
+    if (!selectedRoof || activeModuleMode === mode) return;
+    if (mode === "portrait" || mode === "landscape") {
+      const draft = standardDraft ?? createStandardPlanningDraft({
+        panelSpecId: displayedPanelId,
+        modules,
+        moduleTilt: displayedTiltInput,
+        thermalFieldLimits: displayedThermalLimits,
       });
-      const runId = nanoid();
-      const moduleTilt = resolveStandardTiltInput(roof.surfacePlanning);
-      const thermalLimits = displayedThermalLimits.kind === "pitched-grid"
-        ? displayedThermalLimits
-        : undefined;
-      const currentState = usePlannerV2Store.getState();
-      const generated = buildDirectStandardRoofLayout({
-        roof,
-        panel: selSpec,
-        modules: {
-          ...modules,
-          spacingM: spacing.x,
-          spacingXM: spacing.x,
-          spacingYM: spacing.y,
-        },
-        orientation,
-        moduleTilt,
-        mppImage: snapshot.mppImage,
-        zones: currentState.zones,
-        snowGuards: currentState.snowGuards,
-        thermalFieldLimits: thermalLimits,
-        createPanelId: (index) => `${selectedId}_p_${runId}_${index}`,
+      setRoofPlanningDraft(selectedRoof.id, {
+        ...draft,
+        previewEnabled: false,
+        modules: { ...draft.modules, orientation: mode },
       });
-      if (!generated) {
-        toast.error("Für diese Dachfläche konnte kein gültiges Layout erstellt werden.");
-        return false;
-      }
-      commitRoofLayout({
-        roofId: selectedId,
-        panels: generated.panels,
-        surfacePlanning: generated.config,
-      });
-      setModules(generated.modules);
-      clearRoofPlanningDraft(selectedId);
-      setPendingRegeneration(null);
-      toast.success("Module platziert");
-      return true;
-    },
-    [
-      selectedId,
-      selSpec,
-      snapshot?.mppImage,
-      layers,
-      modules,
-      displayedThermalLimits,
-      commitRoofLayout,
-      clearRoofPlanningDraft,
-      setModules,
-    ],
-  );
-
-  const generateAdvancedMode = useCallback(
-    (mode: "south" | "east-west") => {
-      if (!selectedRoof || !selSpec || !snapshot.mppImage) return false;
-      const state = usePlannerV2Store.getState();
-      const companyLimits = resolveCompanyThermalFieldLimits({
-        company: state.companyPlannerDefaults,
-        roofKind: "flat",
-        mountingOrientation: mode,
-      });
-      let config = selectedAdvancedConfig ?? createInitialAdvancedPlanning({
-        panel: selSpec,
-        standardModules: modulesWithRoofEdgeMargin(selectedRoof, modules),
-      });
-      config = setAdvancedMountingOrientation({ config, orientation: mode });
-      config = setAdvancedQuantityMode({ config, mode: "auto" });
-      config = {
-        ...config,
-        ...(companyLimits.kind === "flat-block" ? { thermalFieldLimits: companyLimits } : {}),
-      };
+      return;
+    }
+    if (!selSpec) return;
+    const companyLimits = resolveCompanyThermalFieldLimits({
+      company: companyPlannerDefaults,
+      roofKind: "flat",
+      mountingOrientation: mode,
+    });
+    let config = selectedAdvancedConfig ?? createInitialAdvancedPlanning({
+      panel: selSpec,
+      standardModules: modulesWithRoofEdgeMargin(selectedRoof, modules),
+    });
+    config = setAdvancedMountingOrientation({ config, orientation: mode });
+    if (snapshot.mppImage) {
       config = alignAdvancedLayoutParallelToRoofEdge({
         config,
         roof: selectedRoof,
         mppImage: snapshot.mppImage,
       });
-      config = withEffectiveAdvancedThermalLimits(config, state.companyPlannerDefaults);
-      const runId = nanoid();
-      const generated = buildDirectAdvancedRoofLayout({
-        roof: selectedRoof,
-        config,
-        mppImage: snapshot.mppImage,
-        zones: state.zones,
-        snowGuards: state.snowGuards,
-        layoutRunId: runId,
-        createPanelId: (index) => `${selectedRoof.id}_advanced_${runId}_${index}`,
-      });
-      if (!generated) {
-        toast.error("Für diese Dachfläche konnte kein gültiges Layout erstellt werden.");
-        return false;
-      }
-      commitRoofLayout({
-        roofId: selectedRoof.id,
-        panels: generated.panels,
-        surfacePlanning: generated.config,
-      });
-      clearRoofPlanningDraft(selectedRoof.id);
-      setPendingRegeneration(null);
-      toast.success("Module platziert");
-      return true;
-    },
-    [clearRoofPlanningDraft, commitRoofLayout, modules, selSpec, selectedAdvancedConfig, selectedRoof, snapshot.mppImage],
-  );
-
-  const requestModuleMode = useCallback((mode: "portrait" | "landscape" | "south" | "east-west") => {
-    if (!selectedRoof || activeModuleMode === mode) return;
-    const hasPanels = panels.some((panel) => panel.roofId === selectedRoof.id);
-    const needsConfirmation = hasPanels && hasManualRoofLayoutChanges({ roof: selectedRoof, panels });
-    const next = mode === "portrait" || mode === "landscape"
-      ? { kind: "standard" as const, mode }
-      : { kind: "advanced" as const, mode };
-    if (needsConfirmation) {
-      setPendingRegeneration(next);
-      return;
     }
-    if (next.kind === "standard") generateStandardMode(next.mode);
-    else generateAdvancedMode(next.mode);
-  }, [activeModuleMode, generateAdvancedMode, generateStandardMode, panels, selectedRoof]);
+    if (companyLimits.kind === "flat-block") {
+      config = { ...config, thermalFieldLimits: companyLimits };
+    }
+    setRoofPlanningDraft(selectedRoof.id, {
+      targetMode: "advanced",
+      previewEnabled: false,
+      config,
+    });
+  }, [activeModuleMode, companyPlannerDefaults, displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selSpec, selectedAdvancedConfig, selectedRoof, setRoofPlanningDraft, snapshot.mppImage, standardDraft]);
 
   return (
     <div className="w-full max-w-[240px] space-y-4 p-2 text-foreground">
@@ -642,7 +480,7 @@ export default function ModulesPanel() {
                 const rowPlanning = resolveSurfacePlanning(l.surfacePlanning);
                 const rowKind = rowPlanning.status === "supported-advanced"
                   ? rowPlanning.config.surface.kind
-                  : "pitched";
+                  : l.roofKind ?? resolveInitialSonnendachRoofType(l) ?? "pitched";
                 const az = rowPlanning.status === "supported-advanced"
                   ? rowPlanning.config.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(l)
                   : resolveRoofFallAzimuth(l);
@@ -659,6 +497,9 @@ export default function ModulesPanel() {
 
                 const azView = az;
                 const azShort = azView != null ? Math.round(azView * 100) / 100 : undefined;
+                const geometricOrientation = rowKind === "flat"
+                  ? resolveRoofGeometricOrientationDeg(l.points, mpp ?? 0)
+                  : undefined;
 
                 const src = l.source;
                 const srcBadge =
@@ -768,17 +609,28 @@ export default function ModulesPanel() {
                           </div>
 
                           <div className="px-0.5">
-                            <button
-                              type="button"
-                              onClick={() => openInlineEditor({ roofId, field: "az", value: azShort })}
-                              title="Gefällerichtung bearbeiten"
-                              aria-label={`Ausrichtung für D${i + 1} bearbeiten`}
-                              className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums transition hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                            >
-                              {azShort != null
-                                ? `${roofAzimuthCardinal(azShort)} · ${azShort}°`
-                                : "Festlegen"}
-                            </button>
+                            {rowKind === "flat" ? (
+                              <div
+                                title="Geometrische Dachausrichtung"
+                                className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums"
+                              >
+                                {geometricOrientation == null
+                                  ? "—"
+                                  : `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(geometricOrientation)}°`}
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => openInlineEditor({ roofId, field: "az", value: azShort })}
+                                title="Gefällerichtung bearbeiten"
+                                aria-label={`Ausrichtung für D${i + 1} bearbeiten`}
+                                className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums transition hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                              >
+                                {azShort != null
+                                  ? `${roofAzimuthCardinal(azShort)} · ${azShort}°`
+                                  : "Festlegen"}
+                              </button>
+                            )}
                           </div>
 
                           <div className="flex items-center justify-end gap-1">
@@ -1002,7 +854,11 @@ export default function ModulesPanel() {
               selectedDraft?.targetMode === "advanced" ||
               implicitFlatConfig !== undefined
             }
-            isImplicitInitialConfig={implicitFlatConfig !== undefined}
+            previewEnabled={
+              selectedDraft?.targetMode === "advanced"
+                ? selectedDraft.previewEnabled !== false
+                : false
+            }
           />
         )}
 
@@ -1026,7 +882,6 @@ export default function ModulesPanel() {
                   })),
                   panelSpecId: event.target.value,
                 });
-                setConfirmStandardReplace(false);
               }}
               className={inputBase}
             >
@@ -1183,47 +1038,15 @@ export default function ModulesPanel() {
           </section>
 
           {standardDraft && (
-            <section className="sticky bottom-0 -mx-2 space-y-2 border-y border-primary/25 bg-background/95 p-3 backdrop-blur">
-              <p className="text-[11px] font-semibold text-primary">
-                Layout-Änderungen
-              </p>
-              {confirmStandardReplace && (
-                <p className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-2 text-[10px]">
-                  Das bestehende Layout dieser Dachfläche wird ersetzt. Andere
-                  Dachflächen bleiben unverändert.
-                </p>
-              )}
-              <p className="text-[10px] text-muted-foreground">
-                Nicht angewendete Änderungen
-              </p>
-              <div className="grid grid-cols-[0.8fr_1.2fr] gap-2">
-                <button
-                  type="button"
-                  className="h-9 rounded-lg border border-border text-[11px]"
-                  onClick={() => {
-                    clearRoofPlanningDraft(selectedRoof.id);
-                    setConfirmStandardReplace(false);
-                  }}
-                >
-                  Abbrechen
-                </button>
-                <button
-                  type="button"
-                  className="h-9 rounded-lg bg-primary text-[11px] font-medium text-primary-foreground"
-                  onClick={() => {
-                    if (
-                      hasCommittedPanelsForRoof(panels, selectedRoof.id) &&
-                      !confirmStandardReplace
-                    )
-                      setConfirmStandardReplace(true);
-                    else applyStandardDraft();
-                  }}
-                >
-                  {confirmStandardReplace
-                    ? "Ersetzen bestätigen"
-                    : "Änderungen übernehmen"}
-                </button>
-              </div>
+            <section className="space-y-2 border-t border-border/70 pt-3 text-[10px] text-muted-foreground">
+              <p>Konfiguration gewählt. Module werden erst mit U, F oder Einzelplatzierung erzeugt.</p>
+              <button
+                type="button"
+                className="h-8 w-full rounded-lg border border-border text-[10px] text-foreground"
+                onClick={() => clearRoofPlanningDraft(selectedRoof.id)}
+              >
+                Auswahl zurücksetzen
+              </button>
             </section>
           )}
         </div>
@@ -1240,18 +1063,6 @@ export default function ModulesPanel() {
         }
         onCancel={() => setPendingRoofType(null)}
         onConfirm={confirmRoofTypeChange}
-      />
-      <LayoutRegenerationDialog
-        open={pendingRegeneration !== null}
-        roofLabel={selectedRoof?.name}
-        moduleCount={selectedRoof ? panels.filter((panel) => panel.roofId === selectedRoof.id).length : 0}
-        onCancel={() => setPendingRegeneration(null)}
-        onConfirm={() => {
-          const pending = pendingRegeneration;
-          if (!pending) return;
-          if (pending.kind === "standard") generateStandardMode(pending.mode);
-          else generateAdvancedMode(pending.mode);
-        }}
       />
     </div>
   );

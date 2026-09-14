@@ -476,7 +476,8 @@ export default function CanvasStage() {
     standardPreviewPanel &&
     snap.mppImage &&
     standardPreviewModules.showGrid &&
-    selectedPlanningDraft?.targetMode === "standard",
+    selectedPlanningDraft?.targetMode === "standard" &&
+    selectedPlanningDraft.previewEnabled !== false,
   );
   const candidateThermalFieldSource = selectedPlanningDraft?.targetMode === "advanced"
     ? thermalFieldSources.advancedPreview
@@ -1486,7 +1487,7 @@ export default function CanvasStage() {
                     />
                   )}
 
-                {selectedPlanningDraft?.targetMode === "advanced" && step === "modules" && !manualPlacementSession && (
+                {selectedPlanningDraft?.targetMode === "advanced" && selectedPlanningDraft.previewEnabled !== false && step === "modules" && !manualPlacementSession && (
                   <AdvancedPreviewLayer
                     canvasRotationDeg={rotateDeg}
                     onThermalFieldsChange={showFieldDimensions ? setAdvancedPreviewThermalFields : undefined}

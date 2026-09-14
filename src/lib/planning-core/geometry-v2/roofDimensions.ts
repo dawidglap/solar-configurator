@@ -112,6 +112,19 @@ export function analyzeRectangularRoof(
   };
 }
 
+/**
+ * Canonical plan-view orientation of a rectangular roof's long axis.
+ * It is derived from north-up image geometry and deliberately ignores the
+ * current canvas/view rotation.
+ */
+export function resolveRoofGeometricOrientationDeg(
+  pointsPx: readonly MetricPoint[],
+  mppImage: number,
+): number | undefined {
+  const analysis = analyzeRectangularRoof(pointsPx, mppImage);
+  return analysis.supported ? analysis.dimensions.canvasAngleDeg : undefined;
+}
+
 export type ResizeRectangularRoofResult =
   | { valid: true; points: MetricPoint[]; dimensions: RectangularRoofDimensions }
   | { valid: false; reason: "unsupported-shape" | "invalid-length" | "invalid-width" };

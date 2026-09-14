@@ -256,17 +256,63 @@ test("customer UI is mode-explicit, direct and free of obsolete full-layout cont
   const toolbar = readFileSync(new URL("../../src/components_v2/layout/TopToolbar.tsx", import.meta.url), "utf8");
 
   assert.ok(modulesPanel.includes("requestModuleMode(orientation)"));
-  assert.ok(modulesPanel.includes("<LayoutRegenerationDialog"));
+  assert.equal(modulesPanel.includes("<LayoutRegenerationDialog"), false);
+  assert.ok(modulesPanel.includes("previewEnabled: false"));
+  assert.match(modulesPanel, /selectedDraft\.previewEnabled !== false\s*:\s*false/);
+  assert.equal(modulesPanel.includes("generateStandardMode"), false);
+  assert.equal(modulesPanel.includes("generateAdvancedMode"), false);
   assert.equal(modulesPanel.includes("Vorschau als Module platzieren"), false);
   assert.equal(modulesPanel.includes(">Belegung<"), false);
   assert.equal(modulesPanel.includes("Parallel zum First"), false);
   assert.equal(advancedPanel.includes("Parallel zur Dachkante"), false);
   assert.ok(advancedPanel.includes("Wähle Süd oder Ost-West"));
-  assert.ok(advancedPanel.includes("activeMode\n      ? computeAdvancedPlanningPreview"));
+  assert.ok(advancedPanel.includes("activeMode && previewEnabled"));
   assert.ok(toolbar.includes('actionId="planner-fill-layout"'));
   assert.ok(toolbar.includes('actionId="planner-regenerate-layout"'));
   assert.ok(toolbar.includes("Zuerst Hochformat oder Querformat wählen"));
   assert.ok(toolbar.includes("Zuerst Süd oder Ost-West wählen"));
+});
+
+test("flat roof list and dimensions reuse the canonical geometric-orientation resolver", () => {
+  const modulesPanel = readFileSync(new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url), "utf8");
+  const dimensions = readFileSync(new URL("../../src/components_v2/panels/RoofDimensionsControl.tsx", import.meta.url), "utf8");
+  const compass = readFileSync(new URL("../../src/components_v2/compassHUD.tsx", import.meta.url), "utf8");
+  assert.ok(modulesPanel.includes("resolveRoofGeometricOrientationDeg(l.points"));
+  assert.ok(dimensions.includes("resolveRoofGeometricOrientationDeg(roof.points"));
+  assert.ok(modulesPanel.includes('rowKind === "flat"'));
+  assert.ok(modulesPanel.includes('title="Geometrische Dachausrichtung"'));
+  assert.ok(compass.includes('resolveInitialSonnendachRoofType(roof) === "flat"'));
+  assert.ok(compass.includes("isFlat\n    ? primaryModuleAzimuthDeg"));
+});
+
+test("configuration-only drafts resolve the active mode without materialized panels", () => {
+  const standardDraft = {
+    targetMode: "standard" as const,
+    previewEnabled: false,
+    panelSpecId: PANEL.id,
+    modules: { ...MODULES, orientation: "landscape" as const },
+    moduleTilt: { mode: "inherit-roof" as const },
+  };
+  assert.equal(resolveRoofModuleMode({
+    roof: ROOF,
+    roofId: ROOF.id,
+    panels: [],
+    draft: standardDraft,
+  }), "landscape");
+  const advancedDraft = {
+    targetMode: "advanced" as const,
+    previewEnabled: false,
+    config: setAdvancedMountingOrientation({
+      config: createInitialAdvancedPlanning({ panel: PANEL, standardModules: MODULES }),
+      orientation: "east-west" as const,
+    }),
+  };
+  assert.equal(resolveRoofModuleMode({
+    roof: ROOF,
+    roofId: ROOF.id,
+    panels: [],
+    draft: advancedDraft,
+  }), "east-west");
 });
 
 test("reference-edge hierarchy and generation triggers keep their intended alignment semantics", () => {

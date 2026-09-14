@@ -240,11 +240,13 @@ export default function ManualPlacementLayer({
           surfacePlanning: buildStandardSurfacePlanning({
             roof,
             moduleTilt,
+            moduleLayoutMode: standardModules.orientation,
             thermalFieldLimits: standardThermalFieldLimits,
           }),
         });
         setSelectedPanel(standardPanel.id);
         setModules(standardModules);
+        usePlannerV2Store.getState().clearRoofPlanningDraft(roof.id);
       } else {
         addPanelsForRoof(roof.id, [panel]);
       }
@@ -284,6 +286,7 @@ export default function ManualPlacementLayer({
       panels: regrouped,
       surfacePlanning: advancedConfig,
     });
+    usePlannerV2Store.getState().clearRoofPlanningDraft(roof.id);
     setSelectedPanels(added.map((panel) => panel.id));
     toast.success(added.length === 2 ? "K2 Block hinzugefügt" : "Modul hinzugefügt");
   };

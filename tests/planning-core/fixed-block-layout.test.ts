@@ -21,7 +21,11 @@ import type {
   AdvancedSurfacePlanningV1,
 } from "../../src/lib/planning-core/advanced";
 import type { ModulesConfig, PanelSpec, RoofArea } from "../../src/types/planner";
-import { resolvePanelLocalArrowAzimuth } from "../../src/components_v2/modules/panels/moduleSlope";
+import {
+  imageVectorFromGeographicAzimuth,
+  resolvePanelLocalArrowAzimuth,
+} from "../../src/components_v2/modules/panels/moduleSlope";
+import { getCanonicalRoofEdges, resolveRoofReferenceEdgeIndex } from "../../src/lib/planning-core/geometry-v2";
 
 const MODULE: PanelSpec = {
   id: "module-440",
@@ -360,11 +364,13 @@ test("Parallel zur Dachkante aligns a rotated 37 degree rectangle and preserves 
   });
   assert.equal(aligned.advanced.system.systemId, K2_D_DOME_SYSTEM_ID);
   if (aligned.advanced.system.systemId !== K2_D_DOME_SYSTEM_ID) return;
-  assert.ok(Math.abs(aligned.advanced.system.primaryFaceAzimuthDeg - 217) < 1e-8);
+  // With no explicit override, the northernmost physical side is selected.
+  // For this rotated rectangle that is edge 3, whose tangent azimuth is 37°.
+  assert.ok(Math.abs(aligned.advanced.system.primaryFaceAzimuthDeg - 37) < 1e-8);
   const result = preview(aligned, roof);
   assert.equal(result.valid, true);
   if (!result.valid) return;
-  assert.ok(result.blocks.every((block) => Math.abs(block.rotationCanvasDeg - 217) < 1e-8));
+  assert.ok(result.blocks.every((block) => Math.abs(block.rotationCanvasDeg - 37) < 1e-8));
   const firstPair = result.modules.filter((module) => module.blockKey === "r0:c0");
   assert.equal(firstPair.length, 2);
   const difference = normalizeDifference(firstPair[1].faceAzimuthDeg - firstPair[0].faceAzimuthDeg);
@@ -377,9 +383,13 @@ test("Parallel zur Dachkante aligns a rotated 37 degree rectangle and preserves 
     ),
     180,
   );
+  const autoEdgeIndex = resolveRoofReferenceEdgeIndex({ points: roof.points, roofKind: "flat" });
+  const edge = getCanonicalRoofEdges(roof.points)[autoEdgeIndex!];
+  const arrow = imageVectorFromGeographicAzimuth(firstPair[0].faceAzimuthDeg);
+  assert.ok(Math.abs(edge.direction.x * arrow.y - edge.direction.y * arrow.x) < 1e-10);
 });
 
-test("opposite flat-roof Referenzkanten generate opposite inward panel arrows", () => {
+test("opposite flat-roof Referenzkanten preserve South inward arrows and East-West tangent arrows", () => {
   for (const system of ["s-dome", "d-dome"] as const) {
     const topRoof = { ...rectangleRoof(), referenceEdgeIndex: 0 };
     const bottomRoof = { ...rectangleRoof(), referenceEdgeIndex: 2 };
@@ -399,8 +409,14 @@ test("opposite flat-roof Referenzkanten generate opposite inward panel arrows", 
     assert.equal(bottom.valid, true);
     if (!top.valid || !bottom.valid) continue;
 
-    assert.equal(resolvePanelLocalArrowAzimuth(top.modules[0].angleDeg), 180);
-    assert.equal(resolvePanelLocalArrowAzimuth(bottom.modules[0].angleDeg), 0);
+    assert.equal(
+      resolvePanelLocalArrowAzimuth(top.modules[0].angleDeg),
+      system === "s-dome" ? 180 : 90,
+    );
+    assert.equal(
+      resolvePanelLocalArrowAzimuth(bottom.modules[0].angleDeg),
+      system === "s-dome" ? 0 : 270,
+    );
     assert.equal(
       normalizeDifference(top.modules[0].angleDeg - bottom.modules[0].angleDeg),
       180,

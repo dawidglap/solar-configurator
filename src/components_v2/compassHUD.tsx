@@ -11,6 +11,7 @@ import {
   resolveSurfacePlanning,
   type AdvancedSurfacePlanningV1,
 } from "@/lib/planning-core/advanced";
+import { resolveInitialSonnendachRoofType } from "./modules/advanced/advancedPlanningApplication";
 
 const TICKS = Array.from({ length: 36 }, (_, i) => i * 10); // alle 10°
 
@@ -49,7 +50,8 @@ export default function CompassHUD({
       : persistedPlanning.status === "supported-advanced"
         ? persistedPlanning.config
         : undefined;
-  const isFlat = advancedConfig?.surface.kind === "flat";
+  const isFlat = advancedConfig?.surface.kind === "flat" ||
+    resolveInitialSonnendachRoofType(roof) === "flat";
   const system = advancedConfig?.advanced.system;
   const primaryModuleAzimuthDeg = system?.systemId === K2_S_DOME_SYSTEM_ID ||
       system?.systemId === GENERIC_SOUTH_SYSTEM_ID

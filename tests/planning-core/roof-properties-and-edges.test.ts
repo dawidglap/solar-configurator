@@ -6,6 +6,7 @@ import {
   getCanonicalRoofEdges,
   getPitchedRoofEdgeRoles,
   resolveCanonicalRoofReferenceEdge,
+  resolveRoofGeometricOrientationDeg,
   resolveRoofReferenceEdgeIndex,
   resizeRectangularRoof,
 } from "../../src/lib/planning-core/geometry-v2";
@@ -80,11 +81,41 @@ test("pitched quadrilateral labels edge zero First without reordering the polygo
   assert.deepEqual(rectangle[0], { x: 10, y: 10 });
 });
 
-test("reference edge fallback is edge zero for pitched and longest real edge for flat", () => {
+test("reference edge fallback is edge zero for pitched and northernmost real edge for flat", () => {
   assert.equal(resolveRoofReferenceEdgeIndex({ points: rectangle, roofKind: "pitched" }), 0);
   assert.equal(resolveRoofReferenceEdgeIndex({ points: rectangle, roofKind: "flat" }), 0);
   assert.equal(resolveRoofReferenceEdgeIndex({ points: rectangle, roofKind: "flat", requestedIndex: 2 }), 2);
   assert.equal(resolveRoofReferenceEdgeIndex({ points: rectangle, roofKind: "flat", requestedIndex: 8 }), 0);
+});
+
+test("flat auto reference uses northern midpoint, then length, then stable index", () => {
+  const trapezoid = [
+    { x: 25, y: 5 },
+    { x: 85, y: 5 },
+    { x: 110, y: 70 },
+    { x: 0, y: 70 },
+  ];
+  assert.equal(resolveRoofReferenceEdgeIndex({ points: trapezoid, roofKind: "flat" }), 0);
+  const northTie = [
+    { x: 0, y: 0 },
+    { x: 20, y: 0 },
+    { x: 20, y: 10 },
+    { x: 40, y: 0 },
+    { x: 80, y: 0 },
+    { x: 80, y: 50 },
+    { x: 0, y: 50 },
+  ];
+  assert.equal(resolveRoofReferenceEdgeIndex({ points: northTie, roofKind: "flat" }), 3);
+  assert.equal(resolveRoofReferenceEdgeIndex({ points: trapezoid, roofKind: "flat", requestedIndex: 2 }), 2);
+});
+
+test("flat geometric orientation is canonical and independent from viewport state", () => {
+  const radians = 24.4 * Math.PI / 180;
+  const rotated = rectangle.map((point) => ({
+    x: point.x * Math.cos(radians) - point.y * Math.sin(radians),
+    y: point.x * Math.sin(radians) + point.y * Math.cos(radians),
+  }));
+  assert.ok(Math.abs((resolveRoofGeometricOrientationDeg(rotated, 0.1) ?? 0) - 24.4) < 1e-9);
 });
 
 test("the canonical edge resolver returns the selected physical edge and updates deterministically", () => {
@@ -135,6 +166,7 @@ test("explicit flat Referenzkante overrides the rectangle/longest-edge alignment
   assert.equal(alignment?.source, "explicit-reference-edge");
   assert.equal(alignment?.edgeIndex, 1);
   assert.equal(alignment?.faceAzimuthDeg, 270);
+  assert.equal(alignment?.edgeTangentAzimuthDeg, 180);
 });
 
 test("flat Referenzkante resolves the inward normal for every rectangle edge", () => {

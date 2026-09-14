@@ -1,5 +1,4 @@
 import {
-  analyzeRectangularRoof,
   getCanonicalRoofEdges,
   pointPolygonRelation,
   resolveCanonicalRoofReferenceEdge,
@@ -8,9 +7,11 @@ import type { CanonicalRoofEdge, MetricPoint } from "../geometry-v2";
 import { normalizeGeographicAzimuth } from "./moduleGeometry";
 
 export type RoofEdgeAlignment = {
-  /** K2 block-local X axis follows this canvas edge direction. */
+  /** Inward face direction used by south-facing systems. */
   faceAzimuthDeg: number;
-  source: "explicit-reference-edge" | "rectangle-main-axis" | "longest-edge";
+  /** Directed tangent of the selected physical roof edge. */
+  edgeTangentAzimuthDeg: number;
+  source: "explicit-reference-edge" | "auto-northern-edge";
   edgeIndex: number;
 };
 
@@ -90,15 +91,14 @@ function alignmentForEdge(input: {
   });
   return inward ? {
     faceAzimuthDeg: inward.geographicAzimuthDeg,
+    edgeTangentAzimuthDeg: geographicAzimuthFromImageVector(input.edge.direction),
     source: input.source,
     edgeIndex: input.edge.edgeIndex,
   } : null;
 }
 
-/**
- * K2 Dome definitions use face azimuth as the module-local forward direction.
- * Its planar block axis remains parallel to the selected edge, while choosing
- * the inward normal removes the otherwise ambiguous 180 degree orientation.
+/** Resolves both physical frames needed by Dome systems without screen state:
+ * South uses the inward edge normal; East-West uses the directed edge tangent.
  */
 export function resolveK2ParallelRoofEdgeAlignment(input: {
   roofPointsPx: readonly MetricPoint[];
@@ -111,45 +111,21 @@ export function resolveK2ParallelRoofEdgeAlignment(input: {
     !Number.isFinite(input.mppImage)
   ) return null;
   const canonicalEdges = getCanonicalRoofEdges(input.roofPointsPx);
-  if (
+  const hasExplicitReference =
     Number.isInteger(input.referenceEdgeIndex) &&
     (input.referenceEdgeIndex as number) >= 0 &&
-    (input.referenceEdgeIndex as number) < canonicalEdges.length
-  ) {
-    const edge = resolveCanonicalRoofReferenceEdge({
-      points: input.roofPointsPx,
-      requestedIndex: input.referenceEdgeIndex,
-      roofKind: "flat",
-    });
-    if (!edge) return null;
-    return alignmentForEdge({
-      roofPoints: input.roofPointsPx,
-      edge,
-      source: "explicit-reference-edge",
-    });
-  }
-  const rectangle = analyzeRectangularRoof(input.roofPointsPx, input.mppImage);
-  if (rectangle.supported) {
-    const edge = canonicalEdges[rectangle.dimensions.lengthEdgeIndex];
-    return edge ? alignmentForEdge({
-      roofPoints: input.roofPointsPx,
-      edge,
-      source: "rectangle-main-axis",
-    }) : null;
-  }
-
-  let longestIndex = -1;
-  let longestLength = 0;
-  for (const edge of canonicalEdges) {
-    if (edge.lengthPx > longestLength) {
-      longestLength = edge.lengthPx;
-      longestIndex = edge.edgeIndex;
-    }
-  }
-  if (!(longestLength > 0) || longestIndex < 0) return null;
+    (input.referenceEdgeIndex as number) < canonicalEdges.length;
+  const edge = resolveCanonicalRoofReferenceEdge({
+    points: input.roofPointsPx,
+    requestedIndex: hasExplicitReference ? input.referenceEdgeIndex : undefined,
+    roofKind: "flat",
+  });
+  if (!edge) return null;
   return alignmentForEdge({
     roofPoints: input.roofPointsPx,
-    edge: canonicalEdges[longestIndex],
-    source: "longest-edge",
+    edge,
+    source: hasExplicitReference
+      ? "explicit-reference-edge"
+      : "auto-northern-edge",
   });
 }

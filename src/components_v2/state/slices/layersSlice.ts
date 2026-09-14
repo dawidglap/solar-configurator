@@ -38,6 +38,10 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
                 if (l.id !== id) return l;
                 const next = { ...l, ...patch };
                 if (!patch.points) return next;
+                // Absence means automatic reference-edge resolution. Keep it
+                // absent so geometry edits can re-resolve the northern edge
+                // without silently turning the fallback into persisted input.
+                if (next.referenceEdgeIndex == null) return next;
                 const planning = getRoofSurfacePlanning([next], next.id);
                 const roofKind = planning.status === 'supported-advanced'
                     ? planning.config.surface.kind

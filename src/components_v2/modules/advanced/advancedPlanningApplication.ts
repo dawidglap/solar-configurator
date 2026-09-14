@@ -75,6 +75,8 @@ const MAX_DEFAULT_FLAT_SPACING_M = 20;
 
 export type StandardPlanningDraft = {
   targetMode: "standard";
+  /** False for a configuration-only mode selection; generation stays explicit. */
+  previewEnabled?: boolean;
   panelSpecId: string;
   modules: ModulesConfig;
   moduleTilt: StandardModuleTiltInput;
@@ -83,6 +85,8 @@ export type StandardPlanningDraft = {
 
 export type AdvancedPlanningDraft = {
   targetMode: "advanced";
+  /** False for a configuration-only mode selection; generation stays explicit. */
+  previewEnabled?: boolean;
   config: AdvancedSurfacePlanningV1;
 };
 
@@ -811,7 +815,7 @@ export function alignAdvancedLayoutParallelToRoofEdge(input: {
         ...input.config.advanced,
         system: {
           ...system,
-          primaryFaceAzimuthDeg: alignment.faceAzimuthDeg,
+          primaryFaceAzimuthDeg: alignment.edgeTangentAzimuthDeg,
         },
       },
     };
@@ -862,10 +866,19 @@ export function resolveInitialSonnendachRoofType(
  */
 export function resolveRoofModuleMode(input: {
   roof?: Pick<RoofArea, "surfacePlanning">;
+  draft?: RoofPlanningDraft;
   panels: readonly Pick<PanelInstance, "roofId" | "orientation" | "advanced">[];
   roofId?: string;
 }): RoofModuleMode | undefined {
   if (!input.roof || !input.roofId) return undefined;
+  if (input.draft?.targetMode === "advanced") {
+    const systemId = input.draft.config.advanced.system.systemId;
+    if (systemId === K2_S_DOME_SYSTEM_ID || systemId === GENERIC_SOUTH_SYSTEM_ID) return "south";
+    if (systemId === K2_D_DOME_SYSTEM_ID || systemId === GENERIC_EAST_WEST_SYSTEM_ID) return "east-west";
+  }
+  if (input.draft?.targetMode === "standard") {
+    return input.draft.modules.orientation;
+  }
   const persisted = resolveSurfacePlanning(input.roof.surfacePlanning);
   if (persisted.status === "supported-advanced") {
     const systemId = persisted.config.advanced.system.systemId;

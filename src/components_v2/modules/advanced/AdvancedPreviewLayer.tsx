@@ -99,10 +99,10 @@ export default function AdvancedPreviewLayer({
   );
   const preview = React.useMemo(
     () =>
-      roof && config && draft?.targetMode === "advanced"
+      roof && config && draft?.targetMode === "advanced" && draft.previewEnabled !== false
         ? computeAdvancedPlanningPreview({ roof, config, mppImage: mppImage ?? 0, zones, snowGuards })
         : null,
-    [config, draft?.targetMode, mppImage, roof, snowGuards, zones],
+    [config, draft, mppImage, roof, snowGuards, zones],
   );
   const thermalFieldDisplayInputs = React.useMemo<ThermalFieldDisplayInput[]>(() => {
     const limits = config?.thermalFieldLimits;

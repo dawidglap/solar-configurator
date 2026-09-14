@@ -177,6 +177,7 @@ export default function TopToolbar() {
     roof: selectedRoof,
     roofId: selectedId,
     panels,
+    draft: selectedPlanningDraft,
   });
   const manualPlacementKind = displayedAdvancedConfig
     && (activeModuleMode === "south" || activeModuleMode === "east-west")
@@ -469,7 +470,7 @@ export default function TopToolbar() {
     }
 
     const roof = st.layers.find((item) => item.id === st.selectedId);
-    const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: st.panels });
+    const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: st.panels, draft: roof ? st.roofPlanningDrafts[roof.id] : undefined });
     if (!mode) {
       toast.error(resolveInitialSonnendachRoofType(roof) === "flat"
         ? "Zuerst Süd oder Ost-West wählen"
@@ -507,7 +508,7 @@ export default function TopToolbar() {
     }
 
     const roof = st.layers.find((item) => item.id === st.selectedId);
-    const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: st.panels });
+    const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: st.panels, draft: roof ? st.roofPlanningDrafts[roof.id] : undefined });
     if (!mode) {
       toast.error(resolveInitialSonnendachRoofType(roof) === "flat"
         ? "Zuerst Süd oder Ost-West wählen"
@@ -575,7 +576,7 @@ export default function TopToolbar() {
     const roof = layers.find((l) => l.id === selectedId);
     if (!roof?.points?.length) return;
     const currentState = usePlannerV2Store.getState();
-    const mode = resolveRoofModuleMode({ roof, roofId: selectedId, panels: currentState.panels });
+    const mode = resolveRoofModuleMode({ roof, roofId: selectedId, panels: currentState.panels, draft: currentState.roofPlanningDrafts[selectedId] });
     if (!mode) return;
     const runId = nanoid();
     if (mode === "portrait" || mode === "landscape") {
@@ -631,6 +632,7 @@ export default function TopToolbar() {
       commitRoofLayout({ roofId: selectedId, panels: generated.panels, surfacePlanning: generated.config });
     }
 
+    currentState.clearRoofPlanningDraft(selectedId);
     // torna allo strumento selezione
     setTool("select" as any);
     toast.success("Layout neu erstellt");
