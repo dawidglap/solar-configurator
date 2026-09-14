@@ -13,9 +13,13 @@ import {
 import { resolveDirectLayoutTargets } from "../../src/components_v2/modules/panels/directLayoutGeometry";
 import {
   createPanelPasteGroup,
+  findNearestValidPanelPaste,
   offsetPanelPasteGroup,
   panelPasteOffsetCandidates,
+  resolvePanelPasteLattice,
 } from "../../src/components_v2/modules/panels/panelClipboardGeometry";
+import { createPanelPastePlacementValidator } from "../../src/components_v2/modules/manualPlacement";
+import type { RoofArea } from "../../src/types/planner";
 
 function panel(id: string, cx: number, cy: number): PanelInstance {
   return {
@@ -29,6 +33,63 @@ function panel(id: string, cx: number, cy: number): PanelInstance {
     orientation: "portrait",
     panelId: "module-a",
   };
+}
+
+const SEARCH_ROOF: RoofArea = {
+  id: "roof-a",
+  name: "D1",
+  roofKind: "pitched",
+  points: [
+    { x: 0, y: 0 },
+    { x: 120, y: 0 },
+    { x: 120, y: 100 },
+    { x: 0, y: 100 },
+  ],
+};
+
+function gridPanel(id: string, cx: number, cy: number, angleDeg = 0): PanelInstance {
+  return {
+    ...panel(id, cx, cy),
+    wPx: 8,
+    hPx: 18,
+    angleDeg,
+  };
+}
+
+function searchPaste(input: {
+  copied: PanelInstance[];
+  occupied: PanelInstance[];
+  roof?: RoofArea;
+  spacingM?: number;
+  advancedPitchM?: { x: number; y: number };
+  marginM?: number;
+  zones?: Array<{ roofId: string; points: Array<{ x: number; y: number }> }>;
+}) {
+  const roof = input.roof ?? SEARCH_ROOF;
+  const mppImage = 0.1;
+  const lattice = resolvePanelPasteLattice({
+    panels: input.copied,
+    mppImage,
+    spacingXM: input.spacingM ?? 0.2,
+    spacingYM: input.spacingM ?? 0.2,
+    advancedPitchM: input.advancedPitchM,
+  });
+  assert.ok(lattice);
+  return findNearestValidPanelPaste({
+    panels: input.copied,
+    roofPointsPx: roof.points,
+    mppImage,
+    preferredOffset: { xM: 0.2, yM: 0.2 },
+    lattice,
+    isValid: createPanelPastePlacementValidator({
+      roof,
+      marginM: input.marginM ?? 0,
+      mppImage,
+      zones: input.zones ?? [],
+      snowGuards: [],
+      panels: input.occupied,
+    }),
+  });
 }
 
 test("planner clipboard is explicitly typed and a new copy resets the paste cascade", () => {
@@ -124,9 +185,213 @@ test("hotkey ownership is mutually exclusive and module paste is one validated b
   assert.match(panelHotkeys, /clipboard\?\.type !== 'panels'/);
   assert.match(roofHotkeys, /clipboard\?\.type !== "roof"/);
   assert.match(panelHotkeys, /closest\("input, textarea, select, \[contenteditable='true'\]"\)/);
-  assert.match(panelHotkeys, /validateExistingPanelPlacement/);
+  assert.match(panelHotkeys, /createPanelPastePlacementValidator/);
+  assert.match(panelHotkeys, /findNearestValidPanelPaste/);
   assert.equal((panelHotkeys.match(/appendPanelsToRoof\(/g) ?? []).length, 1);
   assert.match(panelHotkeys, /selectAdded: true/);
   assert.doesNotMatch(canvasStage, /CanvasHotkeys/);
   assert.equal(existsSync("src/components_v2/canvas/CanvasHotekeys.tsx"), false);
+});
+
+test("a deleted Standard grid cell is found beyond the invalid preferred offset", () => {
+  const occupied = [
+    gridPanel("a", 20, 20),
+    gridPanel("b", 30, 20),
+    // C at 40/20 was deleted from the current committed array.
+    gridPanel("d", 50, 20),
+    gridPanel("e", 20, 40),
+    gridPanel("f", 30, 40),
+    gridPanel("h", 50, 40),
+  ];
+  const copied = createPanelPasteGroup({
+    source: [occupied[1]],
+    roofId: SEARCH_ROOF.id,
+    createPanelId: () => "copy-b",
+    createBlockKey: () => "unused",
+    layoutRunId: "copy-run",
+  });
+  const pasted = searchPaste({ copied, occupied });
+  assert.ok(pasted);
+  assert.deepEqual({ cx: pasted[0].cx, cy: pasted[0].cy }, { cx: 40, cy: 20 });
+});
+
+test("immediate bulk delete changes paste occupancy without reload or cache invalidation", () => {
+  const beforeDelete = [gridPanel("a", 20, 20), gridPanel("b", 30, 20), gridPanel("c", 40, 20)];
+  const afterDelete = beforeDelete.filter((item) => item.id !== "c");
+  const copied = createPanelPasteGroup({
+    source: [beforeDelete[1]],
+    roofId: SEARCH_ROOF.id,
+    createPanelId: () => "copy-immediate",
+    createBlockKey: () => "unused",
+    layoutRunId: "copy-run",
+  });
+  const pasted = searchPaste({ copied, occupied: afterDelete });
+  assert.ok(pasted);
+  assert.deepEqual({ cx: pasted[0].cx, cy: pasted[0].cy }, { cx: 40, cy: 20 });
+});
+
+test("search skips a deleted-looking cell blocked by Randabstand and finds another slot", () => {
+  const roof: RoofArea = {
+    ...SEARCH_ROOF,
+    points: [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 60 }, { x: 0, y: 60 }],
+  };
+  const source = gridPanel("source", 30, 30);
+  const copied = createPanelPasteGroup({
+    source: [source],
+    roofId: roof.id,
+    createPanelId: () => "margin-copy",
+    createBlockKey: () => "unused",
+    layoutRunId: "copy-run",
+  });
+  const pasted = searchPaste({ copied, occupied: [source], roof, marginM: 0.5 });
+  assert.ok(pasted);
+  assert.ok(pasted[0].cx >= 9 && pasted[0].cx <= 51);
+  assert.ok(pasted[0].cy >= 14 && pasted[0].cy <= 46);
+});
+
+test("search rejects an obstacle-covered hole and continues to a valid grid cell", () => {
+  const source = gridPanel("source", 30, 20);
+  const copied = createPanelPasteGroup({
+    source: [source],
+    roofId: SEARCH_ROOF.id,
+    createPanelId: () => "obstacle-copy",
+    createBlockKey: () => "unused",
+    layoutRunId: "copy-run",
+  });
+  const pasted = searchPaste({
+    copied,
+    occupied: [source],
+    zones: [{
+      roofId: SEARCH_ROOF.id,
+      points: [{ x: 36, y: 11 }, { x: 44, y: 11 }, { x: 44, y: 29 }, { x: 36, y: 29 }],
+    }],
+  });
+  assert.ok(pasted);
+  assert.notDeepEqual({ cx: pasted[0].cx, cy: pasted[0].cy }, { cx: 40, cy: 20 });
+});
+
+test("deleting a D-Dome block makes its complete atomic slot available to paste", () => {
+  const advanced = (id: string, cx: number, slotIndex: number, blockKey: string): PanelInstance => ({
+    ...gridPanel(id, cx, 30),
+    wPx: 12,
+    hPx: 18,
+    advanced: {
+      layoutMode: "advanced",
+      advancedEngineVersion: "advanced-block-v1",
+      geometryEngineVersion: "geometry-v2",
+      systemId: "k2-d-dome-6.10-classic",
+      adapterVersion: "07-481-08@2023-05-05",
+      blockKey,
+      slotIndex,
+      nominalTiltDeg: 10,
+      effectiveTiltDeg: 8.648,
+      moduleFaceAzimuthDeg: slotIndex === 0 ? 90 : 270,
+    },
+  });
+  const source = [advanced("source-0", 30, 0, "source"), advanced("source-1", 44, 1, "source")];
+  const deleted = [advanced("deleted-0", 60, 0, "deleted"), advanced("deleted-1", 74, 1, "deleted")];
+  const far = [advanced("far-0", 90, 0, "far"), advanced("far-1", 104, 1, "far")];
+  const beforeDelete = [...source, ...deleted, ...far];
+  const occupied = beforeDelete.filter((panel) => panel.advanced?.blockKey !== "deleted");
+  const copied = createPanelPasteGroup({
+    source,
+    roofId: SEARCH_ROOF.id,
+    createPanelId: (() => { let id = 0; return () => `copy-${id++}`; })(),
+    createBlockKey: () => "fresh-block",
+    layoutRunId: "copy-run",
+  });
+  const pasted = searchPaste({
+    copied,
+    occupied,
+    spacingM: 0,
+    advancedPitchM: { x: 3, y: 3 },
+  });
+  assert.ok(pasted);
+  assert.equal(pasted.length, 2);
+  assert.deepEqual(pasted.map((item) => item.advanced?.slotIndex), [0, 1]);
+  assert.deepEqual(new Set(pasted.map((item) => item.advanced?.blockKey)), new Set(["fresh-block"]));
+  assert.equal(pasted[1].cx - pasted[0].cx, source[1].cx - source[0].cx);
+  assert.deepEqual(pasted.map(({ cx, cy }) => ({ cx, cy })), deleted.map(({ cx, cy }) => ({ cx, cy })));
+});
+
+test("repeated paste treats the previous result as occupied and finds the next slot", () => {
+  const source = gridPanel("source", 20, 20);
+  const firstCopy = createPanelPasteGroup({
+    source: [source],
+    roofId: SEARCH_ROOF.id,
+    createPanelId: () => "copy-1",
+    createBlockKey: () => "unused",
+    layoutRunId: "copy-run-1",
+  });
+  const firstPaste = searchPaste({ copied: firstCopy, occupied: [source] });
+  assert.ok(firstPaste);
+  const secondCopy = createPanelPasteGroup({
+    source: [source],
+    roofId: SEARCH_ROOF.id,
+    createPanelId: () => "copy-2",
+    createBlockKey: () => "unused",
+    layoutRunId: "copy-run-2",
+  });
+  const secondPaste = searchPaste({ copied: secondCopy, occupied: [source, ...firstPaste] });
+  assert.ok(secondPaste);
+  assert.notDeepEqual(
+    { cx: secondPaste[0].cx, cy: secondPaste[0].cy },
+    { cx: firstPaste[0].cx, cy: firstPaste[0].cy },
+  );
+});
+
+test("rotated paste keeps actual +17 degree geometry and follows its physical lattice", () => {
+  const roof = { ...SEARCH_ROOF, points: [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 300 }, { x: 0, y: 300 }] };
+  const source = gridPanel("source", 150, 150, 17);
+  const copied = createPanelPasteGroup({
+    source: [source],
+    roofId: roof.id,
+    createPanelId: () => "rotated-copy",
+    createBlockKey: () => "unused",
+    layoutRunId: "copy-run",
+  });
+  const pasted = searchPaste({ copied, occupied: [source], roof });
+  assert.ok(pasted);
+  assert.equal(pasted[0].angleDeg, 17);
+  const distanceM = Math.hypot(pasted[0].cx - source.cx, pasted[0].cy - source.cy) * 0.1;
+  assert.ok(Math.abs(distanceM - 1) < 1e-9);
+});
+
+test("multi-panel paste remains a rigid all-or-nothing group", () => {
+  const source = [
+    gridPanel("a", 20, 20),
+    gridPanel("b", 30, 20),
+    gridPanel("c", 20, 40),
+    gridPanel("d", 30, 40),
+  ];
+  const copied = createPanelPasteGroup({
+    source,
+    roofId: SEARCH_ROOF.id,
+    createPanelId: (() => { let id = 0; return () => `group-copy-${id++}`; })(),
+    createBlockKey: () => "unused",
+    layoutRunId: "copy-run",
+  });
+  const pasted = searchPaste({ copied, occupied: source });
+  assert.ok(pasted);
+  assert.equal(pasted.length, 4);
+  assert.deepEqual(
+    pasted.map((item) => ({ x: item.cx - pasted[0].cx, y: item.cy - pasted[0].cy, angle: item.angleDeg })),
+    source.map((item) => ({ x: item.cx - source[0].cx, y: item.cy - source[0].cy, angle: item.angleDeg })),
+  );
+});
+
+test("a genuinely full roof exhausts its physical lattice and returns no paste", () => {
+  const roof: RoofArea = {
+    ...SEARCH_ROOF,
+    points: [{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 40 }, { x: 0, y: 40 }],
+  };
+  const occupied = [10, 20].flatMap((cx) => [10, 30].map((cy) => gridPanel(`${cx}-${cy}`, cx, cy)));
+  const copied = createPanelPasteGroup({
+    source: [occupied[0]],
+    roofId: roof.id,
+    createPanelId: () => "full-copy",
+    createBlockKey: () => "unused",
+    layoutRunId: "copy-run",
+  });
+  assert.equal(searchPaste({ copied, occupied, roof }), undefined);
 });

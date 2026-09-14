@@ -32,6 +32,7 @@ import {
   rotateMetricPoint,
   validatePlacementFootprint,
   type ImageMetricAdapter,
+  type MetricPoint,
   type MetricPolygon,
 } from "@/lib/planning-core/geometry-v2";
 import type { ModulesConfig, PanelInstance, PanelSpec, Pt, RoofArea } from "@/types/planner";
@@ -109,6 +110,132 @@ function committedPanelFootprints(
         adapter,
       ),
     );
+}
+
+type PolygonBounds = { minX: number; minY: number; maxX: number; maxY: number };
+
+function polygonBounds(points: readonly MetricPoint[]): PolygonBounds {
+  return {
+    minX: Math.min(...points.map((point) => point.x)),
+    minY: Math.min(...points.map((point) => point.y)),
+    maxX: Math.max(...points.map((point) => point.x)),
+    maxY: Math.max(...points.map((point) => point.y)),
+  };
+}
+
+function boundsOverlap(a: PolygonBounds, b: PolygonBounds): boolean {
+  return !(
+    a.maxX < b.minX ||
+    b.maxX < a.minX ||
+    a.maxY < b.minY ||
+    b.maxY < a.minY
+  );
+}
+
+function cross(origin: MetricPoint, a: MetricPoint, b: MetricPoint): number {
+  return (a.x - origin.x) * (b.y - origin.y) -
+    (a.y - origin.y) * (b.x - origin.x);
+}
+
+function convexHull(points: readonly MetricPoint[]): MetricPolygon {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  if (sorted.length <= 3) return sorted;
+  const lower: MetricPoint[] = [];
+  for (const point of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
+      lower.pop();
+    }
+    lower.push(point);
+  }
+  const upper: MetricPoint[] = [];
+  for (let index = sorted.length - 1; index >= 0; index -= 1) {
+    const point = sorted[index];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+      upper.pop();
+    }
+    upper.push(point);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+/**
+ * Prepares all static geometry once for a paste search. The returned closure
+ * reads no store and performs no mutations; deleted panels are absent as soon
+ * as the caller supplies the current committed PanelInstance array.
+ */
+export function createPanelPastePlacementValidator(input: {
+  roof: RoofArea;
+  marginM: number;
+  mppImage: number;
+  zones: readonly ObstacleZone[];
+  snowGuards: readonly SnowGuard[];
+  panels: readonly PanelInstance[];
+}): (panels: readonly PanelInstance[]) => boolean {
+  const adapter = imageAdapter(input.roof, input.mppImage);
+  const usableRoof = computeUsableRoof({
+    roofPolygonM: imagePolygonToMetric(input.roof.points, adapter),
+    marginM: input.marginM,
+  });
+  const reservedZones = input.zones
+    .filter((zone) => zone.roofId === input.roof.id && zone.type !== "walkway")
+    .map((zone, index) => ({
+      id: `zone-${index}`,
+      polygon: imagePolygonToMetric(zone.points, adapter),
+    }));
+  const snowGuards = input.snowGuards
+    .filter((guard) => guard.roofId === input.roof.id)
+    .map((guard, index) => ({
+      id: `snow-${index}`,
+      start: imagePointToMetric(guard.p1, adapter),
+      end: imagePointToMetric(guard.p2, adapter),
+      clearanceM: 0,
+    }));
+  const occupied = committedPanelFootprints(
+    input.panels,
+    input.roof.id,
+    adapter,
+  ).map((polygon) => ({ polygon, bounds: polygonBounds(polygon) }));
+
+  return (panels) => {
+    if (!panels.length || panels.some((panel) => panel.roofId !== input.roof.id)) return false;
+    const panelFootprints = panels.map((panel) => imagePolygonToMetric(rectangle(
+      { x: panel.cx, y: panel.cy },
+      panel.wPx,
+      panel.hPx,
+      panel.angleDeg,
+    ), adapter));
+    const advancedBlocks = new Map<string, MetricPoint[]>();
+    panels.forEach((panel, index) => {
+      const blockKey = panel.advanced?.blockKey;
+      if (!blockKey) return;
+      advancedBlocks.set(blockKey, [
+        ...(advancedBlocks.get(blockKey) ?? []),
+        ...panelFootprints[index],
+      ]);
+    });
+    const advancedPanelIndexes = new Set(
+      panels.flatMap((panel, index) => panel.advanced?.blockKey ? [index] : []),
+    );
+    const atomicFootprints: MetricPolygon[] = [
+      ...panelFootprints.filter((_footprint, index) => !advancedPanelIndexes.has(index)),
+      ...[...advancedBlocks.values()].map(convexHull),
+    ];
+
+    return atomicFootprints.every((footprint) => {
+      const geometric = validatePlacementFootprint({
+        footprint,
+        usableRoof,
+        reservedZones,
+        snowGuards,
+      });
+      if (!geometric.valid) return false;
+      const bounds = polygonBounds(footprint);
+      return !occupied.some((candidate) =>
+        boundsOverlap(bounds, candidate.bounds) &&
+        polygonsIntersectOrTouch(footprint, candidate.polygon),
+      );
+    });
+  };
 }
 
 function validate(input: {

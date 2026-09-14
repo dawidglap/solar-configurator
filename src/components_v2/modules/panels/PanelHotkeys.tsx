@@ -6,6 +6,7 @@ import { nanoid } from 'nanoid';
 import toast from 'react-hot-toast';
 
 import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
+import { resolveSurfacePlanning } from '@/lib/planning-core/advanced';
 import {
   copyPanelsToPlannerClipboard,
   markPanelClipboardPaste,
@@ -13,16 +14,20 @@ import {
 } from '../../canvas/plannerObjectClipboard';
 import { usePlannerV2Store } from '../../state/plannerV2Store';
 import { history as plannerHistory } from '../../state/history';
-import { validateExistingPanelPlacement } from '../manualPlacement';
+import {
+  createPanelPastePlacementValidator,
+  resolveManualAdvancedBlockDefinition,
+} from '../manualPlacement';
 import { resolveDirectLayoutTargets } from './directLayoutGeometry';
 import {
   createPanelPasteGroup,
-  offsetPanelPasteGroup,
+  findNearestValidPanelPaste,
   panelPasteOffsetCandidates,
+  resolvePanelPasteLattice,
 } from './panelClipboardGeometry';
 
 type Props = {
-  disabled: any;
+  disabled: boolean;
   /** Modalità controllata (singolo pannello): se presente, usa queste props */
   selectedPanelId?: string;
   onDelete?: (id: string) => void;
@@ -56,8 +61,8 @@ export default function PanelHotkeys(props: Props) {
   const duplicatePanelInStore = usePlannerV2Store((s) => s.duplicatePanel);
 
   // step/tool globali
-  const step = usePlannerV2Store((s) => (s as any).step ?? (s as any).ui?.step);
-  const tool = usePlannerV2Store((s) => (s as any).tool ?? (s as any).ui?.tool);
+  const step = usePlannerV2Store((s) => s.step);
+  const tool = usePlannerV2Store((s) => s.tool);
   const setTool = usePlannerV2Store((s) => s.setTool);
 
   // mappa id -> panel (utile per verificare esistenza)
@@ -87,7 +92,7 @@ export default function PanelHotkeys(props: Props) {
       if ((key === 's' || key === 'S') && step === 'building') {
         e.preventDefault();
         e.stopPropagation();
-        setTool('draw-snow-guard' as any);
+        setTool('draw-snow-guard');
         return;
       }
 
@@ -132,23 +137,52 @@ export default function PanelHotkeys(props: Props) {
           createBlockKey: () => `${roofId}:copy-block:${nanoid()}`,
           layoutRunId: `${roofId}:manual-copy:${nanoid()}`,
         });
-        const marginM = resolveRoofEdgeMarginM(roof, state.modules.marginM);
-        const pasted = panelPasteOffsetCandidates(clipboard.pasteCount)
-          .map((offset) => offsetPanelPasteGroup({ panels: pasteGroup, offset, mppImage }))
-          .find((candidates) => candidates.every((candidate) =>
-            validateExistingPanelPlacement({
-              panel: candidate,
-              centerPx: { x: candidate.cx, y: candidate.cy },
-              angleDeg: candidate.angleDeg,
-              roof,
-              marginM,
+        const draft = state.roofPlanningDrafts[roofId];
+        const persisted = resolveSurfacePlanning(roof.surfacePlanning);
+        const advancedConfig = draft?.targetMode === 'advanced'
+          ? draft.config
+          : persisted.status === 'supported-advanced'
+            ? persisted.config
+            : undefined;
+        const definition = advancedConfig
+          ? resolveManualAdvancedBlockDefinition(advancedConfig)
+          : null;
+        const marginM = resolveRoofEdgeMarginM(
+          roof,
+          advancedConfig?.advanced.layout.marginM ?? state.modules.marginM,
+        );
+        const standardModules = draft?.targetMode === 'standard'
+          ? draft.modules
+          : state.modules;
+        const lattice = resolvePanelPasteLattice({
+          panels: pasteGroup,
+          mppImage,
+          spacingXM: standardModules.spacingXM ?? standardModules.spacingM,
+          spacingYM: standardModules.spacingYM ?? standardModules.spacingM,
+          ...(pasteGroup.some((panel) => panel.advanced) && definition
+            ? { advancedPitchM: definition.pitchM }
+            : {}),
+        });
+        const validatePaste = createPanelPastePlacementValidator({
+          roof,
+          marginM,
+          mppImage,
+          zones: state.zones,
+          snowGuards: state.snowGuards,
+          // This is the authoritative, post-delete committed occupancy snapshot.
+          panels: state.panels,
+        });
+        const preferredOffset = panelPasteOffsetCandidates(clipboard.pasteCount)[0];
+        const pasted = lattice && preferredOffset
+          ? findNearestValidPanelPaste({
+              panels: pasteGroup,
+              roofPointsPx: roof.points,
               mppImage,
-              zones: state.zones,
-              snowGuards: state.snowGuards,
-              panels: state.panels,
-              excludePanelIds: new Set(),
-            }).valid,
-          ));
+              preferredOffset,
+              lattice,
+              isValid: validatePaste,
+            })
+          : undefined;
 
         if (!pasted) {
           toast('Keine freie Position zum Einfügen gefunden.');
