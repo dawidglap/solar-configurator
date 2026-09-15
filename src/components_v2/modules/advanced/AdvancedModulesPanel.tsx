@@ -1,25 +1,26 @@
 "use client";
 
 import React from "react";
+import toast from "react-hot-toast";
 
 import {
   GENERIC_EAST_WEST_SYSTEM_ID,
   GENERIC_SOUTH_SYSTEM_ID,
   K2_D_DOME_SYSTEM_ID,
   K2_S_DOME_SYSTEM_ID,
+  resolveSurfacePlanning,
   type AdvancedSurfacePlanningV1,
 } from "@/lib/planning-core/advanced";
 import type { RoofArea } from "@/types/planner";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
-import {
-  COMPANY_MODULE_SPACING_LIMITS_MM,
-  isValidModuleSpacingMm,
-} from "@/lib/planning/companyPlannerDefaults";
+import { isValidModuleSpacingMm } from "@/lib/planning/companyPlannerDefaults";
 import {
   computeAdvancedPlanningPreview,
   type AdvancedPlanningPreview,
   DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG,
+  DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M,
   getAdvancedRowSpaceM,
+  getAdvancedServiceCorridorM,
   replaceAdvancedDraftModule,
   setAdvancedFixedQuantity,
   setAdvancedQuantityMode,
@@ -28,6 +29,8 @@ import {
 import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
 import { buildGuidedPlanningResult } from "./guidedPlanningPresentation";
 import DirectLayoutControl from "../panels/DirectLayoutControl";
+import { history as plannerHistory } from "../../state/history";
+import { buildAdvancedExistingLayoutReflow } from "../panels/existingLayoutReflow";
 
 const inputClass =
   "glass-input h-8 w-full rounded-lg px-2 text-[11px] focus:ring-1 focus:ring-primary/40";
@@ -41,6 +44,61 @@ const fmt = (value: number, digits = 2) =>
   }).format(value);
 
 const normalizeAzimuth = (value: number) => ((value % 360) + 360) % 360;
+
+function MetricCommitInput({
+  id,
+  value,
+  unit,
+  onCommit,
+  ariaLabel,
+}: {
+  id: string;
+  value: number;
+  unit: string;
+  onCommit: (value: number) => boolean;
+  ariaLabel: string;
+}) {
+  const formatted = React.useMemo(() => String(Math.round(value * 100) / 100), [value]);
+  const [text, setText] = React.useState(formatted);
+  const cancelledRef = React.useRef(false);
+
+  React.useEffect(() => setText(formatted), [formatted]);
+
+  const commit = () => {
+    if (cancelledRef.current) {
+      cancelledRef.current = false;
+      return;
+    }
+    const parsed = Number(text.replace(",", "."));
+    if (!Number.isFinite(parsed) || !onCommit(parsed)) setText(formatted);
+  };
+
+  return (
+    <span className="relative block min-w-0">
+      <input
+        id={id}
+        aria-label={ariaLabel}
+        className={`${inputClass} appearance-none pr-8 text-right [MozAppearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+        type="text"
+        inputMode="decimal"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            event.preventDefault();
+            cancelledRef.current = true;
+            setText(formatted);
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-muted-foreground">{unit}</span>
+    </span>
+  );
+}
 
 const UNSELECTED_MODE_PREVIEW: AdvancedPlanningPreview = {
   valid: false,
@@ -105,6 +163,8 @@ export default function AdvancedModulesPanel({
     (state) => state.companyPlannerDefaults,
   );
   const clearDraft = usePlannerV2Store((state) => state.clearRoofPlanningDraft);
+  const commitRoofLayout = usePlannerV2Store((state) => state.commitRoofLayout);
+  const [spacingError, setSpacingError] = React.useState<string | null>(null);
 
   const update = React.useCallback(
     (next: AdvancedSurfacePlanningV1) => {
@@ -189,20 +249,61 @@ export default function AdvancedModulesPanel({
     manuallyAdjusted: useCommittedResult && manuallyAdjusted,
   });
 
-  const patchDefaultSystemNumber = (
-    field: "rowSpaceM" | "azimuth" | "nominalTiltDeg" | "moduleGapM",
+  const commitSpacingChange = React.useCallback((
+    field: "rowSpaceM" | "serviceCorridorM" | "moduleGapM" | "nominalTiltDeg",
     value: number,
   ) => {
-    if (!Number.isFinite(value) || !isSupportedSystem) return;
-    update(updateDefaultFlatSystem({
+    const valueIsValid = field === "moduleGapM"
+      ? isValidModuleSpacingMm(value * 1000)
+      : field === "nominalTiltDeg"
+        ? value >= DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.min && value <= DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.max
+        : field === "serviceCorridorM"
+          ? value >= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.min && value <= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max
+          : value > DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.min && value <= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max;
+    if (!Number.isFinite(value) || !valueIsValid || !isSupportedSystem || !(mppImage && mppImage > 0)) {
+      setSpacingError("Bitte einen gültigen Wert eingeben.");
+      return false;
+    }
+    const next = updateDefaultFlatSystem({
       config,
       orientation,
-      ...(field === "rowSpaceM" ? { rowSpaceM: Math.round(value * 100) / 100 } : {}),
-      ...(field === "azimuth" ? { azimuthDeg: normalizeAzimuth(value) } : {}),
+      ...(field === "rowSpaceM" ? { rowSpaceM: value } : {}),
+      ...(field === "serviceCorridorM" ? { serviceCorridorM: value } : {}),
       ...(field === "nominalTiltDeg" ? { nominalTiltDeg: value } : {}),
       ...(field === "moduleGapM" ? { moduleGapM: value } : {}),
-    }));
-  };
+    });
+    const resolved = resolveSurfacePlanning(roof.surfacePlanning);
+    const previousConfig = resolved.status === "supported-advanced" ? resolved.config : config;
+    if (
+      (field === "rowSpaceM" && Math.abs(getAdvancedRowSpaceM(next) - value) > 1e-6) ||
+      (field === "serviceCorridorM" && Math.abs(getAdvancedServiceCorridorM(next) - value) > 1e-6)
+    ) {
+      setSpacingError("Dieser Abstand ist mit der aktuellen Modulgeometrie nicht möglich.");
+      return false;
+    }
+    const candidate = buildAdvancedExistingLayoutReflow({
+      roof,
+      currentPanels: panels,
+      previousConfig,
+      nextConfig: withEffectiveAdvancedThermalLimits(next, companyPlannerDefaults),
+      mppImage,
+      zones,
+      snowGuards,
+    });
+    if (!candidate) {
+      setSpacingError("Die bestehende Belegung passt mit diesem Wert nicht vollständig auf die Dachfläche.");
+      toast.error("Abstand nicht übernommen: Die bestehende Belegung wäre ungültig.");
+      return false;
+    }
+    setSpacingError(null);
+    plannerHistory.push("Abstände ändern");
+    commitRoofLayout({
+      roofId: roof.id,
+      panels: candidate.panels,
+      surfacePlanning: candidate.surfacePlanning,
+    });
+    return true;
+  }, [companyPlannerDefaults, config, commitRoofLayout, isSupportedSystem, mppImage, orientation, panels, roof, snowGuards, zones]);
 
   if (config.surface.kind !== "flat" || !isSupportedSystem) {
     return (
@@ -357,82 +458,24 @@ export default function AdvancedModulesPanel({
       </section>
 
       <section className="space-y-2 border-b border-border/60 pb-4">
-        <h3 className={labelClass}>Abstände</h3>
-        <label className="block space-y-1 text-[10px] text-muted-foreground">
-          Reihenabstand
-          <div className="flex items-center gap-2">
-            <input
-              className={inputClass}
-              type="number"
-              min={0}
-              step={0.01}
-              value={Number(rowSpaceM.toFixed(2))}
-              onChange={(event) => patchDefaultSystemNumber("rowSpaceM", Number(event.target.value))}
-            />
-            <span>m</span>
-          </div>
-        </label>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] text-muted-foreground">
-          <span>Wartungsgang</span>
-          <span className="text-right text-foreground">
-            {fmt(preview.derived?.kind === "generic"
-              ? preview.derived.blockGapYM
-              : preview.derived?.kind === "k2"
-                ? preview.derived.serviceCorridorM
-                : 0)} m
-          </span>
-          <label htmlFor={`advanced-module-gap-${roof.id}`} className="self-center">
-            Modulabstand
-            {!isK2System && (
-              <button
-                type="button"
-                className="ml-1 text-[9px] text-primary hover:underline"
-                title={`Firmenstandard: ${companyPlannerDefaults.moduleSpacing.horizontalMm} mm`}
-                onClick={() =>
-                  patchDefaultSystemNumber(
-                    "moduleGapM",
-                    companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
-                  )
-                }
-              >
-                Standard
-              </button>
-            )}
-          </label>
-          <span className="flex items-center justify-end gap-1">
-            <input
-              id={`advanced-module-gap-${roof.id}`}
-              className={`${inputClass} max-w-20 text-right`}
-              type="number"
-              min={0}
-              max={COMPANY_MODULE_SPACING_LIMITS_MM.max}
-              step={1}
-              value={Math.round(moduleGapM * 1000)}
-              disabled={isK2System}
-              title={isK2System ? "Vom Montagesystem vorgegeben" : undefined}
-              onChange={(event) => {
-                const mm = Number(event.target.value);
-                if (!isValidModuleSpacingMm(mm)) return;
-                patchDefaultSystemNumber("moduleGapM", mm / 1000);
-              }}
-            />
-            <span>mm</span>
-          </span>
-          <label htmlFor={`advanced-module-tilt-${roof.id}`} className="self-center">Modulneigung</label>
-          <span className="flex items-center justify-end gap-1">
-            <input
-              id={`advanced-module-tilt-${roof.id}`}
-              className={`${inputClass} max-w-20 text-right`}
-              type="number"
-              min={DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.min}
-              max={DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.max}
-              step={0.5}
-              value={nominalTiltDeg}
-              onChange={(event) => patchDefaultSystemNumber("nominalTiltDeg", Number(event.target.value))}
-            />
-            <span>°</span>
-          </span>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className={labelClass}>Abstände</h3>
+          <span className="text-[9px] text-muted-foreground">Werte direkt anpassen</span>
         </div>
+        <div className="grid grid-cols-[minmax(0,3fr)_minmax(92px,2fr)] items-center gap-x-3 gap-y-2 text-[10px] text-muted-foreground">
+          <label htmlFor={`advanced-row-space-${roof.id}`}>Reihenabstand</label>
+          <MetricCommitInput id={`advanced-row-space-${roof.id}`} ariaLabel="Reihenabstand" value={rowSpaceM} unit="m" onCommit={(value) => commitSpacingChange("rowSpaceM", value)} />
+          <label htmlFor={`advanced-service-corridor-${roof.id}`}>Wartungsgang</label>
+          <MetricCommitInput id={`advanced-service-corridor-${roof.id}`} ariaLabel="Wartungsgang" value={getAdvancedServiceCorridorM(config)} unit="m" onCommit={(value) => commitSpacingChange("serviceCorridorM", value)} />
+          <label htmlFor={`advanced-module-gap-${roof.id}`}>
+            Modulabstand
+            {!isK2System && <span className="ml-1 text-[9px] text-primary">Firmenstandard</span>}
+          </label>
+          <MetricCommitInput id={`advanced-module-gap-${roof.id}`} ariaLabel="Modulabstand" value={moduleGapM * 1000} unit="mm" onCommit={(value) => commitSpacingChange("moduleGapM", value / 1000)} />
+          <label htmlFor={`advanced-module-tilt-${roof.id}`}>Modulneigung</label>
+          <MetricCommitInput id={`advanced-module-tilt-${roof.id}`} ariaLabel="Modulneigung" value={nominalTiltDeg} unit="°" onCommit={(value) => commitSpacingChange("nominalTiltDeg", value)} />
+        </div>
+        {spacingError && <p className="text-[10px] leading-snug text-destructive" role="alert">{spacingError}</p>}
       </section>
 
       <section className={`rounded-xl border p-3 ${result.status === "valid" ? "border-primary/30 bg-primary/5" : "border-destructive/40 bg-destructive/5"}`} aria-live="polite">

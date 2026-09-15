@@ -29,7 +29,6 @@ import {
 import { modulesWithRoofEdgeMargin } from "@/lib/planning/roofProperties";
 import { resolveRoofGeometricOrientationDeg } from "@/lib/planning-core/geometry-v2";
 import {
-  COMPANY_MODULE_SPACING_LIMITS_MM,
   isValidModuleSpacingMm,
   resolveCompanyThermalFieldLimits,
 } from "@/lib/planning/companyPlannerDefaults";
@@ -46,6 +45,8 @@ import {
 import ZonePropertiesControl from "../zones/ZonePropertiesControl";
 import DirectLayoutControl from "../modules/panels/DirectLayoutControl";
 import { endManualPlacement } from "../modules/manualPlacementSession";
+import { history as plannerHistory } from "../state/history";
+import { buildStandardExistingLayoutReflow } from "../modules/panels/existingLayoutReflow";
 
 type Pt = { x: number; y: number };
 
@@ -73,7 +74,9 @@ export default function ModulesPanel() {
   // --- Moduli / pannelli ---
   const panels = usePlannerV2Store((s) => s.panels);
   const modules = usePlannerV2Store((s) => s.modules);
-  const setModules = usePlannerV2Store((s) => s.setModules);
+  const commitRoofLayout = usePlannerV2Store((s) => s.commitRoofLayout);
+  const zones = usePlannerV2Store((s) => s.zones);
+  const snowGuards = usePlannerV2Store((s) => s.snowGuards);
   const companyPlannerDefaults = usePlannerV2Store(
     (s) => s.companyPlannerDefaults,
   );
@@ -103,6 +106,8 @@ export default function ModulesPanel() {
     "pitched" | "flat" | null
   >(null);
   const [moduleTiltText, setModuleTiltText] = React.useState("");
+  const [spacingXText, setSpacingXText] = React.useState("");
+  const [spacingYText, setSpacingYText] = React.useState("");
 
   const selectedRoof = React.useMemo(
     () => layers.find((roof) => roof.id === selectedId),
@@ -217,37 +222,71 @@ export default function ModulesPanel() {
         : String(Number(displayedTilt.effectiveTiltDeg.toFixed(2))),
     );
   }, [displayedTilt.effectiveTiltDeg, displayedTilt.mode, selectedRoof?.id]);
-  const patchDisplayedModules = React.useCallback(
-    (patch: Partial<typeof modules>) => {
-      if (selectedRoof) {
-        setRoofPlanningDraft(selectedRoof.id, {
-          ...(standardDraft ?? createStandardPlanningDraft({
-            panelSpecId: displayedPanelId,
-            modules,
-            moduleTilt: displayedTiltInput,
-            thermalFieldLimits: displayedThermalLimits.kind === "pitched-grid" ? displayedThermalLimits : undefined,
-          })),
-          modules: { ...displayedModules, ...patch },
-        });
-        return;
-      }
-      setModules(patch);
-    },
-    [displayedModules, displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selectedRoof, setModules, setRoofPlanningDraft, standardDraft],
-  );
+  React.useEffect(() => {
+    setSpacingXText(String(Math.round(displayedSpacingXM * 10000) / 10));
+    setSpacingYText(String(Math.round(displayedSpacingYM * 10000) / 10));
+  }, [displayedSpacingXM, displayedSpacingYM, selectedRoof?.id]);
+  const commitStandardGeometry = React.useCallback((input: {
+    nextModules?: typeof modules;
+    moduleTilt?: StandardModuleTiltInput;
+  }) => {
+    if (!selectedRoof || !(snapshot.mppImage && snapshot.mppImage > 0)) return false;
+    const nextModules = input.nextModules ?? modules;
+    const persisted = resolveSurfacePlanning(selectedRoof.surfacePlanning);
+    const moduleTilt: StandardModuleTiltInput = input.moduleTilt ?? ((
+      persisted.status === "supported-standard"
+        ? persisted.config.moduleTilt
+        : displayedTiltInput
+    ) ?? { mode: "inherit-roof" });
+    const candidate = buildStandardExistingLayoutReflow({
+      roof: selectedRoof,
+      currentPanels: panels,
+      previousModules: modules,
+      nextModules,
+      moduleTilt,
+      thermalFieldLimits: displayedThermalLimits,
+      mppImage: snapshot.mppImage,
+      zones,
+      snowGuards,
+    });
+    if (!candidate) {
+      toast.error("Wert nicht übernommen: Die bestehende Belegung wäre ungültig.");
+      return false;
+    }
+    plannerHistory.push("Abstände ändern");
+    commitRoofLayout({
+      roofId: selectedRoof.id,
+      panels: candidate.panels,
+      surfacePlanning: candidate.surfacePlanning,
+      modules: candidate.modules,
+    });
+    return true;
+  }, [commitRoofLayout, displayedThermalLimits, displayedTiltInput, modules, panels, selectedRoof, snapshot.mppImage, snowGuards, zones]);
+
+  const commitStandardSpacing = React.useCallback((axis: "x" | "y") => {
+    const text = axis === "x" ? spacingXText : spacingYText;
+    const mm = Number(text.replace(",", "."));
+    if (!isValidModuleSpacingMm(mm)) {
+      if (axis === "x") setSpacingXText(String(Math.round(displayedSpacingXM * 10000) / 10));
+      else setSpacingYText(String(Math.round(displayedSpacingYM * 10000) / 10));
+      return false;
+    }
+    const metres = mm / 1000;
+    const applied = commitStandardGeometry({
+      nextModules: axis === "x"
+        ? { ...modules, spacingM: metres, spacingXM: metres }
+        : { ...modules, spacingYM: metres },
+    });
+    if (!applied) {
+      if (axis === "x") setSpacingXText(String(Math.round(displayedSpacingXM * 10000) / 10));
+      else setSpacingYText(String(Math.round(displayedSpacingYM * 10000) / 10));
+    }
+    return applied;
+  }, [commitStandardGeometry, displayedSpacingXM, displayedSpacingYM, modules, spacingXText, spacingYText]);
 
   const patchStandardTilt = React.useCallback((moduleTilt: StandardModuleTiltInput) => {
-    if (!selectedRoof) return;
-    setRoofPlanningDraft(selectedRoof.id, {
-      ...(standardDraft ?? createStandardPlanningDraft({
-        panelSpecId: displayedPanelId,
-        modules,
-        moduleTilt: displayedTiltInput,
-        thermalFieldLimits: displayedThermalLimits.kind === "pitched-grid" ? displayedThermalLimits : undefined,
-      })),
-      moduleTilt,
-    });
-  }, [displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selectedRoof, setRoofPlanningDraft, standardDraft]);
+    commitStandardGeometry({ moduleTilt });
+  }, [commitStandardGeometry]);
 
   const commitModuleTiltText = React.useCallback(() => {
     const value = Number(moduleTiltText);
@@ -974,13 +1013,13 @@ export default function ModulesPanel() {
               <button
                 type="button"
                 onClick={() =>
-                  patchDisplayedModules({
-                    spacingM:
-                      companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
-                    spacingXM:
-                      companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
-                    spacingYM:
-                      companyPlannerDefaults.moduleSpacing.verticalMm / 1000,
+                  commitStandardGeometry({
+                    nextModules: {
+                      ...modules,
+                      spacingM: companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
+                      spacingXM: companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
+                      spacingYM: companyPlannerDefaults.moduleSpacing.verticalMm / 1000,
+                    },
                   })
                 }
                 className="text-[9px] text-primary hover:underline"
@@ -994,20 +1033,21 @@ export default function ModulesPanel() {
               Horizontal
               <span className="flex items-center gap-1">
                 <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max={COMPANY_MODULE_SPACING_LIMITS_MM.max}
-                  value={displayedSpacingXM * 1000}
-                  onChange={(event) => {
-                    const mm = Number(event.target.value);
-                    if (!isValidModuleSpacingMm(mm)) return;
-                    patchDisplayedModules({
-                      spacingM: mm / 1000,
-                      spacingXM: mm / 1000,
-                    });
+                  type="text"
+                  inputMode="decimal"
+                  value={spacingXText}
+                  onChange={(event) => setSpacingXText(event.target.value)}
+                  onBlur={() => commitStandardSpacing("x")}
+                  onKeyDown={(event) => {
+                    stopHotkeysCapture(event);
+                    if (event.key === "Enter") event.currentTarget.blur();
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setSpacingXText(String(Math.round(displayedSpacingXM * 10000) / 10));
+                      event.currentTarget.blur();
+                    }
                   }}
-                  className={inputBase}
+                  className={`${inputBase} appearance-none [MozAppearance:textfield]`}
                   aria-label="Modulabstand horizontal (mm)"
                 />
                 <span>mm</span>
@@ -1017,17 +1057,21 @@ export default function ModulesPanel() {
               Vertikal
               <span className="flex items-center gap-1">
                 <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max={COMPANY_MODULE_SPACING_LIMITS_MM.max}
-                  value={displayedSpacingYM * 1000}
-                  onChange={(event) => {
-                    const mm = Number(event.target.value);
-                    if (!isValidModuleSpacingMm(mm)) return;
-                    patchDisplayedModules({ spacingYM: mm / 1000 });
+                  type="text"
+                  inputMode="decimal"
+                  value={spacingYText}
+                  onChange={(event) => setSpacingYText(event.target.value)}
+                  onBlur={() => commitStandardSpacing("y")}
+                  onKeyDown={(event) => {
+                    stopHotkeysCapture(event);
+                    if (event.key === "Enter") event.currentTarget.blur();
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setSpacingYText(String(Math.round(displayedSpacingYM * 10000) / 10));
+                      event.currentTarget.blur();
+                    }
                   }}
-                  className={inputBase}
+                  className={`${inputBase} appearance-none [MozAppearance:textfield]`}
                   aria-label="Modulabstand vertikal (mm)"
                 />
                 <span>mm</span>

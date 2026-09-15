@@ -69,9 +69,9 @@ export type AdvancedMountingOrientation = "south" | "east-west";
 export type RoofModuleMode = "portrait" | "landscape" | "south" | "east-west";
 
 export const DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG = { min: 8.5, max: 90 } as const;
+export const DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M = { min: 0, max: 20 } as const;
 export const DEFAULT_FLAT_MODULE_GAP_M = 0.018;
 export const DEFAULT_FLAT_EAST_WEST_CENTER_GAP_M = 0.078;
-const MAX_DEFAULT_FLAT_SPACING_M = 20;
 
 export type StandardPlanningDraft = {
   targetMode: "standard";
@@ -486,10 +486,36 @@ function currentSystemRowSpaceM(config: AdvancedSurfacePlanningV1): number {
     : projectedDepthM * 2 + system.interModuleGapM + system.blockGapY;
 }
 
+/**
+ * The maintenance corridor is the clear Y distance between two consecutive
+ * placement units. It is intentionally derived from the canonical block
+ * footprint and pitch so row pitch and corridor can never contradict each
+ * other in persisted data.
+ */
+export function getAdvancedServiceCorridorM(config: AdvancedSurfacePlanningV1): number {
+  const system = config.advanced.system;
+  if (system.systemId === GENERIC_SOUTH_SYSTEM_ID || system.systemId === GENERIC_EAST_WEST_SYSTEM_ID) {
+    return system.blockGapY;
+  }
+  const adapter = system.systemId === K2_D_DOME_SYSTEM_ID
+    ? createK2DDomeBlock({
+        module: config.advanced.module,
+        rowSpaceM: system.rowSpaceM,
+        primaryFaceAzimuthDeg: system.primaryFaceAzimuthDeg,
+      })
+    : createK2SDomeBlock({
+        module: config.advanced.module,
+        rowSpaceM: system.rowSpaceM,
+        faceAzimuthDeg: system.faceAzimuthDeg,
+      });
+  return adapter.valid ? adapter.derivedDimensions.serviceCorridorM : 0;
+}
+
 export function updateDefaultFlatSystem(input: {
   config: AdvancedSurfacePlanningV1;
   orientation?: AdvancedMountingOrientation;
   rowSpaceM?: number;
+  serviceCorridorM?: number;
   nominalTiltDeg?: number;
   moduleGapM?: number;
   azimuthDeg?: number;
@@ -515,14 +541,18 @@ export function updateDefaultFlatSystem(input: {
   const moduleGapM = clamp(
     input.moduleGapM ?? currentModuleGapM,
     0,
-    MAX_DEFAULT_FLAT_SPACING_M,
-  );
-  const desiredRowSpaceM = clamp(
-    input.rowSpaceM ?? currentSystemRowSpaceM(config),
-    0,
-    MAX_DEFAULT_FLAT_SPACING_M,
+    DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max,
   );
   const projectedDepthM = moduleProjectedDepthM(config, nominalTiltDeg);
+  const blockDepthM = orientation === "south"
+    ? projectedDepthM
+    : projectedDepthM * 2 + DEFAULT_FLAT_EAST_WEST_CENTER_GAP_M;
+  const currentServiceCorridorM = getAdvancedServiceCorridorM(config);
+  const desiredRowSpaceM = clamp(
+    input.rowSpaceM ?? blockDepthM + (input.serviceCorridorM ?? currentServiceCorridorM),
+    0,
+    DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max,
+  );
   const currentAzimuth =
     "faceAzimuthDeg" in current
       ? current.faceAzimuthDeg
@@ -540,7 +570,7 @@ export function updateDefaultFlatSystem(input: {
         moduleGapX: moduleGapM,
         moduleGapY: 0,
         blockGapX: 0,
-        blockGapY: Math.max(0, desiredRowSpaceM - projectedDepthM),
+        blockGapY: Math.max(0, desiredRowSpaceM - blockDepthM),
       } as const
     : {
         systemId: GENERIC_EAST_WEST_SYSTEM_ID,
@@ -552,7 +582,7 @@ export function updateDefaultFlatSystem(input: {
         blockGapX: 0,
         blockGapY: Math.max(
           0,
-          desiredRowSpaceM - projectedDepthM * 2 - DEFAULT_FLAT_EAST_WEST_CENTER_GAP_M,
+          desiredRowSpaceM - blockDepthM,
         ),
       } as const;
   return {
@@ -1209,7 +1239,7 @@ export function computeAdvancedPlanningPreview(input: {
               (value) =>
                 !Number.isFinite(value) ||
                 value < 0 ||
-                value > MAX_DEFAULT_FLAT_SPACING_M,
+                value > DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max,
             )
               ? [{
                   code: "invalid-generic-spacing" as const,
