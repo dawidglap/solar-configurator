@@ -51,7 +51,7 @@ test("guided result card turns an incomplete fixed matrix into one clear error",
   assert.equal(result.powerKWp, null);
 });
 
-test("guided sidebar exposes primary choices and keeps fine tuning collapsed by default", () => {
+test("guided sidebar exposes primary choices and keeps fine tuning always visible", () => {
   const modulesPanel = readFileSync(
     new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),
     "utf8",
@@ -85,7 +85,9 @@ test("guided sidebar exposes primary choices and keeps fine tuning collapsed by 
   assert.ok(presentation.includes("Anordnung passt nicht vollständig"));
   assert.ok(advancedPanel.includes("Module werden erst mit U, F oder Einzelplatzierung erzeugt."));
   assert.equal(advancedPanel.includes("Layout anwenden"), false);
-  assert.ok(advancedPanel.includes("React.useState(false)"));
+  assert.equal(advancedPanel.includes("fineTuningOpen"), false);
+  assert.equal(advancedPanel.includes(">Manuell</button>"), false);
+  assert.equal(advancedPanel.includes("aria-expanded"), false);
   assert.equal(advancedPanel.includes("Primäre Ausrichtung"), false);
 });
 

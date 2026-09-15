@@ -105,11 +105,6 @@ export default function AdvancedModulesPanel({
     (state) => state.companyPlannerDefaults,
   );
   const clearDraft = usePlannerV2Store((state) => state.clearRoofPlanningDraft);
-  const [fineTuningOpen, setFineTuningOpen] = React.useState(false);
-
-  React.useEffect(() => {
-    setFineTuningOpen(false);
-  }, [roof.id]);
 
   const update = React.useCallback(
     (next: AdvancedSurfacePlanningV1) => {
@@ -207,10 +202,6 @@ export default function AdvancedModulesPanel({
       ...(field === "nominalTiltDeg" ? { nominalTiltDeg: value } : {}),
       ...(field === "moduleGapM" ? { moduleGapM: value } : {}),
     }));
-  };
-
-  const openManualOrientation = () => {
-    setFineTuningOpen(true);
   };
 
   if (config.surface.kind !== "flat" || !isSupportedSystem) {
@@ -348,25 +339,20 @@ export default function AdvancedModulesPanel({
       </section>
 
       <section className="space-y-3 border-b border-border/60 pb-4">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className={labelClass}>Ausrichtung</h3>
-          <button type="button" className="text-[10px] font-medium text-primary hover:underline" onClick={openManualOrientation}>Manuell</button>
-        </div>
+        <h3 className={labelClass}>Ausrichtung</h3>
         <div className="flex items-center justify-between rounded-lg bg-muted/15 px-3 py-2 text-[10px]">
           <span className="text-muted-foreground">Modulausrichtung</span>
           <strong>{isOpposingSystem ? `${fmt(azimuth, 0)}° / ${fmt(normalizeAzimuth(azimuth + 180), 0)}°` : `${fmt(azimuth, 0)}°`}</strong>
         </div>
         <div className="rounded-xl border border-border/60 text-[10px]">
-          <button type="button" className="flex w-full items-center justify-between px-3 py-2.5 text-left font-medium text-muted-foreground" onClick={() => setFineTuningOpen((open) => !open)} aria-expanded={fineTuningOpen}>
-            <span>Feinjustierung</span><span aria-hidden="true">{fineTuningOpen ? "▴" : "▾"}</span>
-          </button>
-          {fineTuningOpen && <div className="space-y-3 border-t border-border/60 p-3">
+          <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">Feinjustierung</div>
+          <div className="space-y-3 border-t border-border/60 p-3">
             <DirectLayoutControl roofId={roof.id} />
             <div className="border-t border-border/60 pt-2 text-muted-foreground"><p>System: Standardsystem</p></div>
             {preview.warnings.some((warning) => warning.code.includes("block-size")) && (
               <p className="text-amber-700 dark:text-amber-300">Die K2 Blockgrösse überschreitet die dokumentierte Systemgrenze.</p>
             )}
-          </div>}
+          </div>
         </div>
       </section>
 

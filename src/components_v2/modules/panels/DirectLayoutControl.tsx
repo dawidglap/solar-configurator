@@ -1,8 +1,10 @@
 "use client";
 
 import React from "react";
+import { nanoid } from "nanoid";
+import toast from "react-hot-toast";
 
-import { K2_D_DOME_SYSTEM_ID } from "@/lib/planning-core/advanced";
+import { K2_D_DOME_SYSTEM_ID, resolveSurfacePlanning } from "@/lib/planning-core/advanced";
 import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import type { PanelInstance } from "@/types/planner";
 import { getCurrentCanvasRotationDeg } from "../../canvas/canvasRotationState";
@@ -11,7 +13,9 @@ import { usePlannerV2Store } from "../../state/plannerV2Store";
 import { validateExistingPanelPlacement } from "../manualPlacement";
 import {
   type DirectLayoutDirection,
+  normalizeDegrees,
   resolveDirectLayoutPivot,
+  resolveDirectLayoutTargetMode,
   resolveDirectLayoutTargets,
   rotateDirectPanels,
   screenNudgeToImageDelta,
@@ -21,19 +25,26 @@ import {
   clearTransientPanelGeometry,
   setTransientPanelGeometry,
 } from "./transientPanelGeometry";
+import {
+  buildWholeLayoutReflow,
+  resolveAdvancedWorkingOrientationDeg,
+} from "./wholeLayoutReflow";
 
 const HOLD_DELAY_MS = 300;
 const HOLD_REPEAT_MS = 80;
 
 type GestureAction =
   | { kind: "move"; direction: DirectLayoutDirection; fast: boolean }
-  | { kind: "rotate"; deltaSign: -1 | 1; fast: boolean };
+  | { kind: "rotate"; deltaSign: -1 | 1; degrees: 1 | 90 };
 
 type Gesture = {
   action: GestureAction;
   initial: PanelInstance[];
   current: PanelInstance[];
   pivot?: { x: number; y: number };
+  targetMode: "whole-layout" | "partial-selection";
+  initialVisualAngle?: number;
+  accumulatedRotationDeg: number;
   changed: boolean;
   delayTimer?: ReturnType<typeof setTimeout>;
   repeatTimer?: ReturnType<typeof setInterval>;
@@ -61,6 +72,7 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
   const selectedPanelIds = usePlannerV2Store((state) => state.selectedPanelIds);
   const hasDraft = usePlannerV2Store((state) => Boolean(state.roofPlanningDrafts[roofId]));
   const updatePanelsBulk = usePlannerV2Store((state) => state.updatePanelsBulk);
+  const commitRoofLayout = usePlannerV2Store((state) => state.commitRoofLayout);
   const controllerRef = React.useRef<HTMLDivElement>(null);
   const gestureRef = React.useRef<Gesture | null>(null);
   const mountedRef = React.useRef(true);
@@ -72,11 +84,17 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
     selectedPanelIds,
     roofId,
   }), [panels, roofId, selectedPanelIds]);
+  const targetMode = React.useMemo(() => resolveDirectLayoutTargetMode({
+    panels,
+    selectedPanelIds,
+    roofId,
+  }), [panels, roofId, selectedPanelIds]);
   const targetIdsKey = targets.map((panel) => panel.id).sort().join("|");
-  const firstTargetAngle = targets[0]?.angleDeg;
-  const hasSelectionOnRoof = selectedPanelIds.some((id) =>
-    panels.some((panel) => panel.id === id && panel.roofId === roofId),
-  );
+  const roof = usePlannerV2Store((state) => state.layers.find((candidate) => candidate.id === roofId));
+  const resolvedPlanning = resolveSurfacePlanning(roof?.surfacePlanning);
+  const firstTargetAngle = targetMode === "whole-layout" && resolvedPlanning.status === "supported-advanced"
+    ? resolveAdvancedWorkingOrientationDeg(resolvedPlanning.config)
+    : targets[0]?.angleDeg;
   const dDomeBlockCount = React.useMemo(() => {
     if (!targets.length || targets.some((panel) => panel.advanced?.systemId !== K2_D_DOME_SYSTEM_ID)) return undefined;
     return new Set(targets.map((panel) => panel.advanced?.blockKey).filter(Boolean)).size;
@@ -86,7 +104,7 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
     setVisualAngle(firstTargetAngle);
   }, [firstTargetAngle, targetIdsKey]);
 
-  const targetLabel = !hasSelectionOnRoof
+  const targetLabel = targetMode === "whole-layout"
     ? "Gesamtes Layout"
     : dDomeBlockCount !== undefined
       ? `${dDomeBlockCount} ${dDomeBlockCount === 1 ? "Block" : "Blöcke"} · ${targets.length} Module ausgewählt`
@@ -103,7 +121,43 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
     gestureRef.current = null;
     clearTimers(gesture);
     const ids = gesture.initial.map((panel) => panel.id);
-    if (commit && gesture.changed) {
+    if (commit && gesture.changed && gesture.targetMode === "whole-layout" && gesture.action.kind === "rotate") {
+      const state = usePlannerV2Store.getState();
+      const currentRoof = state.layers.find((candidate) => candidate.id === roofId);
+      if (!currentRoof || !(state.snapshot.mppImage && state.snapshot.mppImage > 0)) {
+        clearTransientPanelGeometry(ids);
+        return false;
+      }
+      const runId = `fine-${nanoid()}`;
+      const candidate = buildWholeLayoutReflow({
+        roof: currentRoof,
+        currentPanels: state.panels,
+        catalogPanels: state.catalogPanels,
+        selectedPanelId: state.selectedPanelId,
+        modules: state.modules,
+        companyPlannerDefaults: state.companyPlannerDefaults,
+        mppImage: state.snapshot.mppImage,
+        zones: state.zones,
+        snowGuards: state.snowGuards,
+        deltaDeg: gesture.accumulatedRotationDeg,
+        layoutRunId: runId,
+        createPanelId: (index) => `${roofId}_${runId}_${index}`,
+      });
+      clearTransientPanelGeometry(ids);
+      if (!candidate) {
+        setVisualAngle(gesture.initialVisualAngle);
+        toast.error("Bei dieser Ausrichtung ist keine gültige Belegung möglich.");
+        return false;
+      }
+      plannerHistory.push("Layout intelligent drehen");
+      commitRoofLayout({
+        roofId,
+        panels: candidate.panels,
+        surfacePlanning: candidate.surfacePlanning,
+        modules: candidate.modules,
+      });
+      setVisualAngle(candidate.workingOrientationDeg);
+    } else if (commit && gesture.changed) {
       plannerHistory.push(gesture.action.kind === "move" ? "move panels precisely" : "rotate panels precisely");
       updatePanelsBulk(Object.fromEntries(gesture.current.map((panel) => [panel.id, {
         cx: panel.cx,
@@ -118,7 +172,7 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
       setVisualAngle(gesture.initial[0]?.angleDeg);
     }
     return true;
-  }, [clearTimers, updatePanelsBulk]);
+  }, [clearTimers, commitRoofLayout, roofId, updatePanelsBulk]);
 
   const candidatesAreValid = React.useCallback((candidates: readonly PanelInstance[], initial: readonly PanelInstance[]) => {
     const state = usePlannerV2Store.getState();
@@ -145,6 +199,13 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
     const gesture = gestureRef.current;
     if (!gesture) return;
     const state = usePlannerV2Store.getState();
+    if (gesture.targetMode === "whole-layout" && gesture.action.kind === "rotate") {
+      const delta = gesture.action.deltaSign * gesture.action.degrees;
+      gesture.accumulatedRotationDeg += delta;
+      gesture.changed = gesture.accumulatedRotationDeg !== 0;
+      setVisualAngle(normalizeDegrees((gesture.initialVisualAngle ?? 0) + gesture.accumulatedRotationDeg));
+      return;
+    }
     const next = gesture.action.kind === "move"
       ? translateDirectPanels(gesture.current, screenNudgeToImageDelta({
           direction: gesture.action.direction,
@@ -155,7 +216,7 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
       : rotateDirectPanels(
           gesture.current,
           gesture.pivot ?? resolveDirectLayoutPivot(gesture.initial) ?? { x: 0, y: 0 },
-          gesture.action.deltaSign * (gesture.action.fast ? 5 : 1),
+          gesture.action.deltaSign * gesture.action.degrees,
         );
     if (!candidatesAreValid(next, gesture.initial)) {
       setInvalidPulse(true);
@@ -177,11 +238,24 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
       roofId,
     }).map((panel) => ({ ...panel, ...(panel.advanced ? { advanced: { ...panel.advanced } } : {}) }));
     if (!initial.length || hasDraft) return;
+    const currentTargetMode = resolveDirectLayoutTargetMode({
+      panels: state.panels,
+      selectedPanelIds: state.selectedPanelIds,
+      roofId,
+    });
+    const currentRoof = state.layers.find((candidate) => candidate.id === roofId);
+    const currentPlanning = resolveSurfacePlanning(currentRoof?.surfacePlanning);
+    const initialVisualAngle = currentTargetMode === "whole-layout" && currentPlanning.status === "supported-advanced"
+      ? resolveAdvancedWorkingOrientationDeg(currentPlanning.config)
+      : initial[0]?.angleDeg;
     const gesture: Gesture = {
       action,
       initial,
       current: initial,
       pivot: action.kind === "rotate" ? resolveDirectLayoutPivot(initial) : undefined,
+      targetMode: currentTargetMode,
+      initialVisualAngle,
+      accumulatedRotationDeg: 0,
       changed: false,
     };
     gestureRef.current = gesture;
@@ -251,7 +325,7 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
 
   const activateFromKeyboardClick = (event: React.MouseEvent, action: GestureAction) => {
     if (event.detail !== 0) return;
-    beginGesture({ ...action, fast: event.shiftKey });
+    beginGesture(action.kind === "move" ? { ...action, fast: event.shiftKey } : action);
     finishGesture(true);
   };
 
@@ -291,9 +365,14 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Ein Grad gegen den Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: -1, fast: event.shiftKey })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: -1, fast: false })}><span className="text-lg">↶</span> 1°</button>
-        <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Ein Grad im Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: 1, fast: event.shiftKey })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: 1, fast: false })}>1° <span className="text-lg">↷</span></button>
+        <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Ein Grad gegen den Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: -1, degrees: 1 })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: -1, degrees: 1 })}><span className="text-lg">↶</span> 1°</button>
+        <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Ein Grad im Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: 1, degrees: 1 })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: 1, degrees: 1 })}>1° <span className="text-lg">↷</span></button>
+        <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Neunzig Grad gegen den Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: -1, degrees: 90 })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: -1, degrees: 90 })}><span className="text-lg">↶</span> 90°</button>
+        <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Neunzig Grad im Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: 1, degrees: 90 })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: 1, degrees: 90 })}>90° <span className="text-lg">↷</span></button>
       </div>
+      {targetMode === "whole-layout" && targets.length > 0 && (
+        <p className="mt-2 text-[9px] text-muted-foreground">Gesamtes Layout wird bei Drehung neu berechnet.</p>
+      )}
 
       <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-2 text-[10px]">
         <span className="text-muted-foreground">Drehung</span>

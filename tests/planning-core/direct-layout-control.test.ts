@@ -7,6 +7,7 @@ import type { PanelInstance, RoofArea } from "../../src/types/planner";
 import { validateExistingPanelPlacement } from "../../src/components_v2/modules/manualPlacement";
 import {
   resolveDirectLayoutPivot,
+  resolveDirectLayoutTargetMode,
   resolveDirectLayoutTargets,
   rotateDirectPanels,
   screenNudgeToImageDelta,
@@ -76,6 +77,13 @@ test("a marquee subset remains the only target", () => {
     roofId: "roof-a",
   });
   assert.deepEqual(targets.map((item) => item.id), ["a", "c"]);
+});
+
+test("target resolver treats no selection and an exact all-panel selection as whole layout", () => {
+  const panels = [panel("a"), panel("b"), panel("other", "roof-b")];
+  assert.equal(resolveDirectLayoutTargetMode({ panels, selectedPanelIds: [], roofId: "roof-a" }), "whole-layout");
+  assert.equal(resolveDirectLayoutTargetMode({ panels, selectedPanelIds: ["b", "a"], roofId: "roof-a" }), "whole-layout");
+  assert.equal(resolveDirectLayoutTargetMode({ panels, selectedPanelIds: ["a"], roofId: "roof-a" }), "partial-selection");
 });
 
 test("whole-roof and marquee transforms leave every non-target panel untouched", () => {
@@ -207,6 +215,9 @@ test("translation is rigid and source lifecycle keeps holds transient until one 
   assert.match(source, /HOLD_DELAY_MS = 300/);
   assert.match(source, /HOLD_REPEAT_MS = 80/);
   assert.equal((source.match(/updatePanelsBulk\(/g) ?? []).length, 1);
+  assert.equal((source.match(/buildWholeLayoutReflow\(/g) ?? []).length, 1);
+  assert.match(source, /gesture\.accumulatedRotationDeg \+= delta/);
+  assert.match(source, /degrees: 90/);
 
   const hotkeys = readFileSync("src/components_v2/modules/panels/PanelHotkeys.tsx", "utf8");
   assert.doesNotMatch(hotkeys, /tryNudge|isArrowKey|nudgeFromScreenDelta/);
@@ -223,4 +234,17 @@ test("consumed native Arrow repeats are prevented before the internal repeat gua
   assert.ok(handler.includes("if (isInteractiveFormTarget(event.target)) return"));
   assert.ok(handler.indexOf("event.preventDefault()") < handler.indexOf("if (event.repeat) return"));
   assert.ok(handler.indexOf("if (!direction) return") < handler.indexOf("event.preventDefault()"));
+});
+
+test("whole-layout hold accumulates angle in applyStep and invokes the full solver only from finish", () => {
+  const source = readFileSync("src/components_v2/modules/panels/DirectLayoutControl.tsx", "utf8");
+  const finishStart = source.indexOf("const finishGesture");
+  const applyStart = source.indexOf("const applyStep", finishStart);
+  const beginStart = source.indexOf("const beginGesture", applyStart);
+  const finishSource = source.slice(finishStart, applyStart);
+  const applySource = source.slice(applyStart, beginStart);
+  assert.equal((finishSource.match(/buildWholeLayoutReflow\(/g) ?? []).length, 1);
+  assert.equal(applySource.includes("buildWholeLayoutReflow("), false);
+  assert.match(applySource, /gesture\.accumulatedRotationDeg \+= delta/);
+  assert.match(source, /setInterval\(applyStep, HOLD_REPEAT_MS\)/);
 });

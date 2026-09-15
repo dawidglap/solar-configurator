@@ -262,6 +262,7 @@ type PlannerV2State = {
     roofId: string;
     panels: PanelInstance[];
     surfacePlanning?: SurfacePlanningV1;
+    modules?: ModulesConfig;
   }) => void;
   confirmRoofKindChange: (input: {
     roofId: string;
@@ -623,7 +624,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           delete roofPlanningDrafts[roofId];
           return { roofPlanningDrafts };
         }),
-      commitRoofLayout: ({ roofId, panels, surfacePlanning }) =>
+      commitRoofLayout: ({ roofId, panels, surfacePlanning, modules }) =>
         set((state) => {
           const committed = applyRoofLayoutTransaction({
             roofs: state.layers,
@@ -641,6 +642,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
               committed.panels.some((panel) => panel.id === panelId),
             ),
             roofPlanningDrafts,
+            ...(modules ? { modules } : {}),
           };
         }),
       confirmRoofKindChange: ({ roofId, nextRoofKind }) => {

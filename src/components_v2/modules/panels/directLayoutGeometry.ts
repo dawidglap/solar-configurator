@@ -3,6 +3,7 @@ import type { PanelInstance } from "@/types/planner";
 import { resolvePanelSelectionIds } from "./panelSelection";
 
 export type DirectLayoutDirection = "up" | "down" | "left" | "right";
+export type DirectLayoutTargetMode = "whole-layout" | "partial-selection";
 export type DirectPanelGeometry = Pick<PanelInstance, "id" | "cx" | "cy" | "wPx" | "hPx" | "angleDeg" | "advanced">;
 
 export function normalizeDegrees(value: number): number {
@@ -35,6 +36,24 @@ export function resolveDirectLayoutTargets(input: {
   return requestedPanels.filter((panel) =>
     !panel.locked && !lockedBlocks.has(panel.advanced?.blockKey),
   );
+}
+
+export function resolveDirectLayoutTargetMode(input: {
+  panels: readonly PanelInstance[];
+  selectedPanelIds: readonly string[];
+  roofId: string;
+}): DirectLayoutTargetMode {
+  if (!input.selectedPanelIds.length) return "whole-layout";
+  const allEditable = resolveDirectLayoutTargets({
+    ...input,
+    selectedPanelIds: [],
+  });
+  const selectedEditable = resolveDirectLayoutTargets(input);
+  if (allEditable.length !== selectedEditable.length) return "partial-selection";
+  const selectedIds = new Set(selectedEditable.map((panel) => panel.id));
+  return allEditable.every((panel) => selectedIds.has(panel.id))
+    ? "whole-layout"
+    : "partial-selection";
 }
 
 export function screenNudgeToImageDelta(input: {

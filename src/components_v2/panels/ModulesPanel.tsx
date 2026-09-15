@@ -958,14 +958,14 @@ export default function ModulesPanel() {
 
           <section className="space-y-3 border-b border-border/60 pb-4">
             <h3 className={labelSm}>Ausrichtung</h3>
-            <details className="rounded-xl border border-border/60 text-[10px]">
-              <summary className="cursor-pointer px-3 py-2.5 font-medium text-muted-foreground">
+            <div className="rounded-xl border border-border/60 text-[10px]">
+              <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">
                 Feinjustierung
-              </summary>
+              </div>
               <div className="space-y-3 border-t border-border/60 p-3">
                 <DirectLayoutControl roofId={selectedRoof.id} />
               </div>
-            </details>
+            </div>
           </section>
 
           <section className="space-y-2">
