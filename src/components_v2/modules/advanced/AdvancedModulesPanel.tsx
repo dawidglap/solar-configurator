@@ -31,7 +31,6 @@ import {
   updateDefaultFlatSystem,
 } from "./advancedPlanningApplication";
 import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
-import { buildGuidedPlanningResult } from "./guidedPlanningPresentation";
 import DirectLayoutControl from "../panels/DirectLayoutControl";
 import { history as plannerHistory } from "../../state/history";
 import { buildAdvancedExistingLayoutReflow } from "../panels/existingLayoutReflow";
@@ -232,35 +231,6 @@ export default function AdvancedModulesPanel({
   const requestedBlocks = blocksPerRow * rowCount;
   const requestedModules = requestedBlocks * (isOpposingSystem ? 2 : 1);
   const selectedCatalogPanel = catalogPanels.find((panel) => panel.id === moduleId);
-  const previewQuantity = preview.quantity;
-  const committedRoofPanels = panels.filter((panel) => panel.roofId === roof.id);
-  const committedBlockKeys = new Set(
-    committedRoofPanels.flatMap((panel) => panel.advanced?.blockKey ? [panel.advanced.blockKey] : []),
-  );
-  const committedFieldKeys = new Set(
-    committedRoofPanels.flatMap((panel) => panel.advanced?.montageFieldKey ? [panel.advanced.montageFieldKey] : []),
-  );
-  const committedThermalFieldKeys = new Set(
-    committedRoofPanels.flatMap((panel) => panel.advanced?.thermalFieldKey ? [panel.advanced.thermalFieldKey] : []),
-  );
-  const manuallyAdjusted = committedRoofPanels.some((panel) =>
-    panel.advanced?.layoutRunId?.startsWith("manual-") ||
-    panel.advanced?.blockKey?.includes(":manual-"),
-  );
-  const useCommittedResult = (!isDraft || !previewEnabled) && committedRoofPanels.length > 0;
-  const result = buildGuidedPlanningResult({
-    valid: preview.valid,
-    quantityMode,
-    requestedBlockCount: useCommittedResult ? committedBlockKeys.size : previewQuantity?.requestedBlockCount ?? preview.blockCount,
-    validBlockCount: useCommittedResult ? committedBlockKeys.size : previewQuantity?.validBlockCount ?? preview.blockCount,
-    requestedModuleCount: useCommittedResult ? committedRoofPanels.length : previewQuantity?.requestedModuleCount ?? preview.moduleCount,
-    validModuleCount: useCommittedResult ? committedRoofPanels.length : previewQuantity?.validModuleCount ?? preview.moduleCount,
-    blocksPerRow,
-    rowCount,
-    powerW: config.advanced.module.powerW,
-    montageFieldCount: useCommittedResult ? committedFieldKeys.size : preview.montageFieldCount,
-    manuallyAdjusted: useCommittedResult && manuallyAdjusted,
-  });
 
   const commitSpacingValues = React.useCallback((values: Partial<{
     rowSpaceM: number;
@@ -377,7 +347,18 @@ export default function AdvancedModulesPanel({
   return (
     <div className="space-y-5">
       <section className="space-y-2 border-b border-border/60 pb-4">
-        <h3 className={labelClass}>Aufständerung</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className={labelClass}>Aufständerung</h3>
+          {isDraft && (
+            <button
+              type="button"
+              onClick={() => clearDraft(roof.id)}
+              className="text-[9px] text-primary hover:underline"
+            >
+              Auswahl zurücksetzen
+            </button>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Aufständerung">
           <button
             type="button"
@@ -539,41 +520,9 @@ export default function AdvancedModulesPanel({
         }}
       />
 
-      <section className={`rounded-xl border p-3 ${result.status === "valid" ? "border-primary/30 bg-primary/5" : "border-destructive/40 bg-destructive/5"}`} aria-live="polite">
-        <p className={`text-[12px] font-semibold ${result.status === "valid" ? "text-primary" : "text-destructive"}`}>
-          {result.status === "valid" ? "✓ " : ""}{result.title}
-        </p>
-        {result.validityLabel && <p className="mt-1 text-[10px] font-medium text-destructive">{result.validityLabel}</p>}
-        {result.guidance && <p className="mt-1 text-[10px] text-muted-foreground">{result.guidance}</p>}
-        {result.status === "valid" && (
-          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
-            <span className="text-muted-foreground">Module</span><strong className="text-right">{result.moduleCount}</strong>
-            <span className="text-muted-foreground">Blöcke</span><strong className="text-right">{result.blockCount}</strong>
-            {(result.montageFieldCount ?? 0) > 0 && <><span className="text-muted-foreground">Montagefelder</span><strong className="text-right">{result.montageFieldCount ?? 0}</strong></>}
-            {(useCommittedResult ? committedThermalFieldKeys.size : preview.thermalFieldCount) > 0 && <><span className="text-muted-foreground">Thermische Felder</span><strong className="text-right">{useCommittedResult ? committedThermalFieldKeys.size : preview.thermalFieldCount}</strong></>}
-            {result.powerKWp != null && <><span className="text-muted-foreground">Leistung</span><strong className="text-right">{fmt(result.powerKWp)} kWp</strong></>}
-            <span className="text-muted-foreground">System</span><span className="text-right">{isSouthSystem ? "Süd · Standardsystem" : "Ost-West · Standardsystem"}</span>
-            <span className="text-muted-foreground">Anordnung</span><span className="text-right">{result.arrangementLabel}</span>
-          </div>
-        )}
-      </section>
-
       <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">
         Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.
       </p>
-
-      {isDraft && (
-        <div className="space-y-2 border-t border-border/70 pt-3 text-[10px] text-muted-foreground">
-          <p>Konfiguration gewählt. Module werden erst mit U, F oder Einzelplatzierung erzeugt.</p>
-          <button
-            type="button"
-            onClick={() => clearDraft(roof.id)}
-            className="h-8 w-full rounded-lg border border-border text-[10px] text-foreground"
-          >
-            Auswahl zurücksetzen
-          </button>
-        </div>
-      )}
     </div>
   );
 }

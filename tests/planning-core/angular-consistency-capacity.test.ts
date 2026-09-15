@@ -9,6 +9,7 @@ import {
 } from "../../src/lib/planning-core/geometry-v2";
 import {
   resolveK2ParallelRoofEdgeAlignment,
+  type AdvancedSurfacePlanningV1,
 } from "../../src/lib/planning-core/advanced";
 import {
   alignAdvancedLayoutParallelToRoofEdge,
@@ -171,7 +172,7 @@ test("display rounds only at the boundary while fine rotations preserve decimals
   const initial = createInitialAdvancedPlanning({ panel: PANEL, standardModules: MODULES });
   const system = initial.advanced.system;
   assert.ok("primaryFaceAzimuthDeg" in system);
-  const decimal = {
+  const decimal: AdvancedSurfacePlanningV1 = {
     ...initial,
     advanced: {
       ...initial.advanced,
@@ -187,7 +188,7 @@ test("display rounds only at the boundary while fine rotations preserve decimals
     205.3,
   );
 
-  let repeated = decimal;
+  let repeated: AdvancedSurfacePlanningV1 = decimal;
   for (let index = 0; index < 100; index += 1) {
     repeated = rotateAdvancedWorkingOrientation(repeated, 1);
     repeated = rotateAdvancedWorkingOrientation(repeated, -1);

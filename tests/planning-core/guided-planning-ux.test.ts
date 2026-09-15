@@ -2,66 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildGuidedPlanningResult } from "../../src/components_v2/modules/advanced/guidedPlanningPresentation";
-
-test("guided result card presents a valid fixed D-Dome 5 x 3 without recalculating geometry", () => {
-  const result = buildGuidedPlanningResult({
-    valid: true,
-    quantityMode: "fixed",
-    requestedBlockCount: 15,
-    validBlockCount: 15,
-    requestedModuleCount: 30,
-    validModuleCount: 30,
-    blocksPerRow: 5,
-    rowCount: 3,
-    powerW: 440,
-    montageFieldCount: 1,
-  });
-
-  assert.deepEqual(result, {
-    status: "valid",
-    title: "Planung passt",
-    blockCount: 15,
-    moduleCount: 30,
-    powerKWp: 13.2,
-    arrangementLabel: "5 × 3",
-    validityLabel: null,
-    guidance: null,
-    montageFieldCount: 1,
-  });
-});
-
-test("guided result card turns an incomplete fixed matrix into one clear error", () => {
-  const result = buildGuidedPlanningResult({
-    valid: false,
-    quantityMode: "fixed",
-    requestedBlockCount: 15,
-    validBlockCount: 14,
-    requestedModuleCount: 30,
-    validModuleCount: 28,
-    blocksPerRow: 5,
-    rowCount: 3,
-    powerW: 440,
-  });
-
-  assert.equal(result.status, "invalid");
-  assert.equal(result.title, "Anordnung passt nicht vollständig");
-  assert.equal(result.validityLabel, "14 von 15 Blocks gültig");
-  assert.equal(result.guidance, "Passe Anzahl, Ausrichtung oder Abstände an.");
-  assert.equal(result.powerKWp, null);
-});
-
-test("guided sidebar exposes primary choices and keeps fine tuning always visible", () => {
+test("guided sidebar exposes primary choices without a dynamic bottom status area", () => {
   const modulesPanel = readFileSync(
     new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),
     "utf8",
   );
   const advancedPanel = readFileSync(
     new URL("../../src/components_v2/modules/advanced/AdvancedModulesPanel.tsx", import.meta.url),
-    "utf8",
-  );
-  const presentation = readFileSync(
-    new URL("../../src/components_v2/modules/advanced/guidedPlanningPresentation.ts", import.meta.url),
     "utf8",
   );
 
@@ -81,9 +28,12 @@ test("guided sidebar exposes primary choices and keeps fine tuning always visibl
   assert.match(advancedPanel, /className=\{`\$\{inputClass\} min-w-0 truncate`\}/);
   assert.equal(advancedPanel.includes("Parallel zur Dachkante"), false);
   assert.ok(advancedPanel.includes("Wähle Süd oder Ost-West"));
-  assert.ok(presentation.includes("Planung passt"));
-  assert.ok(presentation.includes("Anordnung passt nicht vollständig"));
-  assert.ok(advancedPanel.includes("Module werden erst mit U, F oder Einzelplatzierung erzeugt."));
+  assert.equal(advancedPanel.includes("Planung passt"), false);
+  assert.equal(advancedPanel.includes("Planung noch nicht möglich"), false);
+  assert.equal(advancedPanel.includes("Passe Anzahl, Ausrichtung oder Abstände an."), false);
+  assert.equal(advancedPanel.includes("Module werden erst mit U, F oder Einzelplatzierung erzeugt."), false);
+  assert.equal(modulesPanel.includes("Module werden erst mit U, F oder Einzelplatzierung erzeugt."), false);
+  assert.ok(advancedPanel.includes("Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft."));
   assert.equal(advancedPanel.includes("Layout anwenden"), false);
   assert.equal(advancedPanel.includes("fineTuningOpen"), false);
   assert.equal(advancedPanel.includes(">Manuell</button>"), false);

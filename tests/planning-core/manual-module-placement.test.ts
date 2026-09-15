@@ -21,7 +21,6 @@ import {
   snapStandardManualCenter,
 } from "../../src/components_v2/modules/manualPlacement";
 import type { ModulesConfig, PanelInstance, PanelSpec, RoofArea } from "../../src/types/planner";
-import { buildGuidedPlanningResult } from "../../src/components_v2/modules/advanced/guidedPlanningPresentation";
 import { resolvePanelSelectionIds } from "../../src/components_v2/modules/panels/panelSelection";
 import {
   beginManualPlacement,
@@ -472,24 +471,4 @@ test("Standard magnetic snap creates an exact compact 2x2 grid and is rotation i
     activationThresholdPx: 4,
     disableSnap: true,
   }), pointer);
-});
-
-test("a fixed committed layout reports truthful actual counts after manual addition", () => {
-  const result = buildGuidedPlanningResult({
-    valid: true,
-    quantityMode: "fixed",
-    blocksPerRow: 5,
-    rowCount: 3,
-    requestedBlockCount: 16,
-    validBlockCount: 16,
-    requestedModuleCount: 32,
-    validModuleCount: 32,
-    powerW: 440,
-    montageFieldCount: 2,
-    manuallyAdjusted: true,
-  });
-  assert.equal(result.blockCount, 16);
-  assert.equal(result.moduleCount, 32);
-  assert.equal(result.powerKWp, 14.08);
-  assert.equal(result.arrangementLabel, "5 × 3 · manuell angepasst");
 });

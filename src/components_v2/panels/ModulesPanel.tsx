@@ -91,9 +91,7 @@ export default function ModulesPanel() {
   const selectedPanelId = usePlannerV2Store((s) => s.selectedPanelId);
   const roofPlanningDrafts = usePlannerV2Store((s) => s.roofPlanningDrafts);
   const setRoofPlanningDraft = usePlannerV2Store((s) => s.setRoofPlanningDraft);
-  const clearRoofPlanningDraft = usePlannerV2Store(
-    (s) => s.clearRoofPlanningDraft,
-  );
+  const clearRoofPlanningDraft = usePlannerV2Store((s) => s.clearRoofPlanningDraft);
   const confirmRoofKindChange = usePlannerV2Store((s) => s.confirmRoofKindChange);
 
   // --- Edit inline tilt/az (spostato sotto per evitare TDZ) ---
@@ -961,7 +959,18 @@ export default function ModulesPanel() {
           </section>
 
           <section className="space-y-2">
-            <label className={labelSm}>Layout</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className={labelSm}>Layout</label>
+              {standardDraft && (
+                <button
+                  type="button"
+                  className="text-[9px] text-primary hover:underline"
+                  onClick={() => clearRoofPlanningDraft(selectedRoof.id)}
+                >
+                  Auswahl zurücksetzen
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/25 p-1">
               {(["portrait", "landscape"] as const).map((orientation) => (
                 <button
@@ -1109,18 +1118,6 @@ export default function ModulesPanel() {
             </div>
           </section>
 
-          {standardDraft && (
-            <section className="space-y-2 border-t border-border/70 pt-3 text-[10px] text-muted-foreground">
-              <p>Konfiguration gewählt. Module werden erst mit U, F oder Einzelplatzierung erzeugt.</p>
-              <button
-                type="button"
-                className="h-8 w-full rounded-lg border border-border text-[10px] text-foreground"
-                onClick={() => clearRoofPlanningDraft(selectedRoof.id)}
-              >
-                Auswahl zurücksetzen
-              </button>
-            </section>
-          )}
         </div>
       )}
 
