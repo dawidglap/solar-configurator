@@ -42,6 +42,7 @@ export default function SettingsPage() {
         horizontalMm: Number(horizontal),
         verticalMm: Number(vertical),
       },
+      flatRoofSpacing: query.data?.plannerDefaults.flatRoofSpacing,
       thermalSeparations: {
         gapMm: Number(thermalGap),
         pitched: {

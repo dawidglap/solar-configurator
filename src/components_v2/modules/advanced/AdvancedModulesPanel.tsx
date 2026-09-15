@@ -2,6 +2,7 @@
 
 import React from "react";
 import toast from "react-hot-toast";
+import { Settings2 } from "lucide-react";
 
 import {
   GENERIC_EAST_WEST_SYSTEM_ID,
@@ -13,7 +14,10 @@ import {
 } from "@/lib/planning-core/advanced";
 import type { RoofArea } from "@/types/planner";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
-import { isValidModuleSpacingMm } from "@/lib/planning/companyPlannerDefaults";
+import {
+  isValidModuleSpacingMm,
+  resolveCompanyFlatRoofSpacingDefaults,
+} from "@/lib/planning/companyPlannerDefaults";
 import {
   computeAdvancedPlanningPreview,
   type AdvancedPlanningPreview,
@@ -31,6 +35,7 @@ import { buildGuidedPlanningResult } from "./guidedPlanningPresentation";
 import DirectLayoutControl from "../panels/DirectLayoutControl";
 import { history as plannerHistory } from "../../state/history";
 import { buildAdvancedExistingLayoutReflow } from "../panels/existingLayoutReflow";
+import CompanySpacingDefaultsDialog from "./CompanySpacingDefaultsDialog";
 
 const inputClass =
   "glass-input h-8 w-full rounded-lg px-2 text-[11px] focus:ring-1 focus:ring-primary/40";
@@ -165,6 +170,7 @@ export default function AdvancedModulesPanel({
   const clearDraft = usePlannerV2Store((state) => state.clearRoofPlanningDraft);
   const commitRoofLayout = usePlannerV2Store((state) => state.commitRoofLayout);
   const [spacingError, setSpacingError] = React.useState<string | null>(null);
+  const [companyDefaultsOpen, setCompanyDefaultsOpen] = React.useState(false);
 
   const update = React.useCallback(
     (next: AdvancedSurfacePlanningV1) => {
@@ -194,6 +200,13 @@ export default function AdvancedModulesPanel({
       ? system.primaryFaceAzimuthDeg
       : 90;
   const rowSpaceM = getAdvancedRowSpaceM(config);
+  const companySpacingDefaults = React.useMemo(
+    () => resolveCompanyFlatRoofSpacingDefaults({
+      company: companyPlannerDefaults,
+      orientation,
+    }),
+    [companyPlannerDefaults, orientation],
+  );
   const effectiveConfig = React.useMemo(
     () => withEffectiveAdvancedThermalLimits(config, companyPlannerDefaults),
     [companyPlannerDefaults, config],
@@ -249,34 +262,37 @@ export default function AdvancedModulesPanel({
     manuallyAdjusted: useCommittedResult && manuallyAdjusted,
   });
 
-  const commitSpacingChange = React.useCallback((
-    field: "rowSpaceM" | "serviceCorridorM" | "moduleGapM" | "nominalTiltDeg",
-    value: number,
-  ) => {
-    const valueIsValid = field === "moduleGapM"
-      ? isValidModuleSpacingMm(value * 1000)
-      : field === "nominalTiltDeg"
-        ? value >= DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.min && value <= DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.max
-        : field === "serviceCorridorM"
-          ? value >= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.min && value <= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max
-          : value > DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.min && value <= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max;
-    if (!Number.isFinite(value) || !valueIsValid || !isSupportedSystem || !(mppImage && mppImage > 0)) {
+  const commitSpacingValues = React.useCallback((values: Partial<{
+    rowSpaceM: number;
+    serviceCorridorM: number;
+    moduleGapM: number;
+    nominalTiltDeg: number;
+  }>) => {
+    const valuesAreValid = Object.entries(values).every(([field, value]) => {
+      if (!Number.isFinite(value)) return false;
+      if (field === "moduleGapM") return isValidModuleSpacingMm(value * 1000);
+      if (field === "nominalTiltDeg") {
+        return value >= DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.min && value <= DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.max;
+      }
+      if (field === "serviceCorridorM") {
+        return value >= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.min && value <= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max;
+      }
+      return value > DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.min && value <= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max;
+    });
+    if (!valuesAreValid || !isSupportedSystem || !(mppImage && mppImage > 0)) {
       setSpacingError("Bitte einen gültigen Wert eingeben.");
       return false;
     }
     const next = updateDefaultFlatSystem({
       config,
       orientation,
-      ...(field === "rowSpaceM" ? { rowSpaceM: value } : {}),
-      ...(field === "serviceCorridorM" ? { serviceCorridorM: value } : {}),
-      ...(field === "nominalTiltDeg" ? { nominalTiltDeg: value } : {}),
-      ...(field === "moduleGapM" ? { moduleGapM: value } : {}),
+      ...values,
     });
     const resolved = resolveSurfacePlanning(roof.surfacePlanning);
     const previousConfig = resolved.status === "supported-advanced" ? resolved.config : config;
     if (
-      (field === "rowSpaceM" && Math.abs(getAdvancedRowSpaceM(next) - value) > 1e-6) ||
-      (field === "serviceCorridorM" && Math.abs(getAdvancedServiceCorridorM(next) - value) > 1e-6)
+      (values.rowSpaceM !== undefined && Math.abs(getAdvancedRowSpaceM(next) - values.rowSpaceM) > 1e-6) ||
+      (values.serviceCorridorM !== undefined && values.rowSpaceM === undefined && Math.abs(getAdvancedServiceCorridorM(next) - values.serviceCorridorM) > 1e-6)
     ) {
       setSpacingError("Dieser Abstand ist mit der aktuellen Modulgeometrie nicht möglich.");
       return false;
@@ -304,6 +320,30 @@ export default function AdvancedModulesPanel({
     });
     return true;
   }, [companyPlannerDefaults, config, commitRoofLayout, isSupportedSystem, mppImage, orientation, panels, roof, snowGuards, zones]);
+
+  const commitSpacingChange = React.useCallback((
+    field: "rowSpaceM" | "serviceCorridorM" | "moduleGapM" | "nominalTiltDeg",
+    value: number,
+  ) => commitSpacingValues({ [field]: value }), [commitSpacingValues]);
+
+  const currentSpacingValues = React.useMemo(() => ({
+    rowSpaceM,
+    serviceCorridorM: getAdvancedServiceCorridorM(config),
+    moduleGapMm: moduleGapM * 1000,
+    nominalTiltDeg,
+  }), [config, moduleGapM, nominalTiltDeg, rowSpaceM]);
+  const differsFromCompanyDefaults = (
+    Math.abs(currentSpacingValues.rowSpaceM - companySpacingDefaults.rowSpaceM) > 0.005 ||
+    Math.abs(currentSpacingValues.serviceCorridorM - companySpacingDefaults.serviceCorridorM) > 0.005 ||
+    Math.abs(currentSpacingValues.moduleGapMm - companySpacingDefaults.moduleGapMm) > 0.05 ||
+    Math.abs(currentSpacingValues.nominalTiltDeg - companySpacingDefaults.nominalTiltDeg) > 0.005
+  );
+  const resetCurrentRoofToCompanyDefaults = React.useCallback(() => commitSpacingValues({
+    rowSpaceM: companySpacingDefaults.rowSpaceM,
+    serviceCorridorM: companySpacingDefaults.serviceCorridorM,
+    moduleGapM: companySpacingDefaults.moduleGapMm / 1000,
+    nominalTiltDeg: companySpacingDefaults.nominalTiltDeg,
+  }), [commitSpacingValues, companySpacingDefaults]);
 
   if (config.surface.kind !== "flat" || !isSupportedSystem) {
     return (
@@ -459,24 +499,45 @@ export default function AdvancedModulesPanel({
 
       <section className="space-y-2 border-b border-border/60 pb-4">
         <div className="flex items-center justify-between gap-2">
-          <h3 className={labelClass}>Abstände</h3>
-          <span className="text-[9px] text-muted-foreground">Werte direkt anpassen</span>
+          <div className="flex items-center gap-1.5">
+            <h3 className={labelClass}>Abstände</h3>
+            {differsFromCompanyDefaults && (
+              <span className="text-[9px] text-muted-foreground">· Abweichend</span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setCompanyDefaultsOpen(true)}
+            className="flex items-center gap-1 text-[9px] font-medium text-primary hover:underline"
+          >
+            Firmenstandard
+            <Settings2 className="h-3 w-3" aria-hidden="true" />
+          </button>
         </div>
         <div className="grid grid-cols-[minmax(0,3fr)_minmax(92px,2fr)] items-center gap-x-3 gap-y-2 text-[10px] text-muted-foreground">
           <label htmlFor={`advanced-row-space-${roof.id}`}>Reihenabstand</label>
           <MetricCommitInput id={`advanced-row-space-${roof.id}`} ariaLabel="Reihenabstand" value={rowSpaceM} unit="m" onCommit={(value) => commitSpacingChange("rowSpaceM", value)} />
           <label htmlFor={`advanced-service-corridor-${roof.id}`}>Wartungsgang</label>
           <MetricCommitInput id={`advanced-service-corridor-${roof.id}`} ariaLabel="Wartungsgang" value={getAdvancedServiceCorridorM(config)} unit="m" onCommit={(value) => commitSpacingChange("serviceCorridorM", value)} />
-          <label htmlFor={`advanced-module-gap-${roof.id}`}>
-            Modulabstand
-            {!isK2System && <span className="ml-1 text-[9px] text-primary">Firmenstandard</span>}
-          </label>
+          <label htmlFor={`advanced-module-gap-${roof.id}`}>Modulabstand</label>
           <MetricCommitInput id={`advanced-module-gap-${roof.id}`} ariaLabel="Modulabstand" value={moduleGapM * 1000} unit="mm" onCommit={(value) => commitSpacingChange("moduleGapM", value / 1000)} />
           <label htmlFor={`advanced-module-tilt-${roof.id}`}>Modulneigung</label>
           <MetricCommitInput id={`advanced-module-tilt-${roof.id}`} ariaLabel="Modulneigung" value={nominalTiltDeg} unit="°" onCommit={(value) => commitSpacingChange("nominalTiltDeg", value)} />
         </div>
         {spacingError && <p className="text-[10px] leading-snug text-destructive" role="alert">{spacingError}</p>}
       </section>
+
+      <CompanySpacingDefaultsDialog
+        open={companyDefaultsOpen}
+        orientation={orientation}
+        defaults={companySpacingDefaults}
+        differsFromCurrentRoof={differsFromCompanyDefaults}
+        onClose={() => setCompanyDefaultsOpen(false)}
+        onResetCurrentRoof={resetCurrentRoofToCompanyDefaults}
+        onBeforeCompanyDefaultsUpdate={() => {
+          if (roof.surfacePlanning === undefined && !isDraft) update(config);
+        }}
+      />
 
       <section className={`rounded-xl border p-3 ${result.status === "valid" ? "border-primary/30 bg-primary/5" : "border-destructive/40 bg-destructive/5"}`} aria-live="polite">
         <p className={`text-[12px] font-semibold ${result.status === "valid" ? "text-primary" : "text-destructive"}`}>

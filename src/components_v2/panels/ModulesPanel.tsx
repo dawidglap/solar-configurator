@@ -30,6 +30,7 @@ import { modulesWithRoofEdgeMargin } from "@/lib/planning/roofProperties";
 import { resolveRoofGeometricOrientationDeg } from "@/lib/planning-core/geometry-v2";
 import {
   isValidModuleSpacingMm,
+  resolveCompanyFlatRoofSpacingDefaults,
   resolveCompanyThermalFieldLimits,
 } from "@/lib/planning/companyPlannerDefaults";
 import {
@@ -40,6 +41,7 @@ import {
   resolveRoofPlanningMode,
   resolveRoofModuleMode,
   setAdvancedMountingOrientation,
+  updateDefaultFlatSystem,
   alignAdvancedLayoutParallelToRoofEdge,
 } from "../modules/advanced/advancedPlanningApplication";
 import ZonePropertiesControl from "../zones/ZonePropertiesControl";
@@ -150,10 +152,22 @@ export default function ModulesPanel() {
       roofKind: "flat",
       mountingOrientation: "east-west",
     });
-    return createInitialAdvancedPlanning({
+    const initial = createInitialAdvancedPlanning({
       panel: selSpec,
       standardModules: modulesWithRoofEdgeMargin(selectedRoof, modules),
       thermalFieldLimits: limits.kind === "flat-block" ? limits : undefined,
+    });
+    const defaults = resolveCompanyFlatRoofSpacingDefaults({
+      company: companyPlannerDefaults,
+      orientation: "east-west",
+    });
+    return updateDefaultFlatSystem({
+      config: initial,
+      orientation: "east-west",
+      rowSpaceM: defaults.rowSpaceM,
+      serviceCorridorM: defaults.serviceCorridorM,
+      moduleGapM: defaults.moduleGapMm / 1000,
+      nominalTiltDeg: defaults.nominalTiltDeg,
     });
   }, [
     companyPlannerDefaults,
@@ -440,6 +454,20 @@ export default function ModulesPanel() {
       standardModules: modulesWithRoofEdgeMargin(selectedRoof, modules),
     });
     config = setAdvancedMountingOrientation({ config, orientation: mode });
+    if (!selectedAdvancedConfig) {
+      const defaults = resolveCompanyFlatRoofSpacingDefaults({
+        company: companyPlannerDefaults,
+        orientation: mode,
+      });
+      config = updateDefaultFlatSystem({
+        config,
+        orientation: mode,
+        rowSpaceM: defaults.rowSpaceM,
+        serviceCorridorM: defaults.serviceCorridorM,
+        moduleGapM: defaults.moduleGapMm / 1000,
+        nominalTiltDeg: defaults.nominalTiltDeg,
+      });
+    }
     if (snapshot.mppImage) {
       config = alignAdvancedLayoutParallelToRoofEdge({
         config,

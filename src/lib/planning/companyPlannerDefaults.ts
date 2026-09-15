@@ -11,6 +11,20 @@ export const BUILT_IN_COMPANY_PLANNER_DEFAULTS = {
     horizontalMm: 19,
     verticalMm: 19,
   },
+  flatRoofSpacing: {
+    south: {
+      rowSpaceM: 1.5,
+      serviceCorridorM: 0.38,
+      moduleGapMm: 18,
+      nominalTiltDeg: 10,
+    },
+    eastWest: {
+      rowSpaceM: 2.61,
+      serviceCorridorM: 0.3,
+      moduleGapMm: 18,
+      nominalTiltDeg: 10,
+    },
+  },
   thermalSeparations: {
     /** Clear edge-to-edge separation used at every thermal field break. */
     gapMm: 140,
@@ -40,6 +54,15 @@ export const COMPANY_THERMAL_FIELD_LIMITS_M = {
 } as const;
 
 export const COMPANY_THERMAL_GAP_LIMITS_MM = { min: 0, max: 5000 } as const;
+export const COMPANY_FLAT_SPACING_LIMITS_M = { min: 0, max: 20 } as const;
+export const COMPANY_FLAT_TILT_LIMITS_DEG = { min: 8.5, max: 90 } as const;
+
+export type CompanyFlatRoofSpacingDefaults = {
+  rowSpaceM: number;
+  serviceCorridorM: number;
+  moduleGapMm: number;
+  nominalTiltDeg: number;
+};
 
 export function isValidModuleSpacingMm(value: unknown): value is number {
   return (
@@ -56,6 +79,11 @@ export type CompanyPlannerDefaultsV1 = {
   moduleSpacing: {
     horizontalMm: number;
     verticalMm: number;
+  };
+  /** Defaults for newly initialized generic flat-roof systems. */
+  flatRoofSpacing: {
+    south: CompanyFlatRoofSpacingDefaults;
+    eastWest: CompanyFlatRoofSpacingDefaults;
   };
   thermalSeparations: {
     gapMm: number;
@@ -124,6 +152,42 @@ function readThermalLimit(
   return value;
 }
 
+function readFlatSpacingDefaults(
+  value: unknown,
+  path: string,
+  fallback: CompanyFlatRoofSpacingDefaults,
+  errors: string[],
+): CompanyFlatRoofSpacingDefaults {
+  if (value === undefined) return { ...fallback };
+  const input = value as Record<string, unknown> | null;
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    errors.push(`${path} must be an object.`);
+    return { ...fallback };
+  }
+  const rowSpaceM = finiteNumber(input.rowSpaceM);
+  const serviceCorridorM = finiteNumber(input.serviceCorridorM);
+  const moduleGapMm = finiteNumber(input.moduleGapMm);
+  const nominalTiltDeg = finiteNumber(input.nominalTiltDeg);
+  if (rowSpaceM === undefined || rowSpaceM <= COMPANY_FLAT_SPACING_LIMITS_M.min || rowSpaceM > COMPANY_FLAT_SPACING_LIMITS_M.max) {
+    errors.push(`${path}.rowSpaceM must be greater than ${COMPANY_FLAT_SPACING_LIMITS_M.min} and at most ${COMPANY_FLAT_SPACING_LIMITS_M.max} m.`);
+  }
+  if (serviceCorridorM === undefined || serviceCorridorM < COMPANY_FLAT_SPACING_LIMITS_M.min || serviceCorridorM > COMPANY_FLAT_SPACING_LIMITS_M.max) {
+    errors.push(`${path}.serviceCorridorM must be between ${COMPANY_FLAT_SPACING_LIMITS_M.min} and ${COMPANY_FLAT_SPACING_LIMITS_M.max} m.`);
+  }
+  if (!isValidModuleSpacingMm(moduleGapMm)) {
+    errors.push(`${path}.moduleGapMm must be between ${COMPANY_MODULE_SPACING_LIMITS_MM.min} and ${COMPANY_MODULE_SPACING_LIMITS_MM.max} mm.`);
+  }
+  if (nominalTiltDeg === undefined || nominalTiltDeg < COMPANY_FLAT_TILT_LIMITS_DEG.min || nominalTiltDeg > COMPANY_FLAT_TILT_LIMITS_DEG.max) {
+    errors.push(`${path}.nominalTiltDeg must be between ${COMPANY_FLAT_TILT_LIMITS_DEG.min} and ${COMPANY_FLAT_TILT_LIMITS_DEG.max} degrees.`);
+  }
+  return {
+    rowSpaceM: rowSpaceM ?? fallback.rowSpaceM,
+    serviceCorridorM: serviceCorridorM ?? fallback.serviceCorridorM,
+    moduleGapMm: moduleGapMm ?? fallback.moduleGapMm,
+    nominalTiltDeg: nominalTiltDeg ?? fallback.nominalTiltDeg,
+  };
+}
+
 export function validateCompanyPlannerDefaults(
   value: unknown,
 ): CompanyPlannerDefaultsValidation {
@@ -150,6 +214,26 @@ export function validateCompanyPlannerDefaults(
     "verticalMm",
     errors,
   );
+  const flatRoofSpacingInput = input.flatRoofSpacing as Record<string, unknown> | undefined;
+  const flatRoofSpacing = flatRoofSpacingInput === undefined
+    ? {
+        south: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.flatRoofSpacing.south },
+        eastWest: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.flatRoofSpacing.eastWest },
+      }
+    : {
+        south: readFlatSpacingDefaults(
+          flatRoofSpacingInput.south,
+          "flatRoofSpacing.south",
+          BUILT_IN_COMPANY_PLANNER_DEFAULTS.flatRoofSpacing.south,
+          errors,
+        ),
+        eastWest: readFlatSpacingDefaults(
+          flatRoofSpacingInput.eastWest,
+          "flatRoofSpacing.eastWest",
+          BUILT_IN_COMPANY_PLANNER_DEFAULTS.flatRoofSpacing.eastWest,
+          errors,
+        ),
+      };
   const thermalInput = input.thermalSeparations as Record<string, unknown> | undefined;
   const pitchedInput = thermalInput?.pitched as Record<string, unknown> | undefined;
   const flatInput = thermalInput?.flat as Record<string, unknown> | undefined;
@@ -192,6 +276,7 @@ export function validateCompanyPlannerDefaults(
     value: {
       schemaVersion: COMPANY_PLANNER_DEFAULTS_SCHEMA_VERSION,
       moduleSpacing: { horizontalMm, verticalMm },
+      flatRoofSpacing,
       thermalSeparations: thermalSeparations as CompanyPlannerDefaultsV1["thermalSeparations"],
     },
   };
@@ -211,6 +296,10 @@ export function resolveCompanyPlannerDefaults(
           verticalMm:
             BUILT_IN_COMPANY_PLANNER_DEFAULTS.moduleSpacing.verticalMm,
         },
+        flatRoofSpacing: {
+          south: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.flatRoofSpacing.south },
+          eastWest: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.flatRoofSpacing.eastWest },
+        },
         thermalSeparations: {
           gapMm: BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.gapMm,
           pitched: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.pitched },
@@ -218,6 +307,16 @@ export function resolveCompanyPlannerDefaults(
           flatEastWest: { ...BUILT_IN_COMPANY_PLANNER_DEFAULTS.thermalSeparations.flatEastWest },
         },
       };
+}
+
+export function resolveCompanyFlatRoofSpacingDefaults(input: {
+  company?: unknown;
+  orientation: "south" | "east-west";
+}): CompanyFlatRoofSpacingDefaults {
+  const defaults = resolveCompanyPlannerDefaults(input.company).flatRoofSpacing;
+  return input.orientation === "south"
+    ? { ...defaults.south }
+    : { ...defaults.eastWest };
 }
 
 export type EffectiveThermalFieldLimits =

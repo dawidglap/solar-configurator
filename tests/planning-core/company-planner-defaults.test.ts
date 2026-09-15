@@ -4,6 +4,7 @@ import {
   BUILT_IN_COMPANY_PLANNER_DEFAULTS,
   COMPANY_PLANNER_DEFAULTS_SCHEMA_VERSION,
   resolveCompanyPlannerDefaults,
+  resolveCompanyFlatRoofSpacingDefaults,
   resolveEffectiveModuleSpacingM,
   validateCompanyPlannerDefaults,
 } from "../../src/lib/planning/companyPlannerDefaults";
@@ -28,6 +29,54 @@ test("company planner defaults validate finite tenant values and use 19 mm fallb
   assert.equal(validateCompanyPlannerDefaults(company(19, 25)).valid, true);
   assert.equal(validateCompanyPlannerDefaults(company(-1, 25)).valid, false);
   assert.equal(validateCompanyPlannerDefaults(company(19, Number.NaN)).valid, false);
+});
+
+test("legacy company documents receive system-scoped flat-roof spacing fallbacks without migration", () => {
+  const resolved = resolveCompanyPlannerDefaults(company(21, 22));
+  assert.deepEqual(
+    resolved.flatRoofSpacing,
+    BUILT_IN_COMPANY_PLANNER_DEFAULTS.flatRoofSpacing,
+  );
+});
+
+test("flat-roof company spacing defaults resolve independently for south and east-west", () => {
+  const configured = {
+    ...resolveCompanyPlannerDefaults(company(19, 19)),
+    flatRoofSpacing: {
+      south: {
+        rowSpaceM: 1.7,
+        serviceCorridorM: 0.5,
+        moduleGapMm: 21,
+        nominalTiltDeg: 12,
+      },
+      eastWest: {
+        rowSpaceM: 2.8,
+        serviceCorridorM: 0.42,
+        moduleGapMm: 24,
+        nominalTiltDeg: 15,
+      },
+    },
+  };
+  assert.equal(validateCompanyPlannerDefaults(configured).valid, true);
+  assert.deepEqual(
+    resolveCompanyFlatRoofSpacingDefaults({ company: configured, orientation: "south" }),
+    configured.flatRoofSpacing.south,
+  );
+  assert.deepEqual(
+    resolveCompanyFlatRoofSpacingDefaults({ company: configured, orientation: "east-west" }),
+    configured.flatRoofSpacing.eastWest,
+  );
+});
+
+test("invalid flat-roof company defaults are rejected", () => {
+  const configured = resolveCompanyPlannerDefaults(company(19, 19));
+  assert.equal(validateCompanyPlannerDefaults({
+    ...configured,
+    flatRoofSpacing: {
+      ...configured.flatRoofSpacing,
+      south: { ...configured.flatRoofSpacing.south, nominalTiltDeg: 120 },
+    },
+  }).valid, false);
 });
 
 test("planning override wins over company default and company over fallback", () => {
