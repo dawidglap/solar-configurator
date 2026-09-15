@@ -1,8 +1,10 @@
 import polygonClipping, { type MultiPolygon, type Pair, type Polygon } from "polygon-clipping";
+import ClipperLib, { type ClipperPath, type ClipperPaths } from "clipper-lib";
 
 import {
   GEOMETRY_AREA_EPSILON_M2,
   GEOMETRY_EPSILON_M,
+  PLACEMENT_CONTAINMENT_EPSILON_M,
   type MetricPoint,
   type MetricPolygon,
 } from "./types";
@@ -10,6 +12,8 @@ import {
 // polygon-clipping is CommonJS at runtime; the default namespace keeps the
 // same geometry implementation available in both tsx tests and Next/Webpack.
 const { difference } = polygonClipping;
+const CONTAINMENT_CLIPPER_SCALE = 1_000_000;
+const expandedContainmentComponents = new WeakMap<MetricPolygon[], MetricPolygon[]>();
 
 export type MetricBounds = {
   minX: number;
@@ -207,6 +211,40 @@ function multiPolygonArea(multiPolygon: MultiPolygon): number {
   }, 0);
 }
 
+function toContainmentClipperPath(polygon: MetricPolygon): ClipperPath {
+  const path = polygon.map((point) => ({
+    X: Math.round(point.x * CONTAINMENT_CLIPPER_SCALE),
+    Y: Math.round(point.y * CONTAINMENT_CLIPPER_SCALE),
+  }));
+  return ClipperLib.Clipper.Orientation(path) ? path : [...path].reverse();
+}
+
+function expandContainmentComponents(components: MetricPolygon[]): MetricPolygon[] {
+  const cached = expandedContainmentComponents.get(components);
+  if (cached) return cached;
+  const expanded = components.flatMap((component) => {
+    const offset = new ClipperLib.ClipperOffset(10, 0.25);
+    offset.AddPath(
+      toContainmentClipperPath(component),
+      ClipperLib.JoinType.jtMiter,
+      ClipperLib.EndType.etClosedPolygon,
+    );
+    const solution: ClipperPaths = [];
+    offset.Execute(
+      solution,
+      PLACEMENT_CONTAINMENT_EPSILON_M * CONTAINMENT_CLIPPER_SCALE,
+    );
+    return solution.map((path) =>
+      normalizeMetricPolygon(path.map((point) => ({
+        x: point.X / CONTAINMENT_CLIPPER_SCALE,
+        y: point.Y / CONTAINMENT_CLIPPER_SCALE,
+      }))),
+    ).filter((polygon) => polygon.length >= 3);
+  });
+  expandedContainmentComponents.set(components, expanded);
+  return expanded;
+}
+
 export function isFootprintContainedInUsableRoof(
   footprint: MetricPolygon,
   usableComponents: MetricPolygon[],
@@ -216,7 +254,15 @@ export function isFootprintContainedInUsableRoof(
   const roof: MultiPolygon = usableComponents.map((component) => [toClosedRing(component)]);
   try {
     const outside = difference(subject, roof);
-    return multiPolygonArea(outside) <= GEOMETRY_AREA_EPSILON_M2;
+    if (multiPolygonArea(outside) <= GEOMETRY_AREA_EPSILON_M2) return true;
+
+    // The inset roof is quantized to Clipper's micrometre grid. Validate once
+    // more against a 0.01 mm physical buffer so an exactly tangent, rotated
+    // footprint is not rejected by representation noise. Obstacle collision
+    // checks deliberately do not use this buffer.
+    const expandedRoof: MultiPolygon = expandContainmentComponents(usableComponents)
+      .map((component) => [toClosedRing(component)]);
+    return multiPolygonArea(difference(subject, expandedRoof)) <= GEOMETRY_AREA_EPSILON_M2;
   } catch {
     return false;
   }

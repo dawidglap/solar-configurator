@@ -15,13 +15,6 @@ export type RoofEdgeAlignment = {
   edgeIndex: number;
 };
 
-function geographicAzimuthFromImageVector(vector: MetricPoint): number {
-  const normalized = normalizeGeographicAzimuth(
-    (Math.atan2(vector.x, -vector.y) * 180) / Math.PI,
-  );
-  return Object.is(normalized, -0) ? 0 : normalized;
-}
-
 export type RoofEdgeInwardNormal = {
   vector: MetricPoint;
   geographicAzimuthDeg: number;
@@ -36,14 +29,18 @@ export function resolveRoofEdgeInwardNormal(input: {
   edge: CanonicalRoofEdge;
 }): RoofEdgeInwardNormal | null {
   const left = { x: -input.edge.direction.y, y: input.edge.direction.x };
-  const candidates = [left, { x: -left.x, y: -left.y }];
+  const candidates = [
+    { vector: left, perpendicularOffsetDeg: 90 },
+    { vector: { x: -left.x, y: -left.y }, perpendicularOffsetDeg: -90 },
+  ];
   const probeDistances = [
     Math.min(0.75, input.edge.lengthPx * 0.01),
     Math.min(2, input.edge.lengthPx * 0.05),
   ].filter((distance) => distance > 1e-6);
 
   for (const distance of probeDistances) {
-    for (const vector of candidates) {
+    for (const candidate of candidates) {
+      const vector = candidate.vector;
       const relation = pointPolygonRelation({
         x: input.edge.midpoint.x + vector.x * distance,
         y: input.edge.midpoint.y + vector.y * distance,
@@ -51,7 +48,9 @@ export function resolveRoofEdgeInwardNormal(input: {
       if (relation === "inside") {
         return {
           vector,
-          geographicAzimuthDeg: geographicAzimuthFromImageVector(vector),
+          geographicAzimuthDeg: normalizeGeographicAzimuth(
+            input.edge.geographicAzimuthDeg + candidate.perpendicularOffsetDeg,
+          ),
         };
       }
     }
@@ -71,12 +70,13 @@ export function resolveRoofEdgeInwardNormal(input: {
     x: centroid.x - input.edge.midpoint.x,
     y: centroid.y - input.edge.midpoint.y,
   };
-  const vector = towardCentroid.x * left.x + towardCentroid.y * left.y >= 0
-    ? left
-    : { x: -left.x, y: -left.y };
+  const useLeft = towardCentroid.x * left.x + towardCentroid.y * left.y >= 0;
+  const vector = useLeft ? left : { x: -left.x, y: -left.y };
   return {
     vector,
-    geographicAzimuthDeg: geographicAzimuthFromImageVector(vector),
+    geographicAzimuthDeg: normalizeGeographicAzimuth(
+      input.edge.geographicAzimuthDeg + (useLeft ? 90 : -90),
+    ),
   };
 }
 
@@ -91,7 +91,7 @@ function alignmentForEdge(input: {
   });
   return inward ? {
     faceAzimuthDeg: inward.geographicAzimuthDeg,
-    edgeTangentAzimuthDeg: geographicAzimuthFromImageVector(input.edge.direction),
+    edgeTangentAzimuthDeg: input.edge.geographicAzimuthDeg,
     source: input.source,
     edgeIndex: input.edge.edgeIndex,
   } : null;

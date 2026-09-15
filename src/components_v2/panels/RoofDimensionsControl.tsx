@@ -20,6 +20,7 @@ import { resolveRoofSlopeForKind } from "@/lib/planning/roofProperties";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import NumericFieldWithSuffix from "../ui/NumericFieldWithSuffix";
+import { formatDisplayAngleDeg } from "../roof/angleDisplay";
 
 const controlClass =
   "glass-input h-9 w-full rounded-lg px-3 py-0 text-[11px] leading-none focus:ring-1 focus:ring-primary/40";
@@ -29,9 +30,6 @@ const fieldLabelClass = "block text-[10px] text-muted-foreground";
 
 const dimensionFormatter = new Intl.NumberFormat("de-DE", {
   maximumFractionDigits: 2,
-});
-const orientationFormatter = new Intl.NumberFormat("de-DE", {
-  maximumFractionDigits: 1,
 });
 
 type RoofKind = "pitched" | "flat" | "green";
@@ -185,9 +183,9 @@ export default function RoofDimensionsControl({
         <div className="flex items-center justify-between gap-3 text-[10px]">
           <span className="text-muted-foreground">Ausrichtung</span>
           <strong className="font-semibold tabular-nums text-foreground">
-            {orientationFormatter.format(
+            {formatDisplayAngleDeg(
               canonicalEdges[referenceEdgeIndex]?.geographicAzimuthDeg ?? 0,
-            )}°
+            )}
           </strong>
         </div>
       )}
@@ -354,7 +352,7 @@ export default function RoofDimensionsControl({
         <div className="flex items-center justify-between gap-3 text-[10px]">
           <span className="text-muted-foreground">Ausrichtung</span>
           <strong className="font-semibold tabular-nums text-foreground">
-            {orientationFormatter.format(geometricOrientationDeg ?? 0)}°
+            {formatDisplayAngleDeg(geometricOrientationDeg ?? 0)}
           </strong>
         </div>
       </div>

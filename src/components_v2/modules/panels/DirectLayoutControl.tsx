@@ -29,6 +29,7 @@ import {
   buildWholeLayoutReflow,
   resolveAdvancedWorkingOrientationDeg,
 } from "./wholeLayoutReflow";
+import { formatDisplayAngleDeg } from "../../roof/angleDisplay";
 
 const HOLD_DELAY_MS = 300;
 const HOLD_REPEAT_MS = 80;
@@ -377,7 +378,7 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
       <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-2 text-[10px]">
         <span className="text-muted-foreground">Drehung</span>
         <strong className="tabular-nums text-foreground">
-          {normalizedAngle === undefined ? "—" : `${new Intl.NumberFormat("de-CH", { maximumFractionDigits: 2 }).format(normalizedAngle)}°`}
+          {normalizedAngle === undefined ? "—" : formatDisplayAngleDeg(normalizedAngle)}
         </strong>
       </div>
       {hasDraft && <p className="mt-2 text-[9px] text-muted-foreground">Zuerst die aktuelle Layout-Konfiguration anwenden.</p>}

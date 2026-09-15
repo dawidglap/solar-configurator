@@ -49,6 +49,7 @@ import DirectLayoutControl from "../modules/panels/DirectLayoutControl";
 import { endManualPlacement } from "../modules/manualPlacementSession";
 import { history as plannerHistory } from "../state/history";
 import { buildStandardExistingLayoutReflow } from "../modules/panels/existingLayoutReflow";
+import { formatDisplayAngleDeg } from "../roof/angleDisplay";
 
 type Pt = { x: number; y: number };
 
@@ -682,7 +683,7 @@ export default function ModulesPanel() {
                               >
                                 {geometricOrientation == null
                                   ? "—"
-                                  : `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(geometricOrientation)}°`}
+                                  : formatDisplayAngleDeg(geometricOrientation)}
                               </div>
                             ) : (
                               <button

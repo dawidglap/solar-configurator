@@ -1,6 +1,14 @@
 export const GEOMETRY_V2_ENGINE_VERSION = "geometry-v2" as const;
 export const GEOMETRY_EPSILON_M = 1e-6;
 export const GEOMETRY_AREA_EPSILON_M2 = 1e-10;
+/**
+ * Physical tolerance used only when checking that a placement footprint is
+ * inside an already computed usable-roof polygon. Clipper stores the inset
+ * roof on a 1 µm integer grid, while rotated footprints retain IEEE-754
+ * precision. Ten micrometres absorbs that representation boundary without
+ * becoming a planning clearance or allowing millimetre/centimetre overflow.
+ */
+export const PLACEMENT_CONTAINMENT_EPSILON_M = 1e-5;
 
 export type MetricPoint = { x: number; y: number };
 export type MetricPolygon = MetricPoint[];
