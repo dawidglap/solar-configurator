@@ -6,6 +6,9 @@ export type DirectLayoutDirection = "up" | "down" | "left" | "right";
 export type DirectLayoutTargetMode = "whole-layout" | "partial-selection";
 export type DirectPanelGeometry = Pick<PanelInstance, "id" | "cx" | "cy" | "wPx" | "hPx" | "angleDeg" | "advanced">;
 
+export const DIRECT_LAYOUT_NUDGE_M = 0.05;
+export const DIRECT_LAYOUT_SHIFT_NUDGE_M = 0.2;
+
 export function normalizeDegrees(value: number): number {
   return ((value % 360) + 360) % 360;
 }

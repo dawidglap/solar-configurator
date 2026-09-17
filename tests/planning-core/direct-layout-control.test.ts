@@ -6,6 +6,8 @@ import { K2_D_DOME_ADAPTER_VERSION, K2_D_DOME_SYSTEM_ID } from "../../src/lib/pl
 import type { PanelInstance, RoofArea } from "../../src/types/planner";
 import { validateExistingPanelPlacement } from "../../src/components_v2/modules/manualPlacement";
 import {
+  DIRECT_LAYOUT_NUDGE_M,
+  DIRECT_LAYOUT_SHIFT_NUDGE_M,
   resolveDirectLayoutPivot,
   resolveDirectLayoutTargetMode,
   resolveDirectLayoutTargets,
@@ -114,14 +116,14 @@ test("D-Dome selection expands to the complete physical pair", () => {
   assert.deepEqual(targets.map((item) => item.id), ["slot-0", "slot-1"]);
 });
 
-test("10 mm movement is metric, zoom-independent and visually correct at -78 degrees", () => {
+test("50 mm movement is metric, zoom-independent and visually correct at -78 degrees", () => {
   const delta = screenNudgeToImageDelta({
     direction: "up",
-    distanceM: 0.01,
+    distanceM: DIRECT_LAYOUT_NUDGE_M,
     mppImage: 0.02,
     canvasRotationDeg: -78,
   });
-  assert.ok(Math.abs(Math.hypot(delta.dx, delta.dy) * 0.02 - 0.01) < 1e-12);
+  assert.ok(Math.abs(Math.hypot(delta.dx, delta.dy) * 0.02 - DIRECT_LAYOUT_NUDGE_M) < 1e-12);
   const radians = -78 * Math.PI / 180;
   const screenY = delta.dx * Math.sin(radians) + delta.dy * Math.cos(radians);
   const screenX = delta.dx * Math.cos(radians) - delta.dy * Math.sin(radians);
@@ -130,11 +132,31 @@ test("10 mm movement is metric, zoom-independent and visually correct at -78 deg
 
   const sameAtAnyZoom = screenNudgeToImageDelta({
     direction: "right",
-    distanceM: 0.01,
+    distanceM: DIRECT_LAYOUT_NUDGE_M,
     mppImage: 0.02,
     canvasRotationDeg: 0,
   });
-  assert.equal(sameAtAnyZoom.dx, 0.5);
+  assert.equal(sameAtAnyZoom.dx, 2.5);
+});
+
+test("customer nudge steps are 50 mm normally and 200 mm with Shift", () => {
+  assert.equal(DIRECT_LAYOUT_NUDGE_M, 0.05);
+  assert.equal(DIRECT_LAYOUT_SHIFT_NUDGE_M, 0.2);
+
+  const normal = screenNudgeToImageDelta({
+    direction: "right",
+    distanceM: DIRECT_LAYOUT_NUDGE_M,
+    mppImage: 0.01,
+    canvasRotationDeg: 0,
+  });
+  const shifted = screenNudgeToImageDelta({
+    direction: "right",
+    distanceM: DIRECT_LAYOUT_SHIFT_NUDGE_M,
+    mppImage: 0.01,
+    canvasRotationDeg: 0,
+  });
+  assert.equal(normal.dx, 5);
+  assert.equal(shifted.dx, 20);
 });
 
 test("single and multi rotation preserve their deterministic pivots and relative geometry", () => {
@@ -218,6 +240,14 @@ test("translation is rigid and source lifecycle keeps holds transient until one 
   assert.equal((source.match(/buildWholeLayoutReflow\(/g) ?? []).length, 1);
   assert.match(source, /gesture\.accumulatedRotationDeg \+= delta/);
   assert.match(source, /degrees: 90/);
+  assert.match(source, /distanceM: gesture\.action\.fast\s*\? DIRECT_LAYOUT_SHIFT_NUDGE_M\s*:\s*DIRECT_LAYOUT_NUDGE_M/);
+  assert.match(source, />50 mm<\/div>/);
+  assert.match(source, /title="Shift: 200 mm"/);
+  assert.match(source, /const SHOW_FINE_ROTATION_DETAILS = false/);
+  assert.match(source, /SHOW_FINE_ROTATION_DETAILS &&/);
+  assert.match(source, /degrees: 1/);
+  assert.match(source, /<span className="text-muted-foreground">Drehung<\/span>/);
+  assert.equal(source.includes('SHOW_FINE_ROTATION_DETAILS = true'), false);
 
   const hotkeys = readFileSync("src/components_v2/modules/panels/PanelHotkeys.tsx", "utf8");
   assert.doesNotMatch(hotkeys, /tryNudge|isArrowKey|nudgeFromScreenDelta/);

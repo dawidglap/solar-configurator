@@ -12,6 +12,8 @@ import { history as plannerHistory } from "../../state/history";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
 import { validateExistingPanelPlacement } from "../manualPlacement";
 import {
+  DIRECT_LAYOUT_NUDGE_M,
+  DIRECT_LAYOUT_SHIFT_NUDGE_M,
   type DirectLayoutDirection,
   normalizeDegrees,
   resolveDirectLayoutPivot,
@@ -33,6 +35,9 @@ import { formatDisplayAngleDeg } from "../../roof/angleDisplay";
 
 const HOLD_DELAY_MS = 300;
 const HOLD_REPEAT_MS = 80;
+// Product decision: customer-facing fine rotation/readout is temporarily hidden.
+// Keep the existing 1° action and angle presentation ready for a possible re-enable.
+const SHOW_FINE_ROTATION_DETAILS = false;
 
 type GestureAction =
   | { kind: "move"; direction: DirectLayoutDirection; fast: boolean }
@@ -210,7 +215,9 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
     const next = gesture.action.kind === "move"
       ? translateDirectPanels(gesture.current, screenNudgeToImageDelta({
           direction: gesture.action.direction,
-          distanceM: gesture.action.fast ? 0.1 : 0.01,
+          distanceM: gesture.action.fast
+            ? DIRECT_LAYOUT_SHIFT_NUDGE_M
+            : DIRECT_LAYOUT_NUDGE_M,
           mppImage: state.snapshot.mppImage ?? 0,
           canvasRotationDeg: getCurrentCanvasRotationDeg(),
         }))
@@ -355,19 +362,23 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
 
       <div className="mx-auto grid w-[136px] grid-cols-3 gap-1.5">
         <span />
-        <button type="button" disabled={disabled} className={buttonClass} aria-label="10 Millimeter nach oben" onPointerDown={(event) => startPointerGesture(event, { kind: "move", direction: "up", fast: event.shiftKey })} onClick={(event) => activateFromKeyboardClick(event, { kind: "move", direction: "up", fast: false })}>↑</button>
+        <button type="button" disabled={disabled} className={buttonClass} aria-label="50 Millimeter nach oben" title="Shift: 200 mm" onPointerDown={(event) => startPointerGesture(event, { kind: "move", direction: "up", fast: event.shiftKey })} onClick={(event) => activateFromKeyboardClick(event, { kind: "move", direction: "up", fast: false })}>↑</button>
         <span />
-        <button type="button" disabled={disabled} className={buttonClass} aria-label="10 Millimeter nach links" onPointerDown={(event) => startPointerGesture(event, { kind: "move", direction: "left", fast: event.shiftKey })} onClick={(event) => activateFromKeyboardClick(event, { kind: "move", direction: "left", fast: false })}>←</button>
-        <div className="flex h-10 items-center justify-center rounded-lg bg-muted/15 text-[10px] font-semibold text-muted-foreground">10 mm</div>
-        <button type="button" disabled={disabled} className={buttonClass} aria-label="10 Millimeter nach rechts" onPointerDown={(event) => startPointerGesture(event, { kind: "move", direction: "right", fast: event.shiftKey })} onClick={(event) => activateFromKeyboardClick(event, { kind: "move", direction: "right", fast: false })}>→</button>
+        <button type="button" disabled={disabled} className={buttonClass} aria-label="50 Millimeter nach links" title="Shift: 200 mm" onPointerDown={(event) => startPointerGesture(event, { kind: "move", direction: "left", fast: event.shiftKey })} onClick={(event) => activateFromKeyboardClick(event, { kind: "move", direction: "left", fast: false })}>←</button>
+        <div className="flex h-10 items-center justify-center rounded-lg bg-muted/15 text-[10px] font-semibold text-muted-foreground">50 mm</div>
+        <button type="button" disabled={disabled} className={buttonClass} aria-label="50 Millimeter nach rechts" title="Shift: 200 mm" onPointerDown={(event) => startPointerGesture(event, { kind: "move", direction: "right", fast: event.shiftKey })} onClick={(event) => activateFromKeyboardClick(event, { kind: "move", direction: "right", fast: false })}>→</button>
         <span />
-        <button type="button" disabled={disabled} className={buttonClass} aria-label="10 Millimeter nach unten" onPointerDown={(event) => startPointerGesture(event, { kind: "move", direction: "down", fast: event.shiftKey })} onClick={(event) => activateFromKeyboardClick(event, { kind: "move", direction: "down", fast: false })}>↓</button>
+        <button type="button" disabled={disabled} className={buttonClass} aria-label="50 Millimeter nach unten" title="Shift: 200 mm" onPointerDown={(event) => startPointerGesture(event, { kind: "move", direction: "down", fast: event.shiftKey })} onClick={(event) => activateFromKeyboardClick(event, { kind: "move", direction: "down", fast: false })}>↓</button>
         <span />
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Ein Grad gegen den Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: -1, degrees: 1 })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: -1, degrees: 1 })}><span className="text-lg">↶</span> 1°</button>
-        <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Ein Grad im Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: 1, degrees: 1 })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: 1, degrees: 1 })}>1° <span className="text-lg">↷</span></button>
+        {SHOW_FINE_ROTATION_DETAILS && (
+          <>
+            <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Ein Grad gegen den Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: -1, degrees: 1 })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: -1, degrees: 1 })}><span className="text-lg">↶</span> 1°</button>
+            <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Ein Grad im Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: 1, degrees: 1 })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: 1, degrees: 1 })}>1° <span className="text-lg">↷</span></button>
+          </>
+        )}
         <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Neunzig Grad gegen den Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: -1, degrees: 90 })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: -1, degrees: 90 })}><span className="text-lg">↶</span> 90°</button>
         <button type="button" disabled={disabled} className={`${buttonClass} gap-1 text-[13px]`} aria-label="Neunzig Grad im Uhrzeigersinn drehen" onPointerDown={(event) => startPointerGesture(event, { kind: "rotate", deltaSign: 1, degrees: 90 })} onClick={(event) => activateFromKeyboardClick(event, { kind: "rotate", deltaSign: 1, degrees: 90 })}>90° <span className="text-lg">↷</span></button>
       </div>
@@ -375,12 +386,14 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
         <p className="mt-2 text-[9px] text-muted-foreground">Gesamtes Layout wird bei Drehung neu berechnet.</p>
       )}
 
-      <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-2 text-[10px]">
-        <span className="text-muted-foreground">Drehung</span>
-        <strong className="tabular-nums text-foreground">
-          {normalizedAngle === undefined ? "—" : formatDisplayAngleDeg(normalizedAngle)}
-        </strong>
-      </div>
+      {SHOW_FINE_ROTATION_DETAILS && (
+        <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-2 text-[10px]">
+          <span className="text-muted-foreground">Drehung</span>
+          <strong className="tabular-nums text-foreground">
+            {normalizedAngle === undefined ? "—" : formatDisplayAngleDeg(normalizedAngle)}
+          </strong>
+        </div>
+      )}
       {hasDraft && <p className="mt-2 text-[9px] text-muted-foreground">Zuerst die aktuelle Layout-Konfiguration anwenden.</p>}
     </div>
   );
