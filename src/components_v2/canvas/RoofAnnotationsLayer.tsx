@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Arrow, Group, Line, Text } from "react-konva";
+import { Arrow, Group, Line, Rect, Text } from "react-konva";
 
 import {
   computeUsableRoof,
@@ -16,7 +16,10 @@ import { plannerTheme } from "../theme/plannerTheme";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import RoofAzimuthArrows from "./RoofAzimuthArrows";
 import { RoofMarginBand } from "../modules/panels/RoofMarginBand";
-import { buildRoofAnnotationModel } from "./roofAnnotationModel";
+import {
+  buildRoofAnnotationModel,
+  resolveScreenReadableAnnotationRotation,
+} from "./roofAnnotationModel";
 import RoofReferenceEdgeLayer from "./RoofReferenceEdgeLayer";
 import {
   getTransientRoofAnnotationPoints,
@@ -60,20 +63,17 @@ function SmallFallArrow({ center, azimuthDeg, scale }: {
         opacity={0.72}
         listening={false}
       />
-      <Text
-        x={center.x + direction.x * length / 2 + 4 * inverseScale}
-        y={center.y + direction.y * length / 2 - 5 * inverseScale}
-        text="GEFÄLLE"
-        fill={plannerTheme.textLight}
-        fontSize={8 * inverseScale}
-        fontStyle="bold"
-        listening={false}
-      />
     </Group>
   );
 }
 
-export default function RoofAnnotationsLayer() {
+type RoofAnnotationsLayerProps = {
+  canvasRotationDeg?: number;
+};
+
+export default function RoofAnnotationsLayer({
+  canvasRotationDeg = 0,
+}: RoofAnnotationsLayerProps) {
   const selectedId = usePlannerV2Store((state) => state.selectedId);
   const selectedZone = usePlannerV2Store((state) =>
     state.zones.find((zone) => zone.id === state.selectedZoneId),
@@ -117,7 +117,8 @@ export default function RoofAnnotationsLayer() {
     ...(selectedZone ? { referenceLabel: "BEZUGSKANTE" as const } : {}),
   });
   const inverseScale = 1 / Math.max(scale, 0.01);
-  const offset = 18 * inverseScale;
+  const useModuleEdgePills = step === "modules" && !selectedZone;
+  const offset = (useModuleEdgePills ? 24 : 18) * inverseScale;
   const adapter = { mppImage, metricOriginPx: { x: 0, y: 0 } };
   const usableRoof = marginM > 0
     ? computeUsableRoof({
@@ -164,7 +165,7 @@ export default function RoofAnnotationsLayer() {
           y: edge.midpoint.y + edge.outward.y * offset,
         };
         const tick = 3.5 * inverseScale;
-        const fontSize = 8.5 * inverseScale;
+        const fontSize = (useModuleEdgePills ? 10.5 : 8.5) * inverseScale;
         const lineStart = {
           x: edge.start.x + edge.outward.x * offset,
           y: edge.start.y + edge.outward.y * offset,
@@ -174,6 +175,11 @@ export default function RoofAnnotationsLayer() {
           y: edge.end.y + edge.outward.y * offset,
         };
         const displayLabel = edge.label;
+        const pillWidth = Math.max(84, displayLabel.length * 6.15 + 18) * inverseScale;
+        const pillHeight = 24 * inverseScale;
+        const labelRotation = useModuleEdgePills
+          ? resolveScreenReadableAnnotationRotation(edge.readableAngleDeg, canvasRotationDeg)
+          : edge.readableAngleDeg;
         return (
           <Group key={edge.edgeIndex} listening={false}>
             {edge.isReference && selectedZone && (
@@ -207,21 +213,57 @@ export default function RoofAnnotationsLayer() {
                 listening={false}
               />
             ))}
-            <Text
-              x={labelPoint.x}
-              y={labelPoint.y}
-              text={displayLabel}
-              rotation={edge.readableAngleDeg}
-              offsetX={displayLabel.length * fontSize * 0.27}
-              offsetY={fontSize + 1.5 * inverseScale}
-              fill={edge.isReference && selectedZone ? plannerTheme.primary : plannerTheme.textLight}
-              fontSize={fontSize}
-              fontStyle={edge.isReference && selectedZone ? "bold" : "normal"}
-              shadowColor="#000"
-              shadowBlur={2 * inverseScale}
-              shadowOpacity={0.85}
-              listening={false}
-            />
+            {useModuleEdgePills ? (
+              <Group
+                x={labelPoint.x}
+                y={labelPoint.y}
+                rotation={labelRotation}
+                listening={false}
+              >
+                <Rect
+                  x={-pillWidth / 2}
+                  y={-pillHeight / 2}
+                  width={pillWidth}
+                  height={pillHeight}
+                  fill="#FFFFFF"
+                  cornerRadius={7 * inverseScale}
+                  shadowColor="#000000"
+                  shadowBlur={4 * inverseScale}
+                  shadowOffsetY={1.5 * inverseScale}
+                  shadowOpacity={0.26}
+                  listening={false}
+                />
+                <Text
+                  x={-pillWidth / 2 + 9 * inverseScale}
+                  y={-pillHeight / 2}
+                  width={pillWidth - 18 * inverseScale}
+                  height={pillHeight}
+                  text={displayLabel}
+                  fill="#000000"
+                  fontSize={fontSize}
+                  fontStyle="600"
+                  align="center"
+                  verticalAlign="middle"
+                  listening={false}
+                />
+              </Group>
+            ) : (
+              <Text
+                x={labelPoint.x}
+                y={labelPoint.y}
+                text={displayLabel}
+                rotation={labelRotation}
+                offsetX={displayLabel.length * fontSize * 0.27}
+                offsetY={fontSize + 1.5 * inverseScale}
+                fill={edge.isReference && selectedZone ? plannerTheme.primary : plannerTheme.textLight}
+                fontSize={fontSize}
+                fontStyle={edge.isReference && selectedZone ? "bold" : "normal"}
+                shadowColor="#000"
+                shadowBlur={2 * inverseScale}
+                shadowOpacity={0.85}
+                listening={false}
+              />
+            )}
           </Group>
         );
       })}

@@ -49,6 +49,21 @@ export function normalizeReadableAnnotationAngle(angleDeg: number): number {
   return angle;
 }
 
+/**
+ * Returns the local Konva rotation whose final on-screen angle stays readable
+ * after the complete map viewport is rotated.
+ */
+export function resolveScreenReadableAnnotationRotation(
+  edgeAngleDeg: number,
+  canvasRotationDeg: number,
+): number {
+  return normalizeReadableAnnotationAngle(edgeAngleDeg + canvasRotationDeg) - canvasRotationDeg;
+}
+
+export function formatRoofEdgeLengthM(lengthM: number): string {
+  return `${lengthM.toFixed(2).replace(".", ",")} m`;
+}
+
 export function buildRoofAnnotationModel(input: {
   points: readonly Pt[];
   mppImage: number;
@@ -108,7 +123,7 @@ export function buildRoofAnnotationModel(input: {
         Math.atan2(edge.direction.y, edge.direction.x) * 180 / Math.PI,
       ),
       lengthM,
-      label: `${semanticLabel} · ${lengthM.toFixed(2)} m`,
+      label: `${semanticLabel} · ${formatRoofEdgeLengthM(lengthM)}`,
       isReference,
     };
   });
