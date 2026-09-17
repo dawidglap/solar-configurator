@@ -96,6 +96,7 @@ import {
   resolveEscapeAction,
   resolveInteractionCursor,
   resolvePlannerInteractionMode,
+  resolveRoofLocalPointerAction,
   shouldIgnorePlannerHotkeyTarget,
 } from "./interactionPolicy";
 import {
@@ -248,6 +249,7 @@ export default function CanvasStage() {
   const selectedSnowGuardId = usePlannerV2Store((s) => s.selectedSnowGuardId);
   const setSelectedSnowGuard = usePlannerV2Store((s) => s.setSelectedSnowGuard);
   const deleteSnowGuard = usePlannerV2Store((s) => s.deleteSnowGuard);
+  const roofSwitchSnowGuardRef = useRef<string | undefined>(undefined);
 
   const selPanel = usePlannerV2Store((s) => s.getSelectedPanel());
   const roofAlign = usePlannerV2Store((s) => s.roofAlign);
@@ -1536,8 +1538,30 @@ export default function CanvasStage() {
                         lineCap="round"
                         lineJoin="round"
                         listening={!drawingCapturesPointer}
+                        onMouseDown={(event) => {
+                          const state = usePlannerV2Store.getState();
+                          roofSwitchSnowGuardRef.current = undefined;
+                          const action = resolveRoofLocalPointerAction({
+                            ownerRoofId: sg.roofId,
+                            selectedRoofId: state.selectedId,
+                            button: event?.evt?.button,
+                            tool: state.tool,
+                          });
+                          if (action === "ignore-non-primary") return;
+                          if (action === "preserve-explicit-tool") return;
+                          if (action === "switch-roof") {
+                            event.cancelBubble = true;
+                            roofSwitchSnowGuardRef.current = sg.id;
+                            state.select(sg.roofId);
+                          }
+                        }}
                         onClick={(e) => {
                           e.cancelBubble = true;
+                          if (roofSwitchSnowGuardRef.current === sg.id) {
+                            roofSwitchSnowGuardRef.current = undefined;
+                            return;
+                          }
+                          if (!isPrimaryPointerButton(e?.evt?.button)) return;
                           setSelectedSnowGuard(sg.id);
                         }}
                       />

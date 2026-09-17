@@ -9,6 +9,7 @@ import {
   getTransientPanelGeometry,
   subscribeTransientPanelGeometry,
 } from './transientPanelGeometry';
+import { createRoofSwitchGestureLatch } from '../../canvas/interactionPolicy';
 
 export type PanelItemProps = {
   id: string;
@@ -22,13 +23,14 @@ export type PanelItemProps = {
   image?: HTMLImageElement | null;
   onStartDrag: (panelId: string, e: any) => void;
   onSelect?: (id?: string, opts?: { additive?: boolean }) => void;
+  onRoutePointerDown?: (panelId: string, e: any) => "continue" | "consume" | "ignore";
 };
 
 const DRAG_THRESHOLD_PX = 3; // piccola soglia per distinguere click vs drag
 const INTERACTIVE_NAME = 'interactive-panel';
 
 export const PanelItem: React.FC<PanelItemProps> = React.memo(
-  ({ id, cx, cy, wPx, hPx, rotationDeg, slopeArrowAzimuthDeg, selected, image, onStartDrag, onSelect }) => {
+  ({ id, cx, cy, wPx, hPx, rotationDeg, slopeArrowAzimuthDeg, selected, image, onStartDrag, onSelect, onRoutePointerDown }) => {
     const transient = React.useSyncExternalStore(
       React.useCallback((listener) => subscribeTransientPanelGeometry(id, listener), [id]),
       React.useCallback(() => getTransientPanelGeometry(id), [id]),
@@ -39,10 +41,27 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
     const visualRotationDeg = transient?.angleDeg ?? rotationDeg;
     const downRef = React.useRef<{ x: number; y: number; active: boolean } | null>(null);
     const didDragRef = React.useRef(false);
+    const roofSwitchLatchRef = React.useRef(createRoofSwitchGestureLatch());
+    const suppressChildGestureRef = React.useRef(false);
 
     const onMouseDown = (e: any) => {
       const ev = e?.evt;
       if (!ev) return;
+      roofSwitchLatchRef.current.reset();
+      suppressChildGestureRef.current = false;
+      const route = onRoutePointerDown?.(id, e) ?? "continue";
+      if (route === "ignore") {
+        suppressChildGestureRef.current = true;
+        downRef.current = null;
+        return;
+      }
+      if (route === "consume") {
+        roofSwitchLatchRef.current.markRoofSwitch();
+        downRef.current = null;
+        e.cancelBubble = true;
+        ev.preventDefault?.();
+        return;
+      }
       downRef.current = { x: ev.clientX, y: ev.clientY, active: true };
       didDragRef.current = false;
     };
@@ -69,6 +88,21 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
     const onTouchStart = (e: any) => {
       const t = e?.evt?.touches?.[0];
       if (!t) return;
+      roofSwitchLatchRef.current.reset();
+      suppressChildGestureRef.current = false;
+      const route = onRoutePointerDown?.(id, e) ?? "continue";
+      if (route === "ignore") {
+        suppressChildGestureRef.current = true;
+        downRef.current = null;
+        return;
+      }
+      if (route === "consume") {
+        roofSwitchLatchRef.current.markRoofSwitch();
+        downRef.current = null;
+        e.cancelBubble = true;
+        e.evt?.preventDefault?.();
+        return;
+      }
       downRef.current = { x: t.clientX, y: t.clientY, active: true };
       didDragRef.current = false;
     };
@@ -118,6 +152,14 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
 
       // Click desktop → selezione additiva con Shift/Ctrl/Cmd (se NON c'è stato drag)
       onClick: (e: any) => {
+        if (suppressChildGestureRef.current) {
+          suppressChildGestureRef.current = false;
+          return;
+        }
+        if (roofSwitchLatchRef.current.consumeFollowup()) {
+          e.cancelBubble = true;
+          return;
+        }
         if (didDragRef.current) {
           // abbiamo già fatto drag: sopprimiamo il click finale
           didDragRef.current = false;
@@ -129,7 +171,15 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
       },
 
       // Tap mobile → selezione singola
-      onTap: () => {
+      onTap: (e: any) => {
+        if (suppressChildGestureRef.current) {
+          suppressChildGestureRef.current = false;
+          return;
+        }
+        if (roofSwitchLatchRef.current.consumeFollowup()) {
+          e.cancelBubble = true;
+          return;
+        }
         if (didDragRef.current) {
           didDragRef.current = false;
           return;

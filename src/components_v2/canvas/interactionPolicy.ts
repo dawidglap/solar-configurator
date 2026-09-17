@@ -13,6 +13,12 @@ export type PlannerInteractionMode =
 
 export type PointerIntent = "pan" | "draw" | "edit-or-select";
 
+export type RoofLocalPointerAction =
+  | "interact-child"
+  | "switch-roof"
+  | "preserve-explicit-tool"
+  | "ignore-non-primary";
+
 export type EscapeAction =
   | "cancel-draft"
   | "clear-panels"
@@ -72,6 +78,43 @@ export function resolvePointerIntent(input: {
 
 export function isPrimaryPointerButton(button: number | undefined): boolean {
   return button === undefined || button === 0;
+}
+
+/**
+ * Canonical routing decision for a roof-local child. Ownership comes from the
+ * domain object (panel/zone/snow guard), never from hit-test geometry.
+ */
+export function resolveRoofLocalPointerAction(input: {
+  ownerRoofId: string;
+  selectedRoofId?: string;
+  button?: number;
+  tool: Tool;
+}): RoofLocalPointerAction {
+  if (!isPrimaryPointerButton(input.button)) return "ignore-non-primary";
+  if (input.tool !== "select") return "preserve-explicit-tool";
+  return input.ownerRoofId === input.selectedRoofId
+    ? "interact-child"
+    : "switch-roof";
+}
+
+export type RoofSwitchGestureLatch = {
+  reset: () => void;
+  markRoofSwitch: () => void;
+  consumeFollowup: () => boolean;
+};
+
+/** Keeps pointerdown's roof switch authoritative for the ensuing click/tap. */
+export function createRoofSwitchGestureLatch(): RoofSwitchGestureLatch {
+  let consumed = false;
+  return {
+    reset: () => { consumed = false; },
+    markRoofSwitch: () => { consumed = true; },
+    consumeFollowup: () => {
+      if (!consumed) return false;
+      consumed = false;
+      return true;
+    },
+  };
 }
 
 export function resolveInteractionCursor(input: {

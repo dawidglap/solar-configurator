@@ -5,6 +5,17 @@ import type { PanelInstance } from '@/types/planner';
 type PatchMap = Record<string, Partial<PanelInstance>>;
 type PatchFn = (p: PanelInstance) => Partial<PanelInstance> | undefined | void;
 
+function selectionForActiveRoof(
+    state: PanelsSlice & { selectedId?: string },
+    ids: readonly string[],
+): string[] {
+    if (!state.selectedId) return [];
+    const unique = new Set(ids);
+    return state.panels
+        .filter((panel) => panel.roofId === state.selectedId && unique.has(panel.id))
+        .map((panel) => panel.id);
+}
+
 export type PanelsSlice = {
     /** Istanze di pannelli */
     panels: PanelInstance[];
@@ -37,13 +48,28 @@ export const createPanelsSlice: StateCreator<PanelsSlice, [], [], PanelsSlice> =
     /** ─ Selezione multipla ─ */
     selectedPanelIds: [],
     setSelectedPanels: (ids) =>
-        set(() => ({ selectedPanelIds: Array.from(new Set(ids)) })),
+        set((state) => ({
+            selectedPanelIds: selectionForActiveRoof(
+                state as PanelsSlice & { selectedId?: string },
+                ids,
+            ),
+        })),
     togglePanelSelection: (id) =>
         set((s) => {
+            const activeRoofId = (s as PanelsSlice & { selectedId?: string }).selectedId;
+            const panel = s.panels.find((candidate) => candidate.id === id);
+            if (!activeRoofId || panel?.roofId !== activeRoofId) {
+                return { selectedPanelIds: [] };
+            }
             const next = new Set(s.selectedPanelIds);
             if (next.has(id)) next.delete(id);
             else next.add(id);
-            return { selectedPanelIds: [...next] };
+            return {
+                selectedPanelIds: selectionForActiveRoof(
+                    s as PanelsSlice & { selectedId?: string },
+                    [...next],
+                ),
+            };
         }),
     clearPanelSelection: () => set(() => ({ selectedPanelIds: [] })),
 

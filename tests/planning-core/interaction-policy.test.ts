@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { Tool } from "../../src/types/planner";
 import {
+  createRoofSwitchGestureLatch,
   findRoofAtPoint,
   isDrawingInteractionTool,
   isPrimaryPointerButton,
@@ -11,9 +12,18 @@ import {
   resolveInteractionCursor,
   resolvePlannerInteractionMode,
   resolvePointerIntent,
+  resolveRoofLocalPointerAction,
   shouldCancelDraftOnToolChange,
   shouldIgnorePlannerHotkeyTarget,
 } from "../../src/components_v2/canvas/interactionPolicy";
+import { resolvePanelSelectionIds } from "../../src/components_v2/modules/panels/panelSelection";
+import {
+  ADVANCED_BLOCK_ENGINE_VERSION,
+  K2_D_DOME_ADAPTER_VERSION,
+  K2_D_DOME_SYSTEM_ID,
+} from "../../src/lib/planning-core/advanced";
+import { GEOMETRY_V2_ENGINE_VERSION } from "../../src/lib/planning-core/geometry-v2";
+import type { PanelInstance, RoofArea } from "../../src/types/planner";
 
 const roofs = [
   {
@@ -87,6 +97,133 @@ test("all drawing tools capture left-pointer intent from selectable objects", ()
     resolvePointerIntent({ button: 0, tool: "select" }),
     "edit-or-select",
   );
+});
+
+test("roof-local child routing is roof-first only for primary select gestures", () => {
+  assert.equal(resolveRoofLocalPointerAction({
+    ownerRoofId: "d3",
+    selectedRoofId: "d2",
+    button: 0,
+    tool: "select",
+  }), "switch-roof");
+  assert.equal(resolveRoofLocalPointerAction({
+    ownerRoofId: "d3",
+    selectedRoofId: "d3",
+    button: 0,
+    tool: "select",
+  }), "interact-child");
+  assert.equal(resolveRoofLocalPointerAction({
+    ownerRoofId: "d3",
+    selectedRoofId: "d2",
+    button: 2,
+    tool: "select",
+  }), "ignore-non-primary");
+  assert.equal(resolveRoofLocalPointerAction({
+    ownerRoofId: "d3",
+    selectedRoofId: "d2",
+    button: 0,
+    tool: "draw-reserved",
+  }), "preserve-explicit-tool");
+});
+
+test("one roof-switch pointerdown consumes exactly its own click/tap follow-up", () => {
+  const latch = createRoofSwitchGestureLatch();
+  latch.markRoofSwitch();
+  assert.equal(latch.consumeFollowup(), true);
+  assert.equal(latch.consumeFollowup(), false);
+  latch.markRoofSwitch();
+  latch.reset();
+  assert.equal(latch.consumeFollowup(), false);
+});
+
+test("D2 to D3 first selects only D3; the second click selects the complete D-Dome block", async () => {
+  const { usePlannerV2Store } = await import("../../src/components_v2/state/plannerV2Store");
+  const roof = (id: string): RoofArea => ({
+    id,
+    name: id,
+    points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
+  });
+  const panel = (id: string, roofId: string, slotIndex = 0): PanelInstance => ({
+    id,
+    roofId,
+    panelId: "module-a",
+    cx: slotIndex,
+    cy: 0,
+    wPx: 1,
+    hPx: 2,
+    angleDeg: 0,
+    orientation: "landscape",
+    ...(roofId === "d3" ? {
+      advanced: {
+        systemId: K2_D_DOME_SYSTEM_ID,
+        adapterVersion: K2_D_DOME_ADAPTER_VERSION,
+        layoutMode: "advanced" as const,
+        advancedEngineVersion: ADVANCED_BLOCK_ENGINE_VERSION,
+        geometryEngineVersion: GEOMETRY_V2_ENGINE_VERSION,
+        blockKey: "d3-block-1",
+        slotIndex,
+        nominalTiltDeg: 10,
+        effectiveTiltDeg: 10,
+        moduleFaceAzimuthDeg: slotIndex === 0 ? 90 : 270,
+      },
+    } : {}),
+  });
+  const d2Panel = panel("d2-panel", "d2");
+  const d3Panels = [panel("d3-slot-0", "d3", 0), panel("d3-slot-1", "d3", 1)];
+  const zone = {
+    id: "d3-zone",
+    roofId: "d3",
+    type: "riservata" as const,
+    points: [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 }, { x: 1, y: 2 }],
+  };
+  usePlannerV2Store.setState({
+    layers: [roof("d2"), roof("d3")],
+    selectedId: "d2",
+    panels: [d2Panel, ...d3Panels],
+    selectedPanelIds: [d2Panel.id],
+    zones: [zone],
+    selectedZoneId: undefined,
+    snowGuards: [],
+    selectedSnowGuardId: undefined,
+    tool: "select",
+  });
+
+  const before = d3Panels.map(({ cx, cy }) => ({ cx, cy }));
+  const firstAction = resolveRoofLocalPointerAction({
+    ownerRoofId: "d3",
+    selectedRoofId: usePlannerV2Store.getState().selectedId,
+    button: 0,
+    tool: "select",
+  });
+  assert.equal(firstAction, "switch-roof");
+  usePlannerV2Store.getState().select("d3");
+  assert.equal(usePlannerV2Store.getState().selectedId, "d3");
+  assert.deepEqual(usePlannerV2Store.getState().selectedPanelIds, []);
+  assert.deepEqual(d3Panels.map(({ cx, cy }) => ({ cx, cy })), before);
+
+  const secondAction = resolveRoofLocalPointerAction({
+    ownerRoofId: "d3",
+    selectedRoofId: usePlannerV2Store.getState().selectedId,
+    button: 0,
+    tool: "select",
+  });
+  assert.equal(secondAction, "interact-child");
+  usePlannerV2Store.getState().setSelectedPanels(
+    resolvePanelSelectionIds(usePlannerV2Store.getState().panels, d3Panels[0].id),
+  );
+  assert.deepEqual(usePlannerV2Store.getState().selectedPanelIds, d3Panels.map((item) => item.id));
+
+  // Store-level invariants reject every cross-roof child selection route.
+  usePlannerV2Store.getState().setSelectedPanels([d2Panel.id]);
+  assert.deepEqual(usePlannerV2Store.getState().selectedPanelIds, []);
+  usePlannerV2Store.getState().selectZone(zone.id);
+  assert.equal(usePlannerV2Store.getState().selectedZoneId, zone.id);
+  usePlannerV2Store.getState().select("d2");
+  assert.equal(usePlannerV2Store.getState().selectedZoneId, undefined);
+  usePlannerV2Store.getState().selectZone(zone.id);
+  assert.equal(usePlannerV2Store.getState().selectedZoneId, undefined);
+
+  usePlannerV2Store.getState().resetPlanner();
 });
 
 for (const draft of [

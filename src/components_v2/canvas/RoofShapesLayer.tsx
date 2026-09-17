@@ -349,10 +349,14 @@ export default function RoofShapesLayer({
   const moveAnnotationGroupsRef = useRef<Record<string, Konva.Group>>({});
   const moveDeltaRef = useRef<Pt>({ x: 0, y: 0 });
 
-  // La selezione di gruppo segue la selezione primaria; ESC è gestito una sola
-  // volta da CanvasStage e porta selectedId a undefined.
+  const previousSelectedRoofRef = useRef(selectedId);
+  // La selezione di gruppo appartiene al contesto roof corrente. Un cambio
+  // canonico di roof (anche iniziato da un figlio) la invalida.
   useEffect(() => {
-    if (!selectedId) setGroupSel([]);
+    if (previousSelectedRoofRef.current !== selectedId || !selectedId) {
+      setGroupSel([]);
+    }
+    previousSelectedRoofRef.current = selectedId;
   }, [selectedId]);
 
   // --- Keyboard: DELETE

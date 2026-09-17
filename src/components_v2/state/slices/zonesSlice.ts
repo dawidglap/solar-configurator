@@ -54,10 +54,26 @@ export const createZonesSlice: StateCreator<ZonesSlice, [], [], ZonesSlice> = (s
         })),
 
     // ✅ implementazione nuova API
-    selectZone: (id) => set({ selectedZoneId: id }),
+    selectZone: (id) =>
+        set((state) => {
+            if (!id) return { selectedZoneId: undefined };
+            const ownerRoofId = state.zones.find((zone) => zone.id === id)?.roofId;
+            const selectedRoofId = (state as ZonesSlice & { selectedId?: string }).selectedId;
+            return {
+                selectedZoneId: ownerRoofId && ownerRoofId === selectedRoofId ? id : undefined,
+            };
+        }),
 
     // 🔁 alias legacy
-    setSelectedZone: (id) => set({ selectedZoneId: id }),
+    setSelectedZone: (id) =>
+        set((state) => {
+            if (!id) return { selectedZoneId: undefined };
+            const ownerRoofId = state.zones.find((zone) => zone.id === id)?.roofId;
+            const selectedRoofId = (state as ZonesSlice & { selectedId?: string }).selectedId;
+            return {
+                selectedZoneId: ownerRoofId && ownerRoofId === selectedRoofId ? id : undefined,
+            };
+        }),
 
     getZonesForRoof: (roofId) => get().zones.filter((z) => z.roofId === roofId),
 

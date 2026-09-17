@@ -22,6 +22,7 @@ import {
   HINDERNIS_HATCH_STROKE_WIDTH,
   resolveHindernisHatchPatternScale,
 } from "@/lib/planning/presentation/hindernisHatch";
+import { createRoofSwitchGestureLatch } from "../canvas/interactionPolicy";
 
 function createHindernisHatchPattern(color: string): HTMLImageElement | undefined {
   if (typeof document === "undefined") return undefined;
@@ -59,6 +60,7 @@ export default function MovableZone({
   stageScale,
   snapRadiusImg,
   onSelect,
+  onRoutePointerDown,
   onChange,
 }: {
   zone: Zone;
@@ -71,6 +73,7 @@ export default function MovableZone({
   stageScale: number;
   snapRadiusImg: number;
   onSelect: () => void;
+  onRoutePointerDown?: (event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => "continue" | "consume" | "ignore";
   onChange: (patch: Partial<Zone>) => void;
 }) {
   const groupRef = React.useRef<Konva.Group | null>(null);
@@ -82,6 +85,7 @@ export default function MovableZone({
   const containmentSnapshotRef = React.useRef<RoofContainmentSnapshot | null>(null);
   const frameRef = React.useRef<FrameScheduler<Pt> | null>(null);
   const movingRef = React.useRef(false);
+  const roofSwitchLatchRef = React.useRef(createRoofSwitchGestureLatch());
 
   const endMove = React.useCallback((commit: boolean) => {
     if (!movingRef.current) return;
@@ -105,6 +109,15 @@ export default function MovableZone({
   }, [onChange]);
 
   const startMove = React.useCallback((event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    roofSwitchLatchRef.current.reset();
+    const route = onRoutePointerDown?.(event) ?? "continue";
+    if (route === "ignore") return;
+    if (route === "consume") {
+      roofSwitchLatchRef.current.markRoofSwitch();
+      event.cancelBubble = true;
+      event.evt.preventDefault?.();
+      return;
+    }
     if (!interactive || ("button" in event.evt && event.evt.button !== 0)) return;
     event.cancelBubble = true;
     onSelect();
@@ -150,7 +163,18 @@ export default function MovableZone({
     stage.on("mouseup.zone-move touchend.zone-move pointerup.zone-move", () => endMove(true));
     stage.on("pointercancel.zone-move touchcancel.zone-move", () => endMove(false));
     stage.on("mouseleave.zone-move", () => endMove(true));
-  }, [endMove, interactive, onSelect, ownerRoofPoints, toImg, zone.points]);
+  }, [endMove, interactive, onRoutePointerDown, onSelect, ownerRoofPoints, toImg, zone.points]);
+
+  const selectAfterGesture = React.useCallback((event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if (roofSwitchLatchRef.current.consumeFollowup()) {
+      event.cancelBubble = true;
+      return;
+    }
+    if (interactive) {
+      event.cancelBubble = true;
+      onSelect();
+    }
+  }, [interactive, onSelect]);
 
   React.useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
@@ -200,7 +224,7 @@ export default function MovableZone({
         opacity={selected ? HINDERNIS_HATCH_OPACITY + 0.07 : HINDERNIS_HATCH_OPACITY}
         perfectDrawEnabled={false}
       />
-      {interactive && (
+      {(interactive || onRoutePointerDown) && (
         <Line
           points={flat(zone.points)}
           closed
@@ -211,9 +235,11 @@ export default function MovableZone({
           name="zone-hit interactive"
           onMouseDown={startMove}
           onTouchStart={startMove}
-          onClick={(event) => { event.cancelBubble = true; onSelect(); }}
-          onTap={(event) => { event.cancelBubble = true; onSelect(); }}
-          onMouseEnter={(event) => event.target.getStage()?.container()?.style.setProperty("cursor", "move")}
+          onClick={selectAfterGesture}
+          onTap={selectAfterGesture}
+          onMouseEnter={(event) => {
+            if (interactive) event.target.getStage()?.container()?.style.setProperty("cursor", "move");
+          }}
           onMouseLeave={(event) => event.target.getStage()?.container()?.style.removeProperty("cursor")}
         />
       )}

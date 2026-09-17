@@ -833,7 +833,15 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         }),
 
       selectedSnowGuardId: undefined,
-      setSelectedSnowGuard: (id) => set({ selectedSnowGuardId: id }),
+      setSelectedSnowGuard: (id) =>
+        set((state) => {
+          if (!id) return { selectedSnowGuardId: undefined };
+          const ownerRoofId = state.snowGuards.find((guard) => guard.id === id)?.roofId;
+          return {
+            selectedSnowGuardId:
+              ownerRoofId && ownerRoofId === state.selectedId ? id : undefined,
+          };
+        }),
 
       ...createUiSlice(set, get, api),
       ...createLayersSlice(set, get, api),

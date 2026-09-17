@@ -38,6 +38,10 @@ import { history as plannerHistory } from '../state/history';
 import MultiSelectionDragHandle from './panels/MultiSelectionDragHandle';
 import { resolveDirectLayoutTargets } from './panels/directLayoutGeometry';
 import { resolveOutwardBlockArrowAzimuths } from './panels/moduleSlope';
+import {
+  isPrimaryPointerButton,
+  resolveRoofLocalPointerAction,
+} from '../canvas/interactionPolicy';
 
 const HANDLE_GAP_STAGE_PX = 28;     // distanza sotto al gruppo (px schermo)
 
@@ -91,6 +95,23 @@ export default function PanelsKonva(props: {
       cy: panel.cy,
     })));
   }, [panels]);
+
+  const routePanelPointerDown = React.useCallback((_panelId: string, event: any) => {
+    const state = usePlannerV2Store.getState();
+    const action = resolveRoofLocalPointerAction({
+      ownerRoofId: roofId,
+      selectedRoofId: state.selectedId,
+      button: event?.evt?.button,
+      tool: state.tool,
+    });
+    if (action === 'ignore-non-primary') return 'ignore' as const;
+    if (action === 'preserve-explicit-tool') return 'ignore' as const;
+    if (action === 'switch-roof') {
+      state.select(roofId);
+      return 'consume' as const;
+    }
+    return 'continue' as const;
+  }, [roofId]);
 
 
   // multiselezione
@@ -819,8 +840,15 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
     <Group
       clipFunc={directDragActive ? undefined : clipFunc}
       listening
-      onMouseDown={(e) => { e.cancelBubble = true; }}
-      onTouchStart={(e) => { e.cancelBubble = true; }}
+      onMouseDown={(e) => {
+        if (
+          isPrimaryPointerButton(e?.evt?.button)
+          && usePlannerV2Store.getState().tool === 'select'
+        ) e.cancelBubble = true;
+      }}
+      onTouchStart={(e) => {
+        if (usePlannerV2Store.getState().tool === 'select') e.cancelBubble = true;
+      }}
     >
       {panels.map((p) => {
         const sel =
@@ -843,6 +871,7 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
             image={img}
             onStartDrag={startPanelDrag}
             onSelect={onSelect}
+            onRoutePointerDown={routePanelPointerDown}
           />
         );
       })}

@@ -69,7 +69,18 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
         })),
 
     selectedId: undefined,
-    select: (id) => set({ selectedId: id }),
+    select: (id) =>
+        set((state) => {
+            if (state.selectedId === id) return { selectedId: id };
+            // A roof context switch invalidates every roof-local child
+            // selection. The objects themselves remain untouched.
+            return {
+                selectedId: id,
+                selectedPanelIds: [],
+                selectedZoneId: undefined,
+                selectedSnowGuardId: undefined,
+            } as Partial<LayersSlice>;
+        }),
 });
 
 function normalizeRoofPatch(roof: RoofArea, patch: Partial<RoofArea> | undefined): RoofArea {
