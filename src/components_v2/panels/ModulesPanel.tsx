@@ -20,7 +20,7 @@ import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
 import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
 import RoofMarginControl from "./RoofMarginControl";
-import { formatRoofSlopeDirection, resolveRoofFallAzimuth } from "../roof/roofOrientation";
+import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import {
   normalizeRoofAzimuthDeg,
   ROOF_DIRECTION_CHOICES,
@@ -508,38 +508,22 @@ export default function ModulesPanel() {
           </p>
         ) : (
           <div className="text-[10px]">
-            {step === "building" ? (
-              <div className="grid h-8 grid-cols-[28px_42px_48px_minmax(70px,1fr)_32px] items-end px-1 pb-1 text-[8px] font-medium leading-none text-muted-foreground">
-                <div>Dach</div>
-                <div className="text-right">Fläche</div>
-                <div className="text-center">Neigung</div>
-                <div className="text-center">Ausrichtung</div>
-                <div />
-              </div>
-            ) : (
-              <div className="grid h-6 grid-cols-[1fr_58px_70px] items-center px-1 text-[10px] text-muted-foreground">
-                <div className="font-medium">Dachfläche</div>
-                <div className="flex items-center justify-center gap-1">
-                  <MdViewModule className="h-3 w-3" />
-                  <span>Module</span>
-                </div>
-                <div className="text-right font-medium">kWp</div>
-              </div>
-            )}
+            <div
+              data-roof-list-header
+              className="grid h-8 grid-cols-[28px_42px_48px_minmax(70px,1fr)_32px] items-end px-1 pb-1 text-[8px] font-medium leading-none text-muted-foreground"
+            >
+              <div>Dach</div>
+              <div className="text-right">Fläche</div>
+              <div className="text-center">Neigung</div>
+              <div className="text-center">Ausrichtung</div>
+              <div />
+            </div>
 
             {/* Righe (monolinea) */}
             <ul className="divide-y divide-border/70">
               {layers.map((l, i) => {
                 const roofId = l.id;
                 const active = selectedId === roofId;
-
-                const count = panels.filter((p) => p.roofId === roofId).length;
-                const kWp = selSpec ? (selSpec.wp / 1000) * count : 0;
-
-                const fmtDe2 = new Intl.NumberFormat("de-DE", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                });
 
                 const rowPlanning = resolveSurfacePlanning(l.surfacePlanning);
                 const rowKind = l.roofKind ?? (
@@ -555,10 +539,6 @@ export default function ModulesPanel() {
                   : rowPlanning.status === "supported-advanced"
                     ? rowPlanning.config.surface.slopeDeg ?? l.tiltDeg
                     : l.tiltDeg;
-                const pitchedInfo = rowKind === "pitched" && typeof tilt === "number" && typeof az === "number"
-                  ? formatRoofSlopeDirection(tilt, az)
-                  : undefined;
-
                 const tiltShort = tilt != null ? Math.round(tilt * 100) / 100 : undefined;
 
                 const azView = az;
@@ -574,10 +554,9 @@ export default function ModulesPanel() {
                   <li key={roofId}>
                     <div
                       onClick={() => select(roofId)}
+                      data-roof-list-row
                       className={[
-                        step === "building"
-                          ? "grid min-h-9 grid-cols-[28px_42px_48px_minmax(70px,1fr)_32px] items-center px-1"
-                          : "grid min-h-10 grid-cols-[1fr_58px_70px] items-center px-1 py-1",
+                        "grid min-h-9 grid-cols-[28px_42px_48px_minmax(70px,1fr)_32px] items-center px-1",
                         active
                           ? "bg-primary/15 text-primary ring-1 ring-primary/30"
                           : "glass-row text-foreground",
@@ -591,44 +570,21 @@ export default function ModulesPanel() {
                         className="min-w-0 text-left font-semibold cursor-pointer"
                       >
                         <span className="block">{`D${i + 1}`}</span>
-                        {step === "modules" && pitchedInfo && (
-                          <span className="block truncate text-[8px] font-normal text-muted-foreground">
-                            {pitchedInfo}
-                          </span>
-                        )}
                       </button>
 
-                      {step === "modules" ? (
-                        <>
-                          <button
-                            onClick={() => select(roofId)}
-                            title={`${count} Module`}
-                            aria-label={`${count} Module`}
-                            className="tabular-nums text-center opacity-80"
-                          >
-                            {count}
-                          </button>
-                          <button
-                            onClick={() => select(roofId)}
-                            className="tabular-nums text-right opacity-80"
-                          >
-                            {fmtDe2.format(kWp || 0)}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <div className="tabular-nums text-right opacity-80">
-                            <RoofAreaInfo
-                              points={l.points as Pt[]}
-                              mpp={mpp}
-                              variant="text"
-                              showUnit={false}
-                              tiltDeg={l.tiltDeg}
-                              correctForTilt
-                            />
-                          </div>
-                          <div className="flex justify-center px-0.5">
-                            {editing?.id === roofId &&
+                      <div className="tabular-nums text-right opacity-80">
+                        <RoofAreaInfo
+                          points={l.points as Pt[]}
+                          mpp={mpp}
+                          variant="text"
+                          showUnit={false}
+                          tiltDeg={l.tiltDeg}
+                          correctForTilt
+                        />
+                      </div>
+                      <div className="flex justify-center px-0.5">
+                        {step === "building" ? (
+                          editing?.id === roofId &&
                             editing.field === "tilt" ? (
                               <span className="flex h-7 w-[44px] items-center rounded-md border border-primary bg-background/70 px-1 ring-1 ring-primary/30">
                                 <input
@@ -671,69 +627,78 @@ export default function ModulesPanel() {
                               >
                                 {tiltShort != null ? `${tiltShort}°` : "—"}
                               </button>
-                            )}
+                            )
+                        ) : (
+                          <div className="flex h-7 w-[44px] items-center justify-center rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums">
+                            {tiltShort != null ? `${tiltShort}°` : "—"}
                           </div>
+                        )}
+                      </div>
 
-                          <div className="px-0.5">
-                            {rowKind === "flat" ? (
-                              <div
-                                title="Geometrische Dachausrichtung"
-                                className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums"
-                              >
-                                {geometricOrientation == null
-                                  ? "—"
-                                  : formatDisplayAngleDeg(geometricOrientation)}
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => openInlineEditor({ roofId, field: "az", value: azShort })}
-                                title="Gefällerichtung bearbeiten"
-                                aria-label={`Ausrichtung für D${i + 1} bearbeiten`}
-                                className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums transition hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                              >
-                                {azShort != null
-                                  ? `${roofAzimuthCardinal(azShort)} · ${azShort}°`
-                                  : "Festlegen"}
-                              </button>
-                            )}
+                      <div className="px-0.5">
+                        {rowKind === "flat" ? (
+                          <div
+                            title="Geometrische Dachausrichtung"
+                            className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums"
+                          >
+                            {geometricOrientation == null
+                              ? "—"
+                              : formatDisplayAngleDeg(geometricOrientation)}
                           </div>
+                        ) : step === "building" ? (
+                          <button
+                            type="button"
+                            onClick={() => openInlineEditor({ roofId, field: "az", value: azShort })}
+                            title="Gefällerichtung bearbeiten"
+                            aria-label={`Ausrichtung für D${i + 1} bearbeiten`}
+                            className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums transition hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                          >
+                            {azShort != null
+                              ? `${roofAzimuthCardinal(azShort)} · ${azShort}°`
+                              : "Festlegen"}
+                          </button>
+                        ) : (
+                          <div className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums">
+                            {azShort != null
+                              ? `${roofAzimuthCardinal(azShort)} · ${azShort}°`
+                              : "Festlegen"}
+                          </div>
+                        )}
+                      </div>
 
-                          <div className="flex items-center justify-end gap-1">
-                            {srcBadge && (
-                              <span
-                                className={[
-                                  "inline-flex  h-[14px] min-w-[14px] items-center justify-center rounded-sm px-[4px] text-[9px]",
-                                  active
-                                    ? "bg-primary text-primary-foreground"
-                                    : "bg-secondary text-muted-foreground",
-                                ].join(" ")}
-                                title={
-                                  srcBadge === "S" ? "Sonnendach" : "Manuell"
-                                }
-                              >
-                                {srcBadge}
-                              </span>
-                            )}
-                            <button
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                delLayer(roofId);
-                              }}
-                              title="Dachfläche löschen"
-                              aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
-                              className={[
-                                "text-[12px] leading-none",
-                                active
-                                  ? "opacity-90 hover:opacity-100"
-                                  : "opacity-60 hover:opacity-100 hover:text-destructive",
-                              ].join(" ")}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </>
-                      )}
+                      <div className="flex items-center justify-end gap-1">
+                        {srcBadge && (
+                          <span
+                            className={[
+                              "inline-flex h-[14px] min-w-[14px] items-center justify-center rounded-sm px-[4px] text-[9px]",
+                              active
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-secondary text-muted-foreground",
+                            ].join(" ")}
+                            title={srcBadge === "S" ? "Sonnendach" : "Manuell"}
+                          >
+                            {srcBadge}
+                          </span>
+                        )}
+                        {step === "building" && (
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              delLayer(roofId);
+                            }}
+                            title="Dachfläche löschen"
+                            aria-label={`Ebene löschen: ${l.name ?? `D${i + 1}`}`}
+                            className={[
+                              "text-[12px] leading-none",
+                              active
+                                ? "opacity-90 hover:opacity-100"
+                                : "opacity-60 hover:opacity-100 hover:text-destructive",
+                            ].join(" ")}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {step === "building" && editing?.id === roofId && editing.field === "az" && (
                       <div

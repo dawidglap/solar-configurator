@@ -93,7 +93,7 @@ test("contextual help and compact roof-list property controls remain visible in 
   assert.equal(panel.includes("Module werden erst mit U, F oder Einzelplatzierung erzeugt."), false);
   assert.equal(panel.includes("Vorschau als Module platzieren"), false);
   assert.ok(canvas.includes("RoofAnnotationsLayer"));
-  assert.ok(panel.includes("formatRoofSlopeDirection"));
+  assert.equal(panel.includes("formatRoofSlopeDirection"), false);
   assert.ok(marginControl.includes("Randabstand"));
   assert.equal(marginControl.includes("Dachneigung"), false);
   assert.equal(marginControl.includes("Gefällerichtung"), false);
