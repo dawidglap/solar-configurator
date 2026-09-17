@@ -16,8 +16,12 @@ test("guided sidebar exposes primary choices without a dynamic bottom status are
   assert.equal(modulesPanel.includes("Klicke auf eine Dachfläche, um Module zu planen."), false);
   assert.match(modulesPanel, /step === "modules" && !selectedRoof/);
   assert.ok(modulesPanel.includes('data-testid="module-planning-neutral-shell"'));
-  assert.ok(modulesPanel.includes("Modulausrichtung"));
-  assert.ok(modulesPanel.includes("Keine Dachfläche ausgewählt"));
+  assert.match(modulesPanel, /const SHOW_MODULE_ORIENTATION_READOUT = false/);
+  assert.match(advancedPanel, /const SHOW_MODULE_ORIENTATION_READOUT = false/);
+  assert.match(modulesPanel, /SHOW_MODULE_ORIENTATION_READOUT && \(/);
+  assert.match(advancedPanel, /SHOW_MODULE_ORIENTATION_READOUT && \(/);
+  assert.ok(modulesPanel.includes("Modulausrichtung"), "dormant readout remains restorable");
+  assert.ok(advancedPanel.includes("Modulausrichtung"), "dormant paired-angle readout remains restorable");
   assert.ok(modulesPanel.includes("Firmenstandard"));
   assert.ok(modulesPanel.includes('step === "modules" && selectedRoof && displayMode === "standard"'));
   assert.ok(modulesPanel.includes("Schrägdach"));

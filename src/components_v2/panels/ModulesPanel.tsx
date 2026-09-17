@@ -60,6 +60,11 @@ const inputBase =
 const labelSm =
   "block text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
 
+// Customer requested hiding the module-orientation readout from Modulplanung.
+// Keep the dormant presentation path easy to restore; orientation state and
+// all layout calculations remain active in the planner domain/application code.
+const SHOW_MODULE_ORIENTATION_READOUT = false;
+
 export default function ModulesPanel() {
   // --- Layers / selezione tetto ---
   const layers = usePlannerV2Store((s) => s.layers);
@@ -851,11 +856,15 @@ export default function ModulesPanel() {
           </section>
 
           <section className="space-y-3 border-b border-border/60 pb-4">
-            <h3 className={labelSm}>Ausrichtung</h3>
-            <div className="flex items-center justify-between rounded-lg bg-muted/15 px-3 py-2 text-[10px]">
-              <span className="text-muted-foreground">Modulausrichtung</span>
-              <strong aria-label="Keine Dachfläche ausgewählt">—</strong>
-            </div>
+            {SHOW_MODULE_ORIENTATION_READOUT && (
+              <>
+                <h3 className={labelSm}>Ausrichtung</h3>
+                <div className="flex items-center justify-between rounded-lg bg-muted/15 px-3 py-2 text-[10px]">
+                  <span className="text-muted-foreground">Modulausrichtung</span>
+                  <strong aria-label="Keine Dachfläche ausgewählt">—</strong>
+                </div>
+              </>
+            )}
             <div className="rounded-xl border border-border/60 text-[10px]">
               <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">
                 Feinjustierung
@@ -1092,7 +1101,9 @@ export default function ModulesPanel() {
           </section>
 
           <section className="space-y-3 border-b border-border/60 pb-4">
-            <h3 className={labelSm}>Ausrichtung</h3>
+            {SHOW_MODULE_ORIENTATION_READOUT && (
+              <h3 className={labelSm}>Ausrichtung</h3>
+            )}
             <div className="rounded-xl border border-border/60 text-[10px]">
               <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">
                 Feinjustierung
