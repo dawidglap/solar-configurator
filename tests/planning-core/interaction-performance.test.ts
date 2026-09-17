@@ -12,10 +12,86 @@ import {
   createPanelAxis,
   createPanelDragSpatialIndex,
   hasPanelOverlapCached,
+  PANEL_SNAP_TUNING_SCREEN_PX,
+  panelSnapTuningForScale,
   resolveMagneticNeighbourSnapUV,
   resolvePanelDragFrameUV,
   type PanelInst,
 } from "../../src/components_v2/modules/panels/usePanelDragSnap";
+
+test("snap tuning separates strong adjacency from subtle alignment in screen pixels", () => {
+  assert.deepEqual(PANEL_SNAP_TUNING_SCREEN_PX, {
+    adjacencyActivationPx: 18,
+    adjacencyReleasePx: 26,
+    alignmentActivationPx: 9,
+    alignmentReleasePx: 15,
+    adjacencyPriorityBonusPx: 8,
+  });
+  assert.deepEqual(panelSnapTuningForScale(2), {
+    adjacencyActivationPx: 9,
+    adjacencyReleasePx: 13,
+    alignmentActivationPx: 4.5,
+    alignmentReleasePx: 7.5,
+    adjacencyPriorityBonusPx: 4,
+  });
+});
+
+test("exact adjacency wins over a closer generic alignment guide", () => {
+  const result = resolvePanelDragFrameUV({
+    free: { u: 11, v: 7 },
+    hw: 5,
+    hh: 5,
+    gapXPx: 1,
+    gapYPx: 1,
+    activationThresholdPx: 18,
+    snapTuning: PANEL_SNAP_TUNING_SCREEN_PX,
+    panels: [
+      { id: "neighbour", u: 0, v: 0, hw: 5, hh: 5 },
+      { id: "guide", u: 11, v: 100, hw: 5, hh: 5 },
+    ],
+    validate: () => true,
+  });
+  assert.equal(result.snapKey, "adjacency:neighbour:right");
+  assert.deepEqual(result.position, { u: 11, v: 0 });
+});
+
+test("adjacency activates at 18 px, remains stable to 26 px, then releases", () => {
+  const panels = [{ id: "fixed", u: 0, v: 0, hw: 5, hh: 50 }];
+  const acquired = resolvePanelDragFrameUV({
+    free: { u: 11, v: 17.9 }, hw: 5, hh: 50, gapXPx: 1, gapYPx: 1,
+    activationThresholdPx: 18, snapTuning: PANEL_SNAP_TUNING_SCREEN_PX,
+    panels, validate: () => true,
+  });
+  assert.equal(acquired.snapKey, "adjacency:fixed:right");
+  const retained = resolvePanelDragFrameUV({
+    free: { u: 11, v: 25.9 }, hw: 5, hh: 50, gapXPx: 1, gapYPx: 1,
+    activationThresholdPx: 18, snapTuning: PANEL_SNAP_TUNING_SCREEN_PX,
+    activeSnapKey: acquired.snapKey, panels, validate: () => true,
+  });
+  assert.equal(retained.snapKey, acquired.snapKey);
+  const released = resolvePanelDragFrameUV({
+    free: { u: 11, v: 26.1 }, hw: 5, hh: 50, gapXPx: 1, gapYPx: 1,
+    activationThresholdPx: 18, snapTuning: PANEL_SNAP_TUNING_SCREEN_PX,
+    activeSnapKey: acquired.snapKey, panels, validate: () => true,
+  });
+  assert.equal(released.snapKey, null);
+  assert.deepEqual(released.position, { u: 11, v: 26.1 });
+});
+
+test("screen-space activation is perceptually identical across zoom levels", () => {
+  const panels = [{ id: "fixed", u: 0, v: 0, hw: 5, hh: 50 }];
+  for (const scale of [1, 2]) {
+    const tuning = panelSnapTuningForScale(scale);
+    const result = resolvePanelDragFrameUV({
+      free: { u: 11, v: 17 / scale }, hw: 5, hh: 50, gapXPx: 1, gapYPx: 1,
+      activationThresholdPx: tuning.adjacencyActivationPx,
+      snapTuning: tuning,
+      panels,
+      validate: () => true,
+    });
+    assert.equal(result.snapKey, "adjacency:fixed:right");
+  }
+});
 
 test("drag neighbour snap uses exact axis gaps without pushing invalid candidates", () => {
   const panels = [{ id: "fixed", u: 10, v: 20, hw: 5, hh: 8 }];

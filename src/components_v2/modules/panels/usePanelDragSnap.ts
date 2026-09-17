@@ -32,14 +32,40 @@ type Args = {
   onSelect?: (id?: string) => void;
   onDragStart?: () => void;
   onDragEnd?: () => void;
-  snapPxImg: number;
+  snapTuningImg: PanelSnapTuning;
   gapPx?: number;
   gapXPx?: number;
   gapYPx?: number;
 };
 
 const PARALLEL_TOLERANCE_DEG = 0.25;
-const SNAP_RELEASE_FACTOR = 1.5;
+export type PanelSnapTuning = {
+  adjacencyActivationPx: number;
+  adjacencyReleasePx: number;
+  alignmentActivationPx: number;
+  alignmentReleasePx: number;
+  adjacencyPriorityBonusPx: number;
+};
+
+/** Deliberately screen-space values: zoom must not change the perceived magnet. */
+export const PANEL_SNAP_TUNING_SCREEN_PX: Readonly<PanelSnapTuning> = Object.freeze({
+  adjacencyActivationPx: 18,
+  adjacencyReleasePx: 26,
+  alignmentActivationPx: 9,
+  alignmentReleasePx: 15,
+  adjacencyPriorityBonusPx: 8,
+});
+
+export function panelSnapTuningForScale(stageScale: number): PanelSnapTuning {
+  const inverseScale = 1 / Math.max(Math.abs(stageScale), 1e-6);
+  return {
+    adjacencyActivationPx: PANEL_SNAP_TUNING_SCREEN_PX.adjacencyActivationPx * inverseScale,
+    adjacencyReleasePx: PANEL_SNAP_TUNING_SCREEN_PX.adjacencyReleasePx * inverseScale,
+    alignmentActivationPx: PANEL_SNAP_TUNING_SCREEN_PX.alignmentActivationPx * inverseScale,
+    alignmentReleasePx: PANEL_SNAP_TUNING_SCREEN_PX.alignmentReleasePx * inverseScale,
+    adjacencyPriorityBonusPx: PANEL_SNAP_TUNING_SCREEN_PX.adjacencyPriorityBonusPx * inverseScale,
+  };
+}
 
 export function panelAnglesAreCompatible(angleA: number, angleB: number): boolean {
   const diff = angleDiffDeg(angleA, angleB);
@@ -219,6 +245,7 @@ export function resolvePanelDragFrameUV(input: {
   gapYPx: number;
   activationThresholdPx: number;
   releaseThresholdPx?: number;
+  snapTuning?: PanelSnapTuning;
   disableSnap?: boolean;
   activeSnapKey?: string | null;
   panels: readonly StaticPanelUV[];
@@ -228,23 +255,40 @@ export function resolvePanelDragFrameUV(input: {
   if (input.disableSnap) {
     return { position: input.free, valid: freeValid, snapped: false, snapKey: null, hintU: false, hintV: false };
   }
-  const activation = Math.max(0, input.activationThresholdPx);
-  const release = Math.max(activation, input.releaseThresholdPx ?? activation * SNAP_RELEASE_FACTOR);
+  const legacyActivation = Math.max(0, input.activationThresholdPx);
+  const legacyRelease = Math.max(legacyActivation, input.releaseThresholdPx ?? legacyActivation * 1.5);
+  const tuning: PanelSnapTuning = input.snapTuning ?? {
+    adjacencyActivationPx: legacyActivation,
+    adjacencyReleasePx: legacyRelease,
+    alignmentActivationPx: legacyActivation,
+    alignmentReleasePx: legacyRelease,
+    adjacencyPriorityBonusPx: legacyActivation * 0.25,
+  };
+  const thresholdFor = (candidate: SnapCandidate) => {
+    const active = candidate.key === input.activeSnapKey;
+    if (candidate.kind === 'adjacency') {
+      return active ? tuning.adjacencyReleasePx : tuning.adjacencyActivationPx;
+    }
+    return active ? tuning.alignmentReleasePx : tuning.alignmentActivationPx;
+  };
   const candidates = generateSnapCandidates(input).filter((candidate) => {
-    const threshold = candidate.key === input.activeSnapKey ? release : activation;
-    return candidate.distance <= threshold && input.validate(candidate.position);
+    return candidate.distance <= thresholdFor(candidate) && input.validate(candidate.position);
   });
+  const score = (candidate: SnapCandidate) => candidate.distance - (
+    candidate.kind === 'adjacency' ? tuning.adjacencyPriorityBonusPx : 0
+  );
   candidates.sort((first, second) => {
-    // Exact physical adjacency gets a modest attraction advantage over a
-    // one-axis guide. This keeps a near-bottom/right approach from being
-    // swallowed by an already-aligned zero/near-zero guide candidate.
-    const firstScore = first.distance - (first.kind === 'adjacency' ? activation * 0.25 : 0);
-    const secondScore = second.distance - (second.kind === 'adjacency' ? activation * 0.25 : 0);
-    return firstScore - secondScore || first.key.localeCompare(second.key);
+    return score(first) - score(second) || first.key.localeCompare(second.key);
   });
-  const chosen = input.activeSnapKey
-    ? candidates.find((candidate) => candidate.key === input.activeSnapKey) ?? candidates[0]
-    : candidates[0];
+  const active = input.activeSnapKey
+    ? candidates.find((candidate) => candidate.key === input.activeSnapKey)
+    : undefined;
+  const best = candidates[0];
+  // Hysteresis keeps an active target stable. Exact adjacency may however
+  // pre-empt a generic guide because it is the user's stronger intent.
+  const chosen = active && !(active.kind !== 'adjacency' && best?.kind === 'adjacency')
+    ? active
+    : best;
   if (!chosen) {
     return { position: input.free, valid: freeValid, snapped: false, snapKey: null, hintU: false, hintV: false };
   }
@@ -344,7 +388,7 @@ export function usePanelDragSnap({
   onSelect,
   onDragStart,
   onDragEnd,
-  snapPxImg,
+  snapTuningImg,
   gapPx = 0,
   gapXPx,
   gapYPx,
@@ -445,7 +489,7 @@ export function usePanelDragSnap({
     );
     spatialIndexRef.current = createPanelDragSpatialIndex(
       staticPanels,
-      Math.max(32, largestPanelExtent + snapPxImg * 2),
+      Math.max(32, largestPanelExtent + snapTuningImg.adjacencyReleasePx * 2),
     );
     axisRef.current = axis;
     startOffsetRef.current = { dx: panel.cx - pointerImg.x, dy: panel.cy - pointerImg.y };
@@ -469,7 +513,7 @@ export function usePanelDragSnap({
       if (!offset || !half || !currentAxis || !validator) return;
       const freeWorld = { x: point.x + offset.dx, y: point.y + offset.dy };
       const free = currentAxis.project(freeWorld);
-      const searchRadius = Math.max(half.hw, half.hh) * 2 + snapPxImg * SNAP_RELEASE_FACTOR;
+      const searchRadius = Math.max(half.hw, half.hh) * 2 + snapTuningImg.adjacencyReleasePx;
       const nearby = spatialIndexRef.current?.query(free.u, free.v, searchRadius) ?? [];
       const resolution = resolvePanelDragFrameUV({
         free,
@@ -477,8 +521,9 @@ export function usePanelDragSnap({
         hh: half.hh,
         gapXPx: gapXPx ?? gapPx,
         gapYPx: gapYPx ?? gapPx,
-        activationThresholdPx: snapPxImg,
-        releaseThresholdPx: snapPxImg * SNAP_RELEASE_FACTOR,
+        activationThresholdPx: snapTuningImg.adjacencyActivationPx,
+        releaseThresholdPx: snapTuningImg.adjacencyReleasePx,
+        snapTuning: snapTuningImg,
         disableSnap,
         activeSnapKey: activeSnapKeyRef.current,
         panels: nearby,
@@ -530,7 +575,7 @@ export function usePanelDragSnap({
     stage.on(`mouseleave${namespace}`, () => endDrag(true));
   }, [
     allPanels, clearHints, defaultAngleDeg, endDrag, gapPx, gapXPx, gapYPx,
-    onDragStart, onSelect, prepareValidateCandidate, roofId, setGuide, snapPxImg, stageToImg,
+    onDragStart, onSelect, prepareValidateCandidate, roofId, setGuide, snapTuningImg, stageToImg,
   ]);
 
   React.useEffect(() => {

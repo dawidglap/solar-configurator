@@ -12,6 +12,7 @@ import {
   buildPanelDragStaticGeometry,
   createPanelAxis,
   createPanelDragSpatialIndex,
+  panelSnapTuningForScale,
   resolvePanelDragFrameUV,
   type PanelInst as HookPanel,
 } from '../modules/panels/usePanelDragSnap';
@@ -26,16 +27,16 @@ import {
   resolveSurfacePlanning,
 } from '@/lib/planning-core/advanced';
 import {
+  buildAdvancedManualSnapCenters,
   createPanelPastePlacementValidator,
+  resolveAdvancedManualCenterSnap,
   resolveManualAdvancedBlockDefinition,
-  snapAdvancedManualCenter,
 } from './manualPlacement';
 import { history as plannerHistory } from '../state/history';
 import MultiSelectionDragHandle from './panels/MultiSelectionDragHandle';
 import { resolveDirectLayoutTargets } from './panels/directLayoutGeometry';
 import { resolveOutwardBlockArrowAzimuths } from './panels/moduleSlope';
 
-const SNAP_STAGE_PX = 10;           // magnetic activation radius (screen px)
 const HANDLE_GAP_STAGE_PX = 28;     // distanza sotto al gruppo (px schermo)
 
 type PanelInst = HookPanel & PanelInstance;
@@ -106,7 +107,7 @@ export default function PanelsKonva(props: {
   // scale corrente
   const stageScale = usePlannerV2Store((s) => s.view.scale || s.view.fitScale || 1);
   const invScale = 1 / (stageScale || 1);
-  const snapPxImg = React.useMemo(() => SNAP_STAGE_PX * invScale, [invScale]);
+  const snapTuningImg = React.useMemo(() => panelSnapTuningForScale(stageScale), [stageScale]);
 
   // margine progetto → px immagine
   const marginM = usePlannerV2Store((s) => {
@@ -208,7 +209,7 @@ export default function PanelsKonva(props: {
     onSelect,
     onDragStart: handleDirectDragStart,
     onDragEnd: handleDirectDragEnd,
-    snapPxImg,
+    snapTuningImg,
     gapPx,
     gapXPx,
     gapYPx,
@@ -294,6 +295,7 @@ export default function PanelsKonva(props: {
       definition: NonNullable<typeof committedAdvancedDefinition>;
       initialCenter: Pt;
       otherPanels: PanelInst[];
+      spatialIndex: ReturnType<typeof createPanelDragSpatialIndex>;
     } | null;
     placementIsValid: (panels: readonly PanelInstance[]) => boolean;
     frame: FrameScheduler<{ point: Pt; disableSnap: boolean }>;
@@ -461,7 +463,7 @@ export default function PanelsKonva(props: {
     );
     const spatialIndex = createPanelDragSpatialIndex(
       staticPanelsUV,
-      Math.max(32, largestExtent + snapPxImg * 3),
+      Math.max(32, largestExtent + snapTuningImg.adjacencyReleasePx * 3),
     );
     const movingBlockKey = movingPanels[0]?.advanced?.blockKey;
     const isCompleteAdvancedBlock = Boolean(
@@ -471,14 +473,28 @@ export default function PanelsKonva(props: {
       panels.filter((panel) => panel.advanced?.blockKey === movingBlockKey).length === movingPanels.length,
     );
     const advancedSnap = isCompleteAdvancedBlock && committedAdvancedDefinition
-      ? {
+      ? (() => {
+          const otherPanels = allPanels.filter((panel) => !movingIds.has(panel.id));
+          const centers = buildAdvancedManualSnapCenters({ roofId, panels: otherPanels });
+          return {
           definition: committedAdvancedDefinition,
           initialCenter: {
             x: movingPanels.reduce((sum, panel) => sum + panel.cx, 0) / movingPanels.length,
             y: movingPanels.reduce((sum, panel) => sum + panel.cy, 0) / movingPanels.length,
           },
-          otherPanels: allPanels.filter((panel) => !movingIds.has(panel.id)),
-        }
+          otherPanels,
+          spatialIndex: createPanelDragSpatialIndex(
+            centers.map((center) => ({
+              id: center.blockKey,
+              u: center.x,
+              v: center.y,
+              hw: 0,
+              hh: 0,
+            })),
+            Math.max(32, snapTuningImg.adjacencyReleasePx * 2),
+          ),
+        };
+        })()
       : null;
 
     const onFrame = ({ point: curImg, disableSnap }: { point: Pt; disableSnap: boolean }) => {
@@ -518,15 +534,39 @@ export default function PanelsKonva(props: {
           x: st.advancedSnap.initialCenter.x + dImgX,
           y: st.advancedSnap.initialCenter.y + dImgY,
         };
-        const snappedCenter = snapAdvancedManualCenter({
+        const maximumPitchPx = Math.max(
+          st.advancedSnap.definition.pitchM.x,
+          st.advancedSnap.definition.pitchM.y,
+        ) / Math.max(mpp, 1e-9);
+        const nearbyCenters = st.advancedSnap.spatialIndex.query(
+          rawCenter.x,
+          rawCenter.y,
+          maximumPitchPx + snapTuningImg.adjacencyReleasePx,
+        ).map((center) => ({ blockKey: center.id, x: center.u, y: center.v }));
+        const advancedResolution = resolveAdvancedManualCenterSnap({
           pointerPx: rawCenter,
           roofId,
           panels: st.advancedSnap.otherPanels,
+          centers: nearbyCenters,
           definition: st.advancedSnap.definition,
           mppImage: mpp,
-          activationThresholdPx: snapPxImg,
+          activationThresholdPx: snapTuningImg.adjacencyActivationPx,
+          releaseThresholdPx: snapTuningImg.adjacencyReleasePx,
+          activeSnapKey: st.activeSnapKey,
           disableSnap,
+          validateCandidate: (candidateCenter) => {
+            const candidateDeltaUV = st.axis.project({
+              x: candidateCenter.x - st.advancedSnap!.initialCenter.x,
+              y: candidateCenter.y - st.advancedSnap!.initialCenter.y,
+            });
+            return validateCenter({
+              u: st.groupCenterUV.u + candidateDeltaUV.u,
+              v: st.groupCenterUV.v + candidateDeltaUV.v,
+            });
+          },
         });
+        st.activeSnapKey = advancedResolution.snapKey;
+        const snappedCenter = advancedResolution.position;
         const snappedDelta = {
           x: snappedCenter.x - st.advancedSnap.initialCenter.x,
           y: snappedCenter.y - st.advancedSnap.initialCenter.y,
@@ -536,7 +576,7 @@ export default function PanelsKonva(props: {
           u: st.groupCenterUV.u + snappedDeltaUV.u,
           v: st.groupCenterUV.v + snappedDeltaUV.v,
         };
-        if (!disableSnap && validateCenter(advancedCenterUV)) {
+        if (advancedResolution.snapped) {
           resolvedCenterUV = advancedCenterUV;
           valid = true;
           hintU = Math.abs(advancedCenterUV.u - freeCenterUV.u) > 1e-6;
@@ -546,7 +586,7 @@ export default function PanelsKonva(props: {
         const nearby = st.spatialIndex.query(
           freeCenterUV.u,
           freeCenterUV.v,
-          Math.max(st.groupHalfSize.hw, st.groupHalfSize.hh) * 2 + snapPxImg * 1.5,
+          Math.max(st.groupHalfSize.hw, st.groupHalfSize.hh) * 2 + snapTuningImg.adjacencyReleasePx,
         );
         const resolution = resolvePanelDragFrameUV({
           free: freeCenterUV,
@@ -554,8 +594,9 @@ export default function PanelsKonva(props: {
           hh: st.groupHalfSize.hh,
           gapXPx: gapXPx ?? gapPx,
           gapYPx: gapYPx ?? gapPx,
-          activationThresholdPx: snapPxImg,
-          releaseThresholdPx: snapPxImg * 1.5,
+          activationThresholdPx: snapTuningImg.adjacencyActivationPx,
+          releaseThresholdPx: snapTuningImg.adjacencyReleasePx,
+          snapTuning: snapTuningImg,
           disableSnap,
           activeSnapKey: st.activeSnapKey,
           panels: nearby,
@@ -705,7 +746,7 @@ export default function PanelsKonva(props: {
     handleDirectDragStart();
   }, [
     selectedPanels, stageToImg, allPanels, roofId,
-    defaultAngleDeg, snapPxImg, panels,
+    defaultAngleDeg, snapTuningImg, panels,
     updatePanelsBulk, handleDirectDragStart, handleDirectDragEnd,
     committedAdvancedDefinition, mpp, marginM, allZones, snowGuards,
     gapPx, gapXPx, gapYPx, spacingXM, spacingYM, cancelGroupDrag, detachGroupDragInput,

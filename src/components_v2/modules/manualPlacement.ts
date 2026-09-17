@@ -507,40 +507,59 @@ export function resolveManualAdvancedBlockDefinition(
   return null;
 }
 
-export function snapAdvancedManualCenter(input: {
-  pointerPx: Pt;
+export type AdvancedManualSnapResolution = {
+  position: Pt;
+  snapped: boolean;
+  snapKey: string | null;
+};
+
+export type AdvancedManualSnapCenter = Pt & { blockKey: string };
+
+export function buildAdvancedManualSnapCenters(input: {
   roofId: string;
   panels: readonly PanelInstance[];
-  definition: AdvancedBlockDefinition;
-  mppImage: number;
-  activationThresholdPx?: number;
-  disableSnap: boolean;
-}): Pt {
-  if (input.disableSnap) return input.pointerPx;
-  const advanced = input.panels.filter(
-    (panel) => panel.roofId === input.roofId && panel.advanced?.blockKey,
-  );
-  if (!advanced.length) return input.pointerPx;
+}): AdvancedManualSnapCenter[] {
   const byBlock = new Map<string, PanelInstance[]>();
-  advanced.forEach((panel) => {
-    const key = panel.advanced!.blockKey;
+  input.panels.forEach((panel) => {
+    if (panel.roofId !== input.roofId || !panel.advanced?.blockKey) return;
+    const key = panel.advanced.blockKey;
     byBlock.set(key, [...(byBlock.get(key) ?? []), panel]);
   });
-  const centers = [...byBlock.values()].map((items) => ({
+  return [...byBlock.entries()].map(([blockKey, items]) => ({
+    blockKey,
     x: items.reduce((sum, panel) => sum + panel.cx, 0) / items.length,
     y: items.reduce((sum, panel) => sum + panel.cy, 0) / items.length,
   }));
+}
+
+export function resolveAdvancedManualCenterSnap(input: {
+  pointerPx: Pt;
+  roofId: string;
+  panels: readonly PanelInstance[];
+  centers?: readonly AdvancedManualSnapCenter[];
+  definition: AdvancedBlockDefinition;
+  mppImage: number;
+  activationThresholdPx?: number;
+  releaseThresholdPx?: number;
+  activeSnapKey?: string | null;
+  validateCandidate?: (center: Pt) => boolean;
+  disableSnap: boolean;
+}): AdvancedManualSnapResolution {
+  if (input.disableSnap) return { position: input.pointerPx, snapped: false, snapKey: null };
+  const centers = input.centers ?? buildAdvancedManualSnapCenters(input);
+  if (!centers.length) return { position: input.pointerPx, snapped: false, snapKey: null };
   const rotation = ((90 - input.definition.planarOrientationDeg) * Math.PI) / 180;
   const cos = Math.cos(rotation);
   const sin = Math.sin(rotation);
-  let best = input.pointerPx;
-  let bestDistance = Math.max(0, input.activationThresholdPx ?? 10) + Number.EPSILON;
+  const activation = Math.max(0, input.activationThresholdPx ?? 10);
+  const release = Math.max(activation, input.releaseThresholdPx ?? activation * 1.5);
+  const candidates: { key: string; position: Pt; distance: number }[] = [];
   for (const origin of centers) {
     const targets = [
-      { x: -input.definition.pitchM.x, y: 0 },
-      { x: input.definition.pitchM.x, y: 0 },
-      { x: 0, y: -input.definition.pitchM.y },
-      { x: 0, y: input.definition.pitchM.y },
+      { side: 'left', x: -input.definition.pitchM.x, y: 0 },
+      { side: 'right', x: input.definition.pitchM.x, y: 0 },
+      { side: 'top', x: 0, y: -input.definition.pitchM.y },
+      { side: 'bottom', x: 0, y: input.definition.pitchM.y },
     ];
     for (const target of targets) {
       const worldX = target.x * cos - target.y * sin;
@@ -550,13 +569,32 @@ export function snapAdvancedManualCenter(input: {
         y: origin.y - worldY / input.mppImage,
       };
       const distance = Math.hypot(candidate.x - input.pointerPx.x, candidate.y - input.pointerPx.y);
-      if (distance < bestDistance) {
-        best = candidate;
-        bestDistance = distance;
+      const key = `advanced-adjacency:${origin.blockKey}:${target.side}`;
+      const threshold = key === input.activeSnapKey ? release : activation;
+      if (distance <= threshold && (input.validateCandidate?.(candidate) ?? true)) {
+        candidates.push({ key, position: candidate, distance });
       }
     }
   }
-  return best;
+  candidates.sort((first, second) => first.distance - second.distance || first.key.localeCompare(second.key));
+  const chosen = input.activeSnapKey
+    ? candidates.find((candidate) => candidate.key === input.activeSnapKey) ?? candidates[0]
+    : candidates[0];
+  return chosen
+    ? { position: chosen.position, snapped: true, snapKey: chosen.key }
+    : { position: input.pointerPx, snapped: false, snapKey: null };
+}
+
+export function snapAdvancedManualCenter(input: {
+  pointerPx: Pt;
+  roofId: string;
+  panels: readonly PanelInstance[];
+  definition: AdvancedBlockDefinition;
+  mppImage: number;
+  activationThresholdPx?: number;
+  disableSnap: boolean;
+}): Pt {
+  return resolveAdvancedManualCenterSnap(input).position;
 }
 
 export function buildAdvancedManualCandidate(input: {

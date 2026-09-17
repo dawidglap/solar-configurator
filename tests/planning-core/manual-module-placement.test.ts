@@ -15,6 +15,7 @@ import {
   buildAdvancedManualCandidate,
   buildStandardManualCandidate,
   materializeManualAdvancedPanels,
+  resolveAdvancedManualCenterSnap,
   resolveManualAdvancedBlockDefinition,
   regroupK2PanelsAfterManualAdd,
   snapAdvancedManualCenter,
@@ -399,6 +400,43 @@ test("advanced snapping is deterministic and Shift bypasses it", () => {
     activationThresholdPx: 2,
     disableSnap: false,
   }), far);
+
+  const acquired = resolveAdvancedManualCenterSnap({
+    pointerPx: { x: exactNeighbour.x + 1.5, y: exactNeighbour.y },
+    roofId: ROOF.id,
+    panels: existing,
+    definition,
+    mppImage: 0.1,
+    activationThresholdPx: 2,
+    releaseThresholdPx: 4,
+    disableSnap: false,
+  });
+  assert.equal(acquired.snapped, true, "complete D-Dome block acquires exact block adjacency");
+  const retained = resolveAdvancedManualCenterSnap({
+    pointerPx: { x: exactNeighbour.x + 3.5, y: exactNeighbour.y },
+    roofId: ROOF.id,
+    panels: existing,
+    definition,
+    mppImage: 0.1,
+    activationThresholdPx: 2,
+    releaseThresholdPx: 4,
+    activeSnapKey: acquired.snapKey,
+    disableSnap: false,
+  });
+  assert.equal(retained.snapKey, acquired.snapKey, "block snap remains stable inside release radius");
+  const invalid = resolveAdvancedManualCenterSnap({
+    pointerPx: nearNeighbour,
+    roofId: ROOF.id,
+    panels: existing,
+    definition,
+    mppImage: 0.1,
+    activationThresholdPx: 2,
+    releaseThresholdPx: 4,
+    disableSnap: false,
+    validateCandidate: () => false,
+  });
+  assert.equal(invalid.snapped, false, "invalid full-block adjacency is ignored");
+  assert.deepEqual(invalid.position, nearNeighbour);
 });
 
 test("Standard magnetic snap creates an exact compact 2x2 grid and is rotation invariant", () => {
