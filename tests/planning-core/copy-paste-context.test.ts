@@ -5,11 +5,16 @@ import test from "node:test";
 import type { PanelInstance } from "../../src/types/planner";
 import {
   clearPlannerObjectClipboard,
+  copyObstacleToPlannerClipboard,
   copyPanelsToPlannerClipboard,
   copyRoofToPlannerClipboard,
+  markObstacleClipboardPaste,
   markPanelClipboardPaste,
   readPlannerObjectClipboard,
+  resolvePlannerClipboardTarget,
 } from "../../src/components_v2/canvas/plannerObjectClipboard";
+import { createContainedObstaclePaste } from "../../src/components_v2/zones/zoneClipboardGeometry";
+import type { Zone } from "../../src/components_v2/state/slices/zonesSlice";
 import { resolveDirectLayoutTargets } from "../../src/components_v2/modules/panels/directLayoutGeometry";
 import {
   createPanelPasteGroup,
@@ -110,6 +115,129 @@ test("planner clipboard is explicitly typed and a new copy resets the paste casc
   assert.equal(afterPaste?.type === "panels" ? afterPaste.pasteCount : undefined, 1);
 });
 
+test("Gebäude clipboard routing gives an active Hindernis priority over its parent roof", () => {
+  assert.equal(resolvePlannerClipboardTarget({
+    step: "building",
+    tool: "select",
+    selectedRoofId: "roof-a",
+    selectedZoneId: "zone-a",
+    selectedPanelCount: 0,
+  }), "obstacle");
+  assert.equal(resolvePlannerClipboardTarget({
+    step: "building",
+    tool: "select",
+    selectedRoofId: "roof-a",
+    selectedPanelCount: 0,
+  }), "roof");
+  assert.equal(resolvePlannerClipboardTarget({
+    step: "building",
+    tool: "select",
+    selectedRoofId: "roof-a",
+    selectedPanelCount: 2,
+  }), "roof", "stale module selections are not active clipboard targets in Gebäudeplanung");
+  assert.equal(resolvePlannerClipboardTarget({
+    step: "building",
+    tool: "draw-reserved",
+    selectedRoofId: "roof-a",
+    selectedPanelCount: 0,
+  }), "none");
+});
+
+test("Modulplanung owns panel clipboard and never falls back to the active roof", () => {
+  assert.equal(resolvePlannerClipboardTarget({
+    step: "modules",
+    tool: "select",
+    selectedRoofId: "roof-a",
+    selectedPanelCount: 1,
+  }), "panels");
+  assert.equal(resolvePlannerClipboardTarget({
+    step: "modules",
+    tool: "select",
+    selectedRoofId: "roof-a",
+    selectedPanelCount: 0,
+  }), "none");
+});
+
+test("obstacle clipboard snapshots geometry and keeps its type after selection context changes", () => {
+  clearPlannerObjectClipboard();
+  const source: Zone = {
+    id: "zone-a",
+    roofId: "roof-a",
+    type: "riservata",
+    shapeKind: "rectangle",
+    edgeReference: { edgeIndex: 2 },
+    points: [{ x: 10, y: 10 }, { x: 30, y: 10 }, { x: 30, y: 30 }, { x: 10, y: 30 }],
+  };
+  copyObstacleToPlannerClipboard(source);
+  source.points[0].x = 999;
+  const copied = readPlannerObjectClipboard();
+  assert.equal(copied?.type, "obstacle");
+  if (copied?.type !== "obstacle") return;
+  assert.equal(copied.obstacle.points[0].x, 10);
+  assert.equal(copied.sourceRoofId, "roof-a");
+  assert.equal(copied.pasteCount, 0);
+  markObstacleClipboardPaste();
+  const afterPaste = readPlannerObjectClipboard();
+  assert.equal(afterPaste?.type === "obstacle" ? afterPaste.pasteCount : undefined, 1);
+});
+
+test("reported bug duplicates the Hindernis with a fresh ID while roof count stays unchanged", () => {
+  const roofs = [SEARCH_ROOF];
+  const source: Zone = {
+    id: "zone-a",
+    roofId: SEARCH_ROOF.id,
+    type: "riservata",
+    shapeKind: "rectangle",
+    points: [{ x: 10, y: 10 }, { x: 30, y: 10 }, { x: 30, y: 30 }, { x: 10, y: 30 }],
+  };
+  const zones = [source];
+  const pasted = createContainedObstaclePaste({
+    source,
+    ownerRoofPoints: SEARCH_ROOF.points,
+    mppImage: 0.1,
+    pasteCount: 0,
+    createId: () => "zone-b",
+  });
+  assert.ok(pasted);
+  zones.push(pasted);
+  assert.equal(roofs.length, 1, "roof count is unchanged");
+  assert.equal(zones.length, 2, "one obstacle is added");
+  assert.equal(pasted.id, "zone-b");
+  assert.equal(pasted.roofId, source.roofId);
+  assert.notDeepEqual(pasted.points, source.points);
+});
+
+test("obstacle paste near a roof edge finds another contained physical offset or fails cleanly", () => {
+  const source: Zone = {
+    id: "edge-zone",
+    roofId: SEARCH_ROOF.id,
+    type: "riservata",
+    points: [{ x: 98, y: 78 }, { x: 118, y: 78 }, { x: 118, y: 98 }, { x: 98, y: 98 }],
+  };
+  const pasted = createContainedObstaclePaste({
+    source,
+    ownerRoofPoints: SEARCH_ROOF.points,
+    mppImage: 0.1,
+    pasteCount: 0,
+    createId: () => "edge-zone-copy",
+  });
+  assert.ok(pasted, "an inward alternative is found when down/right would leave the roof");
+  assert.ok(pasted.points.every((point) => point.x >= 0 && point.x <= 120 && point.y >= 0 && point.y <= 100));
+
+  const roofSized: Zone = {
+    ...source,
+    id: "roof-sized",
+    points: SEARCH_ROOF.points.map((point) => ({ ...point })),
+  };
+  assert.equal(createContainedObstaclePaste({
+    source: roofSized,
+    ownerRoofPoints: SEARCH_ROOF.points,
+    mppImage: 0.1,
+    pasteCount: 0,
+    createId: () => "impossible",
+  }), undefined, "failure produces no invalid geometry and cannot fall through to roof paste");
+});
+
 test("panel paste preserves rigid geometry, creates fresh identities and cascades in metres", () => {
   let panelIndex = 0;
   let blockIndex = 0;
@@ -183,7 +311,10 @@ test("hotkey ownership is mutually exclusive and module paste is one validated b
   assert.match(roofHotkeys, /step !== "building"/);
   assert.match(panelHotkeys, /state\.selectedPanelIds\.length === 0\) return/);
   assert.match(panelHotkeys, /clipboard\?\.type !== 'panels'/);
-  assert.match(roofHotkeys, /clipboard\?\.type !== "roof"/);
+  assert.match(roofHotkeys, /clipboard\.type === "obstacle"/);
+  assert.match(roofHotkeys, /clipboard\.type !== "roof"/);
+  assert.match(roofHotkeys, /resolvePlannerClipboardTarget/);
+  assert.match(roofHotkeys, /plannerHistory\.push\("paste obstacle"\)/);
   assert.match(panelHotkeys, /closest\("input, textarea, select, \[contenteditable='true'\]"\)/);
   assert.match(panelHotkeys, /createPanelPastePlacementValidator/);
   assert.match(panelHotkeys, /findNearestValidPanelPaste/);
