@@ -254,6 +254,99 @@ test("Schrägdach H/V spacing reflows the same committed panel instances", () =>
   assert.ok(result.panels.some((panel, index) => panel.cx !== generated.panels[index].cx || panel.cy !== generated.panels[index].cy));
 });
 
+function smallestAxisGapM(
+  panels: readonly { cx: number; cy: number; wPx: number; hPx: number }[],
+  axis: "x" | "y",
+  mppImage: number,
+): number {
+  const primary = axis === "x" ? "cx" : "cy";
+  const cross = axis === "x" ? "cy" : "cx";
+  const size = axis === "x" ? "wPx" : "hPx";
+  let minimum = Number.POSITIVE_INFINITY;
+  for (let left = 0; left < panels.length; left += 1) {
+    for (let right = left + 1; right < panels.length; right += 1) {
+      if (Math.abs(panels[left][cross] - panels[right][cross]) > 1e-6) continue;
+      const centerDistanceM = Math.abs(panels[left][primary] - panels[right][primary]) * mppImage;
+      const gapM = centerDistanceM - panels[left][size] * mppImage;
+      if (gapM >= -1e-8) minimum = Math.min(minimum, gapM);
+    }
+  }
+  return minimum;
+}
+
+for (const orientation of ["portrait", "landscape"] as const) {
+  test(`Schrägdach ${orientation} maps Horizontal to local columns and Vertikal to local rows`, () => {
+    const mppImage = 0.1;
+    const initialModules = {
+      ...MODULES,
+      orientation,
+      spacingM: 0.02,
+      spacingXM: 0.02,
+      spacingYM: 0.03,
+    };
+    const widthM = orientation === "portrait" ? PANEL.widthM : PANEL.heightM;
+    const heightM = orientation === "portrait" ? PANEL.heightM : PANEL.widthM;
+    const compact = Array.from({ length: 9 }, (_, index) => {
+      const column = index % 3;
+      const row = Math.floor(index / 3);
+      return {
+        id: `${orientation}-${index}`,
+        roofId: PITCHED_ROOF.id,
+        panelId: PANEL.id,
+        cx: 80 + column * (widthM + 0.02) / mppImage,
+        cy: 80 + row * (heightM + 0.03) / mppImage,
+        wPx: widthM / mppImage,
+        hPx: heightM / mppImage,
+        angleDeg: 0,
+        orientation,
+      };
+    });
+    const generatedConfig = buildDirectStandardRoofLayout({
+      roof: PITCHED_ROOF,
+      panel: PANEL,
+      modules: initialModules,
+      orientation,
+      moduleTilt: { mode: "inherit-roof" },
+      mppImage,
+      zones: [],
+      snowGuards: [],
+      thermalFieldLimits: PITCHED_THERMAL_LIMITS,
+      createPanelId: (index) => `generated-${index}`,
+    });
+    assert.ok(generatedConfig);
+
+    const horizontal = buildStandardExistingLayoutReflow({
+      roof: { ...PITCHED_ROOF, surfacePlanning: generatedConfig.config },
+      currentPanels: compact,
+      previousModules: initialModules,
+      nextModules: { ...initialModules, spacingM: 0.08, spacingXM: 0.08 },
+      moduleTilt: { mode: "inherit-roof" },
+      thermalFieldLimits: PITCHED_THERMAL_LIMITS,
+      mppImage,
+      zones: [],
+      snowGuards: [],
+    });
+    assert.ok(horizontal);
+    assert.ok(Math.abs(smallestAxisGapM(horizontal.panels, "x", mppImage) - 0.08) < 1e-6);
+    assert.ok(Math.abs(smallestAxisGapM(horizontal.panels, "y", mppImage) - 0.03) < 1e-6);
+
+    const vertical = buildStandardExistingLayoutReflow({
+      roof: { ...PITCHED_ROOF, surfacePlanning: generatedConfig.config },
+      currentPanels: compact,
+      previousModules: initialModules,
+      nextModules: { ...initialModules, spacingYM: 0.1 },
+      moduleTilt: { mode: "inherit-roof" },
+      thermalFieldLimits: PITCHED_THERMAL_LIMITS,
+      mppImage,
+      zones: [],
+      snowGuards: [],
+    });
+    assert.ok(vertical);
+    assert.ok(Math.abs(smallestAxisGapM(vertical.panels, "x", mppImage) - 0.02) < 1e-6);
+    assert.ok(Math.abs(smallestAxisGapM(vertical.panels, "y", mppImage) - 0.1) < 1e-6);
+  });
+}
+
 test("legacy/unsupported planning resolution is not changed by the pure reflow helper", () => {
   const unresolved = resolveSurfacePlanning(undefined);
   assert.equal(unresolved.status, "legacy-standard");

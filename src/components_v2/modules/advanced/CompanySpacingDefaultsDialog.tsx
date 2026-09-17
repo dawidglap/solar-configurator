@@ -11,6 +11,7 @@ import {
   COMPANY_FLAT_SPACING_LIMITS_M,
   COMPANY_FLAT_TILT_LIMITS_DEG,
   COMPANY_MODULE_SPACING_LIMITS_MM,
+  isValidModuleSpacingMm,
   validateCompanyPlannerDefaults,
   type CompanyFlatRoofSpacingDefaults,
   type CompanyPlannerDefaultsV1,
@@ -19,17 +20,25 @@ import { usePlannerV2Store } from "../../state/plannerV2Store";
 
 type Props = {
   open: boolean;
-  orientation: "south" | "east-west";
-  defaults: CompanyFlatRoofSpacingDefaults;
   differsFromCurrentRoof: boolean;
   onClose: () => void;
   onResetCurrentRoof: () => boolean;
   onBeforeCompanyDefaultsUpdate?: () => void;
-};
+} & (
+  | {
+      scope?: "flat";
+      orientation: "south" | "east-west";
+      defaults: CompanyFlatRoofSpacingDefaults;
+    }
+  | {
+      scope: "pitched";
+      defaults: CompanyPlannerDefaultsV1["moduleSpacing"];
+    }
+);
 
-type Field = keyof CompanyFlatRoofSpacingDefaults;
+type Field = keyof CompanyFlatRoofSpacingDefaults | keyof CompanyPlannerDefaultsV1["moduleSpacing"];
 
-const fields: Array<{
+const flatFields: Array<{
   key: Field;
   label: string;
   unit: string;
@@ -38,6 +47,11 @@ const fields: Array<{
   { key: "serviceCorridorM", label: "Wartungsgang", unit: "m" },
   { key: "moduleGapMm", label: "Modulabstand", unit: "mm" },
   { key: "nominalTiltDeg", label: "Modulneigung", unit: "°" },
+];
+
+const pitchedFields: Array<{ key: Field; label: string; unit: string }> = [
+  { key: "horizontalMm", label: "Horizontal", unit: "mm" },
+  { key: "verticalMm", label: "Vertikal", unit: "mm" },
 ];
 
 const textFor = (value: number) => String(Math.round(value * 100) / 100);
@@ -57,35 +71,34 @@ function isValidValues(values: CompanyFlatRoofSpacingDefaults) {
     values.nominalTiltDeg <= COMPANY_FLAT_TILT_LIMITS_DEG.max;
 }
 
-export default function CompanySpacingDefaultsDialog({
-  open,
-  orientation,
-  defaults,
-  differsFromCurrentRoof,
-  onClose,
-  onResetCurrentRoof,
-  onBeforeCompanyDefaultsUpdate,
-}: Props) {
+function textValues(defaults: Props["defaults"]): Record<Field, string> {
+  return Object.fromEntries(
+    Object.entries(defaults).map(([key, value]) => [key, textFor(value)]),
+  ) as Record<Field, string>;
+}
+
+export default function CompanySpacingDefaultsDialog(props: Props) {
+  const {
+    open,
+    defaults,
+    differsFromCurrentRoof,
+    onClose,
+    onResetCurrentRoof,
+    onBeforeCompanyDefaultsUpdate,
+  } = props;
+  const pitched = props.scope === "pitched";
+  const orientation = pitched ? undefined : props.orientation;
+  const fields = pitched ? pitchedFields : flatFields;
   const query = useCompanyPlannerDefaults();
   const queryClient = useQueryClient();
   const setCompanyPlannerDefaults = usePlannerV2Store((state) => state.setCompanyPlannerDefaults);
-  const [values, setValues] = React.useState<Record<Field, string>>({
-    rowSpaceM: textFor(defaults.rowSpaceM),
-    serviceCorridorM: textFor(defaults.serviceCorridorM),
-    moduleGapMm: textFor(defaults.moduleGapMm),
-    nominalTiltDeg: textFor(defaults.nominalTiltDeg),
-  });
+  const [values, setValues] = React.useState<Record<Field, string>>(() => textValues(defaults));
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
-    setValues({
-      rowSpaceM: textFor(defaults.rowSpaceM),
-      serviceCorridorM: textFor(defaults.serviceCorridorM),
-      moduleGapMm: textFor(defaults.moduleGapMm),
-      nominalTiltDeg: textFor(defaults.nominalTiltDeg),
-    });
-  }, [defaults, open, orientation]);
+    setValues(textValues(defaults));
+  }, [defaults, open, orientation, pitched]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -99,24 +112,37 @@ export default function CompanySpacingDefaultsDialog({
   if (!open || typeof document === "undefined") return null;
 
   const save = async () => {
-    const nextValues: CompanyFlatRoofSpacingDefaults = {
-      rowSpaceM: Number(values.rowSpaceM.replace(",", ".")),
-      serviceCorridorM: Number(values.serviceCorridorM.replace(",", ".")),
-      moduleGapMm: Number(values.moduleGapMm.replace(",", ".")),
-      nominalTiltDeg: Number(values.nominalTiltDeg.replace(",", ".")),
-    };
-    if (!isValidValues(nextValues)) {
-      toast.error("Bitte gültige Firmenstandards eingeben.");
-      return;
-    }
     const current = query.data?.plannerDefaults ?? usePlannerV2Store.getState().companyPlannerDefaults;
-    const plannerDefaults: CompanyPlannerDefaultsV1 = {
-      ...current,
-      flatRoofSpacing: {
-        ...current.flatRoofSpacing,
-        [orientation === "south" ? "south" : "eastWest"]: nextValues,
-      },
-    };
+    let plannerDefaults: CompanyPlannerDefaultsV1;
+    if (pitched) {
+      const nextValues = {
+        horizontalMm: Number(values.horizontalMm.replace(",", ".")),
+        verticalMm: Number(values.verticalMm.replace(",", ".")),
+      };
+      if (!isValidModuleSpacingMm(nextValues.horizontalMm) || !isValidModuleSpacingMm(nextValues.verticalMm)) {
+        toast.error("Bitte gültige Firmenstandards eingeben.");
+        return;
+      }
+      plannerDefaults = { ...current, moduleSpacing: nextValues };
+    } else {
+      const nextValues: CompanyFlatRoofSpacingDefaults = {
+        rowSpaceM: Number(values.rowSpaceM.replace(",", ".")),
+        serviceCorridorM: Number(values.serviceCorridorM.replace(",", ".")),
+        moduleGapMm: Number(values.moduleGapMm.replace(",", ".")),
+        nominalTiltDeg: Number(values.nominalTiltDeg.replace(",", ".")),
+      };
+      if (!isValidValues(nextValues)) {
+        toast.error("Bitte gültige Firmenstandards eingeben.");
+        return;
+      }
+      plannerDefaults = {
+        ...current,
+        flatRoofSpacing: {
+          ...current.flatRoofSpacing,
+          [orientation === "south" ? "south" : "eastWest"]: nextValues,
+        },
+      };
+    }
     const validation = validateCompanyPlannerDefaults(plannerDefaults);
     if (!validation.valid) {
       toast.error("Bitte gültige Firmenstandards eingeben.");
@@ -164,11 +190,13 @@ export default function CompanySpacingDefaultsDialog({
             <div className="flex items-center gap-2">
               <Settings2 className="h-4 w-4 text-primary" aria-hidden="true" />
               <h2 id="company-spacing-title" className="text-base font-semibold">
-                Firmenstandard – Abstände
+                {pitched ? "Firmenstandard – Modulabstand" : "Firmenstandard – Abstände"}
               </h2>
             </div>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Diese Werte gelten als Standard für neue Planungen Ihres Unternehmens.
+              {pitched
+                ? "Diese Werte gelten als Standard für neue Schrägdach-Planungen Ihres Unternehmens."
+                : "Diese Werte gelten als Standard für neue Planungen Ihres Unternehmens."}
             </p>
           </div>
           <button type="button" aria-label="Schliessen" onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted/30 hover:text-foreground">

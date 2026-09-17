@@ -6,7 +6,7 @@ import { usePlannerV2Store } from "../state/plannerV2Store";
 import RoofAreaInfo from "../ui/RoofAreaInfo";
 import DetectedRoofsImport from "../panels/DetectedRoofsImport";
 import { MdViewModule } from "react-icons/md";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 
 import {
@@ -54,6 +54,7 @@ import { endManualPlacement } from "../modules/manualPlacementSession";
 import { history as plannerHistory } from "../state/history";
 import { buildStandardExistingLayoutReflow } from "../modules/panels/existingLayoutReflow";
 import { formatDisplayAngleDeg } from "../roof/angleDisplay";
+import CompanySpacingDefaultsDialog from "../modules/advanced/CompanySpacingDefaultsDialog";
 
 type Pt = { x: number; y: number };
 
@@ -128,6 +129,7 @@ export default function ModulesPanel() {
   const [moduleTiltText, setModuleTiltText] = React.useState("");
   const [spacingXText, setSpacingXText] = React.useState("");
   const [spacingYText, setSpacingYText] = React.useState("");
+  const [pitchedCompanyDefaultsOpen, setPitchedCompanyDefaultsOpen] = React.useState(false);
 
   const selectedRoof = React.useMemo(
     () => layers.find((roof) => roof.id === selectedId),
@@ -305,16 +307,18 @@ export default function ModulesPanel() {
     }
     const metres = mm / 1000;
     const applied = commitStandardGeometry({
+      // Build from the roof/draft values currently shown in the sidebar, not
+      // from a potentially stale global module snapshot.
       nextModules: axis === "x"
-        ? { ...modules, spacingM: metres, spacingXM: metres }
-        : { ...modules, spacingYM: metres },
+        ? { ...displayedModules, spacingM: metres, spacingXM: metres }
+        : { ...displayedModules, spacingYM: metres },
     });
     if (!applied) {
       if (axis === "x") setSpacingXText(String(Math.round(displayedSpacingXM * 10000) / 10));
       else setSpacingYText(String(Math.round(displayedSpacingYM * 10000) / 10));
     }
     return applied;
-  }, [commitStandardGeometry, displayedSpacingXM, displayedSpacingYM, modules, spacingXText, spacingYText]);
+  }, [commitStandardGeometry, displayedModules, displayedSpacingXM, displayedSpacingYM, spacingXText, spacingYText]);
 
   const patchStandardTilt = React.useCallback((moduleTilt: StandardModuleTiltInput) => {
     commitStandardGeometry({ moduleTilt });
@@ -356,6 +360,7 @@ export default function ModulesPanel() {
   React.useEffect(() => {
     setPendingRoofType(null);
     setPendingLayoutMode(null);
+    setPitchedCompanyDefaultsOpen(false);
   }, [selectedRoof?.id]);
 
   // blocca i global hotkeys (anche in capture) quando digiti negli input inline
@@ -1179,20 +1184,12 @@ export default function ModulesPanel() {
               <span className={labelSm}>Modulabstand</span>
               <button
                 type="button"
-                onClick={() =>
-                  commitStandardGeometry({
-                    nextModules: {
-                      ...modules,
-                      spacingM: companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
-                      spacingXM: companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
-                      spacingYM: companyPlannerDefaults.moduleSpacing.verticalMm / 1000,
-                    },
-                  })
-                }
-                className="text-[9px] text-primary hover:underline"
+                onClick={() => setPitchedCompanyDefaultsOpen(true)}
+                className="flex items-center gap-1 text-[9px] font-medium text-primary hover:underline"
                 title={`Firmenstandard: ${companyPlannerDefaults.moduleSpacing.horizontalMm} / ${companyPlannerDefaults.moduleSpacing.verticalMm} mm`}
               >
                 Firmenstandard
+                <Settings2 className="h-3 w-3" aria-hidden="true" />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -1273,6 +1270,28 @@ export default function ModulesPanel() {
         onCancel={() => setPendingLayoutMode(null)}
         onConfirm={confirmLayoutModeChange}
       />
+      {selectedRoof && displayMode === "standard" && (
+        <CompanySpacingDefaultsDialog
+          open={pitchedCompanyDefaultsOpen}
+          scope="pitched"
+          defaults={companyPlannerDefaults.moduleSpacing}
+          differsFromCurrentRoof={
+            Math.abs(displayedSpacingXM * 1000 - companyPlannerDefaults.moduleSpacing.horizontalMm) > 0.05 ||
+            Math.abs(displayedSpacingYM * 1000 - companyPlannerDefaults.moduleSpacing.verticalMm) > 0.05
+          }
+          onClose={() => setPitchedCompanyDefaultsOpen(false)}
+          onResetCurrentRoof={() =>
+            commitStandardGeometry({
+              nextModules: {
+                ...displayedModules,
+                spacingM: companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
+                spacingXM: companyPlannerDefaults.moduleSpacing.horizontalMm / 1000,
+                spacingYM: companyPlannerDefaults.moduleSpacing.verticalMm / 1000,
+              },
+            })
+          }
+        />
+      )}
     </div>
   );
 }

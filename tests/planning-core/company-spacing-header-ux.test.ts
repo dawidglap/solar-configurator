@@ -10,6 +10,10 @@ const dialog = readFileSync(
   new URL("../../src/components_v2/modules/advanced/CompanySpacingDefaultsDialog.tsx", import.meta.url),
   "utf8",
 );
+const standardPanel = readFileSync(
+  new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),
+  "utf8",
+);
 
 test("Abstände exposes one company-default header action and no per-field badge", () => {
   assert.match(panel, />\s*Firmenstandard\s*</);
@@ -26,4 +30,14 @@ test("company spacing dialog edits all four values and saves through tenant endp
   assert.match(dialog, /Standard speichern/);
   assert.match(dialog, /Aktuelle Dachfläche auf Firmenstandard zurücksetzen/);
   assert.doesNotMatch(dialog, /window\.alert|window\.confirm/);
+});
+
+test("Schrägdach Firmenstandard opens the shared tenant-scoped dialog with H/V fields", () => {
+  assert.match(standardPanel, /onClick=\{\(\) => setPitchedCompanyDefaultsOpen\(true\)\}/);
+  assert.match(standardPanel, /<CompanySpacingDefaultsDialog[\s\S]*scope="pitched"/);
+  assert.match(dialog, /Firmenstandard – Modulabstand/);
+  assert.match(dialog, /neue Schrägdach-Planungen Ihres Unternehmens/);
+  assert.match(dialog, /horizontalMm/);
+  assert.match(dialog, /verticalMm/);
+  assert.match(dialog, /plannerDefaults = \{ \.\.\.current, moduleSpacing: nextValues \}/);
 });
