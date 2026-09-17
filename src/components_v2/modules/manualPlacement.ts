@@ -511,6 +511,12 @@ export type AdvancedManualSnapResolution = {
   position: Pt;
   snapped: boolean;
   snapKey: string | null;
+  guides: AdvancedManualSnapGuide[];
+};
+
+export type AdvancedManualSnapGuide = {
+  axis: "row" | "column";
+  points: [Pt, Pt];
 };
 
 export type AdvancedManualSnapCenter = Pt & { blockKey: string };
@@ -545,15 +551,31 @@ export function resolveAdvancedManualCenterSnap(input: {
   validateCandidate?: (center: Pt) => boolean;
   disableSnap: boolean;
 }): AdvancedManualSnapResolution {
-  if (input.disableSnap) return { position: input.pointerPx, snapped: false, snapKey: null };
+  if (input.disableSnap) return { position: input.pointerPx, snapped: false, snapKey: null, guides: [] };
   const centers = input.centers ?? buildAdvancedManualSnapCenters(input);
-  if (!centers.length) return { position: input.pointerPx, snapped: false, snapKey: null };
+  if (!centers.length) return { position: input.pointerPx, snapped: false, snapKey: null, guides: [] };
   const rotation = ((90 - input.definition.planarOrientationDeg) * Math.PI) / 180;
   const cos = Math.cos(rotation);
   const sin = Math.sin(rotation);
   const activation = Math.max(0, input.activationThresholdPx ?? 10);
   const release = Math.max(activation, input.releaseThresholdPx ?? activation * 1.5);
-  const candidates: { key: string; position: Pt; distance: number }[] = [];
+  const localU = { x: cos, y: -sin };
+  const localV = { x: -sin, y: -cos };
+  const project = (point: Pt) => ({
+    u: point.x * localU.x + point.y * localU.y,
+    v: point.x * localV.x + point.y * localV.y,
+  });
+  const fromLocal = (u: number, v: number): Pt => ({
+    x: u * localU.x + v * localV.x,
+    y: u * localU.y + v * localV.y,
+  });
+  type Candidate = {
+    key: string;
+    position: Pt;
+    distance: number;
+    axes: ("row" | "column")[];
+  };
+  const candidates: Candidate[] = [];
   for (const origin of centers) {
     const targets = [
       { side: 'left', x: -input.definition.pitchM.x, y: 0 },
@@ -572,17 +594,73 @@ export function resolveAdvancedManualCenterSnap(input: {
       const key = `advanced-adjacency:${origin.blockKey}:${target.side}`;
       const threshold = key === input.activeSnapKey ? release : activation;
       if (distance <= threshold && (input.validateCandidate?.(candidate) ?? true)) {
-        candidates.push({ key, position: candidate, distance });
+        candidates.push({
+          key,
+          position: candidate,
+          distance,
+          axes: [target.side === 'left' || target.side === 'right' ? 'row' : 'column'],
+        });
       }
     }
   }
-  candidates.sort((first, second) => first.distance - second.distance || first.key.localeCompare(second.key));
-  const chosen = input.activeSnapKey
-    ? candidates.find((candidate) => candidate.key === input.activeSnapKey) ?? candidates[0]
-    : candidates[0];
+  const candidateGroups: Candidate[][] = [];
+  candidates.forEach((candidate) => {
+    const group = candidateGroups.find((current) => (
+      Math.hypot(
+        current[0].position.x - candidate.position.x,
+        current[0].position.y - candidate.position.y,
+      ) <= 1e-5
+    ));
+    if (group) group.push(candidate);
+    else candidateGroups.push([candidate]);
+  });
+  const exactGridCandidates = candidateGroups.flatMap((group): Candidate[] => {
+    const axes = [...new Set(group.flatMap((candidate) => candidate.axes))];
+    if (axes.length < 2) return [];
+    return [{
+      key: `advanced-grid-cell:${group.map((candidate) => candidate.key).sort().join('|')}`,
+      position: { ...group[0].position },
+      distance: group[0].distance,
+      axes,
+    }];
+  });
+  const ranked = [...exactGridCandidates, ...candidates];
+  ranked.sort((first, second) => (
+    second.axes.length - first.axes.length || first.distance - second.distance || first.key.localeCompare(second.key)
+  ));
+  const active = input.activeSnapKey
+    ? ranked.find((candidate) => candidate.key === input.activeSnapKey)
+    : undefined;
+  const best = ranked[0];
+  const switchMargin = Math.max(1, activation * 0.25);
+  const bestMateriallyBetter = Boolean(active && best && (
+    best.axes.length > active.axes.length || (
+      best.axes.length === active.axes.length && best.distance + switchMargin < active.distance
+    )
+  ));
+  const chosen = active && !bestMateriallyBetter ? active : best;
+  const guides = chosen ? chosen.axes.map((axis): AdvancedManualSnapGuide => {
+    const candidateLocal = project(chosen.position);
+    const pitchPx = (axis === 'row' ? input.definition.pitchM.x : input.definition.pitchM.y) /
+      Math.max(input.mppImage, 1e-9);
+    if (axis === 'row') {
+      const aligned = centers.map((center) => project(center)).filter((center) => (
+        Math.abs(center.v - candidateLocal.v) <= 1e-4
+      ));
+      const start = Math.min(candidateLocal.u, ...aligned.map((center) => center.u)) - pitchPx / 2;
+      const end = Math.max(candidateLocal.u, ...aligned.map((center) => center.u)) + pitchPx / 2;
+      return { axis, points: [fromLocal(start, candidateLocal.v), fromLocal(end, candidateLocal.v)] };
+    }
+    const aligned = centers.map((center) => project(center)).filter((center) => (
+      Math.abs(center.u - candidateLocal.u) <= 1e-4
+    ));
+    const start = Math.min(candidateLocal.v, ...aligned.map((center) => center.v)) - pitchPx / 2;
+    const end = Math.max(candidateLocal.v, ...aligned.map((center) => center.v)) + pitchPx / 2;
+    return { axis, points: [fromLocal(candidateLocal.u, start), fromLocal(candidateLocal.u, end)] };
+  }) : [];
   return chosen
-    ? { position: chosen.position, snapped: true, snapKey: chosen.key }
-    : { position: input.pointerPx, snapped: false, snapKey: null };
+    ? { position: chosen.position, snapped: true, snapKey: chosen.key, guides }
+    : { position: input.pointerPx, snapped: false, snapKey: null, guides: [] };
 }
 
 export function snapAdvancedManualCenter(input: {

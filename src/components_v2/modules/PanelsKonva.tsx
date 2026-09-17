@@ -15,6 +15,7 @@ import {
   panelSnapTuningForScale,
   resolvePanelDragFrameUV,
   type PanelInst as HookPanel,
+  type PanelSnapGuide,
 } from '../modules/panels/usePanelDragSnap';
 import { PanelItem } from './panels/PanelItem';
 import { Guides } from './panels/Guides';
@@ -31,6 +32,7 @@ import {
   createPanelPastePlacementValidator,
   resolveAdvancedManualCenterSnap,
   resolveManualAdvancedBlockDefinition,
+  type AdvancedManualSnapGuide,
 } from './manualPlacement';
 import { history as plannerHistory } from '../state/history';
 import MultiSelectionDragHandle from './panels/MultiSelectionDragHandle';
@@ -529,6 +531,8 @@ export default function PanelsKonva(props: {
       let valid = validateCenter(freeCenterUV);
       let hintU = false;
       let hintV = false;
+      let snapGuides: PanelSnapGuide[] = [];
+      let advancedGuidePoints: AdvancedManualSnapGuide[] = [];
       if (st.advancedSnap) {
         const rawCenter = {
           x: st.advancedSnap.initialCenter.x + dImgX,
@@ -579,8 +583,7 @@ export default function PanelsKonva(props: {
         if (advancedResolution.snapped) {
           resolvedCenterUV = advancedCenterUV;
           valid = true;
-          hintU = Math.abs(advancedCenterUV.u - freeCenterUV.u) > 1e-6;
-          hintV = Math.abs(advancedCenterUV.v - freeCenterUV.v) > 1e-6;
+          advancedGuidePoints = advancedResolution.guides;
         }
       } else {
         const nearby = st.spatialIndex.query(
@@ -600,6 +603,7 @@ export default function PanelsKonva(props: {
           disableSnap,
           activeSnapKey: st.activeSnapKey,
           panels: nearby,
+          allowMismatchedAdjacency: true,
           validate: validateCenter,
         });
         st.activeSnapKey = resolution.snapKey;
@@ -607,17 +611,41 @@ export default function PanelsKonva(props: {
         valid = resolution.valid;
         hintU = resolution.hintU;
         hintV = resolution.hintV;
+        snapGuides = resolution.guides;
       }
 
       const proposed = positionsForCenter(resolvedCenterUV);
       st.final = valid ? proposed : null;
-      const extent = 10000;
-      if (hintU) {
+      const columnGuide = snapGuides.find((guide) => guide.axis === 'column');
+      const advancedColumnGuide = advancedGuidePoints.find((guide) => guide.axis === 'column');
+      if (advancedColumnGuide) {
+        setGroupGuide(groupHintURef, [
+          advancedColumnGuide.points[0].x, advancedColumnGuide.points[0].y,
+          advancedColumnGuide.points[1].x, advancedColumnGuide.points[1].y,
+        ]);
+      } else if (columnGuide) {
+        const a = st.axis.fromUV(columnGuide.coordinate, columnGuide.start);
+        const b = st.axis.fromUV(columnGuide.coordinate, columnGuide.end);
+        setGroupGuide(groupHintURef, [a.x, a.y, b.x, b.y]);
+      } else if (hintU) {
+        const extent = Math.max(st.groupHalfSize.hh * 2, 1);
         const a = st.axis.fromUV(resolvedCenterUV.u, resolvedCenterUV.v - extent);
         const b = st.axis.fromUV(resolvedCenterUV.u, resolvedCenterUV.v + extent);
         setGroupGuide(groupHintURef, [a.x, a.y, b.x, b.y]);
       } else setGroupGuide(groupHintURef, null);
-      if (hintV) {
+      const rowGuide = snapGuides.find((guide) => guide.axis === 'row');
+      const advancedRowGuide = advancedGuidePoints.find((guide) => guide.axis === 'row');
+      if (advancedRowGuide) {
+        setGroupGuide(groupHintVRef, [
+          advancedRowGuide.points[0].x, advancedRowGuide.points[0].y,
+          advancedRowGuide.points[1].x, advancedRowGuide.points[1].y,
+        ]);
+      } else if (rowGuide) {
+        const a = st.axis.fromUV(rowGuide.start, rowGuide.coordinate);
+        const b = st.axis.fromUV(rowGuide.end, rowGuide.coordinate);
+        setGroupGuide(groupHintVRef, [a.x, a.y, b.x, b.y]);
+      } else if (hintV) {
+        const extent = Math.max(st.groupHalfSize.hw * 2, 1);
         const a = st.axis.fromUV(resolvedCenterUV.u - extent, resolvedCenterUV.v);
         const b = st.axis.fromUV(resolvedCenterUV.u + extent, resolvedCenterUV.v);
         setGroupGuide(groupHintVRef, [a.x, a.y, b.x, b.y]);

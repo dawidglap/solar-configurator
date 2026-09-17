@@ -164,7 +164,14 @@ export function createPanelDragSpatialIndex(
   };
 }
 
-type SnapKind = 'adjacency' | 'alignment-u' | 'alignment-v';
+type SnapKind = 'grid-cell' | 'adjacency' | 'edge-alignment' | 'center-alignment';
+export type PanelSnapGuide = {
+  /** row runs along local U; column runs along local V. */
+  axis: 'row' | 'column';
+  coordinate: number;
+  start: number;
+  end: number;
+};
 type SnapCandidate = {
   key: string;
   position: UV;
@@ -172,7 +179,76 @@ type SnapCandidate = {
   kind: SnapKind;
   hintU: boolean;
   hintV: boolean;
+  guides: PanelSnapGuide[];
 };
+
+const GRID_COORDINATE_EPSILON = 1e-5;
+
+function rowGuide(
+  position: UV,
+  hw: number,
+  panels: readonly StaticPanelUV[],
+): PanelSnapGuide {
+  const tolerance = 1e-4;
+  const aligned = panels.filter((panel) => Math.abs(panel.v - position.v) <= tolerance);
+  return {
+    axis: 'row',
+    coordinate: position.v,
+    start: Math.min(position.u - hw, ...aligned.map((panel) => panel.u - panel.hw)),
+    end: Math.max(position.u + hw, ...aligned.map((panel) => panel.u + panel.hw)),
+  };
+}
+
+function columnGuide(
+  position: UV,
+  hh: number,
+  panels: readonly StaticPanelUV[],
+): PanelSnapGuide {
+  const tolerance = 1e-4;
+  const aligned = panels.filter((panel) => Math.abs(panel.u - position.u) <= tolerance);
+  return {
+    axis: 'column',
+    coordinate: position.u,
+    start: Math.min(position.v - hh, ...aligned.map((panel) => panel.v - panel.hh)),
+    end: Math.max(position.v + hh, ...aligned.map((panel) => panel.v + panel.hh)),
+  };
+}
+
+function mergeTwoAxisGridCandidates(candidates: readonly SnapCandidate[]): SnapCandidate[] {
+  const adjacency = candidates.filter((candidate) => candidate.kind === 'adjacency');
+  const groups: SnapCandidate[][] = [];
+  adjacency.forEach((candidate) => {
+    const group = groups.find((current) => (
+      Math.abs(current[0].position.u - candidate.position.u) <= GRID_COORDINATE_EPSILON &&
+      Math.abs(current[0].position.v - candidate.position.v) <= GRID_COORDINATE_EPSILON
+    ));
+    if (group) group.push(candidate);
+    else groups.push([candidate]);
+  });
+  const merged = groups.flatMap((group): SnapCandidate[] => {
+    const axes = new Set(group.flatMap((candidate) => candidate.guides.map((guide) => guide.axis)));
+    if (axes.size < 2) return [];
+    const byAxis = new Map<'row' | 'column', PanelSnapGuide>();
+    group.flatMap((candidate) => candidate.guides).forEach((guide) => {
+      const current = byAxis.get(guide.axis);
+      byAxis.set(guide.axis, current ? {
+        ...guide,
+        start: Math.min(current.start, guide.start),
+        end: Math.max(current.end, guide.end),
+      } : guide);
+    });
+    return [{
+      key: `grid-cell:${group.map((candidate) => candidate.key).sort().join('|')}`,
+      position: { ...group[0].position },
+      distance: group[0].distance,
+      kind: 'grid-cell',
+      hintU: true,
+      hintV: true,
+      guides: [...byAxis.values()].sort((first, second) => first.axis.localeCompare(second.axis)),
+    }];
+  });
+  return [...merged, ...candidates];
+}
 
 function generateSnapCandidates(input: {
   free: UV;
@@ -181,6 +257,7 @@ function generateSnapCandidates(input: {
   gapXPx: number;
   gapYPx: number;
   panels: readonly StaticPanelUV[];
+  allowMismatchedAdjacency?: boolean;
 }): SnapCandidate[] {
   const candidates: SnapCandidate[] = [];
   for (const panel of input.panels) {
@@ -192,35 +269,50 @@ function generateSnapCandidates(input: {
       ['top', { u: panel.u, v: panel.v - verticalOffset }],
       ['bottom', { u: panel.u, v: panel.v + verticalOffset }],
     ] as const;
-    adjacency.forEach(([side, position]) => candidates.push({
-      key: `adjacency:${panel.id}:${side}`,
-      position,
-      distance: Math.hypot(input.free.u - position.u, input.free.v - position.v),
-      kind: 'adjacency',
-      hintU: side === 'left' || side === 'right',
-      hintV: side === 'top' || side === 'bottom',
-    }));
+    const compatibleDimensions = Boolean(input.allowMismatchedAdjacency) || (
+      Math.abs(input.hw - panel.hw) <= GRID_COORDINATE_EPSILON &&
+      Math.abs(input.hh - panel.hh) <= GRID_COORDINATE_EPSILON
+    );
+    if (compatibleDimensions) {
+      adjacency.forEach(([side, position]) => {
+        const continuesRow = side === 'left' || side === 'right';
+        candidates.push({
+          key: `adjacency:${panel.id}:${side}`,
+          position,
+          distance: Math.hypot(input.free.u - position.u, input.free.v - position.v),
+          kind: 'adjacency',
+          // Kept for compatibility: U hint is a local-U coordinate/column line.
+          hintU: !continuesRow,
+          hintV: continuesRow,
+          guides: continuesRow
+            ? [rowGuide(position, input.hw, input.panels)]
+            : [columnGuide(position, input.hh, input.panels)],
+        });
+      });
+    }
 
     const uTargets = [panel.u, panel.u - panel.hw + input.hw, panel.u + panel.hw - input.hw];
     uTargets.forEach((u, index) => candidates.push({
       key: `alignment-u:${panel.id}:${index}`,
       position: { u, v: input.free.v },
       distance: Math.abs(input.free.u - u),
-      kind: 'alignment-u',
+      kind: index === 0 ? 'center-alignment' : 'edge-alignment',
       hintU: true,
       hintV: false,
+      guides: [columnGuide({ u, v: input.free.v }, input.hh, [panel])],
     }));
     const vTargets = [panel.v, panel.v - panel.hh + input.hh, panel.v + panel.hh - input.hh];
     vTargets.forEach((v, index) => candidates.push({
       key: `alignment-v:${panel.id}:${index}`,
       position: { u: input.free.u, v },
       distance: Math.abs(input.free.v - v),
-      kind: 'alignment-v',
+      kind: index === 0 ? 'center-alignment' : 'edge-alignment',
       hintU: false,
       hintV: true,
+      guides: [rowGuide({ u: input.free.u, v }, input.hw, [panel])],
     }));
   }
-  return candidates;
+  return mergeTwoAxisGridCandidates(candidates);
 }
 
 export type PanelDragFrameResolution = {
@@ -230,6 +322,7 @@ export type PanelDragFrameResolution = {
   snapKey: string | null;
   hintU: boolean;
   hintV: boolean;
+  guides: PanelSnapGuide[];
 };
 
 /**
@@ -249,11 +342,12 @@ export function resolvePanelDragFrameUV(input: {
   disableSnap?: boolean;
   activeSnapKey?: string | null;
   panels: readonly StaticPanelUV[];
+  allowMismatchedAdjacency?: boolean;
   validate: (position: UV) => boolean;
 }): PanelDragFrameResolution {
   const freeValid = input.validate(input.free);
   if (input.disableSnap) {
-    return { position: input.free, valid: freeValid, snapped: false, snapKey: null, hintU: false, hintV: false };
+    return { position: input.free, valid: freeValid, snapped: false, snapKey: null, hintU: false, hintV: false, guides: [] };
   }
   const legacyActivation = Math.max(0, input.activationThresholdPx);
   const legacyRelease = Math.max(legacyActivation, input.releaseThresholdPx ?? legacyActivation * 1.5);
@@ -266,7 +360,7 @@ export function resolvePanelDragFrameUV(input: {
   };
   const thresholdFor = (candidate: SnapCandidate) => {
     const active = candidate.key === input.activeSnapKey;
-    if (candidate.kind === 'adjacency') {
+    if (candidate.kind === 'adjacency' || candidate.kind === 'grid-cell') {
       return active ? tuning.adjacencyReleasePx : tuning.adjacencyActivationPx;
     }
     return active ? tuning.alignmentReleasePx : tuning.alignmentActivationPx;
@@ -274,23 +368,42 @@ export function resolvePanelDragFrameUV(input: {
   const candidates = generateSnapCandidates(input).filter((candidate) => {
     return candidate.distance <= thresholdFor(candidate) && input.validate(candidate.position);
   });
+  const priority = (candidate: SnapCandidate) => {
+    if (candidate.kind === 'grid-cell') return 0;
+    if (candidate.kind === 'adjacency') return 1;
+    if (candidate.kind === 'edge-alignment') return 2;
+    return 3;
+  };
   const score = (candidate: SnapCandidate) => candidate.distance - (
-    candidate.kind === 'adjacency' ? tuning.adjacencyPriorityBonusPx : 0
+    candidate.kind === 'adjacency' || candidate.kind === 'grid-cell'
+      ? tuning.adjacencyPriorityBonusPx
+      : 0
   );
   candidates.sort((first, second) => {
-    return score(first) - score(second) || first.key.localeCompare(second.key);
+    return priority(first) - priority(second) || score(first) - score(second) || first.key.localeCompare(second.key);
   });
   const active = input.activeSnapKey
     ? candidates.find((candidate) => candidate.key === input.activeSnapKey)
     : undefined;
   const best = candidates[0];
   // Hysteresis keeps an active target stable. Exact adjacency may however
-  // pre-empt a generic guide because it is the user's stronger intent.
-  const chosen = active && !(active.kind !== 'adjacency' && best?.kind === 'adjacency')
+  // pre-empt a generic guide, and a materially nearer peer may take over when
+  // the pointer changes approach side. This avoids both sticky wrong-side
+  // snaps and right/bottom frame-to-frame jitter around a corner.
+  const switchMargin = Math.max(1, Math.min(
+    tuning.alignmentActivationPx,
+    tuning.adjacencyActivationPx,
+  ) * 0.25);
+  const bestMateriallyBetter = Boolean(active && best && (
+    priority(best) < priority(active) || (
+      priority(best) === priority(active) && best.distance + switchMargin < active.distance
+    )
+  ));
+  const chosen = active && !bestMateriallyBetter
     ? active
     : best;
   if (!chosen) {
-    return { position: input.free, valid: freeValid, snapped: false, snapKey: null, hintU: false, hintV: false };
+    return { position: input.free, valid: freeValid, snapped: false, snapKey: null, hintU: false, hintV: false, guides: [] };
   }
   return {
     position: chosen.position,
@@ -299,6 +412,7 @@ export function resolvePanelDragFrameUV(input: {
     snapKey: chosen.key,
     hintU: chosen.hintU,
     hintV: chosen.hintV,
+    guides: chosen.guides,
   };
 }
 
@@ -320,7 +434,9 @@ export function resolveMagneticNeighbourSnapUV(input: {
     gapXPx: input.gapXPx,
     gapYPx: input.gapYPx,
     panels: input.panels,
-  }).filter((candidate) => candidate.kind === 'adjacency' && candidate.distance <= input.activationThresholdPx);
+  }).filter((candidate) => (
+    candidate.kind === 'adjacency' || candidate.kind === 'grid-cell'
+  ) && candidate.distance <= input.activationThresholdPx);
   candidates.sort((a, b) => a.distance - b.distance || a.key.localeCompare(b.key));
   return candidates[0]?.position ?? null;
 }
@@ -544,16 +660,16 @@ export function usePanelDragSnap({
       draggedSelectionNodeRef.current?.position(visual);
       draggedSlopeArrowNodeRef.current?.position(visual);
 
-      if (resolution.snapped && resolution.hintU) {
-        const extent = 10000;
-        const a = currentAxis.fromUV(resolution.position.u, resolution.position.v - extent);
-        const b = currentAxis.fromUV(resolution.position.u, resolution.position.v + extent);
+      const columnGuide = resolution.guides.find((guide) => guide.axis === 'column');
+      if (resolution.snapped && columnGuide) {
+        const a = currentAxis.fromUV(columnGuide.coordinate, columnGuide.start);
+        const b = currentAxis.fromUV(columnGuide.coordinate, columnGuide.end);
         setGuide(hintURef, [a.x, a.y, b.x, b.y]);
       } else setGuide(hintURef, null);
-      if (resolution.snapped && resolution.hintV) {
-        const extent = 10000;
-        const a = currentAxis.fromUV(resolution.position.u - extent, resolution.position.v);
-        const b = currentAxis.fromUV(resolution.position.u + extent, resolution.position.v);
+      const rowGuide = resolution.guides.find((guide) => guide.axis === 'row');
+      if (resolution.snapped && rowGuide) {
+        const a = currentAxis.fromUV(rowGuide.start, rowGuide.coordinate);
+        const b = currentAxis.fromUV(rowGuide.end, rowGuide.coordinate);
         setGuide(hintVRef, [a.x, a.y, b.x, b.y]);
       } else setGuide(hintVRef, null);
       draggedNodeRef.current?.getLayer()?.batchDraw();

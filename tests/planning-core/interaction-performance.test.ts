@@ -238,6 +238,21 @@ test("snap hysteresis keeps one deterministic corner candidate until the release
   assert.equal(second.snapKey, first.snapKey);
 });
 
+test("directional intent changes side only when another exact candidate is materially nearer", () => {
+  const panels = [{ id: "fixed", u: 0, v: 0, hw: 5, hh: 5 }];
+  const right = resolvePanelDragFrameUV({
+    free: { u: 11, v: 0.2 }, hw: 5, hh: 5, gapXPx: 1, gapYPx: 1,
+    activationThresholdPx: 18, releaseThresholdPx: 26, panels, validate: () => true,
+  });
+  assert.equal(right.snapKey, "adjacency:fixed:right");
+  const below = resolvePanelDragFrameUV({
+    free: { u: 0.2, v: 11 }, hw: 5, hh: 5, gapXPx: 1, gapYPx: 1,
+    activationThresholdPx: 18, releaseThresholdPx: 26,
+    activeSnapKey: right.snapKey, panels, validate: () => true,
+  });
+  assert.equal(below.snapKey, "adjacency:fixed:bottom");
+});
+
 test("right and bottom adjacency snap to the exact configured gaps and release naturally", () => {
   const panels = [{ id: "fixed", u: 0, v: 0, hw: 5, hh: 8 }];
   const right = resolvePanelDragFrameUV({
@@ -263,6 +278,75 @@ test("right and bottom adjacency snap to the exact configured gaps and release n
   assert.equal(released.snapKey, null);
 });
 
+test("row continuation snaps after the last panel and exposes one finite row guide", () => {
+  const panels = [
+    { id: "a", u: -22, v: 4, hw: 5, hh: 8 },
+    { id: "b", u: -11, v: 4, hw: 5, hh: 8 },
+    { id: "c", u: 0, v: 4, hw: 5, hh: 8 },
+  ];
+  const result = resolvePanelDragFrameUV({
+    free: { u: 11.8, v: 5.1 }, hw: 5, hh: 8, gapXPx: 1, gapYPx: 2,
+    activationThresholdPx: 18, panels, validate: () => true,
+  });
+  assert.deepEqual(result.position, { u: 11, v: 4 });
+  assert.equal(result.snapKey, "adjacency:c:right");
+  assert.deepEqual(result.guides, [{ axis: "row", coordinate: 4, start: -27, end: 16 }]);
+});
+
+test("column continuation snaps below the last panel and exposes one finite column guide", () => {
+  const panels = [
+    { id: "a", u: 3, v: -36, hw: 5, hh: 8 },
+    { id: "b", u: 3, v: -18, hw: 5, hh: 8 },
+    { id: "c", u: 3, v: 0, hw: 5, hh: 8 },
+  ];
+  const result = resolvePanelDragFrameUV({
+    free: { u: 2.4, v: 18.9 }, hw: 5, hh: 8, gapXPx: 1, gapYPx: 2,
+    activationThresholdPx: 18, panels, validate: () => true,
+  });
+  assert.deepEqual(result.position, { u: 3, v: 18 });
+  assert.equal(result.snapKey, "adjacency:c:bottom");
+  assert.deepEqual(result.guides, [{ axis: "column", coordinate: 3, start: -44, end: 26 }]);
+});
+
+test("a missing grid cell is one deterministic two-axis proposal, never mixed U/V targets", () => {
+  const panels = [
+    { id: "top-right", u: 11, v: 0, hw: 5, hh: 8 },
+    { id: "bottom-left", u: 0, v: 18, hw: 5, hh: 8 },
+  ];
+  const result = resolvePanelDragFrameUV({
+    free: { u: 12.2, v: 19.3 }, hw: 5, hh: 8, gapXPx: 1, gapYPx: 2,
+    activationThresholdPx: 18, panels, validate: () => true,
+  });
+  assert.deepEqual(result.position, { u: 11, v: 18 });
+  assert.match(result.snapKey ?? "", /^grid-cell:/);
+  assert.deepEqual(result.guides.map((guide) => guide.axis), ["column", "row"]);
+  assert.equal(new Set(result.guides.map((guide) => guide.axis)).size, 2);
+});
+
+test("empty space between panels never creates a synthetic midpoint target", () => {
+  const panels = [
+    { id: "left", u: 0, v: 0, hw: 5, hh: 5 },
+    { id: "right", u: 40, v: 0, hw: 5, hh: 5 },
+  ];
+  const result = resolvePanelDragFrameUV({
+    free: { u: 20, v: 0 }, hw: 5, hh: 5, gapXPx: 1, gapYPx: 1,
+    activationThresholdPx: 18, panels, validate: () => true,
+  });
+  assert.notDeepEqual(result.position, { u: 20, v: 0 });
+  assert.ok(result.position.u === 11 || result.position.u === 29);
+  assert.match(result.snapKey ?? "", /^adjacency:/);
+});
+
+test("incompatible panel dimensions do not produce a strong adjacency target", () => {
+  const result = resolvePanelDragFrameUV({
+    free: { u: 12, v: 0 }, hw: 5, hh: 8, gapXPx: 1, gapYPx: 2,
+    activationThresholdPx: 18,
+    panels: [{ id: "other-size", u: 0, v: 0, hw: 6, hh: 8 }],
+    validate: () => true,
+  });
+  assert.doesNotMatch(result.snapKey ?? "", /^(grid-cell|adjacency):/);
+});
+
 test("Shift disables snap while preserving free-position validation", () => {
   const free = { u: 10.5, v: 0 };
   const result = resolvePanelDragFrameUV({
@@ -278,6 +362,7 @@ test("Shift disables snap while preserving free-position validation", () => {
   });
   assert.deepEqual(result.position, free);
   assert.equal(result.snapped, false);
+  assert.deepEqual(result.guides, []);
 });
 
 test("transient invalid overlap follows the pointer and becomes valid beyond the obstacle", () => {

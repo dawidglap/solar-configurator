@@ -412,6 +412,10 @@ test("advanced snapping is deterministic and Shift bypasses it", () => {
     disableSnap: false,
   });
   assert.equal(acquired.snapped, true, "complete D-Dome block acquires exact block adjacency");
+  assert.equal(acquired.guides.length, 1, "the winning D-Dome adjacency exposes one finite guide");
+  assert.equal(acquired.guides[0].axis, "row");
+  assert.ok(Number.isFinite(acquired.guides[0].points[0].x));
+  assert.ok(Number.isFinite(acquired.guides[0].points[1].y));
   const retained = resolveAdvancedManualCenterSnap({
     pointerPx: { x: exactNeighbour.x + 3.5, y: exactNeighbour.y },
     roofId: ROOF.id,
@@ -437,6 +441,7 @@ test("advanced snapping is deterministic and Shift bypasses it", () => {
   });
   assert.equal(invalid.snapped, false, "invalid full-block adjacency is ignored");
   assert.deepEqual(invalid.position, nearNeighbour);
+  assert.deepEqual(invalid.guides, []);
 });
 
 test("Standard magnetic snap creates an exact compact 2x2 grid and is rotation invariant", () => {
