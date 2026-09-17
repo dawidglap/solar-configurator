@@ -5,7 +5,11 @@ import type Konva from "konva";
 import { Group, Line } from "react-konva";
 
 import type { Pt } from "@/types/planner";
-import { translateRoofOwnedPolygon } from "@/lib/planning-core/geometry-v2";
+import {
+  createRoofContainmentSnapshot,
+  resolveContainedPolygonTranslation,
+  type RoofContainmentSnapshot,
+} from "@/lib/planning-core/geometry-v2";
 import type { Zone } from "../state/slices/zonesSlice";
 import { history } from "../state/history";
 import { plannerTheme } from "../theme/plannerTheme";
@@ -74,6 +78,8 @@ export default function MovableZone({
   const startPointerRef = React.useRef<Pt | null>(null);
   const startPointsRef = React.useRef<Pt[] | null>(null);
   const finalPointsRef = React.useRef<Pt[] | null>(null);
+  const lastValidDeltaRef = React.useRef<Pt | null>(null);
+  const containmentSnapshotRef = React.useRef<RoofContainmentSnapshot | null>(null);
   const frameRef = React.useRef<FrameScheduler<Pt> | null>(null);
   const movingRef = React.useRef(false);
 
@@ -94,6 +100,8 @@ export default function MovableZone({
     startPointerRef.current = null;
     startPointsRef.current = null;
     finalPointsRef.current = null;
+    lastValidDeltaRef.current = null;
+    containmentSnapshotRef.current = null;
   }, [onChange]);
 
   const startMove = React.useCallback((event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -108,23 +116,28 @@ export default function MovableZone({
     startPointerRef.current = start;
     startPointsRef.current = zone.points.map((point) => ({ ...point }));
     finalPointsRef.current = null;
+    containmentSnapshotRef.current = createRoofContainmentSnapshot(ownerRoofPoints);
+    lastValidDeltaRef.current = { x: 0, y: 0 };
     movingRef.current = true;
 
     frameRef.current = createLatestFrameScheduler((point: Pt) => {
       const origin = startPointerRef.current;
       const points = startPointsRef.current;
-      if (!origin || !points) return;
-      const delta = { x: point.x - origin.x, y: point.y - origin.y };
-      const result = translateRoofOwnedPolygon({
+      const snapshot = containmentSnapshotRef.current;
+      if (!origin || !points || !snapshot) return;
+      const requestedDelta = { x: point.x - origin.x, y: point.y - origin.y };
+      const result = resolveContainedPolygonTranslation({
         points,
-        delta,
-        ownerRoofPoints,
+        requestedDelta,
+        previousValidDelta: lastValidDeltaRef.current ?? undefined,
+        snapshot,
       });
       finalPointsRef.current = result.valid ? result.points : null;
       const group = groupRef.current;
       if (!group) return;
-      group.position(delta);
-      group.opacity(result.valid ? 1 : 0.55);
+      if (result.valid) lastValidDeltaRef.current = result.delta;
+      group.position(result.valid ? result.delta : (lastValidDeltaRef.current ?? { x: 0, y: 0 }));
+      group.opacity(1);
       group.getLayer()?.batchDraw();
     });
 

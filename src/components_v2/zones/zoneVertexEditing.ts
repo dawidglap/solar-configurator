@@ -1,4 +1,5 @@
 import {
+  isFootprintContainedInUsableRoof,
   isSimpleMetricPolygon,
   pointPolygonRelation,
   polygonArea,
@@ -81,6 +82,11 @@ export function moveZoneVertex(input: {
   }
   if (!isSimpleMetricPolygon(next) || polygonArea(next) <= minDistance * minDistance) {
     return { accepted: false, points: [...input.points], reason: "invalid-polygon" };
+  }
+  // Checking only the moved vertex is insufficient for concave roofs: a new
+  // polygon edge can cross a roof recess while all vertices remain inside.
+  if (!isFootprintContainedInUsableRoof(next, [[...input.ownerRoof]])) {
+    return { accepted: false, points: [...input.points], reason: "outside-owner-roof" };
   }
   return { accepted: true, points: next, point: snapped.point, snapped: snapped.snapped };
 }

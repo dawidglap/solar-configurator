@@ -20,6 +20,7 @@ import { resolveSurfacePlanning } from '@/lib/planning-core/advanced';
 import {
     createRoofRelativeRectangle,
     resolveRoofReferenceEdgeIndex,
+    translateRoofOwnedPolygon,
     type RoofKind,
 } from '@/lib/planning-core/geometry-v2';
 import { snapPointToOwnerRoof } from '../../zones/zoneVertexEditing';
@@ -235,8 +236,18 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         const targetRoofId = reservedTargetRoofIdRef.current;
         if (!targetRoofId) return;
 
-        history.push('add reserved zone'); // snapshot PRIMA
         const targetRoof = layers.find((roof) => roof.id === targetRoofId) as T | undefined;
+        if (!targetRoof) return;
+        const containment = translateRoofOwnedPolygon({
+            points: pts,
+            delta: { x: 0, y: 0 },
+            ownerRoofPoints: targetRoof.points,
+        });
+        // A concave roof can contain every clicked vertex while an obstacle
+        // edge still crosses outside. Never commit that invalid polygon.
+        if (!containment.valid) return;
+
+        history.push('add reserved zone'); // snapshot PRIMA
         const planning = resolveSurfacePlanning(targetRoof?.surfacePlanning);
         const roofKind: RoofKind = targetRoof?.roofKind ?? (
             planning.status === 'supported-advanced'

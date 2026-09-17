@@ -4,12 +4,16 @@ import test from "node:test";
 
 import {
   alignPolygonToRoofReference,
+  createRoofContainmentSnapshot,
   createRoofRelativeRectangle,
   GEOMETRY_V2_ENGINE_VERSION,
+  isFootprintContainedInUsableRoof,
   orthogonalizePolygonToRoofReference,
+  resolveContainedPolygonTranslation,
   translateRoofOwnedPolygon,
   validatePlacementFootprint,
 } from "../../src/lib/planning-core/geometry-v2";
+import { moveZoneVertex } from "../../src/components_v2/zones/zoneVertexEditing";
 import { usePlannerV2Store } from "../../src/components_v2/state/plannerV2Store";
 
 type Pt = { x: number; y: number };
@@ -112,6 +116,169 @@ test("rigid move translates every vertex equally and rejects an outside release"
   });
   const invalid = translateRoofOwnedPolygon({ points: zone, delta: { x: 100, y: 0 }, ownerRoofPoints: roof });
   assert.equal(invalid.valid, false);
+});
+
+test("whole-obstacle drag stops against all four rectangular roof edges", () => {
+  const roof = rotatedRectangle(100, 80, 0);
+  const zone = rotatedRectangle(20, 10, 0);
+  const snapshot = createRoofContainmentSnapshot(roof);
+  const cases = [
+    { requestedDelta: { x: -200, y: 0 }, expected: { x: -40, y: 0 } },
+    { requestedDelta: { x: 200, y: 0 }, expected: { x: 40, y: 0 } },
+    { requestedDelta: { x: 0, y: -200 }, expected: { x: 0, y: -35 } },
+    { requestedDelta: { x: 0, y: 200 }, expected: { x: 0, y: 35 } },
+  ];
+  cases.forEach(({ requestedDelta, expected }) => {
+    const result = resolveContainedPolygonTranslation({ points: zone, requestedDelta, snapshot });
+    assert.equal(result.valid, true);
+    assert.ok(Math.abs(result.delta.x - expected.x) < 1e-5);
+    assert.ok(Math.abs(result.delta.y - expected.y) < 1e-5);
+    assert.equal(isFootprintContainedInUsableRoof(result.points, [[...roof]]), true);
+  });
+});
+
+test("diagonal drag reaches the corner and subsequent motion slides along the roof edge", () => {
+  const roof = rotatedRectangle(100, 80, 0);
+  const zone = rotatedRectangle(20, 10, 0);
+  const snapshot = createRoofContainmentSnapshot(roof);
+  const corner = resolveContainedPolygonTranslation({
+    points: zone,
+    requestedDelta: { x: 200, y: 175 },
+    snapshot,
+  });
+  assert.equal(corner.valid, true);
+  assert.ok(Math.abs(corner.delta.x - 40) < 1e-5);
+  assert.ok(Math.abs(corner.delta.y - 35) < 1e-5);
+
+  const atLeftWall = resolveContainedPolygonTranslation({
+    points: zone,
+    requestedDelta: { x: -100, y: 0 },
+    snapshot,
+  });
+  assert.equal(atLeftWall.valid, true);
+  const slid = resolveContainedPolygonTranslation({
+    points: zone,
+    requestedDelta: { x: -100, y: 22 },
+    previousValidDelta: atLeftWall.delta,
+    snapshot,
+  });
+  assert.equal(slid.valid, true);
+  assert.ok(Math.abs(slid.delta.x + 40) < 1e-5);
+  assert.ok(Math.abs(slid.delta.y - 22) < 1e-5);
+});
+
+test("containment follows trapezoid and multi-edge roof polygons rather than their bounding boxes", () => {
+  const trapezoid = [
+    { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 75, y: 80 }, { x: 25, y: 80 },
+  ];
+  const zone = rotatedRectangle(12, 10, 0, { x: 50, y: 40 });
+  const trapezoidResult = resolveContainedPolygonTranslation({
+    points: zone,
+    requestedDelta: { x: 60, y: 20 },
+    snapshot: createRoofContainmentSnapshot(trapezoid),
+  });
+  assert.equal(trapezoidResult.valid, true);
+  assert.equal(isFootprintContainedInUsableRoof(trapezoidResult.points, [[...trapezoid]]), true);
+  assert.ok(trapezoidResult.delta.x < 44, "the sloped edge constrains before the bbox edge");
+
+  const hexagon = [
+    { x: 10, y: 0 }, { x: 90, y: 0 }, { x: 110, y: 40 },
+    { x: 90, y: 90 }, { x: 10, y: 90 }, { x: -10, y: 40 },
+  ];
+  const polygonResult = resolveContainedPolygonTranslation({
+    points: zone,
+    requestedDelta: { x: -100, y: 24 },
+    snapshot: createRoofContainmentSnapshot(hexagon),
+  });
+  assert.equal(polygonResult.valid, true);
+  assert.equal(isFootprintContainedInUsableRoof(polygonResult.points, [[...hexagon]]), true);
+});
+
+test("roof ownership wins over an adjacent roof and is viewport-rotation independent", () => {
+  const owner = rotatedRectangle(100, 80, 0);
+  const adjacent = rotatedRectangle(100, 80, 0, { x: 150, y: 50 });
+  const zone = rotatedRectangle(20, 10, 0);
+  const snapshot = createRoofContainmentSnapshot(owner);
+  const direct = resolveContainedPolygonTranslation({
+    points: zone,
+    requestedDelta: { x: 110, y: 0 },
+    snapshot,
+  });
+  assert.equal(direct.valid, true);
+  assert.ok(Math.abs(direct.delta.x - 40) < 1e-5);
+  assert.equal(isFootprintContainedInUsableRoof(direct.points, [[...adjacent]]), false);
+
+  const angle = 71 * Math.PI / 180;
+  const rotate = (point: Pt): Pt => ({
+    x: point.x * Math.cos(angle) - point.y * Math.sin(angle),
+    y: point.x * Math.sin(angle) + point.y * Math.cos(angle),
+  });
+  const unrotate = (point: Pt): Pt => ({
+    x: point.x * Math.cos(angle) + point.y * Math.sin(angle),
+    y: -point.x * Math.sin(angle) + point.y * Math.cos(angle),
+  });
+  const physicalDelta = { x: 110, y: 18 };
+  const reconstructed = unrotate(rotate(physicalDelta));
+  const rotatedViewportResult = resolveContainedPolygonTranslation({
+    points: zone,
+    requestedDelta: reconstructed,
+    snapshot,
+  });
+  assert.equal(rotatedViewportResult.valid, true);
+  assert.ok(Math.abs(rotatedViewportResult.delta.x - 40) < 1e-5);
+  assert.ok(Math.abs(rotatedViewportResult.delta.y - 18) < 1e-5);
+});
+
+test("vertex editing rejects an edge that crosses outside a concave owner roof", () => {
+  const concaveRoof = [
+    { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 70, y: 100 },
+    { x: 70, y: 30 }, { x: 30, y: 30 }, { x: 30, y: 100 }, { x: 0, y: 100 },
+  ];
+  const zone = [{ x: 8, y: 8 }, { x: 25, y: 8 }, { x: 25, y: 24 }, { x: 8, y: 24 }];
+  const result = moveZoneVertex({
+    points: zone,
+    vertexIndex: 2,
+    requestedPoint: { x: 82, y: 82 },
+    ownerRoof: concaveRoof,
+    disableSnap: true,
+  });
+  assert.equal(result.accepted, false);
+  if (!result.accepted) assert.equal(result.reason, "outside-owner-roof");
+  assert.deepEqual(result.points, zone);
+});
+
+test("600 pointer samples remain transient and produce one simulated final commit", () => {
+  const roof = rotatedRectangle(100, 80, 0);
+  const zone = rotatedRectangle(20, 10, 0);
+  const snapshot = createRoofContainmentSnapshot(roof);
+  let previous = { x: 0, y: 0 };
+  let storeCommits = 0;
+  for (let index = 0; index < 600; index += 1) {
+    const result = resolveContainedPolygonTranslation({
+      points: zone,
+      requestedDelta: { x: index / 4, y: Math.sin(index / 20) * 20 },
+      previousValidDelta: previous,
+      snapshot,
+    });
+    if (result.valid) previous = result.delta;
+    assert.equal(storeCommits, 0);
+  }
+  storeCommits += 1;
+  assert.equal(storeCommits, 1);
+
+  const source = readFileSync(
+    new URL("../../src/components_v2/zones/MovableZone.tsx", import.meta.url),
+    "utf8",
+  );
+  const frameBody = source.slice(
+    source.indexOf("frameRef.current = createLatestFrameScheduler"),
+    source.indexOf("stage.off(\".zone-move\")"),
+  );
+  assert.equal(frameBody.includes("onChange("), false);
+  assert.equal(frameBody.includes("history.push"), false);
+  assert.ok(source.includes('stage.on("pointercancel.zone-move touchcancel.zone-move", () => endMove(false))'));
+  assert.ok(source.includes('const onBlur = () => endMove(false)'));
+  assert.ok(source.includes('if (event.key !== "Escape" || !movingRef.current) return'));
 });
 
 test("reference-aligned orthogonalization creates a valid rectangle without changing owner", () => {

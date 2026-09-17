@@ -26,6 +26,47 @@ export type RoofOwnedPolygonResult =
       reason: "missing-reference-edge" | "too-small" | "invalid-polygon" | "outside-owner-roof";
     };
 
+export type RoofContainmentSnapshot = {
+  ownerRoofPoints: MetricPoint[];
+  /** Unit vectors parallel to the real roof edges, cached for edge sliding. */
+  slideDirections: MetricPoint[];
+};
+
+export type ContainedPolygonTranslationResult = RoofOwnedPolygonResult & {
+  delta: MetricPoint;
+  constrained: boolean;
+};
+
+const TRANSLATION_SEARCH_ITERATIONS = 32;
+const TRANSLATION_EPSILON = 1e-7;
+
+function sameUndirectedDirection(a: MetricPoint, b: MetricPoint): boolean {
+  return Math.abs(Math.abs(a.x * b.x + a.y * b.y) - 1) <= 1e-9;
+}
+
+/**
+ * Captures the canonical owner polygon at gesture start. This deliberately has
+ * no margin/Randabstand input: an obstacle is constrained by its owning roof.
+ */
+export function createRoofContainmentSnapshot(
+  ownerRoofPoints: readonly MetricPoint[],
+): RoofContainmentSnapshot {
+  const slideDirections: MetricPoint[] = [];
+  ownerRoofPoints.forEach((start, index) => {
+    const end = ownerRoofPoints[(index + 1) % ownerRoofPoints.length];
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    if (length <= TRANSLATION_EPSILON) return;
+    const direction = { x: (end.x - start.x) / length, y: (end.y - start.y) / length };
+    if (!slideDirections.some((existing) => sameUndirectedDirection(existing, direction))) {
+      slideDirections.push(direction);
+    }
+  });
+  return {
+    ownerRoofPoints: ownerRoofPoints.map((point) => ({ ...point })),
+    slideDirections,
+  };
+}
+
 export function resolveRoofLocalFrame(input: {
   roofPoints: readonly MetricPoint[];
   roofKind: RoofKind;
@@ -131,6 +172,141 @@ export function translateRoofOwnedPolygon(input: {
     y: point.y + input.delta.y,
   }));
   return validateOwnerContainment(points, input.ownerRoofPoints);
+}
+
+function distanceSquared(a: MetricPoint, b: MetricPoint): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+/** Finds the last valid point on a movement segment that starts valid. */
+function furthestValidDeltaOnSegment(input: {
+  points: readonly MetricPoint[];
+  start: MetricPoint;
+  end: MetricPoint;
+  snapshot: RoofContainmentSnapshot;
+}): { delta: MetricPoint; points: MetricPoint[] } {
+  let low = 0;
+  let high = 1;
+  let bestDelta = { ...input.start };
+  let best = translateRoofOwnedPolygon({
+    points: input.points,
+    delta: bestDelta,
+    ownerRoofPoints: input.snapshot.ownerRoofPoints,
+  });
+  for (let index = 0; index < TRANSLATION_SEARCH_ITERATIONS; index += 1) {
+    const amount = (low + high) / 2;
+    const delta = {
+      x: input.start.x + (input.end.x - input.start.x) * amount,
+      y: input.start.y + (input.end.y - input.start.y) * amount,
+    };
+    const result = translateRoofOwnedPolygon({
+      points: input.points,
+      delta,
+      ownerRoofPoints: input.snapshot.ownerRoofPoints,
+    });
+    if (result.valid) {
+      low = amount;
+      bestDelta = delta;
+      best = result;
+    } else {
+      high = amount;
+    }
+  }
+  return { delta: bestDelta, points: best.points };
+}
+
+/**
+ * Resolves a rigid obstacle translation against the actual owner polygon.
+ * When the pointer crosses an edge, movement stops at that edge and the
+ * remaining pointer motion is projected onto real roof-edge tangents so the
+ * obstacle can continue sliding naturally along the boundary.
+ */
+export function resolveContainedPolygonTranslation(input: {
+  points: readonly MetricPoint[];
+  requestedDelta: MetricPoint;
+  previousValidDelta?: MetricPoint;
+  snapshot: RoofContainmentSnapshot;
+}): ContainedPolygonTranslationResult {
+  const requested = translateRoofOwnedPolygon({
+    points: input.points,
+    delta: input.requestedDelta,
+    ownerRoofPoints: input.snapshot.ownerRoofPoints,
+  });
+  if (requested.valid) {
+    return { ...requested, delta: { ...input.requestedDelta }, constrained: false };
+  }
+
+  const startDelta = input.previousValidDelta ?? { x: 0, y: 0 };
+  const start = translateRoofOwnedPolygon({
+    points: input.points,
+    delta: startDelta,
+    ownerRoofPoints: input.snapshot.ownerRoofPoints,
+  });
+  // Legacy invalid obstacles are never migrated or rewritten by this helper.
+  if (!start.valid) {
+    return {
+      valid: false,
+      points: requested.points,
+      reason: requested.reason,
+      delta: { ...startDelta },
+      constrained: true,
+    };
+  }
+
+  let best = furthestValidDeltaOnSegment({
+    points: input.points,
+    start: startDelta,
+    end: input.requestedDelta,
+    snapshot: input.snapshot,
+  });
+
+  // Two passes let a diagonal gesture reach a boundary and then keep moving
+  // along its tangent, without any screen-axis/bounding-box clamp.
+  for (let pass = 0; pass < 2; pass += 1) {
+    let passBest = best;
+    for (const tangent of input.snapshot.slideDirections) {
+      const remaining = {
+        x: input.requestedDelta.x - best.delta.x,
+        y: input.requestedDelta.y - best.delta.y,
+      };
+      const amount = remaining.x * tangent.x + remaining.y * tangent.y;
+      if (Math.abs(amount) <= TRANSLATION_EPSILON) continue;
+      const candidateDelta = {
+        x: best.delta.x + tangent.x * amount,
+        y: best.delta.y + tangent.y * amount,
+      };
+      const candidate = translateRoofOwnedPolygon({
+        points: input.points,
+        delta: candidateDelta,
+        ownerRoofPoints: input.snapshot.ownerRoofPoints,
+      });
+      const resolved = candidate.valid
+        ? { delta: candidateDelta, points: candidate.points }
+        : furthestValidDeltaOnSegment({
+            points: input.points,
+            start: best.delta,
+            end: candidateDelta,
+            snapshot: input.snapshot,
+          });
+      if (
+        distanceSquared(resolved.delta, input.requestedDelta) + TRANSLATION_EPSILON <
+        distanceSquared(passBest.delta, input.requestedDelta)
+      ) {
+        passBest = resolved;
+      }
+    }
+    if (distanceSquared(passBest.delta, best.delta) <= TRANSLATION_EPSILON ** 2) break;
+    best = passBest;
+  }
+
+  return {
+    valid: true,
+    points: best.points,
+    delta: best.delta,
+    constrained: true,
+  };
 }
 
 function polygonCenter(points: readonly MetricPoint[]): MetricPoint {
