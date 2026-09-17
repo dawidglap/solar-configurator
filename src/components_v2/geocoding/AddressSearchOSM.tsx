@@ -10,6 +10,11 @@ import React, {
   useState,
 } from "react";
 import ReactDOM from "react-dom";
+import {
+  createLatestAddressRequestGuard,
+  normalizeAddressAutocompleteQuery,
+  shouldSearchAddress,
+} from "./addressAutocomplete";
 
 export type OSMResult = { label: string; lat: number; lon: number };
 
@@ -69,8 +74,6 @@ type Suggest = {
   label: string;
   lat: number;
   lon: number;
-  postcode?: string;
-  number?: string;
 };
 
 export default function AddressSearchOSM({
@@ -87,6 +90,12 @@ export default function AddressSearchOSM({
   const [active, setActive] = useState(-1);
   const [results, setResults] = useState<Suggest[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const requestGuardRef = useRef(createLatestAddressRequestGuard());
+  const normalizedQuery = useMemo(
+    () => normalizeAddressAutocompleteQuery(q),
+    [q],
+  );
 
   // sync parent -> local input
   useEffect(() => {
@@ -129,16 +138,21 @@ export default function AddressSearchOSM({
   }, [portalNode]);
 
   useEffect(() => {
+    requestGuardRef.current.invalidate();
+    abortRef.current?.abort();
+    abortRef.current = null;
+
     if (readOnly) {
+      setLoading(false);
       setResults([]);
       setOpen(false);
       setActive(-1);
       return;
     }
     setErr(null);
-    const qTrim = q.trim();
 
-    if (qTrim.length < 3) {
+    if (!shouldSearchAddress(normalizedQuery)) {
+      setLoading(false);
       setResults([]);
       setOpen(false);
       setActive(-1);
@@ -146,17 +160,22 @@ export default function AddressSearchOSM({
     }
 
     const t = setTimeout(async () => {
+      const requestId = requestGuardRef.current.begin();
+      const controller = new AbortController();
+      abortRef.current = controller;
       setLoading(true);
       try {
         const url =
           `https://api3.geo.admin.ch/rest/services/api/SearchServer` +
-          `?type=locations&searchText=${encodeURIComponent(qTrim)}` +
+          `?type=locations&searchText=${encodeURIComponent(normalizedQuery)}` +
           `&lang=de&sr=4326&limit=12`;
 
         const res = await fetch(url, {
           headers: { Accept: "application/json" },
+          signal: controller.signal,
         });
         const json = await res.json();
+        if (!requestGuardRef.current.isCurrent(requestId) || controller.signal.aborted) return;
 
         const parsed: Suggest[] = (json?.results ?? [])
           .map((r: any) => {
@@ -166,67 +185,16 @@ export default function AddressSearchOSM({
             const lat = Number(a.lat ?? r.y);
             const lon = Number(a.lon ?? r.x);
 
-            const mPost = label.match(/\b(\d{4})\b/);
-            const mNum = label.match(/\b(\d{1,3}(?:[a-z]|(?:\.\d+)?)?)\b/);
-            const postcode = mPost ? mPost[1] : undefined;
-            const number = mNum ? mNum[1] : undefined;
-
             return Number.isFinite(lat) && Number.isFinite(lon) && label
-              ? { label, lat, lon, postcode, number }
+              ? { label, lat, lon }
               : null;
           })
           .filter((x: Suggest | null): x is Suggest => !!x);
 
-        const ql = qTrim.toLowerCase();
-        const tokens = ql.split(/\s+/);
-
-        const lastTok = tokens.at(-1) || "";
-        const capPrefix = /^\d{2,4}$/.test(lastTok) ? lastTok : null;
-
-        let houseInQuery: string | null = null;
-        for (const tkn of tokens) {
-          if (/^\d{1,3}[a-z]?$/.test(tkn) || /^\d{1,3}\.\d+$/.test(tkn)) {
-            houseInQuery = tkn;
-            break;
-          }
-        }
-        if (houseInQuery && capPrefix && houseInQuery === capPrefix) {
-          houseInQuery = null;
-        }
-
-        const filtered = parsed.filter((it) => {
-          if (
-            capPrefix &&
-            it.postcode &&
-            !String(it.postcode).startsWith(capPrefix)
-          ) {
-            return false;
-          }
-          if (houseInQuery) {
-            if (!it.number) return false;
-            const n = String(it.number).toLowerCase();
-            if (!(n === houseInQuery || n.startsWith(houseInQuery))) {
-              return false;
-            }
-          }
-          return true;
-        });
-
-        const sorted = filtered.sort((a, b) => {
+        const ql = normalizedQuery.toLocaleLowerCase("de-CH");
+        const sorted = parsed.sort((a, b) => {
           const al = a.label.toLowerCase();
           const bl = b.label.toLowerCase();
-
-          const specA = capPrefix
-            ? a.postcode?.startsWith(capPrefix)
-              ? (a.postcode?.length ?? 0)
-              : 0
-            : 0;
-          const specB = capPrefix
-            ? b.postcode?.startsWith(capPrefix)
-              ? (b.postcode?.length ?? 0)
-              : 0
-            : 0;
-          if (specA !== specB) return specB - specA;
 
           const aStarts = Number(al.startsWith(ql));
           const bStarts = Number(bl.startsWith(ql));
@@ -245,17 +213,26 @@ export default function AddressSearchOSM({
         setOpen(sorted.length > 0);
         setActive(sorted.length ? 0 : -1);
       } catch (e: any) {
+        if (e?.name === "AbortError" || !requestGuardRef.current.isCurrent(requestId)) return;
         setErr(e?.message ?? "Search error");
         setResults([]);
         setOpen(false);
         setActive(-1);
       } finally {
-        setLoading(false);
+        if (requestGuardRef.current.isCurrent(requestId)) {
+          setLoading(false);
+          if (abortRef.current === controller) abortRef.current = null;
+        }
       }
     }, 250);
 
     return () => clearTimeout(t);
-  }, [q, readOnly]);
+  }, [normalizedQuery, readOnly]);
+
+  useEffect(() => () => {
+    requestGuardRef.current.invalidate();
+    abortRef.current?.abort();
+  }, []);
 
   const positionDropdown = useCallback(() => {
     if (!anchorRef.current || !dropdownRef.current) return;
