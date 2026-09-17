@@ -17,6 +17,7 @@ import { plannerTheme } from "../../theme/plannerTheme";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
 import { computeAdvancedPlanningPreview } from "./advancedPlanningApplication";
 import ModuleSlopeArrow from "../panels/ModuleSlopeArrow";
+import { resolveOutwardBlockArrowAzimuths } from "../panels/moduleSlope";
 import type { ThermalFieldDisplayInput } from "../thermalFields/thermalFieldDisplay";
 import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
 
@@ -150,6 +151,14 @@ export default function AdvancedPreviewLayer({
   const isOpposingSystem =
     system.systemId === K2_D_DOME_SYSTEM_ID ||
     system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
+  const outwardArrowAzimuths = isOpposingSystem && preview
+    ? resolveOutwardBlockArrowAzimuths(preview.modules.map((module) => ({
+        id: `${module.blockKey}:${module.slotIndex}`,
+        blockKey: module.blockKey,
+        cx: module.cx,
+        cy: module.cy,
+      })))
+    : new Map<string, number>();
   return (
     <Group listening={false}>
       {preview && preview.blocks.length > 0 && (
@@ -199,6 +208,7 @@ export default function AdvancedPreviewLayer({
                   wPx={module.wPx}
                   hPx={module.hPx}
                   panelRotationDeg={module.angleDeg}
+                  arrowAzimuthDeg={outwardArrowAzimuths.get(`${module.blockKey}:${module.slotIndex}`)}
                 />
               </Group>
             );

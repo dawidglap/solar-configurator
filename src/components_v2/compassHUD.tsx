@@ -42,16 +42,15 @@ export default function CompassHUD({
   );
 
   const roof = layers.find((l) => l.id === selectedId);
-  if (!roof) return null;
-  const persistedPlanning = resolveSurfacePlanning(roof.surfacePlanning);
+  const persistedPlanning = resolveSurfacePlanning(roof?.surfacePlanning);
   const advancedConfig: AdvancedSurfacePlanningV1 | undefined =
     draft?.targetMode === "advanced"
       ? draft.config
       : persistedPlanning.status === "supported-advanced"
         ? persistedPlanning.config
         : undefined;
-  const isFlat = roof.roofKind === "flat" || (
-    roof.roofKind === undefined && (
+  const isFlat = roof?.roofKind === "flat" || (
+    roof?.roofKind === undefined && roof != null && (
       advancedConfig?.surface.kind === "flat" ||
       resolveInitialSonnendachRoofType(roof) === "flat"
     )
@@ -68,15 +67,18 @@ export default function CompassHUD({
     system?.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
   const primaryDirectionDeg = isFlat
     ? primaryModuleAzimuthDeg
-    : resolveRoofFallAzimuth(roof);
-  if (primaryDirectionDeg == null) return null;
-  const directionDegs = opposingModules && isFlat
-    ? [primaryDirectionDeg, (primaryDirectionDeg + 180) % 360]
-    : [primaryDirectionDeg];
+    : roof
+      ? resolveRoofFallAzimuth(roof)
+      : undefined;
+  const directionDegs = primaryDirectionDeg == null
+    ? []
+    : opposingModules && isFlat
+      ? [primaryDirectionDeg, (primaryDirectionDeg + 180) % 360]
+      : [primaryDirectionDeg];
   const northOnScreenDeg = normalize360(canvasRotationDeg);
-  const numericLabel = directionDegs
+  const numericLabel = directionDegs.length ? directionDegs
     .map((direction) => `${Math.round(direction)}° ${roofAzimuthCardinal(direction)}`)
-    .join(" / ");
+    .join(" / ") : null;
 
   return (
     <div
@@ -85,7 +87,7 @@ export default function CompassHUD({
     >
       <div
         className="
-          pointer-events-auto flex flex-col items-center gap-1.5
+          pointer-events-none flex flex-col items-center gap-1.5
           rounded-2xl border border-neutral-700/70 bg-[#262626] opacity-80 text-neutral-100
           px-3 py-2 shadow-lg backdrop-blur-sm
         "
@@ -171,12 +173,14 @@ export default function CompassHUD({
         </div>
 
         {/* numerische Anzeige z.B. „268° W“ */}
-        <div className="text-[11px] leading-none tracking-wide tabular-nums">
-          {numericLabel}
-        </div>
+        {numericLabel && (
+          <div className="text-[11px] leading-none tracking-wide tabular-nums">
+            {numericLabel}
+          </div>
+        )}
 
         {/* Legende Nord vs Dach */}
-        <div className="flex items-center gap-3 text-[9px] text-neutral-400 leading-tight">
+        {directionDegs.length > 0 && <div className="flex items-center gap-3 text-[9px] text-neutral-400 leading-tight">
           <span className="flex items-center gap-1">
             <span className="inline-block w-2 h-[2px] bg-red-500" />
             Nord
@@ -185,11 +189,11 @@ export default function CompassHUD({
             <span className="inline-block w-2 h-[2px] bg-emerald-400" />
             {isFlat ? "Module" : "Dach"}
           </span>
-        </div>
+        </div>}
 
-        <div className="text-[9px] text-neutral-500">
+        {directionDegs.length > 0 && <div className="text-[9px] text-neutral-500">
           {isFlat ? "Modulausrichtung relativ zu Nord" : "Gefällerichtung relativ zu Nord"}
-        </div>
+        </div>}
       </div>
     </div>
   );

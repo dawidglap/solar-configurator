@@ -601,6 +601,7 @@ export default function TopToolbar() {
         zones: currentState.zones,
         snowGuards: currentState.snowGuards,
         thermalFieldLimits,
+        maximizeCoverage: true,
         createPanelId: (index) => `${selectedId}_p_${runId}_${index}`,
       });
       if (!generated) return;
@@ -624,6 +625,7 @@ export default function TopToolbar() {
         mppImage: snapshot.mppImage,
         zones: currentState.zones,
         snowGuards: currentState.snowGuards,
+        maximizeCoverage: true,
         layoutRunId: runId,
         createPanelId: (index) => `${selectedId}_advanced_${runId}_${index}`,
       });

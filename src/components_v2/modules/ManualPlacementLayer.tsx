@@ -7,6 +7,8 @@ import { nanoid } from "nanoid";
 import toast from "react-hot-toast";
 
 import {
+  GENERIC_EAST_WEST_SYSTEM_ID,
+  K2_D_DOME_SYSTEM_ID,
   resolveSurfacePlanning,
   type AdvancedSurfacePlanningV1,
 } from "@/lib/planning-core/advanced";
@@ -14,6 +16,7 @@ import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import { plannerTheme } from "../theme/plannerTheme";
 import ModuleSprite from "./ModuleSprite";
 import ModuleSlopeArrow from "./panels/ModuleSlopeArrow";
+import { resolveOutwardBlockArrowAzimuths } from "./panels/moduleSlope";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import {
   resolveStandardAutoLayoutCanvasAngle,
@@ -300,6 +303,16 @@ export default function ManualPlacementLayer({
   };
 
   const valid = candidate?.valid ?? false;
+  const opposingCandidate = advancedConfig?.advanced.system.systemId === K2_D_DOME_SYSTEM_ID ||
+    advancedConfig?.advanced.system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
+  const candidateArrowAzimuths = candidate && opposingCandidate
+    ? resolveOutwardBlockArrowAzimuths(candidate.modules.map((module) => ({
+        id: String(module.slotIndex),
+        blockKey: "candidate",
+        cx: module.cx,
+        cy: module.cy,
+      })))
+    : new Map<string, number>();
   const stroke = valid ? plannerTheme.primary : plannerTheme.danger;
   const inverseScale = 1 / Math.max(stageScale, 0.01);
   const helperText = valid ? "Klicken zum Platzieren" : "Position nicht möglich";
@@ -353,6 +366,7 @@ export default function ManualPlacementLayer({
                   wPx={module.wPx}
                   hPx={module.hPx}
                   panelRotationDeg={module.angleDeg}
+                  arrowAzimuthDeg={candidateArrowAzimuths.get(String(module.slotIndex))}
                 />
               </Group>
             );

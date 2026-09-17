@@ -12,6 +12,7 @@ function ModuleSlopeArrow({
   wPx,
   hPx,
   panelRotationDeg,
+  arrowAzimuthDeg,
   opacity = 0.58,
   color = plannerTheme.textMuted,
 }: {
@@ -21,10 +22,11 @@ function ModuleSlopeArrow({
   wPx: number;
   hPx: number;
   panelRotationDeg: number;
+  arrowAzimuthDeg?: number;
   opacity?: number;
   color?: string;
 }) {
-  const azimuthDeg = resolvePanelLocalArrowAzimuth(panelRotationDeg);
+  const azimuthDeg = resolvePanelLocalArrowAzimuth(arrowAzimuthDeg ?? panelRotationDeg);
   if (azimuthDeg === undefined) return null;
   const length = Math.max(4, Math.min(18, Math.min(wPx, hPx) * 0.55));
   const half = length / 2;

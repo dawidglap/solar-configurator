@@ -158,6 +158,143 @@ export function computeAdvancedBlockLayout(
   };
 }
 
+function normalizedPhase(value: number): number {
+  const phase = value % 1;
+  return phase < 0 ? phase + 1 : phase;
+}
+
+function phaseDistance(a: number, b: number): number {
+  const distance = Math.abs(normalizedPhase(a) - normalizedPhase(b));
+  return Math.min(distance, 1 - distance);
+}
+
+function deterministicPhaseCandidates(
+  current: number | undefined,
+  contacts: readonly number[] = [],
+): number[] {
+  const values = [normalizedPhase(current ?? 0)];
+  for (let index = 0; index < 8; index += 1) values.push(index / 8);
+  values.push(...contacts.map(normalizedPhase));
+  return values.filter((value, index) =>
+    values.findIndex((candidate) => Math.abs(candidate - value) < 1e-9) === index,
+  ).slice(0, 24);
+}
+
+function contactPhaseCandidates(input: ComputeAdvancedBlockLayoutInput): {
+  x: number[];
+  y: number[];
+} {
+  const usableRoof = computeUsableRoof({
+    roofPolygonM: input.roofPolygonM,
+    marginM: input.marginM,
+  });
+  if (usableRoof.status !== "valid" || !usableRoof.components.length) return { x: [], y: [] };
+  const rotation = geographicPlanarOrientationToCartesianRotationDeg(
+    input.blockDefinition.planarOrientationDeg,
+  );
+  const origin = input.gridOriginM ?? { x: 0, y: 0 };
+  const localRoof = usableRoof.components.map((component) =>
+    component.map((point) => toGridLocal(point, origin, rotation)),
+  );
+  const bounds = combinePolygonBounds(localRoof);
+  const footprint = polygonBounds(input.blockDefinition.blockFootprint);
+  const minOriginX = bounds.minX - footprint.minX;
+  const minOriginY = bounds.minY - footprint.minY;
+  const points = [
+    ...localRoof.flat(),
+    ...(input.reservedZones ?? []).flatMap((zone) =>
+      zone.polygon.map((point) => toGridLocal(point, origin, rotation))),
+    ...(input.snowGuards ?? []).flatMap((guard) => [
+      toGridLocal(guard.start, origin, rotation),
+      toGridLocal(guard.end, origin, rotation),
+    ]),
+  ];
+  const x = points.flatMap((point) => [
+    (point.x - footprint.minX - minOriginX) / input.blockDefinition.pitchM.x,
+    (point.x - footprint.maxX - minOriginX) / input.blockDefinition.pitchM.x,
+  ]);
+  const y = points.flatMap((point) => [
+    (point.y - footprint.minY - minOriginY) / input.blockDefinition.pitchM.y,
+    (point.y - footprint.maxY - minOriginY) / input.blockDefinition.pitchM.y,
+  ]);
+  return { x, y };
+}
+
+function fragmentationScore(layout: AdvancedBlockLayoutResult): number {
+  const byRow = new Map<number, number[]>();
+  for (const block of layout.blocks) {
+    const columns = byRow.get(block.rowIndex);
+    if (columns) columns.push(block.columnIndex);
+    else byRow.set(block.rowIndex, [block.columnIndex]);
+  }
+  let runs = 0;
+  for (const columns of byRow.values()) {
+    columns.sort((a, b) => a - b);
+    for (let index = 0; index < columns.length; index += 1) {
+      if (index === 0 || columns[index] !== columns[index - 1] + 1) runs += 1;
+    }
+  }
+  return runs;
+}
+
+/** Finite, deterministic phase search for the explicit Vollbelegung action. */
+export function computeMaximumAdvancedBlockLayout(
+  input: ComputeAdvancedBlockLayoutInput,
+): {
+  layout: AdvancedBlockLayoutResult;
+  phaseX: number;
+  phaseY: number;
+  candidatesEvaluated: number;
+} {
+  const contacts = contactPhaseCandidates(input);
+  const phasesX = deterministicPhaseCandidates(input.phaseX, contacts.x);
+  const phasesY = deterministicPhaseCandidates(input.phaseY, contacts.y);
+  const requestedX = normalizedPhase(input.phaseX ?? 0);
+  const requestedY = normalizedPhase(input.phaseY ?? 0);
+  let best: {
+    layout: AdvancedBlockLayoutResult;
+    phaseX: number;
+    phaseY: number;
+    fragmentation: number;
+    phaseDistance: number;
+    order: number;
+  } | null = null;
+  let order = 0;
+
+  for (const phaseY of phasesY) {
+    for (const phaseX of phasesX) {
+      const layout = computeAdvancedBlockLayout({ ...input, phaseX, phaseY });
+      const candidate = {
+        layout,
+        phaseX,
+        phaseY,
+        fragmentation: fragmentationScore(layout),
+        phaseDistance: phaseDistance(phaseX, requestedX) + phaseDistance(phaseY, requestedY),
+        order: order++,
+      };
+      if (
+        !best ||
+        candidate.layout.moduleCount > best.layout.moduleCount ||
+        (candidate.layout.moduleCount === best.layout.moduleCount &&
+          (candidate.fragmentation < best.fragmentation ||
+            (candidate.fragmentation === best.fragmentation &&
+              (candidate.phaseDistance < best.phaseDistance - 1e-12 ||
+                (Math.abs(candidate.phaseDistance - best.phaseDistance) <= 1e-12 &&
+                  candidate.order < best.order)))))
+      ) {
+        best = candidate;
+      }
+    }
+  }
+
+  return {
+    layout: best!.layout,
+    phaseX: best!.phaseX,
+    phaseY: best!.phaseY,
+    candidatesEvaluated: order,
+  };
+}
+
 function toGridLocal(
   point: { x: number; y: number },
   origin: { x: number; y: number },

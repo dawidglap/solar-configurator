@@ -1,9 +1,13 @@
 export {
   computeLegacyStandardLayout,
+  computeMaximumLegacyStandardLayout,
   LEGACY_STANDARD_ENGINE_VERSION,
   resolveLegacyStandardCanvasAngle,
 } from "./computeLegacyStandardLayout";
-export { computeLegacyStandardCandidates } from "./generateLegacyStandardCandidates";
+export {
+  computeLegacyStandardCandidates,
+  computeMaximizedLegacyStandardCandidates,
+} from "./generateLegacyStandardCandidates";
 export type {
   LegacyGridAnchor,
   LegacyPanelOrientation,

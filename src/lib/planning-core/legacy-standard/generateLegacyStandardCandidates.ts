@@ -4,6 +4,7 @@ import type {
   LegacyStandardGenerationInput,
 } from "./types";
 import { generateThermalAxisPositions } from "../geometry-v2/thermalAxis";
+import { generateAnchoredAxisPositions } from "../geometry-v2/grid";
 
 const EPS = 0.5;
 const deg2rad = (degrees: number) => (degrees * Math.PI) / 180;
@@ -110,8 +111,9 @@ function normalizePhase(phase: number) {
   return normalized;
 }
 
-export function computeLegacyStandardCandidates(
+function generateLegacyStandardCandidates(
   input: LegacyStandardGenerationInput,
+  maximizeCoverage: boolean,
 ): LegacyStandardCandidate[] {
   const {
     roofPolygon,
@@ -206,7 +208,11 @@ export function computeLegacyStandardCandidates(
 
   let minY = Infinity;
   let maxY = -Infinity;
+  let minX = Infinity;
+  let maxX = -Infinity;
   for (const point of localPolygon) {
+    if (point.x < minX) minX = point.x;
+    if (point.x > maxX) maxX = point.x;
     if (point.y < minY) minY = point.y;
     if (point.y > maxY) maxY = point.y;
   }
@@ -214,6 +220,82 @@ export function computeLegacyStandardCandidates(
 
   const cellWidth = panelWidth + gapX;
   const cellHeight = panelHeight + gapY;
+  if (maximizeCoverage) {
+    const columnStarts = thermalBreaks?.x
+      ? generateThermalAxisPositions({
+          min: minX + marginPx,
+          max: maxX - marginPx - panelWidth,
+          pitch: cellWidth,
+          phase: normalizePhase(phaseX),
+          anchor: anchorX,
+          break: {
+            unitExtentM: panelWidth,
+            maxUnitsPerField: thermalBreaks.x.maxUnitsPerField,
+            separationGapM: pixels(thermalBreaks.x.separationGapM),
+          },
+        })
+      : generateAnchoredAxisPositions({
+          min: minX + marginPx,
+          max: maxX - marginPx - panelWidth,
+          pitch: cellWidth,
+          phase: normalizePhase(phaseX),
+          anchor: anchorX,
+        });
+    const rowStarts = thermalBreaks?.y
+      ? generateThermalAxisPositions({
+          min: minY + marginPx,
+          max: maxY - marginPx - panelHeight,
+          pitch: cellHeight,
+          phase: normalizePhase(input.phaseY ?? 0),
+          anchor: input.anchorY ?? "start",
+          break: {
+            unitExtentM: panelHeight,
+            maxUnitsPerField: thermalBreaks.y.maxUnitsPerField,
+            separationGapM: pixels(thermalBreaks.y.separationGapM),
+          },
+        })
+      : generateAnchoredAxisPositions({
+          min: minY + marginPx,
+          max: maxY - marginPx - panelHeight,
+          pitch: cellHeight,
+          phase: normalizePhase(input.phaseY ?? 0),
+          anchor: input.anchorY ?? "start",
+        });
+    const maximumRows = rowStarts.length;
+    const rowsToUse = Math.max(1, Math.min(
+      maximumRows,
+      Math.round(maximumRows * Math.max(0.01, Math.min(1, coverageRatio))),
+    ));
+    const candidates: LegacyStandardCandidate[] = [];
+    for (let rowIndex = 0; rowIndex < rowsToUse; rowIndex += 1) {
+      const y = rowStarts[rowIndex];
+      for (let columnIndex = 0; columnIndex < columnStarts.length; columnIndex += 1) {
+        const x = columnStarts[columnIndex];
+        const corners: LegacyPoint[] = [
+          { x, y },
+          { x: x + panelWidth, y },
+          { x: x + panelWidth, y: y + panelHeight },
+          { x, y: y + panelHeight },
+        ];
+        if (!corners.every((corner) => pointInPolygonInclusive(corner, localPolygon))) continue;
+        const center = localToWorld(
+          { x: x + panelWidth / 2, y: y + panelHeight / 2 },
+          origin,
+          theta,
+        );
+        candidates.push({
+          cx: center.x,
+          cy: center.y,
+          wPx: panelWidth,
+          hPx: panelHeight,
+          angleDeg,
+          columnIndex,
+          rowIndex,
+        });
+      }
+    }
+    return candidates;
+  }
   const rowStarts: number[] = thermalBreaks?.y
     ? generateThermalAxisPositions({
         min: minY + marginPx,
@@ -326,4 +408,16 @@ export function computeLegacyStandardCandidates(
   }
 
   return candidates;
+}
+
+export function computeLegacyStandardCandidates(
+  input: LegacyStandardGenerationInput,
+): LegacyStandardCandidate[] {
+  return generateLegacyStandardCandidates(input, false);
+}
+
+export function computeMaximizedLegacyStandardCandidates(
+  input: LegacyStandardGenerationInput,
+): LegacyStandardCandidate[] {
+  return generateLegacyStandardCandidates(input, true);
 }

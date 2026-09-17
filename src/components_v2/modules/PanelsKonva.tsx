@@ -21,6 +21,8 @@ import { createLatestFrameScheduler, type FrameScheduler } from '../canvas/perfo
 import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
 import type { PanelInstance } from '@/types/planner';
 import {
+  GENERIC_EAST_WEST_SYSTEM_ID,
+  K2_D_DOME_SYSTEM_ID,
   resolveSurfacePlanning,
 } from '@/lib/planning-core/advanced';
 import {
@@ -31,6 +33,7 @@ import {
 import { history as plannerHistory } from '../state/history';
 import MultiSelectionDragHandle from './panels/MultiSelectionDragHandle';
 import { resolveDirectLayoutTargets } from './panels/directLayoutGeometry';
+import { resolveOutwardBlockArrowAzimuths } from './panels/moduleSlope';
 
 const SNAP_STAGE_PX = 10;           // magnetic activation radius (screen px)
 const HANDLE_GAP_STAGE_PX = 28;     // distanza sotto al gruppo (px schermo)
@@ -73,6 +76,18 @@ export default function PanelsKonva(props: {
     () => allPanels.filter((p) => p.roofId === roofId),
     [allPanels, roofId]
   );
+  const opposingArrowAzimuths = React.useMemo(() => {
+    const opposing = panels.filter((panel) =>
+      panel.advanced?.systemId === K2_D_DOME_SYSTEM_ID ||
+      panel.advanced?.systemId === GENERIC_EAST_WEST_SYSTEM_ID,
+    );
+    return resolveOutwardBlockArrowAzimuths(opposing.map((panel) => ({
+      id: panel.id,
+      blockKey: panel.advanced?.blockKey,
+      cx: panel.cx,
+      cy: panel.cy,
+    })));
+  }, [panels]);
 
 
   // multiselezione
@@ -754,6 +769,7 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
             wPx={p.wPx}
             hPx={p.hPx}
             rotationDeg={rotationDeg}
+            slopeArrowAzimuthDeg={opposingArrowAzimuths.get(p.id)}
             selected={sel}
             image={img}
             onStartDrag={startPanelDrag}

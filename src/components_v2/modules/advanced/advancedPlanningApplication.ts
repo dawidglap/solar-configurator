@@ -15,6 +15,7 @@ import {
   calculateK2DDomeAllowedRowSpaceRangeMm,
   calculateK2DDomeOneBlockRailDepthMm,
   computeAdvancedBlockLayout,
+  computeMaximumAdvancedBlockLayout,
   computeFixedAdvancedBlockLayout,
   createGenericEastWestBlock,
   createGenericSouthBlock,
@@ -55,7 +56,10 @@ import type {
   RoofArea,
 } from "@/types/planner";
 import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
-import { computeLegacyStandardLayout } from "@/lib/planning-core/legacy-standard";
+import {
+  computeLegacyStandardLayout,
+  computeMaximumLegacyStandardLayout,
+} from "@/lib/planning-core/legacy-standard";
 import {
   resolveStandardAutoLayoutCanvasAngle,
   orderStandardAutoLayoutPlacements,
@@ -227,6 +231,7 @@ export type AdvancedPlanningPreview =
       moduleCount: number;
       derived: AdvancedDerivedSummary;
       quantity: AdvancedQuantitySummary;
+      resolvedAutoPhase?: { phaseX: number; phaseY: number; candidatesEvaluated: number };
     };
 
 type PreviewObstacleZone = {
@@ -1143,6 +1148,8 @@ export function computeAdvancedPlanningPreview(input: {
   mppImage: number;
   zones?: PreviewObstacleZone[];
   snowGuards?: PreviewSnowGuard[];
+  /** Used only by the explicit Vollbelegung command, never by ordinary live preview. */
+  maximizeAutoLayout?: boolean;
 }): AdvancedPlanningPreview {
   if (!(input.mppImage > 0) || input.roof.points.length < 3) {
     return invalidPreview([
@@ -1359,9 +1366,12 @@ export function computeAdvancedPlanningPreview(input: {
         rowCount: config.advanced.layout.rowCount as number,
       })
     : null;
+  const optimizedAutomaticLayout = !fixedLayout && input.maximizeAutoLayout
+    ? computeMaximumAdvancedBlockLayout(commonLayoutInput)
+    : null;
   const automaticLayout = fixedLayout
     ? null
-    : computeAdvancedBlockLayout(commonLayoutInput);
+    : optimizedAutomaticLayout?.layout ?? computeAdvancedBlockLayout(commonLayoutInput);
   const placedBlocks = fixedLayout
     ? fixedLayout.validBlocks
     : automaticLayout?.blocks ?? [];
@@ -1545,6 +1555,11 @@ export function computeAdvancedPlanningPreview(input: {
       blockCount: placedBlocks.length,
       moduleCount: placedModules.length,
       quantity,
+      ...(optimizedAutomaticLayout ? { resolvedAutoPhase: {
+        phaseX: optimizedAutomaticLayout.phaseX,
+        phaseY: optimizedAutomaticLayout.phaseY,
+        candidatesEvaluated: optimizedAutomaticLayout.candidatesEvaluated,
+      } } : {}),
       derived: {
         kind: "generic",
         nominalTiltDeg: genericSystem.nominalTiltDeg,
@@ -1593,6 +1608,11 @@ export function computeAdvancedPlanningPreview(input: {
     blockCount: placedBlocks.length,
     moduleCount: placedModules.length,
     quantity,
+    ...(optimizedAutomaticLayout ? { resolvedAutoPhase: {
+      phaseX: optimizedAutomaticLayout.phaseX,
+      phaseY: optimizedAutomaticLayout.phaseY,
+      candidatesEvaluated: optimizedAutomaticLayout.candidatesEvaluated,
+    } } : {}),
     derived: {
       kind: "k2",
       nominalTiltDeg: derivedDimensions.nominalTiltDeg,
@@ -1711,7 +1731,7 @@ export function hasCommittedPanelsForRoof(
   return panels.some((panel) => panel.roofId === roofId);
 }
 
-export function computeStandardDraftPanels(input: {
+type StandardDraftPanelsInput = {
   roof: RoofArea;
   panel: PanelSpec;
   modules: ModulesConfig;
@@ -1721,7 +1741,12 @@ export function computeStandardDraftPanels(input: {
   createPanelId: (index: number) => string;
   panelMetadata?: StandardPanelMetadata;
   thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
-}): PanelInstance[] {
+};
+
+function computeStandardDraftPanelResult(
+  input: StandardDraftPanelsInput,
+  maximizeCoverage = false,
+): { panels: PanelInstance[]; phaseX: number; phaseY: number } {
   const obstacles = selectLegacyStandardObstacles(
     input.zones,
     input.snowGuards,
@@ -1746,7 +1771,7 @@ export function computeStandardDraftPanels(input: {
         limits: input.thermalFieldLimits,
       })
     : undefined;
-  const layout = computeLegacyStandardLayout({
+  const layoutInput = {
     generation: {
       roofPolygon: input.roof.points,
       mppImage: input.mppImage,
@@ -1774,7 +1799,11 @@ export function computeStandardDraftPanels(input: {
     reservedZones: obstacles.reservedZones,
     snowGuards: obstacles.snowGuards,
     filterPolicy: STANDARD_AUTO_LAYOUT_POLICY.filterPolicy,
-  });
+  };
+  const optimizedLayout = maximizeCoverage
+    ? computeMaximumLegacyStandardLayout(layoutInput)
+    : null;
+  const layout = optimizedLayout ?? computeLegacyStandardLayout(layoutInput);
   const orderedPlacements = orderStandardAutoLayoutPlacements(
     layout.placements,
     {
@@ -1804,7 +1833,7 @@ export function computeStandardDraftPanels(input: {
         limits: input.thermalFieldLimits,
       })
     : null;
-  return orderedPlacements.map((placement, index) => ({
+  const panels = orderedPlacements.map((placement, index) => ({
     id: input.createPanelId(index),
     roofId: input.roof.id,
     cx: placement.cx,
@@ -1825,6 +1854,15 @@ export function computeStandardDraftPanels(input: {
         }
       : {}),
   }));
+  return {
+    panels,
+    phaseX: optimizedLayout?.phaseX ?? input.modules.gridPhaseX ?? 0,
+    phaseY: optimizedLayout?.phaseY ?? input.modules.gridPhaseY ?? 0,
+  };
+}
+
+export function computeStandardDraftPanels(input: StandardDraftPanelsInput): PanelInstance[] {
+  return computeStandardDraftPanelResult(input).panels;
 }
 
 export function buildDirectStandardRoofLayout(input: {
@@ -1840,6 +1878,8 @@ export function buildDirectStandardRoofLayout(input: {
   createPanelId: (index: number) => string;
   /** Canonical for initial/U generation; current preserves an explicit working rotation for F. */
   alignmentMode?: "canonical" | "current";
+  /** Explicit Vollbelegung search. Other direct-layout callers keep their prior phase semantics. */
+  maximizeCoverage?: boolean;
 }): { panels: PanelInstance[]; config: StandardSurfacePlanningV1; modules: ModulesConfig } | null {
   const requestedModules = {
       ...input.modules,
@@ -1853,7 +1893,7 @@ export function buildDirectStandardRoofLayout(input: {
         modules: requestedModules,
         roofId: input.roof.id,
       });
-  const panels = computeStandardDraftPanels({
+  const generated = computeStandardDraftPanelResult({
     roof: input.roof,
     panel: input.panel,
     modules,
@@ -1866,7 +1906,8 @@ export function buildDirectStandardRoofLayout(input: {
       moduleTilt: input.moduleTilt,
     }),
     createPanelId: input.createPanelId,
-  });
+  }, input.maximizeCoverage === true);
+  const panels = generated.panels;
   if (!panels.length) return null;
   const config = withGeneratedLayoutFingerprint({
     roofId: input.roof.id,
@@ -1878,7 +1919,15 @@ export function buildDirectStandardRoofLayout(input: {
       thermalFieldLimits: input.thermalFieldLimits,
     }),
   });
-  return { panels, config, modules };
+  return {
+    panels,
+    config,
+    modules: {
+      ...modules,
+      gridPhaseX: generated.phaseX,
+      gridPhaseY: generated.phaseY,
+    },
+  };
 }
 
 export function buildDirectAdvancedRoofLayout(input: {
@@ -1889,6 +1938,8 @@ export function buildDirectAdvancedRoofLayout(input: {
   snowGuards: PreviewSnowGuard[];
   layoutRunId: string;
   createPanelId: (index: number) => string;
+  /** Explicit Vollbelegung search. Other direct-layout callers keep their prior phase semantics. */
+  maximizeCoverage?: boolean;
 }): { panels: PanelInstance[]; config: AdvancedSurfacePlanningV1; preview: AdvancedPlanningPreview } | null {
   const preview = computeAdvancedPlanningPreview({
     roof: input.roof,
@@ -1896,11 +1947,27 @@ export function buildDirectAdvancedRoofLayout(input: {
     mppImage: input.mppImage,
     zones: input.zones,
     snowGuards: input.snowGuards,
+    maximizeAutoLayout:
+      input.maximizeCoverage === true &&
+      input.config.advanced.layout.quantityMode !== "fixed",
   });
   if (!preview.valid || preview.moduleCount === 0) return null;
+  const appliedConfig = preview.resolvedAutoPhase
+    ? {
+        ...input.config,
+        advanced: {
+          ...input.config.advanced,
+          layout: {
+            ...input.config.advanced.layout,
+            phaseX: preview.resolvedAutoPhase.phaseX,
+            phaseY: preview.resolvedAutoPhase.phaseY,
+          },
+        },
+      }
+    : input.config;
   const panels = materializeAdvancedPanels({
     roofId: input.roof.id,
-    config: input.config,
+    config: appliedConfig,
     preview,
     layoutRunId: input.layoutRunId,
     createPanelId: input.createPanelId,
@@ -1912,7 +1979,7 @@ export function buildDirectAdvancedRoofLayout(input: {
     config: withGeneratedLayoutFingerprint({
       roofId: input.roof.id,
       panels,
-      config: input.config,
+      config: appliedConfig,
     }),
   };
 }
