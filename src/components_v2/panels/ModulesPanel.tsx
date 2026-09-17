@@ -69,6 +69,11 @@ const labelSm =
 // all layout calculations remain active in the planner domain/application code.
 const SHOW_MODULE_ORIENTATION_READOUT = false;
 
+// TODO: Customer requested hiding Schrägdach module-tilt/inherit-roof
+// controls from Modulplanung. Keep the render path and domain logic for a
+// possible re-enable; this flag is presentation-only.
+const SHOW_PITCHED_MODULE_TILT_CONTROLS = false;
+
 export default function ModulesPanel() {
   // --- Layers / selezione tetto ---
   const layers = usePlannerV2Store((s) => s.layers);
@@ -1106,52 +1111,54 @@ export default function ModulesPanel() {
             </div>
           </section>
 
-          <section className="space-y-2 border-b border-border/60 pb-4">
-            <div className="flex items-center justify-between gap-2">
-              <span className={labelSm}>Modulneigung</span>
-              {displayedTilt.mode === "inherit-roof" && displayedTilt.effectiveTiltDeg !== undefined && (
-                <span className="text-[10px] text-primary">
-                  {Number(displayedTilt.effectiveTiltDeg.toFixed(2))}° · wie Dach
-                </span>
-              )}
-            </div>
-            <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={displayedTilt.mode === "inherit-roof"}
-                disabled={displayedTilt.effectiveTiltDeg === undefined}
-                onChange={(event) => {
-                  if (event.target.checked) patchStandardTilt({ mode: "inherit-roof" });
-                  else patchStandardTilt({
-                    mode: "custom",
-                    customTiltDeg: displayedTilt.effectiveTiltDeg ?? 0,
-                  });
-                }}
-              />
-              Dachneigung übernehmen
-            </label>
-            {displayedTilt.mode === "custom" && (
+          {SHOW_PITCHED_MODULE_TILT_CONTROLS && (
+            <section className="space-y-2 border-b border-border/60 pb-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className={labelSm}>Modulneigung</span>
+                {displayedTilt.mode === "inherit-roof" && displayedTilt.effectiveTiltDeg !== undefined && (
+                  <span className="text-[10px] text-primary">
+                    {Number(displayedTilt.effectiveTiltDeg.toFixed(2))}° · wie Dach
+                  </span>
+                )}
+              </div>
               <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
                 <input
-                  className={inputBase}
-                  type="text"
-                  inputMode="decimal"
-                  value={moduleTiltText}
-                  onChange={(event) => setModuleTiltText(event.target.value)}
-                  onBlur={commitModuleTiltText}
-                  onKeyDown={(event) => {
-                    stopHotkeysCapture(event);
-                    if (event.key === "Enter") event.currentTarget.blur();
+                  type="checkbox"
+                  checked={displayedTilt.mode === "inherit-roof"}
+                  disabled={displayedTilt.effectiveTiltDeg === undefined}
+                  onChange={(event) => {
+                    if (event.target.checked) patchStandardTilt({ mode: "inherit-roof" });
+                    else patchStandardTilt({
+                      mode: "custom",
+                      customTiltDeg: displayedTilt.effectiveTiltDeg ?? 0,
+                    });
                   }}
-                  aria-label="Eigene Modulneigung"
                 />
-                <span>°</span>
+                Dachneigung übernehmen
               </label>
-            )}
-            {displayedTilt.effectiveTiltDeg === undefined && (
-              <p className="text-[10px] text-amber-600">Dachneigung fehlt. Bitte zuerst in Gebäudeplanung eintragen.</p>
-            )}
-          </section>
+              {displayedTilt.mode === "custom" && (
+                <label className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <input
+                    className={inputBase}
+                    type="text"
+                    inputMode="decimal"
+                    value={moduleTiltText}
+                    onChange={(event) => setModuleTiltText(event.target.value)}
+                    onBlur={commitModuleTiltText}
+                    onKeyDown={(event) => {
+                      stopHotkeysCapture(event);
+                      if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                    aria-label="Eigene Modulneigung"
+                  />
+                  <span>°</span>
+                </label>
+              )}
+              {displayedTilt.effectiveTiltDeg === undefined && (
+                <p className="text-[10px] text-amber-600">Dachneigung fehlt. Bitte zuerst in Gebäudeplanung eintragen.</p>
+              )}
+            </section>
+          )}
 
           <section className="space-y-3 border-b border-border/60 pb-4">
             {SHOW_MODULE_ORIENTATION_READOUT && (

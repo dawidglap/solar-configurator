@@ -18,6 +18,8 @@ test("guided sidebar exposes primary choices without a dynamic bottom status are
   assert.ok(modulesPanel.includes('data-testid="module-planning-neutral-shell"'));
   assert.match(modulesPanel, /const SHOW_MODULE_ORIENTATION_READOUT = false/);
   assert.match(advancedPanel, /const SHOW_MODULE_ORIENTATION_READOUT = false/);
+  assert.match(modulesPanel, /const SHOW_PITCHED_MODULE_TILT_CONTROLS = false/);
+  assert.match(modulesPanel, /SHOW_PITCHED_MODULE_TILT_CONTROLS && \(/);
   assert.match(modulesPanel, /SHOW_MODULE_ORIENTATION_READOUT && \(/);
   assert.match(advancedPanel, /SHOW_MODULE_ORIENTATION_READOUT && \(/);
   assert.ok(modulesPanel.includes("Modulausrichtung"), "dormant readout remains restorable");
@@ -27,6 +29,7 @@ test("guided sidebar exposes primary choices without a dynamic bottom status are
   assert.ok(modulesPanel.includes("Schrägdach"));
   assert.ok(modulesPanel.includes("Flachdach"));
   assert.ok(modulesPanel.includes("Feinjustierung"));
+  assert.ok(modulesPanel.includes("Dachneigung übernehmen"), "dormant pitched tilt UI remains restorable");
 
   assert.ok(advancedPanel.includes("MountingChoiceGraphic"));
   assert.equal(advancedPanel.includes("Modul ändern"), false);
