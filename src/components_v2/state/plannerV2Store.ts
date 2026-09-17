@@ -6,6 +6,7 @@ import { isToolAllowed, defaultToolFor } from './capabilities';
 import { ALLOWED_TOOLS, DEFAULT_TOOL } from '../../constants/stepTools';
 import { nanoid } from 'nanoid';
 import {
+  applyConfirmedModuleModeChange,
   applyConfirmedRoofKindChange,
   applyRoofLayoutTransaction,
   type RoofPlanningDraft,
@@ -267,6 +268,10 @@ type PlannerV2State = {
   confirmRoofKindChange: (input: {
     roofId: string;
     nextRoofKind: "pitched" | "flat";
+  }) => void;
+  confirmModuleModeChange: (input: {
+    roofId: string;
+    nextSurfacePlanning: SurfacePlanningV1;
   }) => void;
   appendPanelsToRoof: (input: {
     roofId: string;
@@ -673,6 +678,28 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             selectedZoneId: changed.selectedZoneId,
             selectedSnowGuardId: changed.selectedSnowGuardId,
             modules: changed.modules,
+            tool: "select",
+          };
+        });
+      },
+      confirmModuleModeChange: ({ roofId, nextSurfacePlanning }) => {
+        const current = get();
+        if (!current.layers.some((roof) => roof.id === roofId)) return;
+        history.push("change module layout mode");
+        set((state) => {
+          const changed = applyConfirmedModuleModeChange({
+            roofs: state.layers,
+            panels: state.panels,
+            roofPlanningDrafts: state.roofPlanningDrafts,
+            selectedPanelIds: state.selectedPanelIds,
+            roofId,
+            nextSurfacePlanning,
+          });
+          return {
+            layers: changed.roofs,
+            panels: changed.panels,
+            roofPlanningDrafts: changed.roofPlanningDrafts,
+            selectedPanelIds: changed.selectedPanelIds,
             tool: "select",
           };
         });

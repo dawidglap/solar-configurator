@@ -72,6 +72,15 @@ import { resolveRoofFallAzimuth } from "../../roof/roofOrientation";
 export type AdvancedMountingOrientation = "south" | "east-west";
 export type RoofModuleMode = "portrait" | "landscape" | "south" | "east-west";
 
+export function resolveModuleModeChangeIntent(input: {
+  currentMode?: RoofModuleMode;
+  requestedMode: RoofModuleMode;
+  committedPanelCount: number;
+}): "noop" | "confirm" | "switch" {
+  if (input.currentMode === input.requestedMode) return "noop";
+  return input.committedPanelCount > 0 ? "confirm" : "switch";
+}
+
 export const DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG = { min: 8.5, max: 90 } as const;
 export const DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M = { min: 0, max: 20 } as const;
 export const DEFAULT_FLAT_MODULE_GAP_M = 0.018;
@@ -1710,6 +1719,49 @@ export function applyRoofLayoutTransaction<T extends RoofArea>(input: {
       ...input.panels.filter((panel) => panel.roofId !== input.roofId),
       ...input.nextPanels.map((panel) => ({ ...panel, roofId: input.roofId })),
     ],
+  };
+}
+
+export function clearGeneratedLayoutFingerprint<T extends SurfacePlanningV1>(
+  config: T,
+): T {
+  const next = { ...config };
+  delete next.generatedLayoutFingerprint;
+  return next;
+}
+
+/**
+ * One confirmed, destructive module-mode change. The requested mode is already
+ * represented by nextSurfacePlanning; this transaction removes only the
+ * selected roof's modules and its transient draft/selection references.
+ */
+export function applyConfirmedModuleModeChange<T extends RoofArea>(input: {
+  roofs: readonly T[];
+  panels: readonly PanelInstance[];
+  roofPlanningDrafts: Record<string, RoofPlanningDraft>;
+  selectedPanelIds: readonly string[];
+  roofId: string;
+  nextSurfacePlanning: SurfacePlanningV1;
+}): {
+  roofs: T[];
+  panels: PanelInstance[];
+  roofPlanningDrafts: Record<string, RoofPlanningDraft>;
+  selectedPanelIds: string[];
+} {
+  const committed = applyRoofLayoutTransaction({
+    roofs: input.roofs,
+    panels: input.panels,
+    roofId: input.roofId,
+    nextPanels: [],
+    surfacePlanning: clearGeneratedLayoutFingerprint(input.nextSurfacePlanning),
+  });
+  const roofPlanningDrafts = { ...input.roofPlanningDrafts };
+  delete roofPlanningDrafts[input.roofId];
+  const remainingIds = new Set(committed.panels.map((panel) => panel.id));
+  return {
+    ...committed,
+    roofPlanningDrafts,
+    selectedPanelIds: input.selectedPanelIds.filter((panelId) => remainingIds.has(panelId)),
   };
 }
 

@@ -13,12 +13,14 @@ import {
   resolveSurfacePlanning,
   resolveStandardModuleTilt,
   type AdvancedSurfacePlanningV1,
+  type SurfacePlanningV1,
   type StandardModuleTiltInput,
   type ThermalFieldLimits,
 } from "@/lib/planning-core/advanced";
 import AdvancedModulesPanel from "../modules/advanced/AdvancedModulesPanel";
 import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
+import LayoutModeChangeDialog from "./LayoutModeChangeDialog";
 import RoofMarginControl from "./RoofMarginControl";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import {
@@ -35,11 +37,13 @@ import {
 } from "@/lib/planning/companyPlannerDefaults";
 import {
   createInitialAdvancedPlanning,
+  buildStandardSurfacePlanning,
   createStandardPlanningDraft,
   resolveStandardTiltInput,
   resolveInitialSonnendachRoofType,
   resolveRoofPlanningMode,
   resolveRoofModuleMode,
+  resolveModuleModeChangeIntent,
   setAdvancedMountingOrientation,
   updateDefaultFlatSystem,
   alignAdvancedLayoutParallelToRoofEdge,
@@ -99,6 +103,7 @@ export default function ModulesPanel() {
   const setRoofPlanningDraft = usePlannerV2Store((s) => s.setRoofPlanningDraft);
   const clearRoofPlanningDraft = usePlannerV2Store((s) => s.clearRoofPlanningDraft);
   const confirmRoofKindChange = usePlannerV2Store((s) => s.confirmRoofKindChange);
+  const confirmModuleModeChange = usePlannerV2Store((s) => s.confirmModuleModeChange);
 
   // --- Edit inline tilt/az (spostato sotto per evitare TDZ) ---
   const updateRoof = usePlannerV2Store((s) => s.updateRoof);
@@ -111,6 +116,9 @@ export default function ModulesPanel() {
   const lastCustomAzimuthByRoofRef = React.useRef<Map<string, number>>(new Map());
   const [pendingRoofType, setPendingRoofType] = React.useState<
     "pitched" | "flat" | null
+  >(null);
+  const [pendingLayoutMode, setPendingLayoutMode] = React.useState<
+    "portrait" | "landscape" | "south" | "east-west" | null
   >(null);
   const [moduleTiltText, setModuleTiltText] = React.useState("");
   const [spacingXText, setSpacingXText] = React.useState("");
@@ -342,6 +350,7 @@ export default function ModulesPanel() {
 
   React.useEffect(() => {
     setPendingRoofType(null);
+    setPendingLayoutMode(null);
   }, [selectedRoof?.id]);
 
   // blocca i global hotkeys (anche in capture) quando digiti negli input inline
@@ -432,8 +441,11 @@ export default function ModulesPanel() {
     setEditing({ id: input.roofId, field: input.field });
   }, [select]);
 
-  const requestModuleMode = useCallback((mode: "portrait" | "landscape" | "south" | "east-west") => {
-    if (!selectedRoof || activeModuleMode === mode) return;
+  const buildRequestedModuleMode = useCallback((mode: "portrait" | "landscape" | "south" | "east-west"): {
+    draft: Parameters<typeof setRoofPlanningDraft>[1];
+    surfacePlanning: SurfacePlanningV1;
+  } | undefined => {
+    if (!selectedRoof) return undefined;
     if (mode === "portrait" || mode === "landscape") {
       const draft = standardDraft ?? createStandardPlanningDraft({
         panelSpecId: displayedPanelId,
@@ -441,14 +453,22 @@ export default function ModulesPanel() {
         moduleTilt: displayedTiltInput,
         thermalFieldLimits: displayedThermalLimits,
       });
-      setRoofPlanningDraft(selectedRoof.id, {
+      const nextDraft = {
         ...draft,
         previewEnabled: false,
         modules: { ...draft.modules, orientation: mode },
-      });
-      return;
+      };
+      return {
+        draft: nextDraft,
+        surfacePlanning: buildStandardSurfacePlanning({
+          roof: selectedRoof,
+          moduleTilt: nextDraft.moduleTilt,
+          moduleLayoutMode: mode,
+          thermalFieldLimits: nextDraft.thermalFieldLimits,
+        }),
+      };
     }
-    if (!selSpec) return;
+    if (!selSpec) return undefined;
     const companyLimits = resolveCompanyThermalFieldLimits({
       company: companyPlannerDefaults,
       roofKind: "flat",
@@ -483,12 +503,45 @@ export default function ModulesPanel() {
     if (companyLimits.kind === "flat-block") {
       config = { ...config, thermalFieldLimits: companyLimits };
     }
-    setRoofPlanningDraft(selectedRoof.id, {
-      targetMode: "advanced",
-      previewEnabled: false,
-      config,
+    return {
+      draft: {
+        targetMode: "advanced",
+        previewEnabled: false,
+        config,
+      },
+      surfacePlanning: config,
+    };
+  }, [companyPlannerDefaults, displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selSpec, selectedAdvancedConfig, selectedRoof, snapshot.mppImage, standardDraft]);
+
+  const requestModuleMode = useCallback((mode: "portrait" | "landscape" | "south" | "east-west") => {
+    if (!selectedRoof || pendingLayoutMode) return;
+    const intent = resolveModuleModeChangeIntent({
+      currentMode: activeModuleMode,
+      requestedMode: mode,
+      committedPanelCount: panels.filter((panel) => panel.roofId === selectedRoof.id).length,
     });
-  }, [activeModuleMode, companyPlannerDefaults, displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selSpec, selectedAdvancedConfig, selectedRoof, setRoofPlanningDraft, snapshot.mppImage, standardDraft]);
+    if (intent === "noop") return;
+    if (intent === "confirm") {
+      setPendingLayoutMode(mode);
+      return;
+    }
+    const requested = buildRequestedModuleMode(mode);
+    if (!requested) return;
+    setRoofPlanningDraft(selectedRoof.id, requested.draft);
+  }, [activeModuleMode, buildRequestedModuleMode, panels, pendingLayoutMode, selectedRoof, setRoofPlanningDraft]);
+
+  const confirmLayoutModeChange = React.useCallback(() => {
+    if (!selectedRoof || !pendingLayoutMode) return;
+    const requested = buildRequestedModuleMode(pendingLayoutMode);
+    if (!requested) return;
+    endManualPlacement();
+    confirmModuleModeChange({
+      roofId: selectedRoof.id,
+      nextSurfacePlanning: requested.surfacePlanning,
+    });
+    setPendingLayoutMode(null);
+    toast.success("Ausrichtung geändert. Die Dachfläche kann neu belegt werden.");
+  }, [buildRequestedModuleMode, confirmModuleModeChange, pendingLayoutMode, selectedRoof]);
 
   return (
     <div className="w-full max-w-[240px] space-y-4 p-2 text-foreground">
@@ -1205,6 +1258,13 @@ export default function ModulesPanel() {
         }
         onCancel={() => setPendingRoofType(null)}
         onConfirm={confirmRoofTypeChange}
+      />
+      <LayoutModeChangeDialog
+        open={pendingLayoutMode !== null}
+        roofLabel={selectedRoof ? `D${layers.findIndex((roof) => roof.id === selectedRoof.id) + 1}` : undefined}
+        moduleCount={selectedRoof ? panels.filter((panel) => panel.roofId === selectedRoof.id).length : 0}
+        onCancel={() => setPendingLayoutMode(null)}
+        onConfirm={confirmLayoutModeChange}
       />
     </div>
   );
