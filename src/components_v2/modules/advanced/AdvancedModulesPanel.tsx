@@ -26,8 +26,6 @@ import {
   getAdvancedRowSpaceM,
   getAdvancedServiceCorridorM,
   replaceAdvancedDraftModule,
-  setAdvancedFixedQuantity,
-  setAdvancedQuantityMode,
   updateDefaultFlatSystem,
 } from "./advancedPlanningApplication";
 import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
@@ -225,11 +223,6 @@ export default function AdvancedModulesPanel({
   const nominalTiltDeg = "nominalTiltDeg" in system ? system.nominalTiltDeg : 10;
   const moduleGapM = "moduleGapX" in system ? system.moduleGapX ?? 0.018 : 0.018;
   const moduleId = config.advanced.module.panelSpecId ?? "";
-  const quantityMode = config.advanced.layout.quantityMode ?? "auto";
-  const blocksPerRow = config.advanced.layout.blocksPerRow ?? 5;
-  const rowCount = config.advanced.layout.rowCount ?? 3;
-  const requestedBlocks = blocksPerRow * rowCount;
-  const requestedModules = requestedBlocks * (isOpposingSystem ? 2 : 1);
   const selectedCatalogPanel = catalogPanels.find((panel) => panel.id === moduleId);
 
   const commitSpacingValues = React.useCallback((values: Partial<{
@@ -404,60 +397,6 @@ export default function AdvancedModulesPanel({
             </option>
           ))}
         </select>
-      </section>
-
-      <section className="space-y-3 border-b border-border/60 pb-4">
-        <h3 className={labelClass}>Anzahl</h3>
-        <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/25 p-1" role="group" aria-label="Anzahl">
-          <button
-            type="button"
-            aria-pressed={quantityMode === "auto"}
-            className={`h-9 rounded-lg text-[10px] font-medium ${quantityMode === "auto" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-            onClick={() => update(setAdvancedQuantityMode({ config, mode: "auto" }))}
-          >
-            Automatisch
-          </button>
-          <button
-            type="button"
-            aria-pressed={quantityMode === "fixed"}
-            className={`h-9 rounded-lg text-[10px] font-medium ${quantityMode === "fixed" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-            onClick={() => update(setAdvancedQuantityMode({ config, mode: "fixed" }))}
-          >
-            Anzahl festlegen
-          </button>
-        </div>
-        {quantityMode === "auto" && (
-          <p className="text-[10px] text-muted-foreground">
-            {preview.blockCount} Blöcke · {preview.moduleCount} Module
-          </p>
-        )}
-        {quantityMode === "fixed" && (
-          <>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1.5 text-[10px] text-muted-foreground">
-                Blöcke pro Reihe
-                <span className="grid grid-cols-[30px_1fr_30px] overflow-hidden rounded-lg border border-border">
-                  <button type="button" aria-label="Weniger Blöcke pro Reihe" className="text-base text-muted-foreground hover:bg-muted/30" onClick={() => update(setAdvancedFixedQuantity({ config, blocksPerRow: Math.max(1, blocksPerRow - 1) }))}>−</button>
-                  <input className="h-8 w-full border-x border-border bg-transparent text-center text-[11px] text-foreground outline-none" type="number" min={1} max={100} step={1} value={blocksPerRow} onChange={(event) => update(setAdvancedFixedQuantity({ config, blocksPerRow: Number(event.target.value) }))} />
-                  <button type="button" aria-label="Mehr Blöcke pro Reihe" className="text-base text-muted-foreground hover:bg-muted/30" onClick={() => update(setAdvancedFixedQuantity({ config, blocksPerRow: Math.min(100, blocksPerRow + 1) }))}>+</button>
-                </span>
-              </label>
-              <label className="space-y-1.5 text-[10px] text-muted-foreground">
-                Reihen
-                <span className="grid grid-cols-[30px_1fr_30px] overflow-hidden rounded-lg border border-border">
-                  <button type="button" aria-label="Weniger Reihen" className="text-base text-muted-foreground hover:bg-muted/30" onClick={() => update(setAdvancedFixedQuantity({ config, rowCount: Math.max(1, rowCount - 1) }))}>−</button>
-                  <input className="h-8 w-full border-x border-border bg-transparent text-center text-[11px] text-foreground outline-none" type="number" min={1} max={100} step={1} value={rowCount} onChange={(event) => update(setAdvancedFixedQuantity({ config, rowCount: Number(event.target.value) }))} />
-                  <button type="button" aria-label="Mehr Reihen" className="text-base text-muted-foreground hover:bg-muted/30" onClick={() => update(setAdvancedFixedQuantity({ config, rowCount: Math.min(100, rowCount + 1) }))}>+</button>
-                </span>
-              </label>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-muted/15 p-3 text-center text-[11px] leading-relaxed">
-              <strong>{blocksPerRow} × {rowCount}</strong>
-              <span className="block text-muted-foreground">= {requestedBlocks} Blöcke</span>
-              <span className="block font-semibold text-foreground">= {requestedModules} Module</span>
-            </div>
-          </>
-        )}
       </section>
 
       <section className="space-y-3 border-b border-border/60 pb-4">

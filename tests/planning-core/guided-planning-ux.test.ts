@@ -12,8 +12,13 @@ test("guided sidebar exposes primary choices without a dynamic bottom status are
     "utf8",
   );
 
-  assert.ok(modulesPanel.includes("Dachfläche auswählen"));
-  assert.ok(modulesPanel.includes("Klicke auf eine Dachfläche, um Module zu planen."));
+  assert.match(modulesPanel, /step === "building" && !selectedRoof/);
+  assert.equal(modulesPanel.includes("Klicke auf eine Dachfläche, um Module zu planen."), false);
+  assert.match(modulesPanel, /step === "modules" && !selectedRoof/);
+  assert.ok(modulesPanel.includes('data-testid="module-planning-neutral-shell"'));
+  assert.ok(modulesPanel.includes("Modulausrichtung"));
+  assert.ok(modulesPanel.includes("Keine Dachfläche ausgewählt"));
+  assert.ok(modulesPanel.includes("Firmenstandard"));
   assert.ok(modulesPanel.includes('step === "modules" && selectedRoof && displayMode === "standard"'));
   assert.ok(modulesPanel.includes("Schrägdach"));
   assert.ok(modulesPanel.includes("Flachdach"));
@@ -39,6 +44,30 @@ test("guided sidebar exposes primary choices without a dynamic bottom status are
   assert.equal(advancedPanel.includes(">Manuell</button>"), false);
   assert.equal(advancedPanel.includes("aria-expanded"), false);
   assert.equal(advancedPanel.includes("Primäre Ausrichtung"), false);
+  assert.equal(advancedPanel.includes(">Anzahl<"), false);
+  assert.equal(advancedPanel.includes("Anzahl festlegen"), false);
+  assert.equal(advancedPanel.includes("Blöcke pro Reihe"), false);
+  assert.equal(advancedPanel.includes("setAdvancedQuantityMode"), false);
+  assert.equal(advancedPanel.includes("setAdvancedFixedQuantity"), false);
+});
+
+test("no-roof module shell stays neutral and roof-dependent tools remain guarded", () => {
+  const modulesPanel = readFileSync(
+    new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const toolbar = readFileSync(
+    new URL("../../src/components_v2/layout/TopToolbar.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(modulesPanel, /value=\{selectedPanelId \?\? ""\}/);
+  assert.match(modulesPanel, /onChange=\{\(event\) => setSelectedPanel\(event\.target\.value\)\}/);
+  assert.match(modulesPanel, /<fieldset disabled/);
+  assert.match(modulesPanel, /<strong aria-label="Keine Dachfläche ausgewählt">—<\/strong>/);
+  assert.equal(modulesPanel.includes("204°"), false, "the neutral shell cannot retain a previous roof angle");
+  assert.match(toolbar, /if \(!st\.selectedId\)/, "F/U handlers require a selected roof");
+  assert.match(toolbar, /disabled=\{!canUseModulesTools \|\| !selectedId\}/);
 });
 
 test("customizable default-system controls remain contextual to the flat-roof panel", () => {

@@ -89,6 +89,7 @@ export default function ModulesPanel() {
   // --- Catalogo PV (spostato qui dalla topbar) ---
   const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
   const selectedPanelId = usePlannerV2Store((s) => s.selectedPanelId);
+  const setSelectedPanel = usePlannerV2Store((s) => s.setSelectedPanel);
   const roofPlanningDrafts = usePlannerV2Store((s) => s.roofPlanningDrafts);
   const setRoofPlanningDraft = usePlannerV2Store((s) => s.setRoofPlanningDraft);
   const clearRoofPlanningDraft = usePlannerV2Store((s) => s.clearRoofPlanningDraft);
@@ -835,7 +836,7 @@ export default function ModulesPanel() {
         </button>
       )}
 
-      {!selectedRoof && (
+      {step === "building" && !selectedRoof && (
         <section className="rounded-xl border border-dashed border-border/80 bg-muted/10 px-4 py-7 text-center">
           <MdViewModule
             className="mx-auto h-6 w-6 text-muted-foreground/70"
@@ -845,11 +846,103 @@ export default function ModulesPanel() {
             Dachfläche auswählen
           </h2>
           <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-            {step === "building"
-              ? "Klicke auf eine Dachfläche, um ihre Eigenschaften zu bearbeiten."
-              : "Klicke auf eine Dachfläche, um Module zu planen."}
+            Klicke auf eine Dachfläche, um ihre Eigenschaften zu bearbeiten.
           </p>
         </section>
+      )}
+
+      {step === "modules" && !selectedRoof && (
+        <div
+          className="space-y-4"
+          data-testid="module-planning-neutral-shell"
+        >
+          <section className="space-y-2 border-b border-border/60 pb-4">
+            <label className={labelSm}>Layout</label>
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/25 p-1">
+              <button type="button" disabled className="h-9 rounded-lg text-[10px] font-medium text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60">
+                Hochformat
+              </button>
+              <button type="button" disabled className="h-9 rounded-lg text-[10px] font-medium text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60">
+                Querformat
+              </button>
+            </div>
+          </section>
+
+          <section className="space-y-1 border-b border-border/60 pb-4">
+            <label htmlFor="panel-select-no-roof" className={labelSm}>Modul</label>
+            <select
+              id="panel-select-no-roof"
+              aria-label="Modul wählen"
+              value={selectedPanelId ?? ""}
+              onChange={(event) => setSelectedPanel(event.target.value)}
+              className={inputBase}
+            >
+              {catalogPanels.map((panel) => (
+                <option key={panel.id} value={panel.id}>
+                  {panel.brand} {panel.model} — {panel.wp} W
+                </option>
+              ))}
+            </select>
+          </section>
+
+          <section className="space-y-3 border-b border-border/60 pb-4">
+            <h3 className={labelSm}>Ausrichtung</h3>
+            <div className="flex items-center justify-between rounded-lg bg-muted/15 px-3 py-2 text-[10px]">
+              <span className="text-muted-foreground">Modulausrichtung</span>
+              <strong aria-label="Keine Dachfläche ausgewählt">—</strong>
+            </div>
+            <div className="rounded-xl border border-border/60 text-[10px]">
+              <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">
+                Feinjustierung
+              </div>
+              <fieldset disabled className="space-y-2 border-t border-border/60 p-3">
+                <div className="flex items-center justify-between gap-2 text-muted-foreground">
+                  <span>Verschieben</span>
+                  <div className="flex gap-1">
+                    {(["←", "↑", "↓", "→"] as const).map((direction) => (
+                      <button key={direction} type="button" className="h-7 w-7 rounded-md border border-border/70 bg-muted/15 disabled:cursor-not-allowed disabled:opacity-60">
+                        {direction}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 text-muted-foreground">
+                  <span>Drehung</span>
+                  <button type="button" className="h-7 rounded-md border border-border/70 bg-muted/15 px-3 disabled:cursor-not-allowed disabled:opacity-60">
+                    —
+                  </button>
+                </div>
+              </fieldset>
+            </div>
+          </section>
+
+          <section className="space-y-2 border-b border-border/60 pb-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className={labelSm}>Modulabstand</span>
+              <span className="text-[9px] text-muted-foreground">Firmenstandard</span>
+            </div>
+            <fieldset disabled className="grid grid-cols-2 gap-2">
+              <label className="space-y-1 text-[10px] text-muted-foreground">
+                Horizontal
+                <span className="flex items-center gap-1">
+                  <input className={`${inputBase} disabled:cursor-not-allowed disabled:opacity-65`} value={companyPlannerDefaults.moduleSpacing.horizontalMm} readOnly />
+                  <span>mm</span>
+                </span>
+              </label>
+              <label className="space-y-1 text-[10px] text-muted-foreground">
+                Vertikal
+                <span className="flex items-center gap-1">
+                  <input className={`${inputBase} disabled:cursor-not-allowed disabled:opacity-65`} value={companyPlannerDefaults.moduleSpacing.verticalMm} readOnly />
+                  <span>mm</span>
+                </span>
+              </label>
+            </fieldset>
+          </section>
+
+          <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">
+            Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.
+          </p>
+        </div>
       )}
 
       {step === "building" && selectedRoof && (
@@ -1117,6 +1210,10 @@ export default function ModulesPanel() {
             </label>
             </div>
           </section>
+
+          <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">
+            Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.
+          </p>
 
         </div>
       )}
