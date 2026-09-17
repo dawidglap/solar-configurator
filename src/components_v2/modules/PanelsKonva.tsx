@@ -9,15 +9,14 @@ import type { Pt } from './panels/math';
 import { longestEdgeAngle, angleDiffDeg } from './panels/math';
 import {
   usePanelDragSnap,
-  buildGuidesCommon,
   buildPanelDragStaticGeometry,
-  hasPanelOverlapCached,
-  snapUVToGuides,
+  createPanelAxis,
+  createPanelDragSpatialIndex,
+  resolvePanelDragFrameUV,
   type PanelInst as HookPanel,
 } from '../modules/panels/usePanelDragSnap';
 import { PanelItem } from './panels/PanelItem';
 import { Guides } from './panels/Guides';
-import { legacyPointInPolygon } from '@/lib/planning-core/legacy-standard/collision';
 import { createLatestFrameScheduler, type FrameScheduler } from '../canvas/performance/latestFrameScheduler';
 import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
 import type { PanelInstance } from '@/types/planner';
@@ -28,7 +27,6 @@ import {
   createPanelPastePlacementValidator,
   resolveManualAdvancedBlockDefinition,
   snapAdvancedManualCenter,
-  validateExistingPanelPlacement,
 } from './manualPlacement';
 import { history as plannerHistory } from '../state/history';
 import MultiSelectionDragHandle from './panels/MultiSelectionDragHandle';
@@ -80,6 +78,15 @@ export default function PanelsKonva(props: {
   // multiselezione
   const selectedIds = usePlannerV2Store((s) => s.selectedPanelIds || []);
   const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds]);
+  const [directDragActive, setDirectDragActive] = React.useState(false);
+  const handleDirectDragStart = React.useCallback(() => {
+    setDirectDragActive(true);
+    onDragStart?.();
+  }, [onDragStart]);
+  const handleDirectDragEnd = React.useCallback(() => {
+    setDirectDragActive(false);
+    onDragEnd?.();
+  }, [onDragEnd]);
 
   // scale corrente
   const stageScale = usePlannerV2Store((s) => s.view.scale || s.view.fitScale || 1);
@@ -92,25 +99,12 @@ export default function PanelsKonva(props: {
     return roof ? resolveRoofEdgeMarginM(roof, s.modules.marginM) : s.modules.marginM;
   }) ?? 0;
   const mpp = usePlannerV2Store((s) => s.snapshot.mppImage) ?? 1;
-  const edgeMarginPx = React.useMemo(() => (mpp ? marginM / mpp : 0), [marginM, mpp]);
   const spacingM = usePlannerV2Store((s) => s.modules.spacingM) ?? 0;
   const spacingXM = usePlannerV2Store((s) => s.modules.spacingXM) ?? spacingM;
   const spacingYM = usePlannerV2Store((s) => s.modules.spacingYM) ?? spacingM;
   const gapPx = React.useMemo(() => (mpp ? spacingM / mpp : 0), [spacingM, mpp]);
   const gapXPx = React.useMemo(() => (mpp ? spacingXM / mpp : 0), [spacingXM, mpp]);
   const gapYPx = React.useMemo(() => (mpp ? spacingYM / mpp : 0), [spacingYM, mpp]);
-  const reservedPolygons = React.useMemo(
-    () => allZones
-      .filter((zone) => zone.roofId === roofId && zone.type === 'riservata')
-      .map((zone) => zone.points),
-    [allZones, roofId],
-  );
-  const isReservedCenter = React.useCallback(
-    (cx: number, cy: number) => reservedPolygons.some((polygon) =>
-      legacyPointInPolygon({ x: cx, y: cy }, polygon),
-    ),
-    [reservedPolygons],
-  );
 
   // texture pannello (opzionale)
   const [img, setImg] = React.useState<HTMLImageElement | null>(null);
@@ -151,87 +145,7 @@ export default function PanelsKonva(props: {
     }
     return polyAngleDeg;
   }, [roofAzimuthDeg, polyAngleDeg]);
-  // assi locali falda
-  const theta = (defaultAngleDeg * Math.PI) / 180;
-  const ex = { x: Math.cos(theta), y: Math.sin(theta) }; // u axis
-  const ey = { x: -Math.sin(theta), y: Math.cos(theta) }; // v axis
-  const project = React.useCallback(
-    (pt: Pt) => ({ u: pt.x * ex.x + pt.y * ex.y, v: pt.x * ey.x + pt.y * ey.y }),
-    [ex.x, ex.y, ey.x, ey.y],
-  );
-  const fromUV = React.useCallback(
-    (u: number, v: number): Pt => ({ x: u * ex.x + v * ey.x, y: u * ex.y + v * ey.y }),
-    [ex.x, ex.y, ey.x, ey.y],
-  );
-
-  // bounds UV falda
-  const uvBounds = React.useMemo(() => {
-    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
-    for (const p of roofPolygon) {
-      const uv = project(p);
-      if (uv.u < minU) minU = uv.u;
-      if (uv.u > maxU) maxU = uv.u;
-      if (uv.v < minV) minV = uv.v;
-      if (uv.v > maxV) maxV = uv.v;
-    }
-    return { minU, maxU, minV, maxV };
-  }, [roofPolygon, project]);
-
-  const normalizePanelCandidate = React.useCallback(
-    (id: string, proposedCx: number, proposedCy: number): Pt | null => {
-      const panel = allPanels.find((p) => p.id === id);
-      if (!panel) return null;
-
-      let nextCx = proposedCx;
-      let nextCy = proposedCy;
-
-      if (typeof nextCx === 'number' && typeof nextCy === 'number') {
-        const uv = project({ x: nextCx, y: nextCy });
-
-        const hw = panel.wPx / 2;
-        const hh = panel.hPx / 2;
-        const m = edgeMarginPx;
-
-        // limiti in UV considerando:
-        // - bordo falda
-        // - randabstand (m)
-        // - metà dimensione pannello
-        let u = uv.u;
-        let v = uv.v;
-
-        const minU = uvBounds.minU + m + hw;
-        const maxU = uvBounds.maxU - m - hw;
-        const minV = uvBounds.minV + m + hh;
-        const maxV = uvBounds.maxV - m - hh;
-
-        if (u < minU) u = minU;
-        if (u > maxU) u = maxU;
-        if (v < minV) v = minV;
-        if (v > maxV) v = maxV;
-
-        const corrected = fromUV(u, v);
-        nextCx = corrected.x;
-        nextCy = corrected.y;
-
-        if (isReservedCenter(nextCx, nextCy)) return null;
-        if (roof && !validateExistingPanelPlacement({
-          panel,
-          centerPx: { x: nextCx, y: nextCy },
-          roof,
-          marginM,
-          mppImage: mpp,
-          zones: allZones,
-          snowGuards,
-          panels: allPanels,
-        }).valid) return null;
-      }
-
-      return { x: nextCx, y: nextCy };
-    },
-    [allPanels, allZones, edgeMarginPx, fromUV, isReservedCenter, marginM, mpp, project, roof, snowGuards, uvBounds]
-  );
-
-  const preparePanelNormalizer = React.useCallback((id: string) => {
+  const preparePanelValidator = React.useCallback((id: string) => {
     const panel = allPanels.find((candidate) => candidate.id === id);
     if (!panel || !roof) return undefined;
     const placementIsValid = createPanelPastePlacementValidator({
@@ -242,44 +156,29 @@ export default function PanelsKonva(props: {
       snowGuards,
       panels: allPanels,
       excludePanelIds: new Set([id]),
+      moduleGapXM: spacingXM,
+      moduleGapYM: spacingYM,
     });
-    return (proposedCx: number, proposedCy: number): Pt | null => {
-      const uv = project({ x: proposedCx, y: proposedCy });
-      const hw = panel.wPx / 2;
-      const hh = panel.hPx / 2;
-      const u = Math.max(uvBounds.minU + edgeMarginPx + hw, Math.min(
-        uvBounds.maxU - edgeMarginPx - hw,
-        uv.u,
-      ));
-      const v = Math.max(uvBounds.minV + edgeMarginPx + hh, Math.min(
-        uvBounds.maxV - edgeMarginPx - hh,
-        uv.v,
-      ));
-      const corrected = fromUV(u, v);
-      return placementIsValid([{ ...panel, cx: corrected.x, cy: corrected.y }])
-        ? corrected
-        : null;
-    };
-  }, [allPanels, allZones, edgeMarginPx, fromUV, marginM, mpp, project, roof, snowGuards, uvBounds]);
+    return (proposedCx: number, proposedCy: number): boolean => placementIsValid([
+      { ...panel, cx: proposedCx, cy: proposedCy },
+    ]);
+  }, [allPanels, allZones, marginM, mpp, roof, snowGuards, spacingXM, spacingYM]);
 
   const commitPanel = React.useCallback(
     (id: string, patch: Partial<PanelInst>) => {
       const panel = allPanels.find((p) => p.id === id);
       if (!panel) return;
-
-      const normalized = normalizePanelCandidate(
-        id,
-        patch.cx ?? panel.cx,
-        patch.cy ?? panel.cy,
-      );
-      if (!normalized) return;
+      const validate = preparePanelValidator(id);
+      const cx = patch.cx ?? panel.cx;
+      const cy = patch.cy ?? panel.cy;
+      if (!validate?.(cx, cy)) return;
 
       plannerHistory.push('move panel');
       updatePanelsBulk({
-        [id]: { ...patch, cx: normalized.x, cy: normalized.y },
+        [id]: { ...patch, cx, cy },
       });
     },
-    [allPanels, normalizePanelCandidate, updatePanelsBulk]
+    [allPanels, preparePanelValidator, updatePanelsBulk]
   );
 
 
@@ -287,24 +186,18 @@ export default function PanelsKonva(props: {
   // drag singolo (immutato)
   const { startDrag, hintURef, hintVRef } = usePanelDragSnap({
     defaultAngleDeg,
-    project,
-    fromUV,
-    uvBounds,
     allPanels,
     roofId,
     stageToImg,
     commitPanel,
     onSelect,
-    onDragStart,
-    onDragEnd,
+    onDragStart: handleDirectDragStart,
+    onDragEnd: handleDirectDragEnd,
     snapPxImg,
-    edgeMarginPx,
     gapPx,
     gapXPx,
     gapYPx,
-    reservedGuard: (cx, cy) => !isReservedCenter(cx, cy),
-    normalizeCandidate: normalizePanelCandidate,
-    prepareNormalizeCandidate: preparePanelNormalizer,
+    prepareValidateCandidate: preparePanelValidator,
   });
 
 
@@ -365,10 +258,13 @@ export default function PanelsKonva(props: {
     stage: any;
     startImg: Pt;
     inProgress: boolean;
-    init: { id: string; cx: number; cy: number; u: number; v: number }[];
+    init: { id: string; cx: number; cy: number; u: number; v: number; opacity: number }[];
     anchorId: string;
-    anchorInitUV: { u: number; v: number; hw: number; hh: number };
-    guides: { uCenters: number[]; uEdges: number[]; vCenters: number[]; vEdges: number[] };
+    groupCenterUV: { u: number; v: number };
+    groupHalfSize: { hw: number; hh: number };
+    axis: ReturnType<typeof createPanelAxis>;
+    spatialIndex: ReturnType<typeof createPanelDragSpatialIndex>;
+    activeSnapKey: string | null;
     nodes: Map<string, any>;
     selectionNodes: Map<string, any>;
     slopeArrowNodes: Map<string, any>;
@@ -385,7 +281,6 @@ export default function PanelsKonva(props: {
       otherPanels: PanelInst[];
     } | null;
     placementIsValid: (panels: readonly PanelInstance[]) => boolean;
-    staticPanelsUV: ReturnType<typeof buildPanelDragStaticGeometry>;
     frame: FrameScheduler<{ point: Pt; disableSnap: boolean }>;
   } | null>(null);
 
@@ -415,7 +310,9 @@ export default function PanelsKonva(props: {
     detachGroupDragInput(state);
     state.frame.cancel();
     state.init.forEach((initial) => {
-      state.nodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
+      const node = state.nodes.get(initial.id);
+      node?.position({ x: initial.cx, y: initial.cy });
+      node?.opacity(initial.opacity);
       state.selectionNodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
       state.slopeArrowNodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
     });
@@ -426,9 +323,9 @@ export default function PanelsKonva(props: {
     setGroupDragActive(false);
     const container = state.stage.container?.();
     if (container) container.style.cursor = 'default';
-    onDragEnd?.();
+    handleDirectDragEnd();
     return true;
-  }, [clearGroupGuides, detachGroupDragInput, onDragEnd]);
+  }, [clearGroupGuides, detachGroupDragInput, handleDirectDragEnd]);
 
   React.useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
@@ -452,7 +349,7 @@ export default function PanelsKonva(props: {
     movingPanels: PanelInst[] = selectedPanels,
     handleNode: any | null = null,
   ) => {
-    if (movingPanels.length < 2 || !stageToImg) return;
+    if (movingPanels.length < 1 || !stageToImg) return;
 
     const stage = e.target.getStage?.();
     const pos = stage?.getPointerPosition?.();
@@ -475,22 +372,10 @@ export default function PanelsKonva(props: {
       }
     }
 
-    // ancora = primo selezionato
+    // A rigid selection uses the actual working angle of its first member.
     const anchor = movingPanels[0];
-    const anchorUV = project({ x: anchor.cx, y: anchor.cy });
-    const anchorHW = anchor.wPx / 2;
-    const anchorHH = anchor.hPx / 2;
-
-    // guide: escludi tutto il gruppo
-    const guides = buildGuidesCommon({
-      allPanels,
-      roofId,
-      defaultAngleDeg,
-      project,
-      uvBounds,
-      edgeMarginPx,
-      excludeIds: new Set(movingPanels.map(p => p.id)),
-    });
+    const workingAngleDeg = typeof anchor.angleDeg === 'number' ? anchor.angleDeg : defaultAngleDeg;
+    const axis = createPanelAxis(workingAngleDeg);
 
     const nodes = new Map<string, any>();
     const selectionNodes = new Map<string, any>();
@@ -514,6 +399,8 @@ export default function PanelsKonva(props: {
           snowGuards,
           panels: allPanels,
           excludePanelIds: movingIds,
+          moduleGapXM: spacingXM,
+          moduleGapYM: spacingYM,
         })
       : () => false;
     const staticPanelsUV = buildPanelDragStaticGeometry({
@@ -521,8 +408,46 @@ export default function PanelsKonva(props: {
       roofId,
       excludeIds: movingIds,
       defaultAngleDeg,
-      project,
+      axisAngleDeg: workingAngleDeg,
+      project: axis.project,
     });
+    const projectedMoving = movingPanels.map((panel) => {
+      const center = axis.project({ x: panel.cx, y: panel.cy });
+      const angleRad = (typeof panel.angleDeg === 'number' ? panel.angleDeg : defaultAngleDeg) * Math.PI / 180;
+      const cos = Math.cos(angleRad);
+      const sin = Math.sin(angleRad);
+      const corners = [
+        { x: -panel.wPx / 2, y: -panel.hPx / 2 },
+        { x: panel.wPx / 2, y: -panel.hPx / 2 },
+        { x: panel.wPx / 2, y: panel.hPx / 2 },
+        { x: -panel.wPx / 2, y: panel.hPx / 2 },
+      ].map((corner) => axis.project({
+        x: panel.cx + corner.x * cos - corner.y * sin,
+        y: panel.cy + corner.x * sin + corner.y * cos,
+      }));
+      return {
+        panel,
+        center,
+        minU: Math.min(...corners.map((corner) => corner.u)),
+        maxU: Math.max(...corners.map((corner) => corner.u)),
+        minV: Math.min(...corners.map((corner) => corner.v)),
+        maxV: Math.max(...corners.map((corner) => corner.v)),
+      };
+    });
+    const minU = Math.min(...projectedMoving.map((item) => item.minU));
+    const maxU = Math.max(...projectedMoving.map((item) => item.maxU));
+    const minV = Math.min(...projectedMoving.map((item) => item.minV));
+    const maxV = Math.max(...projectedMoving.map((item) => item.maxV));
+    const groupCenterUV = { u: (minU + maxU) / 2, v: (minV + maxV) / 2 };
+    const groupHalfSize = { hw: (maxU - minU) / 2, hh: (maxV - minV) / 2 };
+    const largestExtent = staticPanelsUV.reduce(
+      (largest, panel) => Math.max(largest, panel.hw * 2, panel.hh * 2),
+      Math.max(groupHalfSize.hw * 2, groupHalfSize.hh * 2),
+    );
+    const spatialIndex = createPanelDragSpatialIndex(
+      staticPanelsUV,
+      Math.max(32, largestExtent + snapPxImg * 3),
+    );
     const movingBlockKey = movingPanels[0]?.advanced?.blockKey;
     const isCompleteAdvancedBlock = Boolean(
       movingBlockKey &&
@@ -549,10 +474,30 @@ export default function PanelsKonva(props: {
       const dImgY = curImg.y - st.startImg.y;
 
       const anchorInit = st.init.find(i => i.id === st.anchorId)!;
-      let anchorCandUV = project({
-        x: anchorInit.cx + dImgX,
-        y: anchorInit.cy + dImgY,
+      const deltaUV = st.axis.project({ x: dImgX, y: dImgY });
+      const freeCenterUV = {
+        u: st.groupCenterUV.u + deltaUV.u,
+        v: st.groupCenterUV.v + deltaUV.v,
+      };
+      const positionsForCenter = (center: { u: number; v: number }) => {
+        const du = center.u - st.groupCenterUV.u;
+        const dv = center.v - st.groupCenterUV.v;
+        return st.init.map((initial) => {
+          const next = st.axis.fromUV(initial.u + du, initial.v + dv);
+          return { id: initial.id, cx: next.x, cy: next.y, opacity: initial.opacity };
+        });
+      };
+      const panelsForPositions = (positions: { id: string; cx: number; cy: number }[]) => positions.map((position) => {
+        const panel = panels.find((candidate) => candidate.id === position.id)!;
+        return { ...panel, cx: position.cx, cy: position.cy };
       });
+      const validateCenter = (center: { u: number; v: number }) =>
+        st.placementIsValid(panelsForPositions(positionsForCenter(center)));
+
+      let resolvedCenterUV = freeCenterUV;
+      let valid = validateCenter(freeCenterUV);
+      let hintU = false;
+      let hintV = false;
       if (st.advancedSnap) {
         const rawCenter = {
           x: st.advancedSnap.initialCenter.x + dImgX,
@@ -567,57 +512,64 @@ export default function PanelsKonva(props: {
           activationThresholdPx: snapPxImg,
           disableSnap,
         });
-        anchorCandUV = project({
-          x: anchorInit.cx + snappedCenter.x - st.advancedSnap.initialCenter.x,
-          y: anchorInit.cy + snappedCenter.y - st.advancedSnap.initialCenter.y,
+        const snappedDelta = {
+          x: snappedCenter.x - st.advancedSnap.initialCenter.x,
+          y: snappedCenter.y - st.advancedSnap.initialCenter.y,
+        };
+        const snappedDeltaUV = st.axis.project(snappedDelta);
+        const advancedCenterUV = {
+          u: st.groupCenterUV.u + snappedDeltaUV.u,
+          v: st.groupCenterUV.v + snappedDeltaUV.v,
+        };
+        if (!disableSnap && validateCenter(advancedCenterUV)) {
+          resolvedCenterUV = advancedCenterUV;
+          valid = true;
+          hintU = Math.abs(advancedCenterUV.u - freeCenterUV.u) > 1e-6;
+          hintV = Math.abs(advancedCenterUV.v - freeCenterUV.v) > 1e-6;
+        }
+      } else {
+        const nearby = st.spatialIndex.query(
+          freeCenterUV.u,
+          freeCenterUV.v,
+          Math.max(st.groupHalfSize.hw, st.groupHalfSize.hh) * 2 + snapPxImg * 1.5,
+        );
+        const resolution = resolvePanelDragFrameUV({
+          free: freeCenterUV,
+          hw: st.groupHalfSize.hw,
+          hh: st.groupHalfSize.hh,
+          gapXPx: gapXPx ?? gapPx,
+          gapYPx: gapYPx ?? gapPx,
+          activationThresholdPx: snapPxImg,
+          releaseThresholdPx: snapPxImg * 1.5,
+          disableSnap,
+          activeSnapKey: st.activeSnapKey,
+          panels: nearby,
+          validate: validateCenter,
         });
+        st.activeSnapKey = resolution.snapKey;
+        resolvedCenterUV = resolution.position;
+        valid = resolution.valid;
+        hintU = resolution.hintU;
+        hintV = resolution.hintV;
       }
 
-      const snapped = disableSnap || st.advancedSnap
-        ? { bestU: anchorCandUV.u, bestV: anchorCandUV.v, hintU: null, hintV: null }
-        : snapUVToGuides({
-            curU: anchorCandUV.u,
-            curV: anchorCandUV.v,
-            hw: st.anchorInitUV.hw,
-            hh: st.anchorInitUV.hh,
-            guides: st.guides,
-            snapPxImg,
-            fromUV,
-            uvBounds,
-          });
-
-      setGroupGuide(groupHintURef, snapped.hintU);
-      setGroupGuide(groupHintVRef, snapped.hintV);
-
-      const dU = snapped.bestU - st.anchorInitUV.u;
-      const dV = snapped.bestV - st.anchorInitUV.v;
-      const proposed = st.init.map(i => {
-        const pNew = fromUV(i.u + dU, i.v + dV);
-        return { id: i.id, cx: pNew.x, cy: pNew.y };
-      });
-
-      const proposedPanels = proposed.map((position) => {
-        const panel = panels.find((candidate) => candidate.id === position.id)!;
-        return { ...panel, cx: position.cx, cy: position.cy };
-      });
-      if (!st.placementIsValid(proposedPanels)) return;
-      for (const candidate of proposedPanels) {
-        const uv = project({ x: candidate.cx, y: candidate.cy });
-        if (hasPanelOverlapCached({
-          u: uv.u,
-          v: uv.v,
-          hw: candidate.wPx / 2,
-          hh: candidate.hPx / 2,
-          gapPx,
-          gapXPx,
-          gapYPx,
-          panels: st.staticPanelsUV,
-        })) return;
-      }
-
-      st.final = proposed;
+      const proposed = positionsForCenter(resolvedCenterUV);
+      st.final = valid ? proposed : null;
+      const extent = 10000;
+      if (hintU) {
+        const a = st.axis.fromUV(resolvedCenterUV.u, resolvedCenterUV.v - extent);
+        const b = st.axis.fromUV(resolvedCenterUV.u, resolvedCenterUV.v + extent);
+        setGroupGuide(groupHintURef, [a.x, a.y, b.x, b.y]);
+      } else setGroupGuide(groupHintURef, null);
+      if (hintV) {
+        const a = st.axis.fromUV(resolvedCenterUV.u - extent, resolvedCenterUV.v);
+        const b = st.axis.fromUV(resolvedCenterUV.u + extent, resolvedCenterUV.v);
+        setGroupGuide(groupHintVRef, [a.x, a.y, b.x, b.y]);
+      } else setGroupGuide(groupHintVRef, null);
       proposed.forEach((position) => {
-        st.nodes.get(position.id)?.position({ x: position.cx, y: position.cy });
+        const node = st.nodes.get(position.id);
+        node?.position({ x: position.cx, y: position.cy });
+        node?.opacity(valid ? position.opacity : 0.58);
         st.selectionNodes.get(position.id)?.position({ x: position.cx, y: position.cy });
         st.slopeArrowNodes.get(position.id)?.position({ x: position.cx, y: position.cy });
       });
@@ -639,12 +591,22 @@ export default function PanelsKonva(props: {
       startImg,
       inProgress: true,
       init: movingPanels.map(p => {
-        const uv = project({ x: p.cx, y: p.cy });
-        return { id: p.id, cx: p.cx, cy: p.cy, u: uv.u, v: uv.v };
+        const uv = axis.project({ x: p.cx, y: p.cy });
+        return {
+          id: p.id,
+          cx: p.cx,
+          cy: p.cy,
+          u: uv.u,
+          v: uv.v,
+          opacity: nodes.get(p.id)?.opacity?.() ?? 1,
+        };
       }),
       anchorId: anchor.id,
-      anchorInitUV: { u: anchorUV.u, v: anchorUV.v, hw: anchorHW, hh: anchorHH },
-      guides,
+      groupCenterUV,
+      groupHalfSize,
+      axis,
+      spatialIndex,
+      activeSnapKey: null,
       nodes,
       selectionNodes,
       slopeArrowNodes,
@@ -659,7 +621,6 @@ export default function PanelsKonva(props: {
       final: null,
       advancedSnap,
       placementIsValid,
-      staticPanelsUV,
       frame,
     };
 
@@ -690,6 +651,16 @@ export default function PanelsKonva(props: {
         );
         plannerHistory.push('move panels');
         updatePanelsBulk(patches);
+      } else {
+        st.init.forEach((initial) => {
+          const node = st.nodes.get(initial.id);
+          node?.position({ x: initial.cx, y: initial.cy });
+          node?.opacity(initial.opacity);
+          st.selectionNodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
+          st.slopeArrowNodes.get(initial.id)?.position({ x: initial.cx, y: initial.cy });
+        });
+        if (st.handleNode && st.handleInitial) st.handleNode.position(st.handleInitial);
+        st.nodes.values().next().value?.getLayer?.()?.batchDraw?.();
       }
       st.frame.cancel();
       dragStateRef.current = null;
@@ -697,7 +668,7 @@ export default function PanelsKonva(props: {
       setGroupDragActive(false);
       const container = st.stage.container?.();
       if (container) container.style.cursor = 'default';
-      onDragEnd?.();
+      handleDirectDragEnd();
     };
 
     const onCancel = () => cancelGroupDrag();
@@ -716,14 +687,13 @@ export default function PanelsKonva(props: {
     setGroupDragActive(true);
     const container = stage.container?.();
     if (container) container.style.cursor = 'grabbing';
-    onDragStart?.();
+    handleDirectDragStart();
   }, [
     selectedPanels, stageToImg, allPanels, roofId,
-    defaultAngleDeg, project, uvBounds, edgeMarginPx, snapPxImg,
-    fromUV, panels,
-    updatePanelsBulk, onDragStart, onDragEnd,
+    defaultAngleDeg, snapPxImg, panels,
+    updatePanelsBulk, handleDirectDragStart, handleDirectDragEnd,
     committedAdvancedDefinition, mpp, marginM, allZones, snowGuards,
-    gapPx, gapXPx, gapYPx, cancelGroupDrag, detachGroupDragInput,
+    gapPx, gapXPx, gapYPx, spacingXM, spacingYM, cancelGroupDrag, detachGroupDragInput,
     clearGroupGuides, setGroupGuide, roof,
   ]);
 
@@ -745,7 +715,7 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
   const blockKey = panel?.advanced?.blockKey;
   if (blockKey) {
     const blockPanels = panels.filter((item) => item.advanced?.blockKey === blockKey);
-    if (blockPanels.length > 1) {
+    if (blockPanels.length > 0) {
       e.cancelBubble = true;
       setSelectedPanels(blockPanels.map((item) => item.id));
       beginGroupDrag(e, blockPanels);
@@ -763,7 +733,7 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
   <>
     {/* --- CLIPPED: pannelli + guide + banda margine --- */}
     <Group
-      clipFunc={clipFunc}
+      clipFunc={directDragActive ? undefined : clipFunc}
       listening
       onMouseDown={(e) => { e.cancelBubble = true; }}
       onTouchStart={(e) => { e.cancelBubble = true; }}

@@ -171,6 +171,8 @@ export function createPanelPastePlacementValidator(input: {
   snowGuards: readonly SnowGuard[];
   panels: readonly PanelInstance[];
   excludePanelIds?: ReadonlySet<string>;
+  moduleGapXM?: number;
+  moduleGapYM?: number;
 }): (panels: readonly PanelInstance[]) => boolean {
   const adapter = imageAdapter(input.roof, input.mppImage);
   const usableRoof = computeUsableRoof({
@@ -191,12 +193,20 @@ export function createPanelPastePlacementValidator(input: {
       end: imagePointToMetric(guard.p2, adapter),
       clearanceM: 0,
     }));
-  const occupied = committedPanelFootprints(
-    input.panels,
-    input.roof.id,
-    adapter,
-    input.excludePanelIds,
-  ).map((polygon) => ({ polygon, bounds: polygonBounds(polygon) }));
+  const occupied = input.panels
+    .filter((panel) => panel.roofId === input.roof.id && !input.excludePanelIds?.has(panel.id))
+    .map((panel) => {
+      const polygon = imagePolygonToMetric(rectangle(
+        { x: panel.cx, y: panel.cy },
+        panel.wPx,
+        panel.hPx,
+        panel.angleDeg,
+      ), adapter);
+      return { panel, polygon, bounds: polygonBounds(polygon) };
+    });
+  const gapXM = Math.max(0, input.moduleGapXM ?? 0);
+  const gapYM = Math.max(0, input.moduleGapYM ?? 0);
+  const spacingEpsilonM = 1e-6;
 
   return (panels) => {
     if (!panels.length || panels.some((panel) => panel.roofId !== input.roof.id)) return false;
@@ -223,7 +233,7 @@ export function createPanelPastePlacementValidator(input: {
       ...[...advancedBlocks.values()].map(convexHull),
     ];
 
-    return atomicFootprints.every((footprint) => {
+    const geometryValid = atomicFootprints.every((footprint) => {
       const geometric = validatePlacementFootprint({
         footprint,
         usableRoof,
@@ -236,6 +246,31 @@ export function createPanelPastePlacementValidator(input: {
         boundsOverlap(bounds, candidate.bounds) &&
         polygonsIntersectOrTouch(footprint, candidate.polygon),
       );
+    });
+    if (!geometryValid) return false;
+
+    // Generic/Schrägdach spacing is physical geometry, not a magnetic halo.
+    // Advanced units keep their adapter-defined block pitch and are therefore
+    // validated only through their exact atomic footprint above.
+    return panels.every((panel) => {
+      if (panel.advanced?.blockKey) return true;
+      const angleRad = panel.angleDeg * Math.PI / 180;
+      const cos = Math.cos(angleRad);
+      const sin = Math.sin(angleRad);
+      return !occupied.some(({ panel: other }) => {
+        if (other.advanced?.blockKey) return false;
+        const difference = Math.abs(
+          ((((other.angleDeg - panel.angleDeg + 180) % 360) + 360) % 360) - 180,
+        );
+        if (Math.min(difference, Math.abs(180 - difference)) > 0.25) return false;
+        const dxM = (other.cx - panel.cx) * input.mppImage;
+        const dyM = (other.cy - panel.cy) * input.mppImage;
+        const duM = Math.abs(dxM * cos + dyM * sin);
+        const dvM = Math.abs(-dxM * sin + dyM * cos);
+        const minU = (panel.wPx + other.wPx) * input.mppImage / 2 + gapXM;
+        const minV = (panel.hPx + other.hPx) * input.mppImage / 2 + gapYM;
+        return duM < minU - spacingEpsilonM && dvM < minV - spacingEpsilonM;
+      });
     });
   };
 }

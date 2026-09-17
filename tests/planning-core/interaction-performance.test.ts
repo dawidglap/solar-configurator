@@ -5,11 +5,15 @@ import test from "node:test";
 import { createLatestFrameScheduler } from "../../src/components_v2/canvas/performance/latestFrameScheduler";
 import { translateInteractionPoints } from "../../src/components_v2/canvas/performance/transientGeometry";
 import { createRafPointChannel } from "../../src/components_v2/canvas/performance/rafPointChannel";
+import { createPanelPastePlacementValidator } from "../../src/components_v2/modules/manualPlacement";
+import type { PanelInstance, RoofArea } from "../../src/types/planner";
 import {
   buildPanelDragStaticGeometry,
+  createPanelAxis,
+  createPanelDragSpatialIndex,
   hasPanelOverlapCached,
   resolveMagneticNeighbourSnapUV,
-  resolveNoOverlapCached,
+  resolvePanelDragFrameUV,
   type PanelInst,
 } from "../../src/components_v2/modules/panels/usePanelDragSnap";
 
@@ -58,6 +62,229 @@ test("drag neighbour snap uses exact axis gaps without pushing invalid candidate
   }), null);
 });
 
+test("occupied right and constrained left never block a free downward escape", () => {
+  const result = resolvePanelDragFrameUV({
+    free: { u: 0, v: 30 },
+    hw: 5,
+    hh: 8,
+    gapXPx: 1,
+    gapYPx: 1,
+    activationThresholdPx: 8,
+    panels: [{ id: "right", u: 11, v: 0, hw: 5, hh: 8 }],
+    validate: (position) => position.u >= 0 && position.v >= 20,
+  });
+  assert.deepEqual(result.position, { u: 0, v: 30 });
+  assert.equal(result.valid, true);
+  assert.equal(result.snapped, false);
+});
+
+test("side occupancy never blocks a free upward escape", () => {
+  const result = resolvePanelDragFrameUV({
+    free: { u: 0, v: -30 },
+    hw: 5,
+    hh: 8,
+    gapXPx: 1,
+    gapYPx: 1,
+    activationThresholdPx: 8,
+    panels: [
+      { id: "left", u: -11, v: 0, hw: 5, hh: 8 },
+      { id: "right", u: 11, v: 0, hw: 5, hh: 8 },
+    ],
+    validate: (position) => position.v <= -20,
+  });
+  assert.deepEqual(result.position, { u: 0, v: -30 });
+  assert.equal(result.valid, true);
+  assert.equal(result.snapped, false);
+});
+
+test("top and bottom occupancy never block a free horizontal escape", () => {
+  const result = resolvePanelDragFrameUV({
+    free: { u: 30, v: 0 },
+    hw: 5,
+    hh: 8,
+    gapXPx: 1,
+    gapYPx: 1,
+    activationThresholdPx: 8,
+    panels: [
+      { id: "top", u: 0, v: -17, hw: 5, hh: 8 },
+      { id: "bottom", u: 0, v: 17, hw: 5, hh: 8 },
+    ],
+    validate: (position) => position.u >= 20,
+  });
+  assert.deepEqual(result.position, { u: 30, v: 0 });
+  assert.equal(result.valid, true);
+  assert.equal(result.snapped, false);
+});
+
+test("an invalid magnetic proposal is ignored in favour of a valid free pointer position", () => {
+  const free = { u: 21, v: 1 };
+  const result = resolvePanelDragFrameUV({
+    free,
+    hw: 5,
+    hh: 8,
+    gapXPx: 1,
+    gapYPx: 1,
+    activationThresholdPx: 8,
+    panels: [{ id: "fixed", u: 10, v: 0, hw: 5, hh: 8 }],
+    validate: (position) => position.u !== 21 || position.v !== 0,
+  });
+  assert.deepEqual(result.position, free);
+  assert.equal(result.valid, true);
+  assert.equal(result.snapKey, null);
+});
+
+test("snap hysteresis keeps one deterministic corner candidate until the release radius", () => {
+  const panels = [{ id: "fixed", u: 0, v: 0, hw: 5, hh: 5 }];
+  const first = resolvePanelDragFrameUV({
+    free: { u: 10.8, v: 0.4 },
+    hw: 5,
+    hh: 5,
+    gapXPx: 1,
+    gapYPx: 1,
+    activationThresholdPx: 8,
+    releaseThresholdPx: 12,
+    panels,
+    validate: () => true,
+  });
+  assert.equal(first.snapKey, "adjacency:fixed:right");
+  const second = resolvePanelDragFrameUV({
+    free: { u: 11.4, v: 2.5 },
+    hw: 5,
+    hh: 5,
+    gapXPx: 1,
+    gapYPx: 1,
+    activationThresholdPx: 8,
+    releaseThresholdPx: 12,
+    activeSnapKey: first.snapKey,
+    panels,
+    validate: () => true,
+  });
+  assert.equal(second.snapKey, first.snapKey);
+});
+
+test("right and bottom adjacency snap to the exact configured gaps and release naturally", () => {
+  const panels = [{ id: "fixed", u: 0, v: 0, hw: 5, hh: 8 }];
+  const right = resolvePanelDragFrameUV({
+    free: { u: 11.6, v: 0.3 }, hw: 5, hh: 8, gapXPx: 1, gapYPx: 2,
+    activationThresholdPx: 4, panels, validate: () => true,
+  });
+  assert.deepEqual(right.position, { u: 11, v: 0 });
+  assert.equal(right.snapKey, "adjacency:fixed:right");
+
+  const bottom = resolvePanelDragFrameUV({
+    free: { u: 0.2, v: 18.7 }, hw: 5, hh: 8, gapXPx: 1, gapYPx: 2,
+    activationThresholdPx: 4, panels, validate: () => true,
+  });
+  assert.deepEqual(bottom.position, { u: 0, v: 18 });
+  assert.equal(bottom.snapKey, "adjacency:fixed:bottom");
+
+  const released = resolvePanelDragFrameUV({
+    free: { u: 11, v: 20 }, hw: 5, hh: 8, gapXPx: 1, gapYPx: 2,
+    activationThresholdPx: 4, releaseThresholdPx: 6,
+    activeSnapKey: right.snapKey, panels, validate: () => true,
+  });
+  assert.deepEqual(released.position, { u: 11, v: 20 });
+  assert.equal(released.snapKey, null);
+});
+
+test("Shift disables snap while preserving free-position validation", () => {
+  const free = { u: 10.5, v: 0 };
+  const result = resolvePanelDragFrameUV({
+    free,
+    hw: 5,
+    hh: 5,
+    gapXPx: 1,
+    gapYPx: 1,
+    activationThresholdPx: 8,
+    disableSnap: true,
+    panels: [{ id: "fixed", u: 0, v: 0, hw: 5, hh: 5 }],
+    validate: () => true,
+  });
+  assert.deepEqual(result.position, free);
+  assert.equal(result.snapped, false);
+});
+
+test("transient invalid overlap follows the pointer and becomes valid beyond the obstacle", () => {
+  const validate = (position: { u: number; v: number }) => Math.abs(position.u) >= 10;
+  const overlapping = resolvePanelDragFrameUV({
+    free: { u: 0, v: 0 }, hw: 2, hh: 2, gapXPx: 0, gapYPx: 0,
+    activationThresholdPx: 0, disableSnap: true, panels: [], validate,
+  });
+  assert.deepEqual(overlapping.position, { u: 0, v: 0 });
+  assert.equal(overlapping.valid, false);
+  const escaped = resolvePanelDragFrameUV({
+    free: { u: 15, v: 0 }, hw: 2, hh: 2, gapXPx: 0, gapYPx: 0,
+    activationThresholdPx: 0, disableSnap: true, panels: [], validate,
+  });
+  assert.deepEqual(escaped.position, { u: 15, v: 0 });
+  assert.equal(escaped.valid, true);
+});
+
+test("configured gap is the legal boundary and snap radius adds no collision halo", () => {
+  const panels = [{ id: "fixed", u: 0, v: 0, hw: 5, hh: 5 }];
+  const overlapAt = (u: number) => hasPanelOverlapCached({
+    u, v: 0, hw: 5, hh: 5, gapPx: 0, gapXPx: 1, gapYPx: 1, panels,
+  });
+  assert.equal(overlapAt(11 - 1e-4), true);
+  assert.equal(overlapAt(11), false);
+  assert.equal(overlapAt(11 + 1e-4), false);
+});
+
+test("manual 13 degree working geometry keeps its own magnetic axes", () => {
+  const axis = createPanelAxis(13);
+  const fixedWorld = axis.fromUV(40, 25);
+  const staticPanels = buildPanelDragStaticGeometry({
+    allPanels: [{
+      id: "rotated-fixed", roofId: "roof-a", cx: fixedWorld.x, cy: fixedWorld.y,
+      wPx: 10, hPx: 20, angleDeg: 13,
+    }],
+    roofId: "roof-a",
+    defaultAngleDeg: 0,
+    axisAngleDeg: 13,
+    project: axis.project,
+  });
+  const result = resolvePanelDragFrameUV({
+    free: { u: 50.7, v: 25.2 },
+    hw: 5,
+    hh: 10,
+    gapXPx: 1,
+    gapYPx: 1,
+    activationThresholdPx: 3,
+    panels: staticPanels,
+    validate: () => true,
+  });
+  assert.ok(Math.abs(result.position.u - 51) < 1e-9);
+  assert.ok(Math.abs(result.position.v - 25) < 1e-9);
+  assert.equal(result.snapKey, "adjacency:rotated-fixed:right");
+});
+
+test("canonical drag validation uses the full footprint on a trapezoid and obstacle", () => {
+  const roof: RoofArea = {
+    id: "trapezoid",
+    name: "D1",
+    points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 70, y: 100 }, { x: 20, y: 100 }],
+  };
+  const panel = (cx: number, cy: number): PanelInstance => ({
+    id: "moving", roofId: roof.id, cx, cy, wPx: 12, hPx: 20,
+    angleDeg: 0, orientation: "portrait", panelId: "module",
+  });
+  const validate = createPanelPastePlacementValidator({
+    roof,
+    marginM: 0,
+    mppImage: 0.1,
+    zones: [{
+      roofId: roof.id,
+      type: "riservata",
+      points: [{ x: 50, y: 50 }, { x: 60, y: 50 }, { x: 60, y: 60 }, { x: 50, y: 60 }],
+    }],
+    snowGuards: [],
+    panels: [],
+  });
+  assert.equal(validate([panel(80, 80)]), false, "inside AABB but outside trapezoid is invalid");
+  assert.equal(validate([panel(45, 55)]), false, "center outside obstacle but footprint intersects it");
+  assert.equal(validate([panel(35, 30)]), true);
+});
+
 test("raw pointer bursts coalesce to the latest animation frame value", () => {
   const callbacks: FrameRequestCallback[] = [];
   const values: number[] = [];
@@ -89,7 +316,7 @@ test("flush processes the final pointer candidate before drag-end commit", () =>
   assert.equal(scheduler.hasPending(), false);
 });
 
-test("panel drag projects static panels once and preserves overlap resolution", () => {
+test("panel drag projects and indexes static panels once without push-away resolution", () => {
   let projections = 0;
   const panels: PanelInst[] = Array.from({ length: 400 }, (_, index) => ({
     id: `p-${index}`,
@@ -114,23 +341,8 @@ test("panel drag projects static panels once and preserves overlap resolution", 
 
   assert.equal(staticPanels.length, 399);
   assert.equal(projections, 399);
-  const first = resolveNoOverlapCached({
-    u: 12,
-    v: 0,
-    hw: 5,
-    hh: 10,
-    gapPx: 2,
-    panels: staticPanels,
-  });
-  const second = resolveNoOverlapCached({
-    u: 12,
-    v: 0,
-    hw: 5,
-    hh: 10,
-    gapPx: 2,
-    panels: staticPanels,
-  });
-  assert.deepEqual(first, second);
+  const index = createPanelDragSpatialIndex(staticPanels, 32);
+  assert.ok(index.query(12, 0, 24).length < staticPanels.length);
   assert.equal(projections, 399, "no projection is repeated during pointer frames");
 });
 
@@ -205,7 +417,8 @@ test("continuous interactions keep global commits at gesture boundaries", () => 
   assert.equal(panelSource.includes("updatePanel("), false);
   assert.equal(panelSource.match(/commitPanel\(/g)?.length, 1);
   assert.equal(zoneSource.match(/onChange\(/g)?.length, 1);
-  assert.ok(panelSource.includes("node.position"));
+  assert.ok(panelSource.includes("draggedNodeRef.current?.position"));
+  assert.equal(panelSource.includes("resolveNoOverlap"), false);
   assert.ok(panelSource.includes("endDrag(false)"));
   assert.equal(zoneSource.includes("setLivePoints"), false);
   assert.equal(zoneSource.includes("setDragValid"), false);
