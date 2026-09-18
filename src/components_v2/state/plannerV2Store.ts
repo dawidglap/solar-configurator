@@ -28,6 +28,7 @@ import {
   resolveCompanyPlannerDefaults,
   type CompanyPlannerDefaultsV1,
 } from '@/lib/planning/companyPlannerDefaults';
+import { DEFAULT_ROOF_EDGE_MARGIN_M } from '@/lib/planning/roofProperties';
 
 import type {
   PlannerStep,
@@ -126,7 +127,7 @@ function createDefaultModules(
     spacingM: horizontalM,
     spacingXM: horizontalM,
     spacingYM: verticalM,
-    marginM: 0.0,
+    marginM: DEFAULT_ROOF_EDGE_MARGIN_M,
     showGrid: true,
     placingSingle: false,
     gridAngleDeg: 0,

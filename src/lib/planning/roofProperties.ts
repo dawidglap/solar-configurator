@@ -6,6 +6,7 @@ import {
 import type { ModulesConfig, RoofArea } from "@/types/planner";
 
 export const FLAT_SLOPE_DIRECTION_TOLERANCE_DEG = 0.05;
+export const DEFAULT_ROOF_EDGE_MARGIN_M = 0.2;
 
 export function resolveRoofSlopeForKind(
   roofKind: "pitched" | "flat" | "green",

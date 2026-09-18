@@ -1,6 +1,7 @@
 // src/components_v2/state/defaultStoreData.ts
 // ⚠️ NO "use client" qui dentro!
 import type { PlannerStep, Tool } from "@/types/planner";
+import { DEFAULT_ROOF_EDGE_MARGIN_M } from "@/lib/planning/roofProperties";
 import { defaultProfile } from "./slices/profileSlice";
 
 // Se vuoi puoi tipizzare meglio, ma per ora va benissimo così.
@@ -27,7 +28,7 @@ export function defaultStoreData() {
       spacingM: 0.019,
       spacingXM: 0.019,
       spacingYM: 0.019,
-      marginM: 0.0,
+      marginM: DEFAULT_ROOF_EDGE_MARGIN_M,
       showGrid: true,
       placingSingle: false,
       gridAngleDeg: 0,

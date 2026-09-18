@@ -15,6 +15,8 @@ import {
 import { K2_D_DOME_CONSTANTS_MM } from "../../src/lib/planning-core/advanced/k2-d-dome/constants";
 import { K2_S_DOME_CONSTANTS_MM } from "../../src/lib/planning-core/advanced/k2-s-dome/constants";
 import { computeLegacyStandardCandidates } from "../../src/lib/planning-core/legacy-standard";
+import { defaultStoreData } from "../../src/components_v2/state/defaultStoreData";
+import { DEFAULT_ROOF_EDGE_MARGIN_M } from "../../src/lib/planning/roofProperties";
 
 const company = (horizontalMm: number, verticalMm: number) => ({
   schemaVersion: COMPANY_PLANNER_DEFAULTS_SCHEMA_VERSION,
@@ -29,6 +31,17 @@ test("company planner defaults validate finite tenant values and use 19 mm fallb
   assert.equal(validateCompanyPlannerDefaults(company(19, 25)).valid, true);
   assert.equal(validateCompanyPlannerDefaults(company(-1, 25)).valid, false);
   assert.equal(validateCompanyPlannerDefaults(company(19, Number.NaN)).valid, false);
+});
+
+test("new planning payloads use a 0.2 m roof-edge margin by default", async () => {
+  assert.equal(DEFAULT_ROOF_EDGE_MARGIN_M, 0.2);
+  assert.equal(defaultStoreData().modules.marginM, 0.2);
+
+  const { usePlannerV2Store } = await import(
+    "../../src/components_v2/state/plannerV2Store"
+  );
+  usePlannerV2Store.getState().resetPlanner();
+  assert.equal(usePlannerV2Store.getState().modules.marginM, 0.2);
 });
 
 test("legacy company documents receive system-scoped flat-roof spacing fallbacks without migration", () => {
