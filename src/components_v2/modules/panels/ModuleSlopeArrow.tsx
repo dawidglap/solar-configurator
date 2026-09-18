@@ -3,7 +3,7 @@
 import React from "react";
 import { Arrow } from "react-konva";
 import { plannerTheme } from "../../theme/plannerTheme";
-import { resolvePanelLocalArrowAzimuth } from "./moduleSlope";
+import { resolveModuleSlopeArrowAzimuth } from "./moduleSlope";
 
 function ModuleSlopeArrow({
   id,
@@ -26,7 +26,10 @@ function ModuleSlopeArrow({
   opacity?: number;
   color?: string;
 }) {
-  const azimuthDeg = resolvePanelLocalArrowAzimuth(arrowAzimuthDeg ?? panelRotationDeg);
+  const azimuthDeg = resolveModuleSlopeArrowAzimuth({
+    panelRotationCanvasDeg: panelRotationDeg,
+    physicalArrowAzimuthDeg: arrowAzimuthDeg,
+  });
   if (azimuthDeg === undefined) return null;
   const length = Math.max(4, Math.min(18, Math.min(wPx, hPx) * 0.55));
   const half = length / 2;

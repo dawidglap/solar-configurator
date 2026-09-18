@@ -16,7 +16,10 @@ import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import { plannerTheme } from "../theme/plannerTheme";
 import ModuleSprite from "./ModuleSprite";
 import ModuleSlopeArrow from "./panels/ModuleSlopeArrow";
-import { resolveOutwardBlockArrowAzimuths } from "./panels/moduleSlope";
+import {
+  resolveOutwardBlockArrowAzimuths,
+  resolvePitchedRoofDownhillAzimuth,
+} from "./panels/moduleSlope";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import {
   resolveStandardAutoLayoutCanvasAngle,
@@ -317,6 +320,9 @@ export default function ManualPlacementLayer({
         cy: module.cy,
       })))
     : new Map<string, number>();
+  const pitchedRoofArrowAzimuthDeg = session.kind === "standard-module"
+    ? resolvePitchedRoofDownhillAzimuth(roof)
+    : undefined;
   const stroke = valid ? plannerTheme.primary : plannerTheme.danger;
   const inverseScale = 1 / Math.max(stageScale, 0.01);
   const helperText = valid ? "Klicken zum Platzieren" : "Position nicht möglich";
@@ -370,7 +376,7 @@ export default function ManualPlacementLayer({
                   wPx={module.wPx}
                   hPx={module.hPx}
                   panelRotationDeg={module.angleDeg}
-                  arrowAzimuthDeg={candidateArrowAzimuths.get(String(module.slotIndex))}
+                  arrowAzimuthDeg={candidateArrowAzimuths.get(String(module.slotIndex)) ?? pitchedRoofArrowAzimuthDeg}
                 />
               </Group>
             );

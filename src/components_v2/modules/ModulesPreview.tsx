@@ -22,6 +22,7 @@ type Props = {
   polygon: Pt[];                           // px immagine
   mppImage: number;                        // metri/px
   azimuthDeg?: number;                     // 0=N(↑), 90=E(→)
+  slopeArrowAzimuthDeg?: number;           // geographic roof-downhill direction
   orientation: 'portrait' | 'landscape';
   panelSizeM: { w: number; h: number };    // metri (w=lato corto, h=lato lungo)
   spacingM: number;                        // metri fra moduli
@@ -114,6 +115,7 @@ export default function ModulesPreview({
   polygon,
   mppImage,
   azimuthDeg,
+  slopeArrowAzimuthDeg,
   orientation,
   panelSizeM,
   spacingM,
@@ -410,6 +412,7 @@ export default function ModulesPreview({
             wPx={r.wPx}
             hPx={r.hPx}
             panelRotationDeg={r.angleDeg}
+            arrowAzimuthDeg={slopeArrowAzimuthDeg}
           />
         </Group>
       ))}

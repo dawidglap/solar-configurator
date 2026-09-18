@@ -37,7 +37,10 @@ import {
 import { history as plannerHistory } from '../state/history';
 import MultiSelectionDragHandle from './panels/MultiSelectionDragHandle';
 import { resolveDirectLayoutTargets } from './panels/directLayoutGeometry';
-import { resolveOutwardBlockArrowAzimuths } from './panels/moduleSlope';
+import {
+  resolveOutwardBlockArrowAzimuths,
+  resolvePitchedRoofDownhillAzimuth,
+} from './panels/moduleSlope';
 import {
   isPrimaryPointerButton,
   resolveRoofLocalPointerAction,
@@ -171,6 +174,12 @@ export default function PanelsKonva(props: {
     const persisted = resolveSurfacePlanning(roof?.surfacePlanning);
     return persisted.status === 'supported-advanced' ? persisted.config : null;
   }, [roof?.surfacePlanning]);
+  const pitchedRoofArrowAzimuthDeg = React.useMemo(() => {
+    if (!roof) return undefined;
+    const isPitched = roof.roofKind === 'pitched' ||
+      (roof.roofKind == null && committedAdvancedConfig == null);
+    return isPitched ? resolvePitchedRoofDownhillAzimuth(roof) : undefined;
+  }, [committedAdvancedConfig, roof]);
   const committedAdvancedDefinition = React.useMemo(
     () => committedAdvancedConfig ? resolveManualAdvancedBlockDefinition(committedAdvancedConfig) : null,
     [committedAdvancedConfig],
@@ -866,7 +875,8 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
             wPx={p.wPx}
             hPx={p.hPx}
             rotationDeg={rotationDeg}
-            slopeArrowAzimuthDeg={opposingArrowAzimuths.get(p.id)}
+            slopeArrowAzimuthDeg={opposingArrowAzimuths.get(p.id) ?? pitchedRoofArrowAzimuthDeg}
+            lockSlopeArrowToRoof={pitchedRoofArrowAzimuthDeg !== undefined}
             selected={sel}
             image={img}
             onStartDrag={startPanelDrag}
