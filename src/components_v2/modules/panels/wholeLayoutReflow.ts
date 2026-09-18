@@ -10,7 +10,10 @@ import {
   buildDirectStandardRoofLayout,
 } from "../advanced/advancedPlanningApplication";
 import { withEffectiveAdvancedThermalLimits } from "../advanced/advancedThermalDefaults";
-import { resolveStandardAutoLayoutCanvasAngle } from "../legacyStandardApplicationPolicy";
+import {
+  resolveStandardAutoLayoutCanvasAngle,
+  resolveStandardFirstFrameCanvasAngle,
+} from "../legacyStandardApplicationPolicy";
 import { normalizeDegrees } from "./directLayoutGeometry";
 
 type ObstacleZone = { roofId: string; id?: string; type?: unknown; points: Pt[] };
@@ -78,6 +81,8 @@ export function buildWholeLayoutReflow(input: {
   zones: readonly ObstacleZone[];
   snowGuards: readonly SnowGuard[];
   deltaDeg: number;
+  /** Explicit absolute Standard target used by FIRST-frame realignment. */
+  standardTargetAngleDeg?: number;
   createPanelId: (index: number) => string;
   layoutRunId: string;
 }): WholeLayoutReflowResult | null {
@@ -111,10 +116,25 @@ export function buildWholeLayoutReflow(input: {
       roofPolygon: input.roof.points,
       legacyRoofAzimuthDeg: input.roof.azimuthDeg,
       gridAngleDeg: input.modules.gridAngleDeg,
+      perRoofAngleOffsets: input.modules.perRoofAngleOffsets,
       perRoofAngles: input.modules.perRoofAngles,
       referenceEdgeIndex: input.roof.referenceEdgeIndex,
     });
-    const targetAngle = normalizeDegrees(currentAngle + input.deltaDeg);
+    const targetAngle = normalizeDegrees(
+      input.standardTargetAngleDeg ?? currentAngle + input.deltaDeg,
+    );
+    const baseAngle = resolveStandardFirstFrameCanvasAngle({
+      roofPolygon: input.roof.points,
+      referenceEdgeIndex: input.roof.referenceEdgeIndex,
+    });
+    const perRoofAngles = { ...(input.modules.perRoofAngles ?? {}) };
+    const perRoofAngleOffsets = { ...(input.modules.perRoofAngleOffsets ?? {}) };
+    if (baseAngle === undefined) {
+      perRoofAngles[input.roof.id] = targetAngle;
+    } else {
+      delete perRoofAngles[input.roof.id];
+      perRoofAngleOffsets[input.roof.id] = normalizeDegrees(targetAngle - baseAngle);
+    }
     const modules: ModulesConfig = {
       ...input.modules,
       ...(config?.moduleSpacing ? {
@@ -123,10 +143,8 @@ export function buildWholeLayoutReflow(input: {
         spacingYM: config.moduleSpacing.verticalM,
       } : {}),
       orientation,
-      perRoofAngles: {
-        ...(input.modules.perRoofAngles ?? {}),
-        [input.roof.id]: targetAngle,
-      },
+      perRoofAngleOffsets,
+      perRoofAngles,
     };
     const companyLimits = resolveCompanyThermalFieldLimits({
       company: input.companyPlannerDefaults,

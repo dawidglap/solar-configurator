@@ -1,7 +1,3 @@
-import type { RoofArea } from "@/types/planner";
-import { resolveCanonicalRoofReferenceEdge } from "@/lib/planning-core/geometry-v2";
-import { resolveRoofFallAzimuth } from "../../roof/roofOrientation";
-
 export function imageVectorFromGeographicAzimuth(azimuthDeg: number): {
   x: number;
   y: number;
@@ -14,56 +10,23 @@ function normalizeAzimuth(azimuthDeg: number): number {
   return ((azimuthDeg % 360) + 360) % 360;
 }
 
-function geographicAzimuthFromImageVector(vector: { x: number; y: number }): number {
-  return normalizeAzimuth((Math.atan2(vector.x, -vector.y) * 180) / Math.PI);
-}
-
-function signedPolygonArea(points: readonly { x: number; y: number }[]): number {
-  let twiceArea = 0;
-  for (let index = 0; index < points.length; index += 1) {
-    const current = points[index];
-    const next = points[(index + 1) % points.length];
-    twiceArea += current.x * next.y - next.x * current.y;
-  }
-  return twiceArea / 2;
-}
-
-/**
- * Resolves one physical downhill direction for a pitched roof.
- *
- * A canonical geographic fall direction is authoritative. Legacy/manual roofs
- * without one use the normal of FIRST that points towards the roof interior.
- * The interior choice is independent from FIRST's endpoint order.
- */
-export function resolvePitchedRoofDownhillAzimuth(
-  roof: Pick<RoofArea, "points" | "referenceEdgeIndex" | "fallAzimuthDeg" | "azimuthDeg" | "source">,
-): number | undefined {
-  const canonical = resolveRoofFallAzimuth(roof);
-  if (canonical !== undefined) return canonical;
-
-  const first = resolveCanonicalRoofReferenceEdge({
-    points: roof.points,
-    requestedIndex: roof.referenceEdgeIndex,
-    roofKind: "pitched",
-  });
-  if (!first) return undefined;
-
-  const normalA = { x: -first.direction.y, y: first.direction.x };
-  const useA = signedPolygonArea(roof.points) >= 0;
-  return geographicAzimuthFromImageVector(useA
-    ? normalA
-    : { x: -normalA.x, y: -normalA.y });
-}
-
-/** Explicit physical directions override the legacy panel-rotation fallback. */
+/** Explicit flat-system directions override the panel-local fallback. */
 export function resolveModuleSlopeArrowAzimuth(input: {
   panelRotationCanvasDeg: number;
   physicalArrowAzimuthDeg?: number;
+  localArrowOffsetDeg?: number;
 }): number | undefined {
   return resolvePanelLocalArrowAzimuth(
-    input.physicalArrowAzimuthDeg ?? input.panelRotationCanvasDeg,
+    input.physicalArrowAzimuthDeg ??
+      input.panelRotationCanvasDeg + (input.localArrowOffsetDeg ?? 0),
   );
 }
+
+/**
+ * The pitched-module arrow is fixed to local +Y. The Konva Arrow primitive
+ * points toward local -Y at zero rotation, therefore +180° expresses +Y.
+ */
+export const PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG = 180;
 
 export type BlockArrowMember = {
   id: string;
@@ -115,8 +78,8 @@ export function resolveOutwardBlockArrowAzimuths(
 /**
  * Legacy flat-roof fallback: a panel is rendered around its centre with its
  * forward/top on local -Y, so its canvas rotation is also the arrow azimuth.
- * Schrägdach must instead pass its explicit physical roof-downhill azimuth via
- * resolveModuleSlopeArrowAzimuth; panel rotation is not slope semantics there.
+ * Schrägdach passes PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG so the arrow stays
+ * rigidly attached to the panel through every layout rotation.
  */
 export function resolvePanelLocalArrowAzimuth(panelRotationCanvasDeg: number): number | undefined {
   return Number.isFinite(panelRotationCanvasDeg)

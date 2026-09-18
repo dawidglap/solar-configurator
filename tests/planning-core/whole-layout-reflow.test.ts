@@ -97,7 +97,8 @@ test("packed Standard whole layout reflows at +1 and -1 instead of rigidly rejec
     const result = buildWholeLayoutReflow({ ...common(roof, initial.panels, delta), modules: initial.modules });
     assert.ok(result);
     assert.ok(result.panels.length > 0);
-    assert.equal(result.modules?.perRoofAngles?.[roof.id], (360 + delta) % 360);
+    assert.equal(result.modules?.perRoofAngleOffsets?.[roof.id], (360 + delta) % 360);
+    assert.equal(result.modules?.perRoofAngles?.[roof.id], undefined);
     assert.ok(result.panels.every((panel) => panel.angleDeg === (360 + delta) % 360));
     assert.equal("generatedLayoutFingerprint" in result.surfacePlanning, false);
   }
@@ -114,6 +115,27 @@ test("Standard whole ±90 reflow preserves Hochformat or Querformat", () => {
       assert.equal(result.modules?.orientation, orientation);
     }
   }
+});
+
+test("explicit FIRST change reflows from the new base and preserves the relative offset", () => {
+  const initial = initialStandard();
+  const nextRoof = {
+    ...PITCHED,
+    referenceEdgeIndex: 1,
+    surfacePlanning: initial.config,
+  };
+  const result = buildWholeLayoutReflow({
+    ...common(nextRoof, initial.panels, 0),
+    modules: {
+      ...initial.modules,
+      perRoofAngleOffsets: { [PITCHED.id]: 0 },
+    },
+    standardTargetAngleDeg: 90,
+  });
+  assert.ok(result);
+  assert.ok(result.panels.length > 0);
+  assert.ok(result.panels.every((panel) => panel.angleDeg === 90));
+  assert.equal(result.modules?.perRoofAngleOffsets?.[PITCHED.id], 0);
 });
 
 function initialAdvanced(orientation: "south" | "east-west") {

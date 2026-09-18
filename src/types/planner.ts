@@ -127,6 +127,13 @@ export type ModulesConfig = {
 
     /** 0.5 = metà tetto, 0.75 = 3/4, 1 = tutto */
     coverageRatio?: number;
+    /**
+     * Relative clockwise rotation from the canonical pitched-roof FIRST frame.
+     * New layouts use this representation so changing FIRST recomputes the
+     * absolute panel angle without losing the user's fine adjustment.
+     */
+    perRoofAngleOffsets?: Record<string, number>;
+    /** Legacy absolute canvas angles. Kept for load compatibility. */
     perRoofAngles?: Record<string, number>;
 };
 

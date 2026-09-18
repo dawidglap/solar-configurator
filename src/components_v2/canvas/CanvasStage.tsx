@@ -20,7 +20,7 @@ import ScaleIndicator from "./ScaleIndicator";
 import SonnendachOverlayKonva from "./SonnendachOverlayKonva";
 import OrientationHUD from "./OrientationHUD";
 import ModulesPreview from "../modules/ModulesPreview";
-import { resolvePitchedRoofDownhillAzimuth } from "../modules/panels/moduleSlope";
+import { PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG } from "../modules/panels/moduleSlope";
 import ManualPlacementLayer from "../modules/ManualPlacementLayer";
 import { endManualPlacement, useManualPlacementSession } from "../modules/manualPlacementSession";
 import AdvancedPreviewLayer from "../modules/advanced/AdvancedPreviewLayer";
@@ -452,6 +452,7 @@ export default function CanvasStage() {
       roofPolygon: selectedRoof.points,
       legacyRoofAzimuthDeg: selectedRoof.azimuthDeg,
       gridAngleDeg: standardPreviewModules.gridAngleDeg,
+      perRoofAngleOffsets: standardPreviewModules.perRoofAngleOffsets,
       perRoofAngles: standardPreviewModules.perRoofAngles,
       referenceEdgeIndex: selectedRoof.referenceEdgeIndex,
     })
@@ -1462,7 +1463,7 @@ export default function CanvasStage() {
                       polygon={selectedRoof.points}
                       mppImage={snap.mppImage}
                       azimuthDeg={gridDeg}
-                      slopeArrowAzimuthDeg={resolvePitchedRoofDownhillAzimuth(selectedRoof)}
+                      slopeArrowLocalOffsetDeg={PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG}
                       orientation={standardPreviewModules.orientation}
                       panelSizeM={{ w: standardPreviewPanel.widthM, h: standardPreviewPanel.heightM }}
                       spacingM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).x}

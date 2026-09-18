@@ -36,6 +36,7 @@ export function defaultStoreData() {
       gridAnchorX: "start",
       gridAnchorY: "start",
       coverageRatio: 1,
+      perRoofAngleOffsets: {},
       perRoofAngles: {},
     },
 

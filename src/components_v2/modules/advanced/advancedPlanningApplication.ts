@@ -269,6 +269,7 @@ function normalizeAzimuth(value: number): number {
 function cloneModules(modules: ModulesConfig): ModulesConfig {
   return {
     ...modules,
+    perRoofAngleOffsets: { ...(modules.perRoofAngleOffsets ?? {}) },
     perRoofAngles: { ...(modules.perRoofAngles ?? {}) },
   };
 }
@@ -410,10 +411,13 @@ export function alignStandardModulesParallelToFirst(input: {
   roofId: string;
 }): ModulesConfig {
   const perRoofAngles = { ...(input.modules.perRoofAngles ?? {}) };
+  const perRoofAngleOffsets = { ...(input.modules.perRoofAngleOffsets ?? {}) };
   delete perRoofAngles[input.roofId];
+  delete perRoofAngleOffsets[input.roofId];
   return {
     ...input.modules,
     gridAngleDeg: 0,
+    perRoofAngleOffsets,
     perRoofAngles,
   };
 }
@@ -945,7 +949,9 @@ export function applyConfirmedRoofKindChange<
   const roofPlanningDrafts = { ...input.roofPlanningDrafts };
   delete roofPlanningDrafts[input.roofId];
   const perRoofAngles = { ...(input.modules.perRoofAngles ?? {}) };
+  const perRoofAngleOffsets = { ...(input.modules.perRoofAngleOffsets ?? {}) };
   delete perRoofAngles[input.roofId];
+  delete perRoofAngleOffsets[input.roofId];
 
   return {
     roofs: input.roofs.map((roof) => {
@@ -976,6 +982,7 @@ export function applyConfirmedRoofKindChange<
     modules: {
       ...input.modules,
       placingSingle: false,
+      perRoofAngleOffsets,
       perRoofAngles,
     },
   };
@@ -1836,6 +1843,7 @@ function computeStandardDraftPanelResult(
         roofPolygon: input.roof.points,
         legacyRoofAzimuthDeg: input.roof.azimuthDeg,
         gridAngleDeg: input.modules.gridAngleDeg,
+        perRoofAngleOffsets: input.modules.perRoofAngleOffsets,
         perRoofAngles: input.modules.perRoofAngles,
         referenceEdgeIndex: input.roof.referenceEdgeIndex,
       }),

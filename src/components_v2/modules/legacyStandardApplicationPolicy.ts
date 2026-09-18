@@ -75,24 +75,27 @@ export function resolveStandardAutoLayoutCanvasAngle(input: {
   roofPolygon: LegacyPoint[];
   legacyRoofAzimuthDeg?: number;
   gridAngleDeg?: number;
+  perRoofAngleOffsets?: Readonly<Record<string, number | undefined>> | null;
   perRoofAngles?: Readonly<Record<string, number | undefined>> | null;
   referenceEdgeIndex?: number;
 }): number {
+  const relativeOffsetDeg = input.perRoofAngleOffsets?.[input.roofId];
+  const firstFrameAngleDeg = resolveStandardFirstFrameCanvasAngle({
+    roofPolygon: input.roofPolygon,
+    referenceEdgeIndex: input.referenceEdgeIndex,
+  });
+  if (typeof relativeOffsetDeg === "number" && firstFrameAngleDeg !== undefined) {
+    return ((firstFrameAngleDeg + relativeOffsetDeg) % 360 + 360) % 360;
+  }
+
+  // Existing documents persisted an absolute world/canvas angle. Continue to
+  // honour it until an explicit alignment/reflow action writes the new offset.
   const roofOverrideDeg = input.perRoofAngles?.[input.roofId];
   if (typeof roofOverrideDeg === "number") return roofOverrideDeg;
 
-  const edge = resolveCanonicalRoofReferenceEdge({
-    points: input.roofPolygon,
-    requestedIndex: input.referenceEdgeIndex,
-    roofKind: "pitched",
-  });
-  if (edge) {
-    const left = getCanonicalLeftEndOfEdge(edge);
-    const right = left === edge.start ? edge.end : edge.start;
-    return (
-      (Math.atan2(right.y - left.y, right.x - left.x) * 180) / Math.PI +
-      (typeof input.gridAngleDeg === "number" ? input.gridAngleDeg : 0)
-    );
+  if (firstFrameAngleDeg !== undefined) {
+    return firstFrameAngleDeg +
+      (typeof input.gridAngleDeg === "number" ? input.gridAngleDeg : 0);
   }
 
   return resolveLegacyStandardCanvasAngle({
@@ -100,6 +103,42 @@ export function resolveStandardAutoLayoutCanvasAngle(input: {
     legacyRoofAzimuthDeg: input.legacyRoofAzimuthDeg,
     gridAngleDeg: input.gridAngleDeg,
   });
+}
+
+function signedPolygonArea(points: readonly LegacyPoint[]): number {
+  let twiceArea = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    twiceArea += current.x * next.y - next.x * current.y;
+  }
+  return twiceArea / 2;
+}
+
+/**
+ * Canonical Schrägdach base frame.
+ *
+ * A panel at this angle has its local +Y axis facing from FIRST into the roof.
+ * FIRST endpoint order is irrelevant: polygon winding chooses the inward
+ * normal and the resulting tangent is reconstructed from that normal.
+ */
+export function resolveStandardFirstFrameCanvasAngle(input: {
+  roofPolygon: LegacyPoint[];
+  referenceEdgeIndex?: number;
+}): number | undefined {
+  const edge = resolveCanonicalRoofReferenceEdge({
+    points: input.roofPolygon,
+    requestedIndex: input.referenceEdgeIndex,
+    roofKind: "pitched",
+  });
+  if (!edge) return undefined;
+  const rightNormal = { x: -edge.direction.y, y: edge.direction.x };
+  const inward = signedPolygonArea(input.roofPolygon) >= 0
+    ? rightNormal
+    : { x: -rightNormal.x, y: -rightNormal.y };
+  // local +Y at rotation r is (-sin(r), cos(r)); solve it from inward.
+  const angleDeg = (Math.atan2(-inward.x, inward.y) * 180) / Math.PI;
+  return Object.is(angleDeg, -0) ? 0 : angleDeg;
 }
 
 export type StandardAutoLayoutReferenceFrame = {
@@ -133,22 +172,25 @@ export function resolveStandardAutoLayoutReferenceFrame(input: {
     x: (other.x - origin.x) / length,
     y: (other.y - origin.y) / length,
   };
-  const rightNormal = { x: -alongFirst.y, y: alongFirst.x };
+  const rightNormal = { x: -edge.direction.y, y: edge.direction.x };
+  const polygonInward = signedPolygonArea(input.roofPolygon) >= 0
+    ? rightNormal
+    : { x: -rightNormal.x, y: -rightNormal.y };
   const fallAzimuthDeg = input.fallAzimuthDeg;
   if (typeof fallAzimuthDeg !== "number" || !Number.isFinite(fallAzimuthDeg)) {
-    return { origin, alongFirst, downhill: rightNormal };
+    return { origin, alongFirst, downhill: polygonInward };
   }
 
   const radians = (fallAzimuthDeg * Math.PI) / 180;
   const requestedFall = { x: Math.sin(radians), y: -Math.cos(radians) };
-  const useRightNormal =
-    rightNormal.x * requestedFall.x + rightNormal.y * requestedFall.y >= 0;
+  const opposite = { x: -polygonInward.x, y: -polygonInward.y };
+  const useInward =
+    polygonInward.x * requestedFall.x + polygonInward.y * requestedFall.y >=
+    opposite.x * requestedFall.x + opposite.y * requestedFall.y;
   return {
     origin,
     alongFirst,
-    downhill: useRightNormal
-      ? rightNormal
-      : { x: -rightNormal.x, y: -rightNormal.y },
+    downhill: useInward ? polygonInward : opposite,
   };
 }
 

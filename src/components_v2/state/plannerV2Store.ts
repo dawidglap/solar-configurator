@@ -135,6 +135,7 @@ function createDefaultModules(
     gridAnchorX: 'start',
     gridAnchorY: 'start',
     coverageRatio: 1,
+    perRoofAngleOffsets: {},
     perRoofAngles: {},
   };
 }
@@ -390,6 +391,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             gridPhaseX: 0,
             gridPhaseY: 0,
             coverageRatio: 1,
+            perRoofAngleOffsets: {},
             perRoofAngles: {},
           },
           roofPlanningDrafts: {},
@@ -578,6 +580,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         set((s) => {
           const prev = s.modules || {};
           const prevAngles = { ...(prev.perRoofAngles || {}) };
+          const prevAngleOffsets = { ...(prev.perRoofAngleOffsets || {}) };
 
           let nextPerRoof = prevAngles;
           if (patch.perRoofAngles) {
@@ -590,12 +593,23 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             }
           }
 
+          let nextPerRoofOffsets = prevAngleOffsets;
+          if (patch.perRoofAngleOffsets) {
+            for (const [roofId, val] of Object.entries(patch.perRoofAngleOffsets)) {
+              if (val === undefined) delete nextPerRoofOffsets[roofId];
+              else nextPerRoofOffsets[roofId] = val;
+            }
+          }
+
           return {
             modules: {
               ...prev,
               ...patch,
               ...(patch.perRoofAngles
                 ? { perRoofAngles: nextPerRoof }
+                : {}),
+              ...(patch.perRoofAngleOffsets
+                ? { perRoofAngleOffsets: nextPerRoofOffsets }
                 : {}),
             },
           };

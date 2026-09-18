@@ -17,8 +17,8 @@ import { plannerTheme } from "../theme/plannerTheme";
 import ModuleSprite from "./ModuleSprite";
 import ModuleSlopeArrow from "./panels/ModuleSlopeArrow";
 import {
+  PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG,
   resolveOutwardBlockArrowAzimuths,
-  resolvePitchedRoofDownhillAzimuth,
 } from "./panels/moduleSlope";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import {
@@ -134,6 +134,7 @@ export default function ManualPlacementLayer({
       roofPolygon: roof.points,
       legacyRoofAzimuthDeg: roof.azimuthDeg,
       gridAngleDeg: standardModules.gridAngleDeg,
+      perRoofAngleOffsets: standardModules.perRoofAngleOffsets,
       perRoofAngles: standardModules.perRoofAngles,
       referenceEdgeIndex: roof.referenceEdgeIndex,
     });
@@ -320,8 +321,8 @@ export default function ManualPlacementLayer({
         cy: module.cy,
       })))
     : new Map<string, number>();
-  const pitchedRoofArrowAzimuthDeg = session.kind === "standard-module"
-    ? resolvePitchedRoofDownhillAzimuth(roof)
+  const pitchedArrowLocalOffsetDeg = session.kind === "standard-module"
+    ? PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG
     : undefined;
   const stroke = valid ? plannerTheme.primary : plannerTheme.danger;
   const inverseScale = 1 / Math.max(stageScale, 0.01);
@@ -376,7 +377,8 @@ export default function ManualPlacementLayer({
                   wPx={module.wPx}
                   hPx={module.hPx}
                   panelRotationDeg={module.angleDeg}
-                  arrowAzimuthDeg={candidateArrowAzimuths.get(String(module.slotIndex)) ?? pitchedRoofArrowAzimuthDeg}
+                  arrowAzimuthDeg={candidateArrowAzimuths.get(String(module.slotIndex))}
+                  localArrowOffsetDeg={pitchedArrowLocalOffsetDeg}
                 />
               </Group>
             );

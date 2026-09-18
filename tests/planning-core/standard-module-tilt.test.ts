@@ -118,11 +118,13 @@ test("Parallel zum First clears only the selected roof override and preserves le
     modules: {
       ...modules,
       gridAngleDeg: 12,
+      perRoofAngleOffsets: { "roof-pitched": 90, "roof-other": 15 },
       perRoofAngles: { "roof-pitched": 128, "roof-other": 42 },
       gridPhaseX: 0.25,
     },
   });
   assert.equal(aligned.gridAngleDeg, 0);
+  assert.deepEqual(aligned.perRoofAngleOffsets, { "roof-other": 15 });
   assert.deepEqual(aligned.perRoofAngles, { "roof-other": 42 });
   assert.equal(aligned.gridPhaseX, 0.25);
 });
@@ -183,7 +185,11 @@ test("tilt and fine-adjustment drafts do not mutate committed Standard panels", 
   usePlannerV2Store.setState({ layers: [roof], panels: [committedPanel], roofPlanningDrafts: {} });
   usePlannerV2Store.getState().setRoofPlanningDraft(roof.id, createStandardPlanningDraft({
     panelSpecId: "panel-1",
-    modules: { ...modules, gridPhaseX: 0.5, perRoofAngles: { [roof.id]: 128 } },
+    modules: {
+      ...modules,
+      gridPhaseX: 0.5,
+      perRoofAngles: { [roof.id]: 128 },
+    },
     moduleTilt: { mode: "custom", customTiltDeg: 15 },
   }));
   assert.deepEqual(usePlannerV2Store.getState().panels, [committedPanel]);

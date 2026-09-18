@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import { nanoid } from "nanoid";
+import toast from "react-hot-toast";
 
 import {
   MAX_EDITABLE_ROOF_DIMENSION_M,
@@ -21,6 +23,12 @@ import { usePlannerV2Store } from "../state/plannerV2Store";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import NumericFieldWithSuffix from "../ui/NumericFieldWithSuffix";
 import { formatDisplayAngleDeg } from "../roof/angleDisplay";
+import {
+  resolveStandardAutoLayoutCanvasAngle,
+  resolveStandardFirstFrameCanvasAngle,
+} from "../modules/legacyStandardApplicationPolicy";
+import { buildWholeLayoutReflow } from "../modules/panels/wholeLayoutReflow";
+import { history as plannerHistory } from "../state/history";
 
 const controlClass =
   "glass-input h-9 w-full rounded-lg px-3 py-0 text-[11px] leading-none focus:ring-1 focus:ring-primary/40";
@@ -52,6 +60,8 @@ export default function RoofDimensionsControl({
   const mppImage = usePlannerV2Store((state) => state.snapshot.mppImage);
   const panels = usePlannerV2Store((state) => state.panels);
   const updateRoof = usePlannerV2Store((state) => state.updateRoof);
+  const modules = usePlannerV2Store((state) => state.modules);
+  const setModules = usePlannerV2Store((state) => state.setModules);
   const planning = resolveSurfacePlanning(roof.surfacePlanning);
   const planningMatchesRoofKind =
     (planning.status === "supported-advanced" || planning.status === "supported-standard") &&
@@ -114,6 +124,80 @@ export default function RoofDimensionsControl({
     return EDGE_ROLE_LABELS[role] ?? `Kante ${edgeIndex + 1}`;
   };
   const formatDimensionM = (value: number) => `${dimensionFormatter.format(value)} m`;
+  const changeReferenceEdge = (nextReferenceEdgeIndex: number) => {
+    let nextModules = modules;
+    if (roofKind === "pitched") {
+      const oldBase = resolveStandardFirstFrameCanvasAngle({
+        roofPolygon: roof.points,
+        referenceEdgeIndex,
+      });
+      if (oldBase !== undefined) {
+        const currentAngle = resolveStandardAutoLayoutCanvasAngle({
+          roofId: roof.id,
+          roofPolygon: roof.points,
+          legacyRoofAzimuthDeg: roof.azimuthDeg,
+          gridAngleDeg: modules.gridAngleDeg,
+          perRoofAngleOffsets: modules.perRoofAngleOffsets,
+          perRoofAngles: modules.perRoofAngles,
+          referenceEdgeIndex,
+        });
+        nextModules = {
+          ...modules,
+          perRoofAngleOffsets: {
+            ...(modules.perRoofAngleOffsets ?? {}),
+            [roof.id]: ((currentAngle - oldBase) % 360 + 360) % 360,
+          },
+        };
+      }
+    }
+    const nextRoof = { ...roof, referenceEdgeIndex: nextReferenceEdgeIndex };
+    const roofPanels = panels.filter((panel) => panel.roofId === roof.id);
+    if (roofKind !== "pitched" || roofPanels.length === 0) {
+      if (nextModules !== modules) setModules(nextModules);
+      updateRoof(roof.id, { referenceEdgeIndex: nextReferenceEdgeIndex });
+      return;
+    }
+
+    const state = usePlannerV2Store.getState();
+    if (!(state.snapshot.mppImage && state.snapshot.mppImage > 0)) return;
+    const targetAngle = resolveStandardAutoLayoutCanvasAngle({
+      roofId: roof.id,
+      roofPolygon: roof.points,
+      legacyRoofAzimuthDeg: roof.azimuthDeg,
+      gridAngleDeg: nextModules.gridAngleDeg,
+      perRoofAngleOffsets: nextModules.perRoofAngleOffsets,
+      perRoofAngles: nextModules.perRoofAngles,
+      referenceEdgeIndex: nextReferenceEdgeIndex,
+    });
+    const runId = `first-${nanoid()}`;
+    const candidate = buildWholeLayoutReflow({
+      roof: nextRoof,
+      currentPanels: state.panels,
+      catalogPanels: state.catalogPanels,
+      selectedPanelId: state.selectedPanelId,
+      modules: nextModules,
+      companyPlannerDefaults: state.companyPlannerDefaults,
+      mppImage: state.snapshot.mppImage,
+      zones: state.zones,
+      snowGuards: state.snowGuards,
+      deltaDeg: 0,
+      standardTargetAngleDeg: targetAngle,
+      layoutRunId: runId,
+      createPanelId: (index) => `${roof.id}_${runId}_${index}`,
+    });
+    if (!candidate) {
+      toast.error("Mit diesem First ist keine gültige Belegung möglich.");
+      return;
+    }
+    plannerHistory.push("First ändern und Layout neu ausrichten");
+    updateRoof(roof.id, { referenceEdgeIndex: nextReferenceEdgeIndex });
+    state.commitRoofLayout({
+      roofId: roof.id,
+      panels: candidate.panels,
+      surfacePlanning: candidate.surfacePlanning,
+      modules: candidate.modules,
+    });
+  };
 
   React.useEffect(() => {
     setLengthInput(lengthValue);
@@ -169,9 +253,7 @@ export default function RoofDimensionsControl({
         id={`reference-edge-${roof.id}`}
         className={controlClass}
         value={referenceEdgeIndex ?? 0}
-        onChange={(event) =>
-          updateRoof(roof.id, { referenceEdgeIndex: Number(event.target.value) })
-        }
+        onChange={(event) => changeReferenceEdge(Number(event.target.value))}
       >
         {segments.map((segment) => (
           <option key={segment.segmentIndex} value={segment.segmentIndex}>
