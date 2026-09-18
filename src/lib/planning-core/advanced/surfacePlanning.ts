@@ -137,6 +137,21 @@ export type StandardModuleTiltInput =
   | { mode: "inherit-roof" }
   | { mode: "custom"; customTiltDeg: number };
 
+export type StandardModuleSpacingInput = {
+  /** Clear module-to-module gap along the layout-local column axis. */
+  horizontalM: number;
+  /** Clear module-to-module gap along the layout-local row axis. */
+  verticalM: number;
+};
+
+export const STANDARD_MODULE_SPACING_LIMITS_M = { min: 0, max: 0.5 } as const;
+
+export function isValidStandardModuleSpacingM(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) &&
+    value >= STANDARD_MODULE_SPACING_LIMITS_M.min &&
+    value <= STANDARD_MODULE_SPACING_LIMITS_M.max;
+}
+
 export type StandardPanelMetadata = {
   layoutMode: "standard";
   moduleTiltMode: StandardModuleTiltInput["mode"];
@@ -154,6 +169,8 @@ export type StandardSurfacePlanningV1 = {
   moduleTilt?: StandardModuleTiltInput;
   /** Explicit customer choice. Missing means that no safe mode was persisted. */
   moduleLayoutMode?: "portrait" | "landscape";
+  /** Roof-local override. Missing legacy values continue to resolve from ModulesConfig/company defaults. */
+  moduleSpacing?: StandardModuleSpacingInput;
   /** Audit baseline used only to protect generated layouts from destructive replacement. */
   generatedLayoutFingerprint?: string;
   /** Applied roof-local thermal limits. Missing on legacy documents. */
@@ -588,6 +605,20 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
     const moduleTilt = readStandardModuleTilt(value.moduleTilt, moduleTiltIssues);
     const thermalFieldLimits = readThermalFieldLimits(value.thermalFieldLimits, "pitched-grid", moduleTiltIssues);
     const moduleLayoutMode = value.moduleLayoutMode;
+    const moduleSpacing = value.moduleSpacing;
+    let resolvedModuleSpacing: StandardModuleSpacingInput | undefined;
+    if (moduleSpacing !== undefined) {
+      if (!isRecord(moduleSpacing) ||
+          !isValidStandardModuleSpacingM(moduleSpacing.horizontalM) ||
+          !isValidStandardModuleSpacingM(moduleSpacing.verticalM)) {
+        moduleTiltIssues.push(issue("moduleSpacing", "invalid-module-spacing", "Module spacing must be between 0 and 0.5 metres."));
+      } else {
+        resolvedModuleSpacing = {
+          horizontalM: moduleSpacing.horizontalM,
+          verticalM: moduleSpacing.verticalM,
+        };
+      }
+    }
     if (moduleLayoutMode !== undefined && moduleLayoutMode !== "portrait" && moduleLayoutMode !== "landscape") {
       moduleTiltIssues.push(issue("moduleLayoutMode", "invalid-module-layout-mode", "Module layout mode is invalid."));
     }
@@ -608,6 +639,7 @@ export function resolveSurfacePlanning(value: unknown): SurfacePlanningResolutio
         ...(moduleLayoutMode === "portrait" || moduleLayoutMode === "landscape"
           ? { moduleLayoutMode }
           : {}),
+        ...(resolvedModuleSpacing ? { moduleSpacing: resolvedModuleSpacing } : {}),
         ...(typeof value.generatedLayoutFingerprint === "string"
           ? { generatedLayoutFingerprint: value.generatedLayoutFingerprint }
           : {}),

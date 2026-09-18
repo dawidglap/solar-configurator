@@ -117,6 +117,11 @@ export function buildWholeLayoutReflow(input: {
     const targetAngle = normalizeDegrees(currentAngle + input.deltaDeg);
     const modules: ModulesConfig = {
       ...input.modules,
+      ...(config?.moduleSpacing ? {
+        spacingM: config.moduleSpacing.horizontalM,
+        spacingXM: config.moduleSpacing.horizontalM,
+        spacingYM: config.moduleSpacing.verticalM,
+      } : {}),
       orientation,
       perRoofAngles: {
         ...(input.modules.perRoofAngles ?? {}),

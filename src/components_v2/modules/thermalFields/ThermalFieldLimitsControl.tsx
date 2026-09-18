@@ -63,6 +63,16 @@ export default function ThermalFieldLimitsControl() {
       ? persisted.config
       : undefined;
   const standardDraft = draft?.targetMode === "standard" ? draft : undefined;
+  const standardModules = React.useMemo(() => {
+    if (standardDraft) return standardDraft.modules;
+    if (persisted.status !== "supported-standard" || !persisted.config.moduleSpacing) return modules;
+    return {
+      ...modules,
+      spacingM: persisted.config.moduleSpacing.horizontalM,
+      spacingXM: persisted.config.moduleSpacing.horizontalM,
+      spacingYM: persisted.config.moduleSpacing.verticalM,
+    };
+  }, [modules, persisted, standardDraft]);
   const isAdvanced = Boolean(advancedConfig);
   const opposing = advancedConfig
     ? advancedConfig.advanced.system.systemId === K2_D_DOME_SYSTEM_ID ||
@@ -99,7 +109,7 @@ export default function ThermalFieldLimitsControl() {
       const panelId = standardDraft?.panelSpecId ?? selectedPanelId;
       const panel = catalogPanels.find((item) => item.id === panelId);
       if (!panel) return null;
-      const displayedModules = standardDraft?.modules ?? modules;
+      const displayedModules = standardModules;
       const spacing = resolveStandardAutoLayoutSpacingAxes(displayedModules);
       const unitX = displayedModules.orientation === "portrait" ? panel.widthM : panel.heightM;
       const unitY = displayedModules.orientation === "portrait" ? panel.heightM : panel.widthM;
@@ -135,7 +145,7 @@ export default function ThermalFieldLimitsControl() {
       secondLabel: "Max. Reihen pro Feld",
       secondValue: resolveMaximumWholeUnits({ unitExtentM: unitY, regularPitchM: pitchY, fieldLimitM: limits.maxRailDirectionM }),
     };
-  }, [advancedConfig, advancedPreview, catalogPanels, limits, modules, mppImage, selectedPanelId, standardDraft]);
+  }, [advancedConfig, advancedPreview, catalogPanels, limits, mppImage, selectedPanelId, standardDraft, standardModules]);
 
   if (!roof || roof.id !== selectedId || (!isAdvanced && limits.kind !== "pitched-grid")) return null;
 
@@ -147,7 +157,7 @@ export default function ThermalFieldLimitsControl() {
     if (next.kind !== "pitched-grid") return;
     const base = standardDraft ?? createStandardPlanningDraft({
       panelSpecId: selectedPanelId,
-      modules,
+      modules: standardModules,
       moduleTilt: resolveStandardTiltInput(roof.surfacePlanning),
       thermalFieldLimits: next,
     });

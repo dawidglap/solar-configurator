@@ -200,7 +200,19 @@ export default function ModulesPanel() {
   const advancedConfig = selectedAdvancedConfig ?? implicitFlatConfig;
   const standardDraft =
     selectedDraft?.targetMode === "standard" ? selectedDraft : undefined;
-  const displayedModules = standardDraft?.modules ?? modules;
+  const committedRoofModules = React.useMemo(() => {
+    if (persistedPlanning.status !== "supported-standard" || !persistedPlanning.config.moduleSpacing) {
+      return modules;
+    }
+    const { horizontalM, verticalM } = persistedPlanning.config.moduleSpacing;
+    return {
+      ...modules,
+      spacingM: horizontalM,
+      spacingXM: horizontalM,
+      spacingYM: verticalM,
+    };
+  }, [modules, persistedPlanning]);
+  const displayedModules = standardDraft?.modules ?? committedRoofModules;
   const displayedSpacingXM =
     displayedModules.spacingXM ?? displayedModules.spacingM;
   const displayedSpacingYM =
@@ -263,9 +275,9 @@ export default function ModulesPanel() {
   const commitStandardGeometry = React.useCallback((input: {
     nextModules?: typeof modules;
     moduleTilt?: StandardModuleTiltInput;
-  }) => {
+  }, options?: { showGeometryError?: boolean }) => {
     if (!selectedRoof || !(snapshot.mppImage && snapshot.mppImage > 0)) return false;
-    const nextModules = input.nextModules ?? modules;
+    const nextModules = input.nextModules ?? displayedModules;
     const persisted = resolveSurfacePlanning(selectedRoof.surfacePlanning);
     const moduleTilt: StandardModuleTiltInput = input.moduleTilt ?? ((
       persisted.status === "supported-standard"
@@ -275,7 +287,7 @@ export default function ModulesPanel() {
     const candidate = buildStandardExistingLayoutReflow({
       roof: selectedRoof,
       currentPanels: panels,
-      previousModules: modules,
+      previousModules: displayedModules,
       nextModules,
       moduleTilt,
       thermalFieldLimits: displayedThermalLimits,
@@ -284,7 +296,9 @@ export default function ModulesPanel() {
       snowGuards,
     });
     if (!candidate) {
-      toast.error("Wert nicht übernommen: Die bestehende Belegung wäre ungültig.");
+      if (options?.showGeometryError !== false) {
+        toast.error("Abstand nicht übernommen: Die bestehende Belegung kann geometrisch nicht erhalten werden.");
+      }
       return false;
     }
     plannerHistory.push("Abstände ändern");
@@ -295,7 +309,7 @@ export default function ModulesPanel() {
       modules: candidate.modules,
     });
     return true;
-  }, [commitRoofLayout, displayedThermalLimits, displayedTiltInput, modules, panels, selectedRoof, snapshot.mppImage, snowGuards, zones]);
+  }, [commitRoofLayout, displayedModules, displayedThermalLimits, displayedTiltInput, panels, selectedRoof, snapshot.mppImage, snowGuards, zones]);
 
   const commitStandardSpacing = React.useCallback((axis: "x" | "y") => {
     const text = axis === "x" ? spacingXText : spacingYText;
@@ -303,6 +317,7 @@ export default function ModulesPanel() {
     if (!isValidModuleSpacingMm(mm)) {
       if (axis === "x") setSpacingXText(String(Math.round(displayedSpacingXM * 10000) / 10));
       else setSpacingYText(String(Math.round(displayedSpacingYM * 10000) / 10));
+      toast.error("Modulabstand muss zwischen 0 und 500 mm liegen.");
       return false;
     }
     const metres = mm / 1000;
@@ -459,7 +474,7 @@ export default function ModulesPanel() {
     if (mode === "portrait" || mode === "landscape") {
       const draft = standardDraft ?? createStandardPlanningDraft({
         panelSpecId: displayedPanelId,
-        modules,
+        modules: displayedModules,
         moduleTilt: displayedTiltInput,
         thermalFieldLimits: displayedThermalLimits,
       });
@@ -474,6 +489,10 @@ export default function ModulesPanel() {
           roof: selectedRoof,
           moduleTilt: nextDraft.moduleTilt,
           moduleLayoutMode: mode,
+          moduleSpacing: {
+            horizontalM: nextDraft.modules.spacingXM ?? nextDraft.modules.spacingM,
+            verticalM: nextDraft.modules.spacingYM ?? nextDraft.modules.spacingM,
+          },
           thermalFieldLimits: nextDraft.thermalFieldLimits,
         }),
       };
@@ -521,7 +540,7 @@ export default function ModulesPanel() {
       },
       surfacePlanning: config,
     };
-  }, [companyPlannerDefaults, displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selSpec, selectedAdvancedConfig, selectedRoof, snapshot.mppImage, standardDraft]);
+  }, [companyPlannerDefaults, displayedModules, displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selSpec, selectedAdvancedConfig, selectedRoof, snapshot.mppImage, standardDraft]);
 
   const requestModuleMode = useCallback((mode: "portrait" | "landscape" | "south" | "east-west") => {
     if (!selectedRoof || pendingLayoutMode) return;
@@ -1071,7 +1090,7 @@ export default function ModulesPanel() {
                 setRoofPlanningDraft(selectedRoof.id, {
                   ...(standardDraft ?? createStandardPlanningDraft({
                     panelSpecId: displayedPanelId,
-                    modules,
+                    modules: displayedModules,
                     moduleTilt: displayedTiltInput,
                     thermalFieldLimits: displayedThermalLimits.kind === "pitched-grid" ? displayedThermalLimits : undefined,
                   })),
@@ -1280,6 +1299,16 @@ export default function ModulesPanel() {
             Math.abs(displayedSpacingYM * 1000 - companyPlannerDefaults.moduleSpacing.verticalMm) > 0.05
           }
           onClose={() => setPitchedCompanyDefaultsOpen(false)}
+          onApplySavedDefaultsToCurrentRoof={(savedDefaults) =>
+            commitStandardGeometry({
+              nextModules: {
+                ...displayedModules,
+                spacingM: savedDefaults.horizontalMm / 1000,
+                spacingXM: savedDefaults.horizontalMm / 1000,
+                spacingYM: savedDefaults.verticalMm / 1000,
+              },
+            }, { showGeometryError: false })
+          }
           onResetCurrentRoof={() =>
             commitStandardGeometry({
               nextModules: {

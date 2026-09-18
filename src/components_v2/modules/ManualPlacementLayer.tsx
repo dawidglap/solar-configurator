@@ -252,6 +252,10 @@ export default function ManualPlacementLayer({
             roof,
             moduleTilt,
             moduleLayoutMode: standardModules.orientation,
+            moduleSpacing: {
+              horizontalM: standardModules.spacingXM ?? standardModules.spacingM,
+              verticalM: standardModules.spacingYM ?? standardModules.spacingM,
+            },
             thermalFieldLimits: standardThermalFieldLimits,
           }),
         });

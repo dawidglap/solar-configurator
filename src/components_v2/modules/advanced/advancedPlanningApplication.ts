@@ -37,6 +37,7 @@ import {
   type StandardPanelMetadata,
   type StandardSurfacePlanningV1,
   type SurfacePlanningV1,
+  type StandardModuleSpacingInput,
   type ThermalFieldLimits,
 } from "@/lib/planning-core/advanced";
 import {
@@ -365,6 +366,7 @@ export function buildStandardSurfacePlanning(input: {
   roof: RoofArea;
   moduleTilt: StandardModuleTiltInput;
   moduleLayoutMode?: "portrait" | "landscape";
+  moduleSpacing?: StandardModuleSpacingInput;
   generatedLayoutFingerprint?: string;
   thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
 }): StandardSurfacePlanningV1 {
@@ -380,6 +382,7 @@ export function buildStandardSurfacePlanning(input: {
     },
     moduleTilt: input.moduleTilt,
     ...(input.moduleLayoutMode ? { moduleLayoutMode: input.moduleLayoutMode } : {}),
+    ...(input.moduleSpacing ? { moduleSpacing: input.moduleSpacing } : {}),
     ...(input.generatedLayoutFingerprint
       ? { generatedLayoutFingerprint: input.generatedLayoutFingerprint }
       : {}),
@@ -1968,6 +1971,10 @@ export function buildDirectStandardRoofLayout(input: {
       roof: input.roof,
       moduleTilt: input.moduleTilt,
       moduleLayoutMode: input.orientation,
+      moduleSpacing: {
+        horizontalM: modules.spacingXM ?? modules.spacingM,
+        verticalM: modules.spacingYM ?? modules.spacingM,
+      },
       thermalFieldLimits: input.thermalFieldLimits,
     }),
   });

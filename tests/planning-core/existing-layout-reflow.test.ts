@@ -345,6 +345,63 @@ for (const orientation of ["portrait", "landscape"] as const) {
     assert.ok(Math.abs(smallestAxisGapM(vertical.panels, "x", mppImage) - 0.02) < 1e-6);
     assert.ok(Math.abs(smallestAxisGapM(vertical.panels, "y", mppImage) - 0.1) < 1e-6);
   });
+
+  test(`Schrägdach ${orientation} applies 80/100 mm -> 19/19 mm atomically`, () => {
+    const mppImage = 0.1;
+    const previousModules = {
+      ...MODULES,
+      orientation,
+      spacingM: 0.08,
+      spacingXM: 0.08,
+      spacingYM: 0.1,
+    };
+    const widthM = orientation === "portrait" ? PANEL.widthM : PANEL.heightM;
+    const heightM = orientation === "portrait" ? PANEL.heightM : PANEL.widthM;
+    const currentPanels = Array.from({ length: 4 }, (_, index) => {
+      const column = index % 2;
+      const row = Math.floor(index / 2);
+      return {
+        id: `reported-${orientation}-${index}`,
+        roofId: PITCHED_ROOF.id,
+        panelId: PANEL.id,
+        cx: 80 + column * (widthM + 0.08) / mppImage,
+        cy: 80 + row * (heightM + 0.1) / mppImage,
+        wPx: widthM / mppImage,
+        hPx: heightM / mppImage,
+        angleDeg: 0,
+        orientation,
+      };
+    });
+    assert.ok(Math.abs(smallestAxisGapM(currentPanels, "x", mppImage) - 0.08) < 1e-6);
+    assert.ok(Math.abs(smallestAxisGapM(currentPanels, "y", mppImage) - 0.1) < 1e-6);
+
+    const result = buildStandardExistingLayoutReflow({
+      roof: PITCHED_ROOF,
+      currentPanels,
+      previousModules,
+      nextModules: {
+        ...previousModules,
+        spacingM: 0.019,
+        spacingXM: 0.019,
+        spacingYM: 0.019,
+      },
+      moduleTilt: { mode: "inherit-roof" },
+      thermalFieldLimits: PITCHED_THERMAL_LIMITS,
+      mppImage,
+      zones: [],
+      snowGuards: [],
+    });
+    assert.ok(result);
+    assert.deepEqual(result.panels.map((panel) => panel.id), currentPanels.map((panel) => panel.id));
+    assert.ok(Math.abs(smallestAxisGapM(result.panels, "x", mppImage) - 0.019) < 1e-6);
+    assert.ok(Math.abs(smallestAxisGapM(result.panels, "y", mppImage) - 0.019) < 1e-6);
+    const resolved = resolveSurfacePlanning(result.surfacePlanning);
+    assert.equal(resolved.status, "supported-standard");
+    assert.deepEqual(
+      resolved.status === "supported-standard" ? resolved.config.moduleSpacing : undefined,
+      { horizontalM: 0.019, verticalM: 0.019 },
+    );
+  });
 }
 
 test("legacy/unsupported planning resolution is not changed by the pure reflow helper", () => {

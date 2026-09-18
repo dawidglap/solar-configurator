@@ -33,6 +33,10 @@ type Props = {
   | {
       scope: "pitched";
       defaults: CompanyPlannerDefaultsV1["moduleSpacing"];
+      /** Runs only after the authenticated company save succeeded. */
+      onApplySavedDefaultsToCurrentRoof?: (
+        defaults: CompanyPlannerDefaultsV1["moduleSpacing"],
+      ) => boolean;
     }
 );
 
@@ -114,6 +118,7 @@ export default function CompanySpacingDefaultsDialog(props: Props) {
   const save = async () => {
     const current = query.data?.plannerDefaults ?? usePlannerV2Store.getState().companyPlannerDefaults;
     let plannerDefaults: CompanyPlannerDefaultsV1;
+    let savedPitchedValues: CompanyPlannerDefaultsV1["moduleSpacing"] | undefined;
     if (pitched) {
       const nextValues = {
         horizontalMm: Number(values.horizontalMm.replace(",", ".")),
@@ -123,6 +128,7 @@ export default function CompanySpacingDefaultsDialog(props: Props) {
         toast.error("Bitte gültige Firmenstandards eingeben.");
         return;
       }
+      savedPitchedValues = nextValues;
       plannerDefaults = { ...current, moduleSpacing: nextValues };
     } else {
       const nextValues: CompanyFlatRoofSpacingDefaults = {
@@ -163,7 +169,17 @@ export default function CompanySpacingDefaultsDialog(props: Props) {
       queryClient.setQueryData(["company-planner-defaults"], data);
       onBeforeCompanyDefaultsUpdate?.();
       setCompanyPlannerDefaults(data.plannerDefaults);
-      toast.success("Firmenstandard gespeichert");
+      const appliedToCurrentRoof = pitched && savedPitchedValues && props.onApplySavedDefaultsToCurrentRoof
+        ? props.onApplySavedDefaultsToCurrentRoof(savedPitchedValues)
+        : true;
+      if (appliedToCurrentRoof) {
+        toast.success(pitched && props.onApplySavedDefaultsToCurrentRoof
+          ? "Firmenstandard gespeichert und auf die Dachfläche angewendet"
+          : "Firmenstandard gespeichert");
+      } else {
+        toast.success("Firmenstandard gespeichert");
+        toast.error("Die aktuelle Dachfläche konnte wegen ihrer Geometrie nicht aktualisiert werden.");
+      }
       onClose();
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Speichern fehlgeschlagen.");
@@ -230,7 +246,7 @@ export default function CompanySpacingDefaultsDialog(props: Props) {
           </p>
         )}
 
-        {differsFromCurrentRoof && (
+        {!pitched && differsFromCurrentRoof && (
           <button
             type="button"
             onClick={() => {

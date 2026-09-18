@@ -290,6 +290,10 @@ export function buildStandardExistingLayoutReflow(input: {
     roof: input.roof,
     moduleTilt: input.moduleTilt,
     moduleLayoutMode: input.nextModules.orientation,
+    moduleSpacing: {
+      horizontalM: input.nextModules.spacingXM ?? input.nextModules.spacingM,
+      verticalM: input.nextModules.spacingYM ?? input.nextModules.spacingM,
+    },
     thermalFieldLimits: input.thermalFieldLimits,
   }));
   if (!roofPanels.length) return { panels: [], surfacePlanning: config, modules: input.nextModules };

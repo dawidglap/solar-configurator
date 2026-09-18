@@ -1,3 +1,8 @@
+import {
+  STANDARD_MODULE_SPACING_LIMITS_M,
+  isValidStandardModuleSpacingM,
+} from "@/lib/planning-core/advanced";
+
 export const COMPANY_PLANNER_DEFAULTS_SCHEMA_VERSION = 1 as const;
 
 /**
@@ -44,8 +49,8 @@ export const BUILT_IN_COMPANY_PLANNER_DEFAULTS = {
 } as const;
 
 export const COMPANY_MODULE_SPACING_LIMITS_MM = {
-  min: 0,
-  max: 500,
+  min: STANDARD_MODULE_SPACING_LIMITS_M.min * 1000,
+  max: STANDARD_MODULE_SPACING_LIMITS_M.max * 1000,
 } as const;
 
 export const COMPANY_THERMAL_FIELD_LIMITS_M = {
@@ -65,12 +70,7 @@ export type CompanyFlatRoofSpacingDefaults = {
 };
 
 export function isValidModuleSpacingMm(value: unknown): value is number {
-  return (
-    typeof value === "number" &&
-    Number.isFinite(value) &&
-    value >= COMPANY_MODULE_SPACING_LIMITS_MM.min &&
-    value <= COMPANY_MODULE_SPACING_LIMITS_MM.max
-  );
+  return typeof value === "number" && isValidStandardModuleSpacingM(value / 1000);
 }
 
 export type CompanyPlannerDefaultsV1 = {

@@ -187,6 +187,10 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
               roof,
               moduleTilt: activeDraft.moduleTilt,
               moduleLayoutMode: activeDraft.modules.orientation,
+              moduleSpacing: {
+                horizontalM: activeDraft.modules.spacingXM ?? activeDraft.modules.spacingM,
+                verticalM: activeDraft.modules.spacingYM ?? activeDraft.modules.spacingM,
+              },
               thermalFieldLimits: activeDraft.thermalFieldLimits,
             }));
             state.clearRoofPlanningDraft(roofId);

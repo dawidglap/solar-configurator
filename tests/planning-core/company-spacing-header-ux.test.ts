@@ -40,4 +40,9 @@ test("Schrägdach Firmenstandard opens the shared tenant-scoped dialog with H/V 
   assert.match(dialog, /horizontalMm/);
   assert.match(dialog, /verticalMm/);
   assert.match(dialog, /plannerDefaults = \{ \.\.\.current, moduleSpacing: nextValues \}/);
+  assert.match(standardPanel, /onApplySavedDefaultsToCurrentRoof/);
+  assert.match(standardPanel, /spacingXM: savedDefaults\.horizontalMm \/ 1000/);
+  assert.match(standardPanel, /spacingYM: savedDefaults\.verticalMm \/ 1000/);
+  assert.match(dialog, /!pitched && differsFromCurrentRoof/);
+  assert.match(dialog, /Firmenstandard gespeichert und auf die Dachfläche angewendet/);
 });

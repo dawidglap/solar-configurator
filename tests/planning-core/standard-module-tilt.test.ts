@@ -63,6 +63,30 @@ test("custom Standard tilt survives canonical JSON save/load", () => {
   }).effectiveTiltDeg, 17);
 });
 
+test("roof-local Schrägdach H/V spacing survives canonical JSON save/load", () => {
+  const config = buildStandardSurfacePlanning({
+    roof,
+    moduleTilt: { mode: "inherit-roof" },
+    moduleSpacing: { horizontalM: 0.019, verticalM: 0.027 },
+  });
+  const loaded = resolveSurfacePlanning(JSON.parse(JSON.stringify(config)));
+  assert.equal(loaded.status, "supported-standard");
+  assert.deepEqual(
+    loaded.status === "supported-standard" ? loaded.config.moduleSpacing : undefined,
+    { horizontalM: 0.019, verticalM: 0.027 },
+  );
+});
+
+test("legacy Standard configs without roof-local spacing remain valid without migration", () => {
+  const config = buildStandardSurfacePlanning({
+    roof,
+    moduleTilt: { mode: "inherit-roof" },
+  });
+  const loaded = resolveSurfacePlanning(JSON.parse(JSON.stringify(config)));
+  assert.equal(loaded.status, "supported-standard");
+  assert.equal(loaded.status === "supported-standard" ? loaded.config.moduleSpacing : undefined, undefined);
+});
+
 test("invalid custom Standard tilt is rejected structurally", () => {
   const config = buildStandardSurfacePlanning({ roof, moduleTilt: { mode: "inherit-roof" } });
   const loaded = resolveSurfacePlanning({ ...config, moduleTilt: { mode: "custom", customTiltDeg: -1 } });
