@@ -7,6 +7,7 @@ export {
 export {
   computeLegacyStandardCandidates,
   computeMaximizedLegacyStandardCandidates,
+  isLegacyStandardCandidateInsideUsableRoof,
 } from "./generateLegacyStandardCandidates";
 export type {
   LegacyGridAnchor,

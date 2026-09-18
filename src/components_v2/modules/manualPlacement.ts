@@ -159,11 +159,11 @@ function convexHull(points: readonly MetricPoint[]): MetricPolygon {
 }
 
 /**
- * Prepares all static geometry once for a paste search. The returned closure
- * reads no store and performs no mutations; deleted panels are absent as soon
- * as the caller supplies the current committed PanelInstance array.
+ * Prepares the canonical static placement geometry once. The returned closure
+ * reads no store and performs no mutations; callers can use it for generation,
+ * paste, drag or any other atomic panel-placement decision.
  */
-export function createPanelPastePlacementValidator(input: {
+export function createPanelPlacementValidator(input: {
   roof: RoofArea;
   marginM: number;
   mppImage: number;
@@ -274,6 +274,9 @@ export function createPanelPastePlacementValidator(input: {
     });
   };
 }
+
+/** Backward-compatible name for clipboard callers. */
+export const createPanelPastePlacementValidator = createPanelPlacementValidator;
 
 function validate(input: {
   footprintM: MetricPolygon;

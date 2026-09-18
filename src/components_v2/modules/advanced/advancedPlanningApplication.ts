@@ -69,6 +69,7 @@ import {
   STANDARD_AUTO_LAYOUT_POLICY,
 } from "../legacyStandardApplicationPolicy";
 import { resolveRoofFallAzimuth } from "../../roof/roofOrientation";
+import { createPanelPlacementValidator } from "../manualPlacement";
 
 export type AdvancedMountingOrientation = "south" | "east-west";
 export type RoofModuleMode = "portrait" | "landscape" | "south" | "east-west";
@@ -1953,8 +1954,10 @@ export function buildDirectStandardRoofLayout(input: {
     panel: input.panel,
     modules,
     mppImage: input.mppImage,
-    zones: input.zones,
-    snowGuards: input.snowGuards,
+    zones: (input.zones ?? []).flatMap((zone) =>
+      zone.points ? [{ roofId: zone.roofId, type: zone.type, points: zone.points }] : [],
+    ),
+    snowGuards: input.snowGuards ?? [],
     thermalFieldLimits: input.thermalFieldLimits,
     panelMetadata: buildStandardPanelMetadata({
       roofSlopeDeg: input.roof.tiltDeg,
@@ -1964,6 +1967,21 @@ export function buildDirectStandardRoofLayout(input: {
   }, input.maximizeCoverage === true);
   const panels = generated.panels;
   if (!panels.length) return null;
+  const placementIsValid = createPanelPlacementValidator({
+    roof: input.roof,
+    marginM: resolveRoofEdgeMarginM(input.roof, modules.marginM),
+    mppImage: input.mppImage,
+    zones: (input.zones ?? []).flatMap((zone) =>
+      zone.points ? [{ roofId: zone.roofId, type: zone.type, points: zone.points }] : [],
+    ),
+    snowGuards: input.snowGuards ?? [],
+    panels: [],
+    moduleGapXM: modules.spacingXM ?? modules.spacingM,
+    moduleGapYM: modules.spacingYM ?? modules.spacingM,
+  });
+  // Defense in depth: generation is polygon-safe already, but no Standard
+  // bulk materialization may reach Zustand if a future generator regresses.
+  if (!placementIsValid(panels)) return null;
   const config = withGeneratedLayoutFingerprint({
     roofId: input.roof.id,
     panels,

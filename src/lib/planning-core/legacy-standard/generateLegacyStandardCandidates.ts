@@ -5,6 +5,12 @@ import type {
 } from "./types";
 import { generateThermalAxisPositions } from "../geometry-v2/thermalAxis";
 import { generateAnchoredAxisPositions } from "../geometry-v2/grid";
+import {
+  computeUsableRoof,
+  validatePlacementFootprint,
+  type MetricPolygon,
+  type UsableRoofGeometry,
+} from "../geometry-v2";
 
 const EPS = 0.5;
 const deg2rad = (degrees: number) => (degrees * Math.PI) / 180;
@@ -109,6 +115,70 @@ function normalizePhase(phase: number) {
   let normalized = phase % 1;
   if (normalized < 0) normalized += 1;
   return normalized;
+}
+
+function candidateFootprintM(
+  candidate: LegacyStandardCandidate,
+  mppImage: number,
+): MetricPolygon {
+  const radians = (candidate.angleDeg * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const halfWidthM = candidate.wPx * mppImage / 2;
+  const halfHeightM = candidate.hPx * mppImage / 2;
+  const centerX = candidate.cx * mppImage;
+  const centerY = candidate.cy * mppImage;
+  return [
+    { x: -halfWidthM, y: -halfHeightM },
+    { x: halfWidthM, y: -halfHeightM },
+    { x: halfWidthM, y: halfHeightM },
+    { x: -halfWidthM, y: halfHeightM },
+  ].map((point) => ({
+    x: centerX + point.x * cos - point.y * sin,
+    y: centerY + point.x * sin + point.y * cos,
+  }));
+}
+
+function exactUsableRoof(input: LegacyStandardGenerationInput): UsableRoofGeometry {
+  return computeUsableRoof({
+    roofPolygonM: input.roofPolygon.map((point) => ({
+      x: point.x * input.mppImage,
+      y: point.y * input.mppImage,
+    })),
+    marginM: Math.max(0, input.marginM),
+  });
+}
+
+/**
+ * Legacy-v1 still owns grid generation, ordering and phase semantics. The
+ * final acceptance rule is nevertheless the same exact polygon rule used by
+ * direct placement, paste, drag and reflow: the complete rotated module
+ * footprint must be contained in the truly inset roof polygon.
+ */
+export function isLegacyStandardCandidateInsideUsableRoof(input: {
+  candidate: LegacyStandardCandidate;
+  mppImage: number;
+  usableRoof: UsableRoofGeometry;
+}): boolean {
+  return validatePlacementFootprint({
+    footprint: candidateFootprintM(input.candidate, input.mppImage),
+    usableRoof: input.usableRoof,
+  }).valid;
+}
+
+function keepExactPolygonSafeCandidates(
+  candidates: LegacyStandardCandidate[],
+  input: LegacyStandardGenerationInput,
+): LegacyStandardCandidate[] {
+  const usableRoof = exactUsableRoof(input);
+  if (usableRoof.status !== "valid") return [];
+  return candidates.filter((candidate) =>
+    isLegacyStandardCandidateInsideUsableRoof({
+      candidate,
+      mppImage: input.mppImage,
+      usableRoof,
+    }),
+  );
 }
 
 function generateLegacyStandardCandidates(
@@ -294,7 +364,7 @@ function generateLegacyStandardCandidates(
         });
       }
     }
-    return candidates;
+    return keepExactPolygonSafeCandidates(candidates, input);
   }
   const rowStarts: number[] = thermalBreaks?.y
     ? generateThermalAxisPositions({
@@ -407,7 +477,7 @@ function generateLegacyStandardCandidates(
     }
   }
 
-  return candidates;
+  return keepExactPolygonSafeCandidates(candidates, input);
 }
 
 export function computeLegacyStandardCandidates(
