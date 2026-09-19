@@ -158,6 +158,93 @@ function convexHull(points: readonly MetricPoint[]): MetricPolygon {
   return [...lower.slice(0, -1), ...upper.slice(0, -1)];
 }
 
+function atomicPanelFootprints(
+  panels: readonly PanelInstance[],
+  adapter: ImageMetricAdapter,
+): MetricPolygon[] {
+  const panelFootprints = panels.map((panel) => imagePolygonToMetric(rectangle(
+    { x: panel.cx, y: panel.cy },
+    panel.wPx,
+    panel.hPx,
+    panel.angleDeg,
+  ), adapter));
+  const advancedBlocks = new Map<string, MetricPoint[]>();
+  panels.forEach((panel, index) => {
+    const blockKey = panel.advanced?.blockKey;
+    if (!blockKey) return;
+    advancedBlocks.set(blockKey, [
+      ...(advancedBlocks.get(blockKey) ?? []),
+      ...panelFootprints[index],
+    ]);
+  });
+  const advancedPanelIndexes = new Set(
+    panels.flatMap((panel, index) => panel.advanced?.blockKey ? [index] : []),
+  );
+  return [
+    ...panelFootprints.filter((_footprint, index) => !advancedPanelIndexes.has(index)),
+    ...[...advancedBlocks.values()].map(convexHull),
+  ];
+}
+
+/**
+ * Gesture-local hard-boundary validator. The expensive inset roof geometry is
+ * prepared once at pointer-down; pointer frames only rebuild the moving
+ * footprint(s) and run pure containment checks.
+ */
+export function createPanelRoofContainmentValidator(input: {
+  roof: RoofArea;
+  marginM: number;
+  mppImage: number;
+}): (panels: readonly PanelInstance[]) => boolean {
+  const adapter = imageAdapter(input.roof, input.mppImage);
+  const usableRoof = computeUsableRoof({
+    roofPolygonM: imagePolygonToMetric(input.roof.points, adapter),
+    marginM: input.marginM,
+  });
+  return (panels) => {
+    if (!panels.length || panels.some((panel) => panel.roofId !== input.roof.id)) return false;
+    return atomicPanelFootprints(panels, adapter).every((footprint) =>
+      validatePlacementFootprint({
+        footprint,
+        usableRoof,
+        reservedZones: [],
+        snowGuards: [],
+      }).valid,
+    );
+  };
+}
+
+/**
+ * Faster rigid-drag variant: module/block footprints and usable roof are both
+ * immutable for the gesture, so only the proposed translation is evaluated.
+ */
+export function createPanelRoofTranslationContainmentValidator(input: {
+  roof: RoofArea;
+  marginM: number;
+  mppImage: number;
+  panels: readonly PanelInstance[];
+}): (dxPx: number, dyPx: number) => boolean {
+  if (!input.panels.length || input.panels.some((panel) => panel.roofId !== input.roof.id)) {
+    return () => false;
+  }
+  const adapter = imageAdapter(input.roof, input.mppImage);
+  const usableRoof = computeUsableRoof({
+    roofPolygonM: imagePolygonToMetric(input.roof.points, adapter),
+    marginM: input.marginM,
+  });
+  const footprints = atomicPanelFootprints(input.panels, adapter);
+  return (dxPx, dyPx) => {
+    const dxM = dxPx * input.mppImage;
+    const dyM = dyPx * input.mppImage;
+    return footprints.every((footprint) => validatePlacementFootprint({
+      footprint: footprint.map((point) => ({ x: point.x + dxM, y: point.y + dyM })),
+      usableRoof,
+      reservedZones: [],
+      snowGuards: [],
+    }).valid);
+  };
+}
+
 /**
  * Prepares the canonical static placement geometry once. The returned closure
  * reads no store and performs no mutations; callers can use it for generation,
@@ -210,28 +297,7 @@ export function createPanelPlacementValidator(input: {
 
   return (panels) => {
     if (!panels.length || panels.some((panel) => panel.roofId !== input.roof.id)) return false;
-    const panelFootprints = panels.map((panel) => imagePolygonToMetric(rectangle(
-      { x: panel.cx, y: panel.cy },
-      panel.wPx,
-      panel.hPx,
-      panel.angleDeg,
-    ), adapter));
-    const advancedBlocks = new Map<string, MetricPoint[]>();
-    panels.forEach((panel, index) => {
-      const blockKey = panel.advanced?.blockKey;
-      if (!blockKey) return;
-      advancedBlocks.set(blockKey, [
-        ...(advancedBlocks.get(blockKey) ?? []),
-        ...panelFootprints[index],
-      ]);
-    });
-    const advancedPanelIndexes = new Set(
-      panels.flatMap((panel, index) => panel.advanced?.blockKey ? [index] : []),
-    );
-    const atomicFootprints: MetricPolygon[] = [
-      ...panelFootprints.filter((_footprint, index) => !advancedPanelIndexes.has(index)),
-      ...[...advancedBlocks.values()].map(convexHull),
-    ];
+    const atomicFootprints = atomicPanelFootprints(panels, adapter);
 
     const geometryValid = atomicFootprints.every((footprint) => {
       const geometric = validatePlacementFootprint({
