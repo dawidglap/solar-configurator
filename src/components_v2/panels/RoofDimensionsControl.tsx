@@ -9,7 +9,6 @@ import {
   MIN_EDITABLE_ROOF_DIMENSION_M,
   analyzeRectangularRoof,
   analyzeRoofSegments,
-  getCanonicalRoofEdges,
   getPitchedRoofEdgeRoles,
   resolveRoofGeometricOrientationDeg,
   resolveRoofReferenceEdgeIndex,
@@ -113,10 +112,6 @@ export default function RoofDimensionsControl({
       referenceEdgeIndex,
     }),
     [referenceEdgeIndex, roof.points],
-  );
-  const canonicalEdges = React.useMemo(
-    () => getCanonicalRoofEdges(roof.points),
-    [roof.points],
   );
   const edgeLabel = (edgeIndex: number) => {
     if (roofKind !== "pitched") return `Kante ${edgeIndex + 1}`;
@@ -261,16 +256,7 @@ export default function RoofDimensionsControl({
           </option>
         ))}
       </select>
-      {referenceEdgeIndex != null && (
-        <div className="flex items-center justify-between gap-3 text-[10px]">
-          <span className="text-muted-foreground">Ausrichtung</span>
-          <strong className="font-semibold tabular-nums text-foreground">
-            {formatDisplayAngleDeg(
-              canonicalEdges[referenceEdgeIndex]?.geographicAzimuthDeg ?? 0,
-            )}
-          </strong>
-        </div>
-      )}
+      {/* TODO: Customer requested hiding roof-edge orientation readout from sidebar; keep underlying value for possible re-enable. */}
     </div>
   ) : null;
 

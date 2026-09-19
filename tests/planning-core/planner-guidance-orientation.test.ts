@@ -99,8 +99,8 @@ test("contextual help and compact roof-list property controls remain visible in 
   assert.equal(marginControl.includes("Gefällerichtung"), false);
   assert.ok(dimensions.includes("NumericFieldWithSuffix"));
   assert.ok(dimensions.includes(">Kanten</p>"));
-  assert.ok(dimensions.includes("getCanonicalRoofEdges"));
   assert.ok(dimensions.includes("getPitchedRoofEdgeRoles"));
+  assert.ok(dimensions.includes("hiding roof-edge orientation readout from sidebar"));
   assert.equal(compass.includes("+ rotateDeg"), false);
 });
 
