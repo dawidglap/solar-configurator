@@ -13,7 +13,6 @@ import {
   createPanelAxis,
   createPanelDragSpatialIndex,
   panelSnapTuningForScale,
-  resolveHardRoofBoundaryPosition,
   resolvePanelDragFrameUV,
   type PanelInst as HookPanel,
   type PanelSnapGuide,
@@ -31,7 +30,6 @@ import {
 import {
   buildAdvancedManualSnapCenters,
   createPanelPastePlacementValidator,
-  createPanelRoofTranslationContainmentValidator,
   resolveAdvancedManualCenterSnap,
   resolveManualAdvancedBlockDefinition,
   type AdvancedManualSnapGuide,
@@ -213,19 +211,6 @@ export default function PanelsKonva(props: {
     ]);
   }, [allPanels, allZones, marginM, mpp, roof, snowGuards, spacingXM, spacingYM]);
 
-  const preparePanelRoofContainment = React.useCallback((id: string) => {
-    const panel = allPanels.find((candidate) => candidate.id === id);
-    if (!panel || !roof) return undefined;
-    const roofContainsTranslation = createPanelRoofTranslationContainmentValidator({
-      roof,
-      marginM,
-      mppImage: mpp,
-      panels: [panel],
-    });
-    return (proposedCx: number, proposedCy: number): boolean =>
-      roofContainsTranslation(proposedCx - panel.cx, proposedCy - panel.cy);
-  }, [allPanels, marginM, mpp, roof]);
-
   const commitPanel = React.useCallback(
     (id: string, patch: Partial<PanelInst>) => {
       const panel = allPanels.find((p) => p.id === id);
@@ -260,7 +245,6 @@ export default function PanelsKonva(props: {
     gapXPx,
     gapYPx,
     prepareValidateCandidate: preparePanelValidator,
-    prepareValidateRoofContainment: preparePanelRoofContainment,
   });
 
 
@@ -345,9 +329,6 @@ export default function PanelsKonva(props: {
       spatialIndex: ReturnType<typeof createPanelDragSpatialIndex>;
     } | null;
     placementIsValid: (panels: readonly PanelInstance[]) => boolean;
-    roofContainsTranslation: (dxPx: number, dyPx: number) => boolean;
-    boundaryPositionUV: { u: number; v: number };
-    boundaryRequestedUV: { u: number; v: number };
     frame: FrameScheduler<{ point: Pt; disableSnap: boolean }>;
   } | null>(null);
 
@@ -470,14 +451,6 @@ export default function PanelsKonva(props: {
           moduleGapYM: spacingYM,
         })
       : () => false;
-    const roofContainsTranslation = roof
-      ? createPanelRoofTranslationContainmentValidator({
-          roof,
-          marginM,
-          mppImage: mpp,
-          panels: movingPanels,
-        })
-      : () => false;
     const staticPanelsUV = buildPanelDragStaticGeometry({
       allPanels,
       roofId,
@@ -582,13 +555,6 @@ export default function PanelsKonva(props: {
       });
       const validateCenter = (center: { u: number; v: number }) =>
         st.placementIsValid(panelsForPositions(positionsForCenter(center)));
-      const roofContainsCenter = (center: { u: number; v: number }) => {
-        const delta = st.axis.fromUV(
-          center.u - st.groupCenterUV.u,
-          center.v - st.groupCenterUV.v,
-        );
-        return st.roofContainsTranslation(delta.x, delta.y);
-      };
 
       let resolvedCenterUV = freeCenterUV;
       let valid = validateCenter(freeCenterUV);
@@ -677,28 +643,6 @@ export default function PanelsKonva(props: {
         snapGuides = resolution.guides;
       }
 
-      const requestedCenterUV = resolvedCenterUV;
-      const constrained = resolveHardRoofBoundaryPosition({
-        previousPosition: { x: st.boundaryPositionUV.u, y: st.boundaryPositionUV.v },
-        previousRequestedPosition: { x: st.boundaryRequestedUV.u, y: st.boundaryRequestedUV.v },
-        requestedPosition: { x: requestedCenterUV.u, y: requestedCenterUV.v },
-        validate: (point) => roofContainsCenter({ u: point.x, v: point.y }),
-      });
-      resolvedCenterUV = { u: constrained.x, v: constrained.y };
-      st.boundaryPositionUV = resolvedCenterUV;
-      st.boundaryRequestedUV = requestedCenterUV;
-      const boundaryAdjusted = Math.hypot(
-        resolvedCenterUV.u - requestedCenterUV.u,
-        resolvedCenterUV.v - requestedCenterUV.v,
-      ) > 1e-5;
-      if (boundaryAdjusted) {
-        st.activeSnapKey = null;
-        hintU = false;
-        hintV = false;
-        snapGuides = [];
-        advancedGuidePoints = [];
-      }
-      valid = validateCenter(resolvedCenterUV);
       const proposed = positionsForCenter(resolvedCenterUV);
       st.final = valid ? proposed : null;
       const columnGuide = snapGuides.find((guide) => guide.axis === 'column');
@@ -790,9 +734,6 @@ export default function PanelsKonva(props: {
       final: null,
       advancedSnap,
       placementIsValid,
-      roofContainsTranslation,
-      boundaryPositionUV: { ...groupCenterUV },
-      boundaryRequestedUV: { ...groupCenterUV },
       frame,
     };
 

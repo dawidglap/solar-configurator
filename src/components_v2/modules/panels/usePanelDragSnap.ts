@@ -29,7 +29,6 @@ type Args = {
   stageToImg?: (x: number, y: number) => Pt;
   commitPanel: (id: string, patch: Partial<PanelInst>) => void;
   prepareValidateCandidate: (id: string) => ((cx: number, cy: number) => boolean) | undefined;
-  prepareValidateRoofContainment: (id: string) => ((cx: number, cy: number) => boolean) | undefined;
   onSelect?: (id?: string) => void;
   onDragStart?: () => void;
   onDragEnd?: () => void;
@@ -461,90 +460,6 @@ export function hasPanelOverlapCached(input: {
   });
 }
 
-const HARD_BOUNDARY_ITERATIONS = 32;
-
-function clampSegmentToValid(input: {
-  start: Pt;
-  end: Pt;
-  validate: (point: Pt) => boolean;
-}): Pt {
-  if (input.validate(input.end)) return input.end;
-  if (!input.validate(input.start)) return input.start;
-  let low = 0;
-  let high = 1;
-  let result = input.start;
-  for (let iteration = 0; iteration < HARD_BOUNDARY_ITERATIONS; iteration += 1) {
-    const ratio = (low + high) / 2;
-    const candidate = {
-      x: input.start.x + (input.end.x - input.start.x) * ratio,
-      y: input.start.y + (input.end.y - input.start.y) * ratio,
-    };
-    if (input.validate(candidate)) {
-      low = ratio;
-      result = candidate;
-    } else high = ratio;
-  }
-  return result;
-}
-
-/**
- * Applies only the latest pointer delta to the last contained position. The
- * two axis-order candidates preserve natural wall sliding when one component
- * points out of bounds, while every accepted intermediate remains contained.
- */
-export function resolveHardRoofBoundaryPosition(input: {
-  previousPosition: Pt;
-  previousRequestedPosition: Pt;
-  requestedPosition: Pt;
-  validate: (point: Pt) => boolean;
-}): Pt {
-  const delta = {
-    x: input.requestedPosition.x - input.previousRequestedPosition.x,
-    y: input.requestedPosition.y - input.previousRequestedPosition.y,
-  };
-  const ideal = {
-    x: input.previousPosition.x + delta.x,
-    y: input.previousPosition.y + delta.y,
-  };
-  if (!input.validate(input.previousPosition)) {
-    return input.validate(ideal) ? ideal : input.previousPosition;
-  }
-  if (input.validate(ideal)) return ideal;
-
-  const direct = clampSegmentToValid({
-    start: input.previousPosition,
-    end: ideal,
-    validate: input.validate,
-  });
-  const wasPreviouslyConstrained = Math.hypot(
-    input.previousPosition.x - input.previousRequestedPosition.x,
-    input.previousPosition.y - input.previousRequestedPosition.y,
-  ) > 1e-5;
-  if (!wasPreviouslyConstrained) return direct;
-
-  const stepAxes = (first: 'x' | 'y'): Pt => {
-    const second = first === 'x' ? 'y' : 'x';
-    const firstTarget = { ...input.previousPosition, [first]: ideal[first] };
-    const afterFirst = clampSegmentToValid({
-      start: input.previousPosition,
-      end: firstTarget,
-      validate: input.validate,
-    });
-    return clampSegmentToValid({
-      start: afterFirst,
-      end: { ...afterFirst, [second]: ideal[second] },
-      validate: input.validate,
-    });
-  };
-  const candidates = [direct, stepAxes('x'), stepAxes('y')];
-  candidates.sort((a, b) => {
-    const distanceA = (a.x - ideal.x) ** 2 + (a.y - ideal.y) ** 2;
-    const distanceB = (b.x - ideal.x) ** 2 + (b.y - ideal.y) ** 2;
-    return distanceA - distanceB;
-  });
-  return candidates[0];
-}
-
 type NodeVisualSnapshot = {
   opacity: number;
   stroke?: string;
@@ -586,7 +501,6 @@ export function usePanelDragSnap({
   stageToImg,
   commitPanel,
   prepareValidateCandidate,
-  prepareValidateRoofContainment,
   onSelect,
   onDragStart,
   onDragEnd,
@@ -606,9 +520,6 @@ export function usePanelDragSnap({
   const dragStartPanelRef = React.useRef<PanelInst | null>(null);
   const finalPositionRef = React.useRef<Pt | null>(null);
   const validateCandidateRef = React.useRef<((cx: number, cy: number) => boolean) | null>(null);
-  const validateRoofContainmentRef = React.useRef<((cx: number, cy: number) => boolean) | null>(null);
-  const boundaryPositionRef = React.useRef<Pt | null>(null);
-  const boundaryRequestedRef = React.useRef<Pt | null>(null);
   const axisRef = React.useRef<ReturnType<typeof createPanelAxis> | null>(null);
   const spatialIndexRef = React.useRef<PanelDragSpatialIndex | null>(null);
   const activeSnapKeyRef = React.useRef<string | null>(null);
@@ -659,9 +570,6 @@ export function usePanelDragSnap({
     dragStartPanelRef.current = null;
     finalPositionRef.current = null;
     validateCandidateRef.current = null;
-    validateRoofContainmentRef.current = null;
-    boundaryPositionRef.current = null;
-    boundaryRequestedRef.current = null;
     axisRef.current = null;
     spatialIndexRef.current = null;
     activeSnapKeyRef.current = null;
@@ -710,9 +618,6 @@ export function usePanelDragSnap({
     dragStartPanelRef.current = { ...panel };
     finalPositionRef.current = { x: panel.cx, y: panel.cy };
     validateCandidateRef.current = prepareValidateCandidate(panelId) ?? null;
-    validateRoofContainmentRef.current = prepareValidateRoofContainment(panelId) ?? null;
-    boundaryPositionRef.current = { x: panel.cx, y: panel.cy };
-    boundaryRequestedRef.current = { x: panel.cx, y: panel.cy };
     activeSnapKeyRef.current = null;
     clearHints();
 
@@ -721,8 +626,7 @@ export function usePanelDragSnap({
       const half = dragSizeHalfRef.current;
       const currentAxis = axisRef.current;
       const validator = validateCandidateRef.current;
-      const roofContains = validateRoofContainmentRef.current;
-      if (!offset || !half || !currentAxis || !validator || !roofContains) return;
+      if (!offset || !half || !currentAxis || !validator) return;
       const freeWorld = { x: point.x + offset.dx, y: point.y + offset.dy };
       const free = currentAxis.project(freeWorld);
       const searchRadius = Math.max(half.hw, half.hh) * 2 + snapTuningImg.adjacencyReleasePx;
@@ -744,27 +648,12 @@ export function usePanelDragSnap({
           return validator(world.x, world.y);
         },
       });
-      const requestedVisual = currentAxis.fromUV(resolution.position.u, resolution.position.v);
-      const previousPosition = boundaryPositionRef.current ?? requestedVisual;
-      const previousRequestedPosition = boundaryRequestedRef.current ?? requestedVisual;
-      const visual = resolveHardRoofBoundaryPosition({
-        previousPosition,
-        previousRequestedPosition,
-        requestedPosition: requestedVisual,
-        validate: (point) => roofContains(point.x, point.y),
-      });
-      boundaryPositionRef.current = visual;
-      boundaryRequestedRef.current = requestedVisual;
-      const boundaryAdjusted = Math.hypot(
-        visual.x - requestedVisual.x,
-        visual.y - requestedVisual.y,
-      ) > 1e-5;
-      activeSnapKeyRef.current = boundaryAdjusted ? null : resolution.snapKey;
-      const valid = validator(visual.x, visual.y);
-      finalPositionRef.current = valid ? visual : null;
+      activeSnapKeyRef.current = resolution.snapKey;
+      const visual = currentAxis.fromUV(resolution.position.u, resolution.position.v);
+      finalPositionRef.current = resolution.valid ? visual : null;
       setNodeInvalidVisual(
         draggedNodeRef.current,
-        !valid,
+        !resolution.valid,
         draggedNodeVisualRef.current,
       );
       draggedNodeRef.current?.position(visual);
@@ -772,13 +661,13 @@ export function usePanelDragSnap({
       draggedSlopeArrowNodeRef.current?.position(visual);
 
       const columnGuide = resolution.guides.find((guide) => guide.axis === 'column');
-      if (!boundaryAdjusted && resolution.snapped && columnGuide) {
+      if (resolution.snapped && columnGuide) {
         const a = currentAxis.fromUV(columnGuide.coordinate, columnGuide.start);
         const b = currentAxis.fromUV(columnGuide.coordinate, columnGuide.end);
         setGuide(hintURef, [a.x, a.y, b.x, b.y]);
       } else setGuide(hintURef, null);
       const rowGuide = resolution.guides.find((guide) => guide.axis === 'row');
-      if (!boundaryAdjusted && resolution.snapped && rowGuide) {
+      if (resolution.snapped && rowGuide) {
         const a = currentAxis.fromUV(rowGuide.start, rowGuide.coordinate);
         const b = currentAxis.fromUV(rowGuide.end, rowGuide.coordinate);
         setGuide(hintVRef, [a.x, a.y, b.x, b.y]);
@@ -802,8 +691,7 @@ export function usePanelDragSnap({
     stage.on(`mouseleave${namespace}`, () => endDrag(true));
   }, [
     allPanels, clearHints, defaultAngleDeg, endDrag, gapPx, gapXPx, gapYPx,
-    onDragStart, onSelect, prepareValidateCandidate, prepareValidateRoofContainment,
-    roofId, setGuide, snapTuningImg, stageToImg,
+    onDragStart, onSelect, prepareValidateCandidate, roofId, setGuide, snapTuningImg, stageToImg,
   ]);
 
   React.useEffect(() => {
