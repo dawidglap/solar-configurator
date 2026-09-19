@@ -335,6 +335,23 @@ test("rectangle pointer frames stay transient and zone persistence happens only 
   assert.ok(source.includes("shapeKind: 'rectangle'"));
 });
 
+test("Hindernis reference controls stay restorable but are not mounted in the sidebar", () => {
+  const sidebar = readFileSync(
+    new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const controls = readFileSync(
+    new URL("../../src/components_v2/zones/ZonePropertiesControl.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.equal(sidebar.includes("<ZonePropertiesControl"), false);
+  assert.ok(sidebar.includes("hiding Hindernis reference-edge controls from sidebar"));
+  assert.ok(controls.includes("Bezugskante"));
+  assert.ok(controls.includes("Parallel zur Bezugskante"));
+  assert.ok(controls.includes("alignPolygonToRoofReference"));
+  assert.ok(controls.includes("orthogonalizePolygonToRoofReference"));
+});
+
 test("legacy zone JSON remains valid without optional reference metadata", () => {
   const legacy = { id: "legacy-zone", roofId: "roof-a", type: "riservata", points: rotatedRectangle(10, 8, 0) };
   const loaded = JSON.parse(JSON.stringify(legacy));

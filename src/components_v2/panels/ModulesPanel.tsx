@@ -48,7 +48,6 @@ import {
   updateDefaultFlatSystem,
   alignAdvancedLayoutParallelToRoofEdge,
 } from "../modules/advanced/advancedPlanningApplication";
-import ZonePropertiesControl from "../zones/ZonePropertiesControl";
 import DirectLayoutControl from "../modules/panels/DirectLayoutControl";
 import { endManualPlacement } from "../modules/manualPlacementSession";
 import { history as plannerHistory } from "../state/history";
@@ -1051,9 +1050,7 @@ export default function ModulesPanel() {
         <RoofDimensionsControl roof={selectedRoof} roofKind={selectedRoofKind} />
       )}
 
-      {step === "building" && selectedRoof && (
-        <ZonePropertiesControl roof={selectedRoof} roofKind={selectedRoofKind} />
-      )}
+      {/* TODO: Customer requested hiding Hindernis reference-edge controls from sidebar. Keep ZonePropertiesControl available for future re-enable. */}
 
       {step === "modules" &&
         selectedRoof &&
