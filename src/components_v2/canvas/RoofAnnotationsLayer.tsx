@@ -26,6 +26,14 @@ import {
   subscribeTransientRoofAnnotationPoints,
 } from "./performance/transientRoofAnnotations";
 
+const MODULE_EDGE_PILL_SCALE = 1.25;
+const MODULE_EDGE_PILL_FONT_SIZE = 10.5 * MODULE_EDGE_PILL_SCALE;
+const MODULE_EDGE_PILL_MIN_WIDTH = 84 * MODULE_EDGE_PILL_SCALE;
+const MODULE_EDGE_PILL_CHAR_WIDTH = 6.15 * MODULE_EDGE_PILL_SCALE;
+const MODULE_EDGE_PILL_PADDING_X = 9 * MODULE_EDGE_PILL_SCALE;
+const MODULE_EDGE_PILL_HEIGHT = 24 * MODULE_EDGE_PILL_SCALE;
+const MODULE_EDGE_PILL_RADIUS = 7 * MODULE_EDGE_PILL_SCALE;
+
 function useTransientPoints(roofId: string): readonly Pt[] | null {
   return React.useSyncExternalStore(
     React.useCallback(
@@ -165,7 +173,7 @@ export default function RoofAnnotationsLayer({
           y: edge.midpoint.y + edge.outward.y * offset,
         };
         const tick = 3.5 * inverseScale;
-        const fontSize = (useModuleEdgePills ? 10.5 : 8.5) * inverseScale;
+        const fontSize = (useModuleEdgePills ? MODULE_EDGE_PILL_FONT_SIZE : 8.5) * inverseScale;
         const lineStart = {
           x: edge.start.x + edge.outward.x * offset,
           y: edge.start.y + edge.outward.y * offset,
@@ -175,8 +183,11 @@ export default function RoofAnnotationsLayer({
           y: edge.end.y + edge.outward.y * offset,
         };
         const displayLabel = edge.label;
-        const pillWidth = Math.max(84, displayLabel.length * 6.15 + 18) * inverseScale;
-        const pillHeight = 24 * inverseScale;
+        const pillWidth = Math.max(
+          MODULE_EDGE_PILL_MIN_WIDTH,
+          displayLabel.length * MODULE_EDGE_PILL_CHAR_WIDTH + MODULE_EDGE_PILL_PADDING_X * 2,
+        ) * inverseScale;
+        const pillHeight = MODULE_EDGE_PILL_HEIGHT * inverseScale;
         const labelRotation = useModuleEdgePills
           ? resolveScreenReadableAnnotationRotation(edge.readableAngleDeg, canvasRotationDeg)
           : edge.readableAngleDeg;
@@ -226,7 +237,7 @@ export default function RoofAnnotationsLayer({
                   width={pillWidth}
                   height={pillHeight}
                   fill="#FFFFFF"
-                  cornerRadius={7 * inverseScale}
+                  cornerRadius={MODULE_EDGE_PILL_RADIUS * inverseScale}
                   shadowColor="#000000"
                   shadowBlur={4 * inverseScale}
                   shadowOffsetY={1.5 * inverseScale}
@@ -234,9 +245,9 @@ export default function RoofAnnotationsLayer({
                   listening={false}
                 />
                 <Text
-                  x={-pillWidth / 2 + 9 * inverseScale}
+                  x={-pillWidth / 2 + MODULE_EDGE_PILL_PADDING_X * inverseScale}
                   y={-pillHeight / 2}
-                  width={pillWidth - 18 * inverseScale}
+                  width={pillWidth - MODULE_EDGE_PILL_PADDING_X * 2 * inverseScale}
                   height={pillHeight}
                   text={displayLabel}
                   fill="#000000"

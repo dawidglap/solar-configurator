@@ -71,9 +71,13 @@ test("semantic copy uses one high-contrast module annotation while only its edge
   assert.match(annotations, /useModuleEdgePills = step === "modules" && !selectedZone/);
   assert.match(annotations, /fill="#FFFFFF"/);
   assert.match(annotations, /fill="#000000"/);
-  assert.match(annotations, /fontSize = \(useModuleEdgePills \? 10\.5 : 8\.5\)/);
+  assert.match(annotations, /MODULE_EDGE_PILL_SCALE = 1\.25/);
+  assert.match(annotations, /MODULE_EDGE_PILL_FONT_SIZE = 10\.5 \* MODULE_EDGE_PILL_SCALE/);
+  assert.match(annotations, /MODULE_EDGE_PILL_MIN_WIDTH = 84 \* MODULE_EDGE_PILL_SCALE/);
+  assert.match(annotations, /MODULE_EDGE_PILL_HEIGHT = 24 \* MODULE_EDGE_PILL_SCALE/);
+  assert.match(annotations, /fontSize = \(useModuleEdgePills \? MODULE_EDGE_PILL_FONT_SIZE : 8\.5\)/);
   assert.match(annotations, /fontStyle="600"/);
-  assert.match(annotations, /cornerRadius=\{7 \* inverseScale\}/);
+  assert.match(annotations, /cornerRadius=\{MODULE_EDGE_PILL_RADIUS \* inverseScale\}/);
   assert.doesNotMatch(annotations, /text="GEFÄLLE"/);
   assert.match(annotations, /<SmallFallArrow/);
   assert.match(annotations, /<Arrow/);
