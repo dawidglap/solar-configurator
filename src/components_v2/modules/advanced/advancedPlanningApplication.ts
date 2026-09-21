@@ -78,9 +78,17 @@ export function resolveModuleModeChangeIntent(input: {
   currentMode?: RoofModuleMode;
   requestedMode: RoofModuleMode;
   committedPanelCount: number;
-}): "noop" | "confirm" | "switch" {
+  /** True only when the committed panels still match a stored generated baseline. */
+  pristineGeneratedLayout?: boolean;
+  /** Kept explicit so Süd/Ost-West retain their existing product behaviour. */
+  regeneratePristineLayout?: boolean;
+}): "noop" | "confirm" | "switch" | "regenerate" {
   if (input.currentMode === input.requestedMode) return "noop";
-  return input.committedPanelCount > 0 ? "confirm" : "switch";
+  if (input.committedPanelCount === 0) return "switch";
+  if (input.regeneratePristineLayout && input.pristineGeneratedLayout) {
+    return "regenerate";
+  }
+  return "confirm";
 }
 
 export const DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG = { min: 8.5, max: 90 } as const;

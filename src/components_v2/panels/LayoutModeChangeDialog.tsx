@@ -8,6 +8,7 @@ type Props = {
   moduleCount: number;
   onCancel: () => void;
   onConfirm: () => void;
+  protectsManualLayout?: boolean;
 };
 
 export default function LayoutModeChangeDialog({
@@ -16,6 +17,7 @@ export default function LayoutModeChangeDialog({
   moduleCount,
   onCancel,
   onConfirm,
+  protectsManualLayout = false,
 }: Props) {
   React.useEffect(() => {
     if (!open) return;
@@ -50,11 +52,15 @@ export default function LayoutModeChangeDialog({
           Ausrichtung ändern?
         </h2>
         <p id="layout-mode-change-description" className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          Alle Module auf dieser Dachfläche werden entfernt.
+          {protectsManualLayout
+            ? "Manuelle Änderungen an der Modulbelegung werden dabei gelöscht."
+            : "Alle Module auf dieser Dachfläche werden entfernt."}
         </p>
-        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-          Die bisherige Modulbelegung kann danach nicht wiederhergestellt werden, außer über Rückgängig.
-        </p>
+        {!protectsManualLayout && (
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Die bisherige Modulbelegung kann danach nicht wiederhergestellt werden, außer über Rückgängig.
+          </p>
+        )}
         {roofLabel && (
           <p className="mt-2 text-xs font-medium text-muted-foreground">
             {roofLabel} · {moduleCount} Module
@@ -74,7 +80,7 @@ export default function LayoutModeChangeDialog({
             onClick={onConfirm}
             className="h-10 rounded-xl bg-destructive px-3 text-sm font-semibold text-destructive-foreground hover:bg-destructive/90"
           >
-            Module entfernen &amp; wechseln
+            {protectsManualLayout ? "Ändern & neu belegen" : "Module entfernen & wechseln"}
           </button>
         </div>
       </section>

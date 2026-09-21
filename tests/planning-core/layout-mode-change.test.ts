@@ -105,13 +105,41 @@ const eastWestConfig: AdvancedSurfacePlanningV1 = {
   },
 };
 
-test("mode-switch intent is a no-op for the active mode and confirms only committed layouts", () => {
+test("mode-switch intent distinguishes empty, pristine Standard and protected layouts", () => {
   assert.equal(resolveModuleModeChangeIntent({ currentMode: "south", requestedMode: "south", committedPanelCount: 66 }), "noop");
   assert.equal(resolveModuleModeChangeIntent({ currentMode: "south", requestedMode: "east-west", committedPanelCount: 66 }), "confirm");
   assert.equal(resolveModuleModeChangeIntent({ currentMode: "east-west", requestedMode: "south", committedPanelCount: 30 }), "confirm");
   assert.equal(resolveModuleModeChangeIntent({ currentMode: "portrait", requestedMode: "landscape", committedPanelCount: 20 }), "confirm");
   assert.equal(resolveModuleModeChangeIntent({ currentMode: "landscape", requestedMode: "portrait", committedPanelCount: 20 }), "confirm");
   assert.equal(resolveModuleModeChangeIntent({ currentMode: "south", requestedMode: "east-west", committedPanelCount: 0 }), "switch");
+  assert.equal(resolveModuleModeChangeIntent({
+    currentMode: "portrait",
+    requestedMode: "landscape",
+    committedPanelCount: 27,
+    pristineGeneratedLayout: true,
+    regeneratePristineLayout: true,
+  }), "regenerate");
+  assert.equal(resolveModuleModeChangeIntent({
+    currentMode: "portrait",
+    requestedMode: "landscape",
+    committedPanelCount: 26,
+    pristineGeneratedLayout: false,
+    regeneratePristineLayout: true,
+  }), "confirm");
+  assert.equal(resolveModuleModeChangeIntent({
+    currentMode: "south",
+    requestedMode: "east-west",
+    committedPanelCount: 30,
+    pristineGeneratedLayout: true,
+    regeneratePristineLayout: false,
+  }), "confirm");
+  assert.equal(resolveModuleModeChangeIntent({
+    currentMode: "portrait",
+    requestedMode: "landscape",
+    committedPanelCount: 0,
+    pristineGeneratedLayout: true,
+    regeneratePristineLayout: true,
+  }), "switch");
 });
 
 test("confirmed D1 Süd to Ost-West is one roof-local clear and preserves D2", () => {
@@ -154,7 +182,13 @@ test("mode-switch dialog owns the destructive decision before draft mutation", (
   assert.match(panelSource, /confirmModuleModeChange\(\{/);
   assert.match(dialogSource, /Ausrichtung ändern\?/);
   assert.match(dialogSource, /Alle Module auf dieser Dachfläche werden entfernt\./);
-  assert.match(dialogSource, /Module entfernen &amp; wechseln/);
+  assert.match(dialogSource, /Module entfernen & wechseln/);
+  assert.match(dialogSource, /Manuelle Änderungen an der Modulbelegung werden dabei gelöscht\./);
+  assert.match(dialogSource, /Ändern & neu belegen/);
+  assert.match(panelSource, /hasManualRoofLayoutChanges\(\{ roof: selectedRoof, panels \}\)/);
+  assert.match(panelSource, /intent === "regenerate"/);
+  assert.match(panelSource, /buildDirectStandardRoofLayout\(/);
+  assert.match(panelSource, /commitRoofLayout\(\{[\s\S]*panels: candidate\.panels,[\s\S]*surfacePlanning: candidate\.config/);
   assert.equal(dialogSource.includes("window.confirm"), false);
 });
 

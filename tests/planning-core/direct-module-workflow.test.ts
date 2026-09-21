@@ -234,6 +234,79 @@ test("the deterministic baseline detects move, delete and manual add without a s
   }), true);
 });
 
+test("pristine Vollbelegung can alternate portrait and landscape with a fresh persisted baseline", () => {
+  const portrait = buildDirectStandardRoofLayout({
+    roof: ROOF,
+    panel: PANEL,
+    modules: MODULES,
+    orientation: "portrait",
+    moduleTilt: { mode: "inherit-roof" },
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    maximizeCoverage: true,
+    createPanelId: (index) => `portrait-${index}`,
+  });
+  assert.ok(portrait);
+  assert.equal(hasManualRoofLayoutChanges({
+    roof: { ...ROOF, surfacePlanning: portrait.config },
+    panels: portrait.panels,
+  }), false);
+
+  const landscape = buildDirectStandardRoofLayout({
+    roof: { ...ROOF, surfacePlanning: portrait.config },
+    panel: PANEL,
+    modules: portrait.modules,
+    orientation: "landscape",
+    moduleTilt: { mode: "inherit-roof" },
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    maximizeCoverage: true,
+    createPanelId: (index) => `landscape-${index}`,
+  });
+  assert.ok(landscape);
+  assert.ok(landscape.panels.every((panel) => panel.orientation === "landscape"));
+  assert.equal(hasManualRoofLayoutChanges({
+    roof: { ...ROOF, surfacePlanning: JSON.parse(JSON.stringify(landscape.config)) },
+    panels: landscape.panels,
+  }), false);
+
+  const portraitAgain = buildDirectStandardRoofLayout({
+    roof: { ...ROOF, surfacePlanning: landscape.config },
+    panel: PANEL,
+    modules: landscape.modules,
+    orientation: "portrait",
+    moduleTilt: { mode: "inherit-roof" },
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    maximizeCoverage: true,
+    createPanelId: (index) => `portrait-again-${index}`,
+  });
+  assert.ok(portraitAgain);
+  assert.ok(portraitAgain.panels.every((panel) => panel.orientation === "portrait"));
+  assert.equal(hasManualRoofLayoutChanges({
+    roof: { ...ROOF, surfacePlanning: portraitAgain.config },
+    panels: portraitAgain.panels,
+  }), false);
+});
+
+test("a legacy Standard layout without a generated fingerprint stays protected", () => {
+  const legacyPanel: PanelInstance = {
+    id: "legacy-panel",
+    roofId: ROOF.id,
+    cx: 30,
+    cy: 30,
+    wPx: 11.34,
+    hPx: 17.22,
+    angleDeg: 0,
+    orientation: "portrait",
+    panelId: PANEL.id,
+  };
+  assert.equal(hasManualRoofLayoutChanges({ roof: ROOF, panels: [legacyPanel] }), true);
+});
+
 test("legacy panels infer orientation only when all non-advanced modules agree", () => {
   const panel = (id: string, orientation: "portrait" | "landscape"): PanelInstance => ({
     id,

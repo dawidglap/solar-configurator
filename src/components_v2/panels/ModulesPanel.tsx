@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useCallback } from "react";
+import { nanoid } from "nanoid";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import RoofAreaInfo from "../ui/RoofAreaInfo";
 import DetectedRoofsImport from "../panels/DetectedRoofsImport";
@@ -44,6 +45,8 @@ import {
   resolveRoofPlanningMode,
   resolveRoofModuleMode,
   resolveModuleModeChangeIntent,
+  hasManualRoofLayoutChanges,
+  buildDirectStandardRoofLayout,
   setAdvancedMountingOrientation,
   updateDefaultFlatSystem,
   alignAdvancedLayoutParallelToRoofEdge,
@@ -541,14 +544,66 @@ export default function ModulesPanel() {
     };
   }, [companyPlannerDefaults, displayedModules, displayedPanelId, displayedThermalLimits, displayedTiltInput, modules, selSpec, selectedAdvancedConfig, selectedRoof, snapshot.mppImage, standardDraft]);
 
+  const regeneratePristineStandardLayout = React.useCallback((orientation: "portrait" | "landscape") => {
+    if (!selectedRoof || !(snapshot.mppImage && snapshot.mppImage > 0)) return false;
+    const panel = catalogPanels.find((candidate) => candidate.id === displayedPanelId);
+    if (!panel) {
+      toast.error("Wähle zuerst ein Solarmodul aus.");
+      return false;
+    }
+    const runId = nanoid();
+    // Candidate-first: the committed mode, panels and fingerprint remain
+    // untouched when the opposite orientation cannot produce a valid layout.
+    const candidate = buildDirectStandardRoofLayout({
+      roof: selectedRoof,
+      panel,
+      modules: displayedModules,
+      orientation,
+      moduleTilt: displayedTiltInput,
+      mppImage: snapshot.mppImage,
+      zones,
+      snowGuards,
+      thermalFieldLimits: displayedThermalLimits,
+      maximizeCoverage: true,
+      createPanelId: (index) => `${selectedRoof.id}_p_${runId}_${index}`,
+    });
+    if (!candidate) {
+      toast.error("Bei dieser Ausrichtung ist keine gültige Belegung möglich.");
+      return false;
+    }
+    endManualPlacement();
+    plannerHistory.push("Ausrichtung ändern und neu belegen");
+    // One Zustand mutation replaces panels, mode and generated baseline. This
+    // prevents an intermediate empty canvas or stale topbar module count.
+    commitRoofLayout({
+      roofId: selectedRoof.id,
+      panels: candidate.panels,
+      surfacePlanning: candidate.config,
+      modules: candidate.modules,
+    });
+    toast.success("Ausrichtung geändert und neu belegt.");
+    return true;
+  }, [catalogPanels, commitRoofLayout, displayedModules, displayedPanelId, displayedThermalLimits, displayedTiltInput, selectedRoof, snapshot.mppImage, snowGuards, zones]);
+
   const requestModuleMode = useCallback((mode: "portrait" | "landscape" | "south" | "east-west") => {
     if (!selectedRoof || pendingLayoutMode) return;
+    const isStandardOrientation = mode === "portrait" || mode === "landscape";
+    const committedPanelCount = panels.filter((panel) => panel.roofId === selectedRoof.id).length;
     const intent = resolveModuleModeChangeIntent({
       currentMode: activeModuleMode,
       requestedMode: mode,
-      committedPanelCount: panels.filter((panel) => panel.roofId === selectedRoof.id).length,
+      committedPanelCount,
+      regeneratePristineLayout: isStandardOrientation,
+      pristineGeneratedLayout:
+        isStandardOrientation &&
+        committedPanelCount > 0 &&
+        !hasManualRoofLayoutChanges({ roof: selectedRoof, panels }),
     });
     if (intent === "noop") return;
+    if (intent === "regenerate" && isStandardOrientation) {
+      regeneratePristineStandardLayout(mode);
+      return;
+    }
     if (intent === "confirm") {
       setPendingLayoutMode(mode);
       return;
@@ -556,10 +611,16 @@ export default function ModulesPanel() {
     const requested = buildRequestedModuleMode(mode);
     if (!requested) return;
     setRoofPlanningDraft(selectedRoof.id, requested.draft);
-  }, [activeModuleMode, buildRequestedModuleMode, panels, pendingLayoutMode, selectedRoof, setRoofPlanningDraft]);
+  }, [activeModuleMode, buildRequestedModuleMode, panels, pendingLayoutMode, regeneratePristineStandardLayout, selectedRoof, setRoofPlanningDraft]);
 
   const confirmLayoutModeChange = React.useCallback(() => {
     if (!selectedRoof || !pendingLayoutMode) return;
+    if (pendingLayoutMode === "portrait" || pendingLayoutMode === "landscape") {
+      if (regeneratePristineStandardLayout(pendingLayoutMode)) {
+        setPendingLayoutMode(null);
+      }
+      return;
+    }
     const requested = buildRequestedModuleMode(pendingLayoutMode);
     if (!requested) return;
     endManualPlacement();
@@ -569,7 +630,7 @@ export default function ModulesPanel() {
     });
     setPendingLayoutMode(null);
     toast.success("Ausrichtung geändert. Die Dachfläche kann neu belegt werden.");
-  }, [buildRequestedModuleMode, confirmModuleModeChange, pendingLayoutMode, selectedRoof]);
+  }, [buildRequestedModuleMode, confirmModuleModeChange, pendingLayoutMode, regeneratePristineStandardLayout, selectedRoof]);
 
   return (
     <div className="w-full max-w-[240px] space-y-4 p-2 text-foreground">
@@ -1283,6 +1344,7 @@ export default function ModulesPanel() {
         open={pendingLayoutMode !== null}
         roofLabel={selectedRoof ? `D${layers.findIndex((roof) => roof.id === selectedRoof.id) + 1}` : undefined}
         moduleCount={selectedRoof ? panels.filter((panel) => panel.roofId === selectedRoof.id).length : 0}
+        protectsManualLayout={pendingLayoutMode === "portrait" || pendingLayoutMode === "landscape"}
         onCancel={() => setPendingLayoutMode(null)}
         onConfirm={confirmLayoutModeChange}
       />
