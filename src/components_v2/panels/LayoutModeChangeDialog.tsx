@@ -9,6 +9,7 @@ type Props = {
   onCancel: () => void;
   onConfirm: () => void;
   protectsManualLayout?: boolean;
+  title?: string;
 };
 
 export default function LayoutModeChangeDialog({
@@ -18,6 +19,7 @@ export default function LayoutModeChangeDialog({
   onCancel,
   onConfirm,
   protectsManualLayout = false,
+  title = "Ausrichtung ändern?",
 }: Props) {
   React.useEffect(() => {
     if (!open) return;
@@ -49,7 +51,7 @@ export default function LayoutModeChangeDialog({
         className="planner-surface-sidebar w-full max-w-sm rounded-2xl border border-border bg-background/95 p-5 text-foreground shadow-2xl backdrop-blur-xl"
       >
         <h2 id="layout-mode-change-title" className="text-base font-semibold">
-          Ausrichtung ändern?
+          {title}
         </h2>
         <p id="layout-mode-change-description" className="mt-3 text-sm leading-relaxed text-muted-foreground">
           {protectsManualLayout

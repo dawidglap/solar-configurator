@@ -13,6 +13,7 @@ import {
   createInitialAdvancedPlanning,
   fingerprintRoofPanels,
   hasManualRoofLayoutChanges,
+  resolveModuleModeChangeIntent,
   resolveRoofModuleMode,
   setAdvancedMountingOrientation,
 } from "../../src/components_v2/modules/advanced/advancedPlanningApplication";
@@ -290,6 +291,116 @@ test("pristine Vollbelegung can alternate portrait and landscape with a fresh pe
     roof: { ...ROOF, surfacePlanning: portraitAgain.config },
     panels: portraitAgain.panels,
   }), false);
+});
+
+test("pristine flat Vollbelegung alternates Süd and Ost-West with complete fresh systems", () => {
+  const flatRoof = { ...ROOF, roofKind: "flat" as const, tiltDeg: 0 };
+  const southConfig = setAdvancedMountingOrientation({
+    config: createInitialAdvancedPlanning({ panel: PANEL, standardModules: MODULES }),
+    orientation: "south",
+  });
+  const south = buildDirectAdvancedRoofLayout({
+    roof: flatRoof,
+    config: southConfig,
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    maximizeCoverage: true,
+    layoutRunId: "south-1",
+    createPanelId: (index) => `south-1-${index}`,
+  });
+  assert.ok(south);
+  assert.ok(south.panels.length > 0);
+  assert.ok(south.panels.every((panel) => panel.advanced?.systemId === K2_S_DOME_SYSTEM_ID));
+  assert.equal(hasManualRoofLayoutChanges({
+    roof: { ...flatRoof, surfacePlanning: south.config },
+    panels: south.panels,
+  }), false);
+  assert.equal(resolveModuleModeChangeIntent({
+    currentMode: "south",
+    requestedMode: "east-west",
+    committedPanelCount: south.panels.length,
+    pristineGeneratedLayout: true,
+    regeneratePristineLayout: true,
+  }), "regenerate");
+
+  const eastWest = buildDirectAdvancedRoofLayout({
+    roof: { ...flatRoof, surfacePlanning: south.config },
+    config: setAdvancedMountingOrientation({ config: south.config, orientation: "east-west" }),
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    maximizeCoverage: true,
+    layoutRunId: "east-west-1",
+    createPanelId: (index) => `east-west-1-${index}`,
+  });
+  assert.ok(eastWest);
+  assert.ok(eastWest.panels.every((panel) => panel.advanced?.systemId === K2_D_DOME_SYSTEM_ID));
+  const eastWestBlocks = new Map<string, PanelInstance[]>();
+  for (const item of eastWest.panels) {
+    const blockKey = item.advanced?.blockKey;
+    assert.ok(blockKey);
+    eastWestBlocks.set(blockKey, [...(eastWestBlocks.get(blockKey) ?? []), item]);
+  }
+  assert.ok(eastWestBlocks.size > 0);
+  for (const blockPanels of eastWestBlocks.values()) {
+    assert.equal(blockPanels.length, 2);
+    assert.deepEqual(blockPanels.map((panel) => panel.advanced?.slotIndex).sort(), [0, 1]);
+  }
+  assert.equal(hasManualRoofLayoutChanges({
+    roof: { ...flatRoof, surfacePlanning: JSON.parse(JSON.stringify(eastWest.config)) },
+    panels: eastWest.panels,
+  }), false);
+
+  const southAgain = buildDirectAdvancedRoofLayout({
+    roof: { ...flatRoof, surfacePlanning: eastWest.config },
+    config: setAdvancedMountingOrientation({ config: eastWest.config, orientation: "south" }),
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    maximizeCoverage: true,
+    layoutRunId: "south-2",
+    createPanelId: (index) => `south-2-${index}`,
+  });
+  assert.ok(southAgain);
+  assert.ok(southAgain.panels.every((panel) =>
+    panel.advanced?.systemId === K2_S_DOME_SYSTEM_ID && panel.advanced.slotIndex === 0));
+  assert.equal(hasManualRoofLayoutChanges({
+    roof: { ...flatRoof, surfacePlanning: southAgain.config },
+    panels: southAgain.panels,
+  }), false);
+
+  const eastWestAgain = buildDirectAdvancedRoofLayout({
+    roof: { ...flatRoof, surfacePlanning: southAgain.config },
+    config: setAdvancedMountingOrientation({ config: southAgain.config, orientation: "east-west" }),
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    maximizeCoverage: true,
+    layoutRunId: "east-west-2",
+    createPanelId: (index) => `east-west-2-${index}`,
+  });
+  assert.ok(eastWestAgain);
+  assert.equal(hasManualRoofLayoutChanges({
+    roof: { ...flatRoof, surfacePlanning: eastWestAgain.config },
+    panels: eastWestAgain.panels,
+  }), false);
+
+  const deletedBlockKey = eastWestAgain.panels[0]?.advanced?.blockKey;
+  const manuallyDeletedBlock = eastWestAgain.panels.filter(
+    (panel) => panel.advanced?.blockKey !== deletedBlockKey,
+  );
+  assert.equal(hasManualRoofLayoutChanges({
+    roof: { ...flatRoof, surfacePlanning: eastWestAgain.config },
+    panels: manuallyDeletedBlock,
+  }), true);
+  assert.equal(resolveModuleModeChangeIntent({
+    currentMode: "east-west",
+    requestedMode: "south",
+    committedPanelCount: manuallyDeletedBlock.length,
+    pristineGeneratedLayout: false,
+    regeneratePristineLayout: true,
+  }), "confirm");
 });
 
 test("a legacy Standard layout without a generated fingerprint stays protected", () => {

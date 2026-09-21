@@ -134,6 +134,20 @@ test("mode-switch intent distinguishes empty, pristine Standard and protected la
     regeneratePristineLayout: false,
   }), "confirm");
   assert.equal(resolveModuleModeChangeIntent({
+    currentMode: "south",
+    requestedMode: "east-west",
+    committedPanelCount: 30,
+    pristineGeneratedLayout: true,
+    regeneratePristineLayout: true,
+  }), "regenerate");
+  assert.equal(resolveModuleModeChangeIntent({
+    currentMode: "east-west",
+    requestedMode: "south",
+    committedPanelCount: 24,
+    pristineGeneratedLayout: true,
+    regeneratePristineLayout: true,
+  }), "regenerate");
+  assert.equal(resolveModuleModeChangeIntent({
     currentMode: "portrait",
     requestedMode: "landscape",
     committedPanelCount: 0,
@@ -179,8 +193,9 @@ test("mode-switch dialog owns the destructive decision before draft mutation", (
     "utf8",
   );
   assert.match(panelSource, /if \(intent === "confirm"\) \{\s*setPendingLayoutMode\(mode\);\s*return;/);
-  assert.match(panelSource, /confirmModuleModeChange\(\{/);
+  assert.match(panelSource, /regeneratePristineLayout\(pendingLayoutMode\)/);
   assert.match(dialogSource, /Ausrichtung ändern\?/);
+  assert.match(panelSource, /Aufständerung ändern\?/);
   assert.match(dialogSource, /Alle Module auf dieser Dachfläche werden entfernt\./);
   assert.match(dialogSource, /Module entfernen & wechseln/);
   assert.match(dialogSource, /Manuelle Änderungen an der Modulbelegung werden dabei gelöscht\./);
@@ -188,7 +203,7 @@ test("mode-switch dialog owns the destructive decision before draft mutation", (
   assert.match(panelSource, /hasManualRoofLayoutChanges\(\{ roof: selectedRoof, panels \}\)/);
   assert.match(panelSource, /intent === "regenerate"/);
   assert.match(panelSource, /buildDirectStandardRoofLayout\(/);
-  assert.match(panelSource, /commitRoofLayout\(\{[\s\S]*panels: candidate\.panels,[\s\S]*surfacePlanning: candidate\.config/);
+  assert.match(panelSource, /commitRoofLayout\(\{[\s\S]*panels: candidatePanels,[\s\S]*surfacePlanning: candidateSurfacePlanning/);
   assert.equal(dialogSource.includes("window.confirm"), false);
 });
 

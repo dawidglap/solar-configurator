@@ -80,7 +80,7 @@ export function resolveModuleModeChangeIntent(input: {
   committedPanelCount: number;
   /** True only when the committed panels still match a stored generated baseline. */
   pristineGeneratedLayout?: boolean;
-  /** Kept explicit so Süd/Ost-West retain their existing product behaviour. */
+  /** Enables candidate-first regeneration for product modes that support it. */
   regeneratePristineLayout?: boolean;
 }): "noop" | "confirm" | "switch" | "regenerate" {
   if (input.currentMode === input.requestedMode) return "noop";
