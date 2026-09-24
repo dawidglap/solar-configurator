@@ -6,7 +6,6 @@ import { nanoid } from "nanoid";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import RoofAreaInfo from "../ui/RoofAreaInfo";
 import DetectedRoofsImport from "../panels/DetectedRoofsImport";
-import { MdViewModule } from "react-icons/md";
 import { Eye, EyeOff, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -247,10 +246,11 @@ export default function ModulesPanel() {
       ...standardDraft?.thermalFieldLimits,
     };
   }, [companyPlannerDefaults, selectedRoof?.surfacePlanning, standardDraft?.thermalFieldLimits]);
-  const customerRoofType =
-    selectedRoof?.roofKind === "pitched"
+  const customerRoofType = !selectedRoof
+    ? undefined
+    : selectedRoof.roofKind === "pitched"
       ? "pitched"
-      : selectedRoof?.roofKind === "flat"
+      : selectedRoof.roofKind === "flat"
         ? "flat"
         : displayMode === "standard"
       ? "pitched"
@@ -259,7 +259,9 @@ export default function ModulesPanel() {
             inferredSonnendachRoofType === "flat")
         ? "flat"
         : "preserved-green";
-  const selectedRoofKind = customerRoofType === "pitched"
+  const selectedRoofKind = !selectedRoof
+    ? undefined
+    : customerRoofType === "pitched"
     ? "pitched"
     : customerRoofType === "flat"
       ? "flat"
@@ -974,21 +976,6 @@ export default function ModulesPanel() {
         </button>
       )}
 
-      {step === "building" && !selectedRoof && (
-        <section className="rounded-xl border border-dashed border-border/80 bg-muted/10 px-4 py-7 text-center">
-          <MdViewModule
-            className="mx-auto h-6 w-6 text-muted-foreground/70"
-            aria-hidden="true"
-          />
-          <h2 className="mt-2 text-[12px] font-semibold">
-            Dachfläche auswählen
-          </h2>
-          <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-            Klicke auf eine Dachfläche, um ihre Eigenschaften zu bearbeiten.
-          </p>
-        </section>
-      )}
-
       {step === "modules" && !selectedRoof && (
         <div
           className="space-y-4"
@@ -1087,7 +1074,7 @@ export default function ModulesPanel() {
         </div>
       )}
 
-      {step === "building" && selectedRoof && (
+      {step === "building" && (
         <section className="space-y-2 border-b border-border/60 pb-4">
           <label className={labelSm}>Dachtyp</label>
           <div
@@ -1098,28 +1085,29 @@ export default function ModulesPanel() {
             <button
               type="button"
               onClick={() => requestRoofTypeChange("pitched")}
+              disabled={!selectedRoof}
               aria-pressed={customerRoofType === "pitched"}
-              className={`h-11 rounded-lg text-[11px] font-semibold ${customerRoofType === "pitched" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              className={`h-11 rounded-lg text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${customerRoofType === "pitched" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
             >
               Schrägdach
             </button>
             <button
               type="button"
               onClick={() => requestRoofTypeChange("flat")}
-              disabled={!selSpec}
+              disabled={!selectedRoof || !selSpec}
               aria-pressed={customerRoofType === "flat"}
               className={`h-11 rounded-lg text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${customerRoofType === "flat" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
             >
               Flachdach
             </button>
           </div>
-          {customerRoofType === "preserved-green" && (
+          {selectedRoof && customerRoofType === "preserved-green" && (
             <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] text-muted-foreground">
               Die bestehende Gründach-Konfiguration bleibt gespeichert. Neue
               Gründach-Planungen sind in diesem Workflow derzeit ausgeblendet.
             </p>
           )}
-          {displayMode === "advanced" && !advancedConfig && (
+          {selectedRoof && displayMode === "advanced" && !advancedConfig && (
             <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-[10px] text-destructive">
               Diese gespeicherte Flachdach-Konfiguration wird von dieser
               SOLA-Version nicht unterstützt. Die gespeicherten Module bleiben
@@ -1129,11 +1117,11 @@ export default function ModulesPanel() {
         </section>
       )}
 
-      {step === "building" && selectedRoof && (
+      {step === "building" && (
         <RoofMarginControl roof={selectedRoof} />
       )}
 
-      {step === "building" && selectedRoof && (
+      {step === "building" && (
         <RoofDimensionsControl roof={selectedRoof} roofKind={selectedRoofKind} />
       )}
 

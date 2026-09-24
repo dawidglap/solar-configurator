@@ -49,7 +49,52 @@ const EDGE_ROLE_LABELS = {
   edge: undefined,
 } as const;
 
-export default function RoofDimensionsControl({
+function EmptyRoofDimensionsControl() {
+  return (
+    <section className="space-y-6" data-testid="empty-roof-properties-shell">
+      <div className="space-y-3">
+        <label className={labelClass}>Dachfläche</label>
+        <p className="text-[10px] leading-relaxed text-muted-foreground">
+          Jede Kante wird in Metern aus der aktuellen Dachgeometrie berechnet.
+        </p>
+      </div>
+      <div className="space-y-3">
+        <label className={labelClass} htmlFor="reference-edge-empty">
+          First / Referenzkante
+        </label>
+        <select
+          id="reference-edge-empty"
+          className={controlClass}
+          value=""
+          disabled
+          aria-label="First oder Referenzkante – keine Dachfläche ausgewählt"
+        >
+          <option value="">—</option>
+        </select>
+      </div>
+      <div className="space-y-3">
+        <p className={labelClass}>Kanten</p>
+        <div className="grid grid-cols-2 gap-2.5">
+          {[1, 2, 3, 4].map((edgeNumber) => (
+            <div
+              key={edgeNumber}
+              className="min-h-14 min-w-0 rounded-lg border border-border/50 bg-muted/10 px-3 py-2"
+            >
+              <p className="truncate text-[10px] text-muted-foreground">
+                Kante {edgeNumber}
+              </p>
+              <p className="mt-1 whitespace-nowrap text-[11px] font-semibold tabular-nums text-muted-foreground">
+                —
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PopulatedRoofDimensionsControl({
   roof,
   roofKind,
 }: {
@@ -463,4 +508,16 @@ export default function RoofDimensionsControl({
       )}
     </section>
   );
+}
+
+export default function RoofDimensionsControl({
+  roof,
+  roofKind,
+}: {
+  roof?: RoofArea;
+  roofKind?: RoofKind;
+}) {
+  return roof && roofKind
+    ? <PopulatedRoofDimensionsControl roof={roof} roofKind={roofKind} />
+    : <EmptyRoofDimensionsControl />;
 }

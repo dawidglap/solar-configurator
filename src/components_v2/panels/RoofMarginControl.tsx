@@ -11,7 +11,25 @@ import NumericFieldWithSuffix from "../ui/NumericFieldWithSuffix";
 const labelClass =
   "text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
 
-export default function RoofMarginControl({ roof }: { roof: RoofArea }) {
+function EmptyRoofMarginControl() {
+  return (
+    <section className="space-y-2 border-b border-border/60 pb-4">
+      <label htmlFor="roof-margin-empty" className={labelClass}>
+        Randabstand
+      </label>
+      <NumericFieldWithSuffix
+        id="roof-margin-empty"
+        suffix="m"
+        value=""
+        placeholder="—"
+        disabled
+        aria-label="Randabstand in Meter – keine Dachfläche ausgewählt"
+      />
+    </section>
+  );
+}
+
+function PopulatedRoofMarginControl({ roof }: { roof: RoofArea }) {
   const updateRoof = usePlannerV2Store((state) => state.updateRoof);
   const planningDraft = usePlannerV2Store((state) => state.roofPlanningDrafts[roof.id]);
   const setPlanningDraft = usePlannerV2Store((state) => state.setRoofPlanningDraft);
@@ -90,4 +108,8 @@ export default function RoofMarginControl({ roof }: { roof: RoofArea }) {
       />
     </section>
   );
+}
+
+export default function RoofMarginControl({ roof }: { roof?: RoofArea }) {
+  return roof ? <PopulatedRoofMarginControl roof={roof} /> : <EmptyRoofMarginControl />;
 }

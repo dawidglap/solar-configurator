@@ -12,7 +12,8 @@ test("guided sidebar exposes primary choices without a dynamic bottom status are
     "utf8",
   );
 
-  assert.match(modulesPanel, /step === "building" && !selectedRoof/);
+  assert.equal(modulesPanel.includes('step === "building" && !selectedRoof'), false);
+  assert.match(modulesPanel, /step === "building" && \(/);
   assert.equal(modulesPanel.includes("Klicke auf eine Dachfläche, um Module zu planen."), false);
   assert.match(modulesPanel, /step === "modules" && !selectedRoof/);
   assert.ok(modulesPanel.includes('data-testid="module-planning-neutral-shell"'));
@@ -77,6 +78,35 @@ test("no-roof module shell stays neutral and roof-dependent tools remain guarded
   assert.match(toolbar, /disabled=\{!canUseModulesTools \|\| !selectedId\}/);
 });
 
+test("building planning keeps a null-safe roof-properties shell without selecting a roof", () => {
+  const modulesPanel = readFileSync(
+    new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const marginControl = readFileSync(
+    new URL("../../src/components_v2/panels/RoofMarginControl.tsx", import.meta.url),
+    "utf8",
+  );
+  const dimensionsControl = readFileSync(
+    new URL("../../src/components_v2/panels/RoofDimensionsControl.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(modulesPanel.includes("Dachfläche auswählen"), false);
+  assert.equal(modulesPanel.includes("Klicke auf eine Dachfläche, um ihre Eigenschaften zu bearbeiten."), false);
+  assert.match(modulesPanel, /step === "building" && \(\s*<section[^>]*>\s*<label className=\{labelSm\}>Dachtyp/);
+  assert.match(modulesPanel, /disabled=\{!selectedRoof\}/);
+  assert.match(modulesPanel, /<RoofMarginControl roof=\{selectedRoof\} \/>/);
+  assert.match(modulesPanel, /<RoofDimensionsControl roof=\{selectedRoof\} roofKind=\{selectedRoofKind\} \/>/);
+  assert.match(marginControl, /roof \? <PopulatedRoofMarginControl roof=\{roof\} \/> : <EmptyRoofMarginControl \/>/);
+  assert.ok(marginControl.includes('placeholder="—"'));
+  assert.ok(marginControl.includes("disabled"));
+  assert.ok(dimensionsControl.includes('data-testid="empty-roof-properties-shell"'));
+  assert.ok(dimensionsControl.includes("First / Referenzkante"));
+  assert.ok(dimensionsControl.includes("[1, 2, 3, 4].map"));
+  assert.ok(dimensionsControl.includes('<option value="">—</option>'));
+});
+
 test("Feinjustierung is the final interactive sidebar section before the disclaimer", () => {
   const modulesPanel = readFileSync(
     new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),
@@ -89,7 +119,7 @@ test("Feinjustierung is the final interactive sidebar section before the disclai
   const disclaimer = "Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.";
 
   const neutralStart = modulesPanel.indexOf('data-testid="module-planning-neutral-shell"');
-  const neutralEnd = modulesPanel.indexOf('{step === "building" && selectedRoof', neutralStart);
+  const neutralEnd = modulesPanel.indexOf('{step === "building" && (', neutralStart);
   const neutralShell = modulesPanel.slice(neutralStart, neutralEnd);
   assert.ok(neutralShell.indexOf("Modulabstand") < neutralShell.indexOf("Feinjustierung"));
   assert.ok(neutralShell.indexOf("Feinjustierung") < neutralShell.indexOf(disclaimer));
