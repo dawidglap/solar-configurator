@@ -93,6 +93,11 @@ export function resolveModuleModeChangeIntent(input: {
 
 export const DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG = { min: 8.5, max: 90 } as const;
 export const DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M = { min: 0, max: 20 } as const;
+/** Minimum customer-editable Wartungsgang: 1 mm. It has no artificial upper cap. */
+export const MIN_ADVANCED_SERVICE_CORRIDOR_M = 0.001;
+export function isValidAdvancedServiceCorridorM(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= MIN_ADVANCED_SERVICE_CORRIDOR_M;
+}
 export const DEFAULT_FLAT_MODULE_GAP_M = 0.018;
 export const DEFAULT_FLAT_EAST_WEST_CENTER_GAP_M = 0.078;
 
@@ -578,11 +583,16 @@ export function updateDefaultFlatSystem(input: {
     ? projectedDepthM
     : projectedDepthM * 2 + DEFAULT_FLAT_EAST_WEST_CENTER_GAP_M;
   const currentServiceCorridorM = getAdvancedServiceCorridorM(config);
-  const desiredRowSpaceM = clamp(
-    input.rowSpaceM ?? blockDepthM + (input.serviceCorridorM ?? currentServiceCorridorM),
-    0,
-    DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max,
-  );
+  const requestedServiceCorridorM = Number.isFinite(input.serviceCorridorM)
+    ? input.serviceCorridorM
+    : undefined;
+  const desiredRowSpaceM = requestedServiceCorridorM !== undefined
+    ? blockDepthM + Math.max(0, requestedServiceCorridorM)
+    : clamp(
+      input.rowSpaceM ?? blockDepthM + currentServiceCorridorM,
+      0,
+      DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max,
+    );
   const currentAzimuth =
     "faceAzimuthDeg" in current
       ? current.faceAzimuthDeg

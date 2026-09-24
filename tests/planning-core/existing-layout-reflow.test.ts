@@ -11,6 +11,7 @@ import {
   createInitialAdvancedPlanning,
   getAdvancedRowSpaceM,
   getAdvancedServiceCorridorM,
+  isValidAdvancedServiceCorridorM,
   setAdvancedMountingOrientation,
   updateDefaultFlatSystem,
 } from "../../src/components_v2/modules/advanced/advancedPlanningApplication";
@@ -79,6 +80,15 @@ function initial() {
   return generated;
 }
 
+test("Wartungsgang input accepts every finite value from 1 mm without an artificial maximum", () => {
+  for (const value of [0.001, 0.01, 0.1, 0.7, 1, 1.25, 100]) {
+    assert.equal(isValidAdvancedServiceCorridorM(value), true);
+  }
+  for (const value of [0, -0.001, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    assert.equal(isValidAdvancedServiceCorridorM(value), false);
+  }
+});
+
 test("Reihenabstand reflows the existing topology without replacing panel or block identities", () => {
   const current = initial();
   const next = updateDefaultFlatSystem({
@@ -118,6 +128,101 @@ test("Wartungsgang is a real geometry command and remains consistent with Reihen
   });
   assert.ok(result);
   assert.ok(result.panels.some((panel, index) => panel.cy !== current.panels[index].cy));
+});
+
+test("authoritative Wartungsgang accepts 1 mm and preserves every still-valid D-Dome block", () => {
+  const current = initial();
+  const next = updateDefaultFlatSystem({ config: current.config, orientation: "east-west", serviceCorridorM: 0.001 });
+  assert.ok(Math.abs(getAdvancedServiceCorridorM(next) - 0.001) < 1e-9);
+  const result = buildAdvancedExistingLayoutReflow({
+    roof: { ...ROOF, surfacePlanning: current.config }, currentPanels: current.panels,
+    previousConfig: current.config, nextConfig: next, mppImage: 0.1, zones: [], snowGuards: [],
+    pruneInvalidUnits: true,
+  });
+  assert.ok(result);
+  assert.equal(result.panels.length, current.panels.length);
+  assert.deepEqual(result.panels.map((panel) => panel.id).sort(), current.panels.map((panel) => panel.id).sort());
+});
+
+test("authoritative Wartungsgang prunes exactly one outer row instead of rejecting the requested value", () => {
+  const current = initial();
+  const next = updateDefaultFlatSystem({ config: current.config, orientation: "east-west", serviceCorridorM: 0.45 });
+  const result = buildAdvancedExistingLayoutReflow({
+    roof: { ...ROOF, surfacePlanning: current.config }, currentPanels: current.panels,
+    previousConfig: current.config, nextConfig: next, mppImage: 0.1, zones: [], snowGuards: [],
+    pruneInvalidUnits: true,
+  });
+  assert.ok(result);
+  assert.equal(current.panels.length, 364);
+  assert.equal(result.panels.length, 336);
+  assert.equal((current.panels.length - result.panels.length) / 2, 14);
+  assert.ok(Math.abs(getAdvancedServiceCorridorM(result.surfacePlanning as typeof next) - 0.45) < 1e-9);
+  const originalIds = new Set(current.panels.map((panel) => panel.id));
+  assert.ok(result.panels.every((panel) => originalIds.has(panel.id)));
+  const grouped = new Map<string | undefined, typeof result.panels>();
+  result.panels.forEach((panel) => {
+    const key = panel.advanced?.blockKey;
+    grouped.set(key, [...(grouped.get(key) ?? []), panel]);
+  });
+  grouped.forEach((panels, blockKey) => {
+    assert.ok(blockKey);
+    assert.equal(panels.length, 2);
+    assert.deepEqual(panels.map((panel) => panel.advanced?.slotIndex).sort(), [0, 1]);
+  });
+});
+
+test("authoritative Wartungsgang removes only a D-Dome block colliding with a Hindernis", () => {
+  const current = initial();
+  const next = updateDefaultFlatSystem({ config: current.config, orientation: "east-west", serviceCorridorM: 0.4 });
+  const baseline = buildAdvancedExistingLayoutReflow({
+    roof: { ...ROOF, surfacePlanning: current.config }, currentPanels: current.panels,
+    previousConfig: current.config, nextConfig: next, mppImage: 0.1, zones: [], snowGuards: [],
+    pruneInvalidUnits: true,
+  });
+  assert.ok(baseline);
+  const targetKey = baseline.panels[0].advanced?.blockKey;
+  assert.ok(targetKey);
+  const target = baseline.panels.filter((panel) => panel.advanced?.blockKey === targetKey);
+  const center = {
+    x: target.reduce((sum, panel) => sum + panel.cx, 0) / target.length,
+    y: target.reduce((sum, panel) => sum + panel.cy, 0) / target.length,
+  };
+  const result = buildAdvancedExistingLayoutReflow({
+    roof: { ...ROOF, surfacePlanning: current.config }, currentPanels: current.panels,
+    previousConfig: current.config, nextConfig: next, mppImage: 0.1,
+    zones: [{
+      roofId: ROOF.id,
+      id: "target-obstacle",
+      type: "reserved",
+      points: [
+        { x: center.x - 1, y: center.y - 1 },
+        { x: center.x + 1, y: center.y - 1 },
+        { x: center.x + 1, y: center.y + 1 },
+        { x: center.x - 1, y: center.y + 1 },
+      ],
+    }],
+    snowGuards: [],
+    pruneInvalidUnits: true,
+  });
+  assert.ok(result);
+  assert.equal(result.panels.length, baseline.panels.length - 2);
+  assert.equal(result.panels.some((panel) => panel.advanced?.blockKey === targetKey), false);
+});
+
+test("authoritative Wartungsgang may commit an empty valid subset", () => {
+  const current = initial();
+  const next = updateDefaultFlatSystem({ config: current.config, orientation: "east-west", serviceCorridorM: 100 });
+  assert.ok(Math.abs(getAdvancedServiceCorridorM(next) - 100) < 1e-9);
+  const result = buildAdvancedExistingLayoutReflow({
+    roof: { ...ROOF, surfacePlanning: current.config }, currentPanels: current.panels,
+    previousConfig: current.config, nextConfig: next, mppImage: 0.1,
+    zones: [{ roofId: ROOF.id, id: "whole-roof", type: "reserved", points: ROOF.points }],
+    snowGuards: [],
+    pruneInvalidUnits: true,
+  });
+  assert.ok(result);
+  assert.equal(result.panels.length, 0);
+  assert.ok(Math.abs(getAdvancedServiceCorridorM(result.surfacePlanning as typeof next) - 100) < 1e-9);
 });
 
 test("D-Dome pairs remain atomic and IDs, block keys and slots survive reflow", () => {
@@ -183,6 +288,7 @@ test("manually deleted holes stay deleted during reflow", () => {
   const result = buildAdvancedExistingLayoutReflow({
     roof: { ...ROOF, surfacePlanning: current.config }, currentPanels: withHole,
     previousConfig: current.config, nextConfig: next, mppImage: 0.1, zones: [], snowGuards: [],
+    pruneInvalidUnits: true,
   });
   assert.ok(result);
   assert.equal(result.panels.length, withHole.length);
@@ -208,6 +314,29 @@ test("South units reflow without D-Dome assumptions", () => {
   assert.ok(result);
   assert.equal(result.panels.length, generated.panels.length);
   assert.ok(result.panels.every((panel) => panel.advanced?.slotIndex === 0));
+});
+
+test("authoritative South Wartungsgang prunes individual one-module units", () => {
+  const config = setAdvancedMountingOrientation({
+    config: createInitialAdvancedPlanning({ panel: PANEL, standardModules: MODULES }),
+    orientation: "south",
+  });
+  const generated = buildDirectAdvancedRoofLayout({
+    roof: ROOF, config, mppImage: 0.1, zones: [], snowGuards: [], layoutRunId: "south-prune",
+    createPanelId: (index) => `south-prune-${index}`,
+  });
+  assert.ok(generated);
+  const next = updateDefaultFlatSystem({ config: generated.config, orientation: "south", serviceCorridorM: 0.8 });
+  const result = buildAdvancedExistingLayoutReflow({
+    roof: { ...ROOF, surfacePlanning: generated.config }, currentPanels: generated.panels,
+    previousConfig: generated.config, nextConfig: next, mppImage: 0.1, zones: [], snowGuards: [],
+    pruneInvalidUnits: true,
+  });
+  assert.ok(result);
+  assert.ok(result.panels.length > 0);
+  assert.ok(result.panels.length < generated.panels.length);
+  assert.ok(result.panels.every((panel) => panel.advanced?.slotIndex === 0));
+  assert.ok(result.panels.every((panel) => generated.panels.some((source) => source.id === panel.id)));
 });
 
 test("an impossible candidate returns null and cannot silently delete or mutate the old layout", () => {
@@ -409,7 +538,7 @@ test("legacy/unsupported planning resolution is not changed by the pure reflow h
   assert.equal(unresolved.status, "legacy-standard");
 });
 
-test("one successful reflow uses one atomic store commit and undo restores config plus exact geometry", async () => {
+test("one pruned Wartungsgang reflow is atomic, cleans selection and undo restores the exact layout", async () => {
   const [{ usePlannerV2Store }, { history }] = await Promise.all([
     import("../../src/components_v2/state/plannerV2Store"),
     import("../../src/components_v2/state/history"),
@@ -419,15 +548,25 @@ test("one successful reflow uses one atomic store commit and undo restores confi
   const next = updateDefaultFlatSystem({
     config: current.config,
     orientation: "east-west",
-    rowSpaceM: getAdvancedRowSpaceM(current.config) + 0.08,
+    serviceCorridorM: 0.8,
   });
   const candidate = buildAdvancedExistingLayoutReflow({
     roof, currentPanels: current.panels, previousConfig: current.config, nextConfig: next,
-    mppImage: 0.1, zones: [], snowGuards: [],
+    mppImage: 0.1, zones: [], snowGuards: [], pruneInvalidUnits: true,
   });
   assert.ok(candidate);
+  assert.ok(candidate.panels.length < current.panels.length);
+  assert.equal(candidate.surfacePlanning.generatedLayoutFingerprint, undefined);
+  const retainedId = candidate.panels[0].id;
+  const retainedIds = new Set(candidate.panels.map((panel) => panel.id));
+  const removedId = current.panels.find((panel) => !retainedIds.has(panel.id))?.id;
+  assert.ok(removedId);
   usePlannerV2Store.getState().resetPlanner();
-  usePlannerV2Store.setState({ layers: [roof], panels: current.panels });
+  usePlannerV2Store.setState({
+    layers: [roof],
+    panels: current.panels,
+    selectedPanelIds: [retainedId, removedId],
+  });
   history.clear();
   history.push("Abstände ändern");
   let storeWrites = 0;
@@ -438,10 +577,13 @@ test("one successful reflow uses one atomic store commit and undo restores confi
     surfacePlanning: candidate.surfacePlanning,
   });
   assert.equal(storeWrites, 1);
+  assert.deepEqual(usePlannerV2Store.getState().selectedPanelIds, [retainedId]);
+  assert.equal(usePlannerV2Store.getState().panels.length, candidate.panels.length);
   history.undo();
   assert.equal(storeWrites, 2);
   assert.deepEqual(usePlannerV2Store.getState().panels, current.panels);
   assert.deepEqual(usePlannerV2Store.getState().layers[0].surfacePlanning, current.config);
+  assert.deepEqual(usePlannerV2Store.getState().selectedPanelIds, [retainedId, removedId]);
   unsubscribe();
   history.clear();
   usePlannerV2Store.getState().resetPlanner();

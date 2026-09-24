@@ -26,6 +26,9 @@ import {
   type ImageMetricAdapter,
   type MetricPoint,
   type MetricPolygon,
+  type PolygonObstacle,
+  type SegmentObstacle,
+  type UsableRoofGeometry,
 } from "@/lib/planning-core/geometry-v2";
 import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
 import type { ModulesConfig, PanelInstance, Pt, RoofArea } from "@/types/planner";
@@ -93,14 +96,19 @@ function strictlyOverlap(first: MetricPolygon, second: MetricPolygon): boolean {
   });
 }
 
-function validateCandidateFootprints(input: {
+type CandidateValidationContext = {
+  usableRoof: UsableRoofGeometry;
+  reservedZones: PolygonObstacle[];
+  snowGuards: SegmentObstacle[];
+};
+
+function buildCandidateValidationContext(input: {
   roof: RoofArea;
   marginM: number;
   mppImage: number;
   zones: readonly ObstacleZone[];
   snowGuards: readonly SnowGuard[];
-  footprints: readonly MetricPolygon[];
-}): boolean {
+}): CandidateValidationContext {
   const adapter = imageAdapter(input.roof, input.mppImage);
   const usableRoof = computeUsableRoof({
     roofPolygonM: imagePolygonToMetric(input.roof.points, adapter),
@@ -117,15 +125,30 @@ function validateCandidateFootprints(input: {
       end: imagePointToMetric(guard.p2, adapter),
       clearanceM: 0,
     }));
-  if (input.footprints.some((footprint) => !validatePlacementFootprint({
+  return { usableRoof, reservedZones, snowGuards };
+}
+
+function isValidCandidateFootprint(
+  footprint: MetricPolygon,
+  context: CandidateValidationContext,
+): boolean {
+  if (footprint.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))) return false;
+  return validatePlacementFootprint({
     footprint,
-    usableRoof,
-    reservedZones,
-    snowGuards,
-  }).valid)) return false;
-  for (let first = 0; first < input.footprints.length; first += 1) {
-    for (let second = first + 1; second < input.footprints.length; second += 1) {
-      if (strictlyOverlap(input.footprints[first], input.footprints[second])) return false;
+    usableRoof: context.usableRoof,
+    reservedZones: context.reservedZones,
+    snowGuards: context.snowGuards,
+  }).valid;
+}
+
+function validateCandidateFootprints(
+  footprints: readonly MetricPolygon[],
+  context: CandidateValidationContext,
+): boolean {
+  if (footprints.some((footprint) => !isValidCandidateFootprint(footprint, context))) return false;
+  for (let first = 0; first < footprints.length; first += 1) {
+    for (let second = first + 1; second < footprints.length; second += 1) {
+      if (strictlyOverlap(footprints[first], footprints[second])) return false;
     }
   }
   return true;
@@ -152,11 +175,20 @@ export function buildAdvancedExistingLayoutReflow(input: {
   mppImage: number;
   zones: readonly ObstacleZone[];
   snowGuards: readonly SnowGuard[];
+  /**
+   * Wartungsgang is authoritative: keep the deterministic reference-edge
+   * order and drop only placement units which cannot survive the reflow.
+   * Other spacing controls retain their existing all-or-nothing policy.
+   */
+  pruneInvalidUnits?: boolean;
 }): ExistingLayoutReflowResult | null {
   const roofPanels = input.currentPanels.filter((panel) => panel.roofId === input.roof.id);
   const nextConfig = withoutGeneratedFingerprint(input.nextConfig);
   if (!roofPanels.length) return { panels: [], surfacePlanning: nextConfig };
-  if (!(input.mppImage > 0) || roofPanels.some((panel) => !panel.advanced?.blockKey || panel.locked)) return null;
+  if (
+    !(input.mppImage > 0) ||
+    roofPanels.some((panel) => !panel.advanced?.blockKey || (!input.pruneInvalidUnits && panel.locked))
+  ) return null;
 
   const previousDefinition = resolveManualAdvancedBlockDefinition(input.previousConfig);
   const nextDefinition = resolveManualAdvancedBlockDefinition(nextConfig);
@@ -216,6 +248,8 @@ export function buildAdvancedExistingLayoutReflow(input: {
     };
     return {
       source: unit,
+      columnIndex,
+      rowIndex,
       block: instantiateAdvancedBlock({
         definition: nextDefinition,
         centerM: rotateMetricPoint(nextLocal, nextRotation),
@@ -226,17 +260,36 @@ export function buildAdvancedExistingLayoutReflow(input: {
     };
   });
 
-  if (!validateCandidateFootprints({
+  const validationContext = buildCandidateValidationContext({
     roof: input.roof,
     marginM: nextConfig.advanced.layout.marginM,
     mppImage: input.mppImage,
     zones: input.zones,
     snowGuards: input.snowGuards,
-    footprints: placed.map((unit) => unit.block.footprint),
-  })) return null;
+  });
+  const retained = input.pruneInvalidUnits
+    ? placed
+      .slice()
+      .sort((a, b) =>
+        a.rowIndex - b.rowIndex ||
+        a.columnIndex - b.columnIndex ||
+        a.source.blockKey.localeCompare(b.source.blockKey)
+      )
+      .reduce<typeof placed>((accepted, candidate) => {
+        if (!isValidCandidateFootprint(candidate.block.footprint, validationContext)) return accepted;
+        if (accepted.some((unit) => strictlyOverlap(unit.block.footprint, candidate.block.footprint))) return accepted;
+        accepted.push(candidate);
+        return accepted;
+      }, [])
+    : placed;
+
+  if (!validateCandidateFootprints(
+    retained.map((unit) => unit.block.footprint),
+    validationContext,
+  )) return null;
 
   const identity = systemIdentity(nextConfig.advanced.system);
-  const panels = placed.flatMap(({ source, block }) => {
+  const panels = retained.flatMap(({ source, block }) => {
     const modules = expandBlockToModules(block);
     return modules.map((module) => {
       const existing = source.panels.find((panel) => panel.advanced?.slotIndex === module.slotIndex)!;
@@ -351,14 +404,14 @@ export function buildStandardExistingLayoutReflow(input: {
     panel.hPx * input.mppImage,
     -panel.angleDeg,
   ));
-  if (!validateCandidateFootprints({
+  const validationContext = buildCandidateValidationContext({
     roof: input.roof,
     marginM: resolveRoofEdgeMarginM(input.roof, input.nextModules.marginM),
     mppImage: input.mppImage,
     zones: input.zones,
     snowGuards: input.snowGuards,
-    footprints,
-  })) return null;
+  });
+  if (!validateCandidateFootprints(footprints, validationContext)) return null;
   return {
     panels: regroupStandardPanelsAfterManualCommit({
       panels,

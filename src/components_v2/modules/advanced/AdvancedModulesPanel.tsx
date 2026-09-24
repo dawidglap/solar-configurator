@@ -25,6 +25,7 @@ import {
   DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M,
   getAdvancedRowSpaceM,
   getAdvancedServiceCorridorM,
+  isValidAdvancedServiceCorridorM,
   replaceAdvancedDraftModule,
   updateDefaultFlatSystem,
 } from "./advancedPlanningApplication";
@@ -58,14 +59,20 @@ function MetricCommitInput({
   unit,
   onCommit,
   ariaLabel,
+  fractionDigits = 2,
 }: {
   id: string;
   value: number;
   unit: string;
   onCommit: (value: number) => boolean;
   ariaLabel: string;
+  fractionDigits?: number;
 }) {
-  const formatted = React.useMemo(() => String(Math.round(value * 100) / 100), [value]);
+  const formatted = React.useMemo(() => {
+    const factor = 10 ** fractionDigits;
+    const rounded = Math.round(value * factor) / factor;
+    return String(Number.isFinite(rounded) ? rounded : value);
+  }, [fractionDigits, value]);
   const [text, setText] = React.useState(formatted);
   const cancelledRef = React.useRef(false);
 
@@ -235,7 +242,7 @@ export default function AdvancedModulesPanel({
     serviceCorridorM: number;
     moduleGapM: number;
     nominalTiltDeg: number;
-  }>) => {
+  }>, options?: { authoritativeServiceCorridor?: boolean }) => {
     const valuesAreValid = Object.entries(values).every(([field, value]) => {
       if (!Number.isFinite(value)) return false;
       if (field === "moduleGapM") return isValidModuleSpacingMm(value * 1000);
@@ -243,7 +250,7 @@ export default function AdvancedModulesPanel({
         return value >= DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.min && value <= DEFAULT_FLAT_SYSTEM_TILT_RANGE_DEG.max;
       }
       if (field === "serviceCorridorM") {
-        return value >= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.min && value <= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max;
+        return isValidAdvancedServiceCorridorM(value);
       }
       return value > DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.min && value <= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max;
     });
@@ -273,6 +280,7 @@ export default function AdvancedModulesPanel({
       mppImage,
       zones,
       snowGuards,
+      pruneInvalidUnits: options?.authoritativeServiceCorridor === true,
     });
     if (!candidate) {
       setSpacingError("Die bestehende Belegung passt mit diesem Wert nicht vollständig auf die Dachfläche.");
@@ -286,13 +294,34 @@ export default function AdvancedModulesPanel({
       panels: candidate.panels,
       surfacePlanning: candidate.surfacePlanning,
     });
+    if (options?.authoritativeServiceCorridor) {
+      const previousRoofPanels = panels.filter((panel) => panel.roofId === roof.id);
+      const removedModuleCount = previousRoofPanels.length - candidate.panels.length;
+      if (removedModuleCount > 0) {
+        const retainedBlockKeys = new Set(candidate.panels.map((panel) => panel.advanced?.blockKey));
+        const removedBlockCount = new Set(
+          previousRoofPanels
+            .filter((panel) => !retainedBlockKeys.has(panel.advanced?.blockKey))
+            .map((panel) => panel.advanced?.blockKey)
+            .filter((key): key is string => typeof key === "string"),
+        ).size;
+        toast.success(
+          orientation === "east-west"
+            ? `Wartungsgang übernommen · ${removedBlockCount} ${removedBlockCount === 1 ? "Block" : "Blöcke"} / ${removedModuleCount} Module entfernt`
+            : `Wartungsgang übernommen · ${removedModuleCount} ${removedModuleCount === 1 ? "Modul" : "Module"} entfernt`,
+        );
+      }
+    }
     return true;
   }, [companyPlannerDefaults, config, commitRoofLayout, isSupportedSystem, mppImage, orientation, panels, roof, snowGuards, zones]);
 
   const commitSpacingChange = React.useCallback((
     field: "rowSpaceM" | "serviceCorridorM" | "moduleGapM" | "nominalTiltDeg",
     value: number,
-  ) => commitSpacingValues({ [field]: value }), [commitSpacingValues]);
+  ) => commitSpacingValues(
+    { [field]: value },
+    field === "serviceCorridorM" ? { authoritativeServiceCorridor: true } : undefined,
+  ), [commitSpacingValues]);
 
   const currentSpacingValues = React.useMemo(() => ({
     rowSpaceM,
@@ -425,7 +454,7 @@ export default function AdvancedModulesPanel({
           <label htmlFor={`advanced-row-space-${roof.id}`}>Reihenabstand</label>
           <MetricCommitInput id={`advanced-row-space-${roof.id}`} ariaLabel="Reihenabstand" value={rowSpaceM} unit="m" onCommit={(value) => commitSpacingChange("rowSpaceM", value)} />
           <label htmlFor={`advanced-service-corridor-${roof.id}`}>Wartungsgang</label>
-          <MetricCommitInput id={`advanced-service-corridor-${roof.id}`} ariaLabel="Wartungsgang" value={getAdvancedServiceCorridorM(config)} unit="m" onCommit={(value) => commitSpacingChange("serviceCorridorM", value)} />
+          <MetricCommitInput id={`advanced-service-corridor-${roof.id}`} ariaLabel="Wartungsgang" value={getAdvancedServiceCorridorM(config)} unit="m" fractionDigits={3} onCommit={(value) => commitSpacingChange("serviceCorridorM", value)} />
           <label htmlFor={`advanced-module-gap-${roof.id}`}>Modulabstand</label>
           <MetricCommitInput id={`advanced-module-gap-${roof.id}`} ariaLabel="Modulabstand" value={moduleGapM * 1000} unit="mm" onCommit={(value) => commitSpacingChange("moduleGapM", value / 1000)} />
           <label htmlFor={`advanced-module-tilt-${roof.id}`}>Modulneigung</label>
