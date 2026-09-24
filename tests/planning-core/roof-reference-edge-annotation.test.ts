@@ -79,8 +79,9 @@ test("semantic copy uses one high-contrast module annotation while only its edge
   assert.match(annotations, /fontStyle="600"/);
   assert.match(annotations, /cornerRadius=\{MODULE_EDGE_PILL_RADIUS \* inverseScale\}/);
   assert.doesNotMatch(annotations, /text="GEFÄLLE"/);
-  assert.match(annotations, /<SmallFallArrow/);
-  assert.match(annotations, /<Arrow/);
+  assert.match(annotations, /showRoofFallArrow =\s*step === "building" &&\s*roofKind === "pitched"/);
+  assert.match(annotations, /showRoofFallArrow && \(\s*<RoofAzimuthArrows/);
+  assert.doesNotMatch(annotations, /SmallFallArrow/);
   assert.match(accentLayer, /resolveCanonicalRoofReferenceEdge/);
   assert.match(accentLayer, /plannerTheme\.referenceEdge/);
   assert.match(accentLayer, /listening=\{false\}/);

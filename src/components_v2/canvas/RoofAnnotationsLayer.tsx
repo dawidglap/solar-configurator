@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Arrow, Group, Line, Rect, Text } from "react-konva";
+import { Group, Line, Rect, Text } from "react-konva";
 
 import {
   computeUsableRoof,
@@ -45,36 +45,6 @@ function useTransientPoints(roofId: string): readonly Pt[] | null {
   );
 }
 
-function SmallFallArrow({ center, azimuthDeg, scale }: {
-  center: Pt;
-  azimuthDeg: number;
-  scale: number;
-}) {
-  const radians = azimuthDeg * Math.PI / 180;
-  const direction = { x: Math.sin(radians), y: -Math.cos(radians) };
-  const inverseScale = 1 / Math.max(scale, 0.01);
-  const length = 20 * inverseScale;
-  return (
-    <Group listening={false}>
-      <Arrow
-        points={[
-          center.x - direction.x * length / 2,
-          center.y - direction.y * length / 2,
-          center.x + direction.x * length / 2,
-          center.y + direction.y * length / 2,
-        ]}
-        stroke={plannerTheme.primary}
-        fill={plannerTheme.primary}
-        strokeWidth={1.25 * inverseScale}
-        pointerLength={5 * inverseScale}
-        pointerWidth={5 * inverseScale}
-        opacity={0.72}
-        listening={false}
-      />
-    </Group>
-  );
-}
-
 type RoofAnnotationsLayerProps = {
   canvasRotationDeg?: number;
 };
@@ -111,6 +81,11 @@ export default function RoofAnnotationsLayer({
     ? 0
     : advancedConfig?.surface.slopeDeg ?? roof.tiltDeg;
   const fallAzimuthDeg = advancedConfig?.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(roof);
+  const showRoofFallArrow =
+    step === "building" &&
+    roofKind === "pitched" &&
+    typeof fallAzimuthDeg === "number" &&
+    (tiltDeg ?? 0) > 0.05;
   const marginM = advancedConfig?.advanced.layout.marginM
     ?? (draft?.targetMode === "standard" ? draft.modules.marginM : undefined)
     ?? resolveRoofEdgeMarginM(roof, globalMarginM);
@@ -150,7 +125,7 @@ export default function RoofAnnotationsLayer({
         </Group>
       )}
 
-      {step === "building" && roofKind === "pitched" && typeof fallAzimuthDeg === "number" && (tiltDeg ?? 0) > 0.05 && (
+      {showRoofFallArrow && (
         <RoofAzimuthArrows
           points={[...points]}
           view={view}
@@ -162,9 +137,6 @@ export default function RoofAnnotationsLayer({
           stepPx={72}
           lenPx={30}
         />
-      )}
-      {step === "modules" && roofKind === "pitched" && typeof fallAzimuthDeg === "number" && (tiltDeg ?? 0) > 0.05 && (
-        <SmallFallArrow center={model.center} azimuthDeg={fallAzimuthDeg} scale={scale} />
       )}
 
       {model.edges.map((edge) => {
