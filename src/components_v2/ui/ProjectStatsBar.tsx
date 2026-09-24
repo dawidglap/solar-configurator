@@ -3,6 +3,7 @@
 
 import React, { useMemo } from "react";
 import { usePlannerV2Store } from "../state/plannerV2Store";
+import ToolbarSeparator from "../layout/TopToolbar/ToolbarSeparator";
 
 function fmt(
   n: number,
@@ -33,28 +34,19 @@ export default function ProjectStatsBar() {
 
   return (
     <div
-      className="
-        inline-flex items-center h-8 pl-4
-        border-l border-white/80
-        px-2 select-none
-      "
+      className="inline-flex h-8 shrink-0 items-center whitespace-nowrap select-none"
       aria-live="polite"
     >
-      <div
-        className="
-          text-[13px] sm:text-[14px] font-medium tracking-tight
-          text-neutral-100
-        "
-      >
+      <div className="inline-flex items-center text-[13px] font-medium tracking-tight text-neutral-100 sm:text-[14px]">
         {/* Count */}
         <span className="text-neutral-100">{fmt(count)}</span>
-        <span className="mx-2 text-neutral-300">Module</span>
-        <span className="me-2 text-white">|</span>
+        <span className="ml-1 text-neutral-300">Module</span>
+        <ToolbarSeparator />
 
         {/* kWp */}
         <span className="text-neutral-100">{fmt(kwp, { min: 2, max: 2 })}</span>
         <span className="ml-1 text-neutral-300">kWp</span>
-        <span className="me-2 ms-2 text-white">|</span>
+        <ToolbarSeparator />
 
         {/* m² */}
         <span className="text-neutral-100">{fmt(Math.round(areaM2))}</span>

@@ -23,6 +23,7 @@ import { IoIosSave } from "react-icons/io";
 import ProjectStatsBar from "../ui/ProjectStatsBar";
 import TopbarAddressSearch from "./TopbarAddressSearch";
 import PlannerHelpDialog from "./PlannerHelpDialog";
+import ToolbarSeparator from "./TopToolbar/ToolbarSeparator";
 import LayoutRegenerationDialog from "../panels/LayoutRegenerationDialog";
 import {
   K2_D_DOME_SYSTEM_ID,
@@ -807,90 +808,84 @@ export default function TopToolbar() {
         </select> */}
       </div>
 
-      {/* DESTRA: 7–10 compatti + Undo/Redo */}
-      <div className="flex items-center ms-auto gap-1">
-        {canUseModulesTools && (
+      {/* DESTRA: azioni, history e statistiche con separatori condivisi. */}
+      <div className="ms-auto flex shrink-0 items-center">
+        <div className="flex items-center gap-1">
+          {canUseModulesTools && (
+            <button
+              type="button"
+              onClick={() => setUI({ showFieldDimensions: !showFieldDimensions })}
+              className={[
+                "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition",
+                showFieldDimensions
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground",
+              ].join(" ")}
+              aria-pressed={showFieldDimensions}
+              title="Thermische Feldmaße anzeigen"
+            >
+              <Ruler className="h-3.5 w-3.5" aria-hidden="true" />
+              Feldmaße
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setUI({ showFieldDimensions: !showFieldDimensions })}
-            className={[
-              "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition",
-              showFieldDimensions
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground",
-            ].join(" ")}
-            aria-pressed={showFieldDimensions}
-            title="Thermische Feldmaße anzeigen"
+            onClick={() => setIsHelpOpen(true)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-amber-300/80 bg-amber-400 text-neutral-950 shadow-sm transition hover:bg-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+            aria-label={`${step === "building" ? "Gebäudeplanung" : "Modulplanung"} Hilfe öffnen`}
+            title="Hilfe"
           >
-            <Ruler className="h-3.5 w-3.5" aria-hidden="true" />
-            Feldmaße
+            <CircleHelp className="h-4 w-4" aria-hidden="true" />
           </button>
-        )}
-        <button
-          type="button"
-          onClick={() => setIsHelpOpen(true)}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-amber-300/80 bg-amber-400 text-neutral-950 shadow-sm transition hover:bg-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-          aria-label={`${step === "building" ? "Gebäudeplanung" : "Modulplanung"} Hilfe öffnen`}
-          title="Hilfe"
-        >
-          <CircleHelp className="h-4 w-4" aria-hidden="true" />
-        </button>
-        {/* 7) Neue Variante — placeholder */}
+          <ActionBtn
+            onClick={handleSave}
+            Icon={IoIosSave}
+            label=""
+            disabled={false}
+            tooltipLabel="Speichern"
+            tooltipKeys={[mod, "S"]}
+          />
+        </div>
 
-        {/* 8) Trasparenza — placeholder */}
+        <ToolbarSeparator />
 
-        {/* 9) Leeren — placeholder */}
+        <div className="flex items-center gap-2">
+          <IconOnlyBtn
+            onClick={handleUndo}
+            Icon={RotateCcw}
+            ariaLabel="Rückgängig"
+            tooltipLabel="Rückgängig"
+            tooltipKeys={isMac ? ["⌘", "Z"] : ["Ctrl", "Z"]}
+            disabled={!canUndo}
+          />
+          <IconOnlyBtn
+            onClick={handleRedo}
+            Icon={RotateCw}
+            ariaLabel="Wiederholen"
+            tooltipLabel="Wiederholen"
+            tooltipKeys={isMac ? ["⇧", "⌘", "Z"] : ["Ctrl", "Y"]}
+            disabled={!canRedo}
+          />
+        </div>
 
-        {/* 10) Speichern — placeholder */}
-        <ActionBtn
-          onClick={handleSave}
-          Icon={IoIosSave}
-          label=""
-          disabled={false}
-          tooltipLabel="Speichern"
-          tooltipKeys={[mod, "S"]}
-        />
-      </div>
-
-      <div className="mx-1 h-6 w-px bg-border" />
-
-      {/* DX: Undo/Redo (icon-only) */}
-      <div className="flex shrink-0 items-center gap-2 pl-2">
-        <IconOnlyBtn
-          onClick={handleUndo}
-          Icon={RotateCcw}
-          ariaLabel="Rückgängig"
-          tooltipLabel="Rückgängig"
-          tooltipKeys={isMac ? ["⌘", "Z"] : ["Ctrl", "Z"]}
-          disabled={!canUndo}
-        />
-        <IconOnlyBtn
-          onClick={handleRedo}
-          Icon={RotateCw}
-          ariaLabel="Wiederholen"
-          tooltipLabel="Wiederholen"
-          tooltipKeys={isMac ? ["⇧", "⌘", "Z"] : ["Ctrl", "Y"]}
-          disabled={!canRedo}
-        />
-        <div className="mx-1 h-6 w-px bg-border" />
-
+        <ToolbarSeparator />
         <ProjectStatsBar />
-
-        <SnowGuardCostDialog
-          open={isSnowDialogOpen}
-          onClose={() => setIsSnowDialogOpen(false)}
-          segments={snowSegments}
-          setSegments={setSnowSegments}
-          pricePerM={SNOW_PRICE_PER_M}
-        />
-
-        <PlannerHelpDialog
-          open={isHelpOpen}
-          step={step}
-          onClose={() => setIsHelpOpen(false)}
-          onChooseTool={(nextTool) => setTool(nextTool)}
-        />
       </div>
+
+      <SnowGuardCostDialog
+        open={isSnowDialogOpen}
+        onClose={() => setIsSnowDialogOpen(false)}
+        segments={snowSegments}
+        setSegments={setSnowSegments}
+        pricePerM={SNOW_PRICE_PER_M}
+      />
+
+      <PlannerHelpDialog
+        open={isHelpOpen}
+        step={step}
+        onClose={() => setIsHelpOpen(false)}
+        onChooseTool={(nextTool) => setTool(nextTool)}
+      />
       <LayoutRegenerationDialog
         open={regenerationPending}
         roofLabel={selectedRoof?.name}
