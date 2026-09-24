@@ -103,6 +103,9 @@ const endDrag = useCallback((commit = true) => {
 
   const startDrag = useCallback(
     (i: number, e: any) => {
+      // Right-click belongs to the Stage pan lifecycle, even directly over a
+      // vertex handle. Touch events have no mouse button and remain valid.
+      if (typeof e?.evt?.button === 'number' && e.evt.button !== 0) return;
       e.cancelBubble = true; // non propagare al poligono
       activeRef.current = i;
       const initial = points.map((point) => ({ ...point }));
@@ -195,7 +198,9 @@ const endDrag = useCallback((commit = true) => {
           fill="#fff"
           stroke="#a855f7"
           strokeWidth={1}
-          hitStrokeWidth={16}
+          // Keep the visible marker compact while making the pointer target
+          // forgiving on dense/overlapping roof geometry.
+          hitStrokeWidth={20}
           listening
           onMouseDown={(e) => startDrag(i, e)}
           onTouchStart={(e) => startDrag(i, e)}

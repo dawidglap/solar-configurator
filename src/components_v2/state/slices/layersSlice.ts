@@ -56,21 +56,28 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
         })),
 
     deleteLayer: (id) =>
-        set((st) => ({
-            layers: st.layers.filter((l) => l.id !== id),
-            selectedId: st.selectedId === id ? undefined : st.selectedId,
-        })),
+        set((st) => removeRoofFromState(st, id)),
 
     // alias con la stessa logica di deleteLayer
     removeRoof: (id) =>
-        set((st) => ({
-            layers: st.layers.filter((l) => l.id !== id),
-            selectedId: st.selectedId === id ? undefined : st.selectedId,
-        })),
+        set((st) => removeRoofFromState(st, id)),
 
     selectedId: undefined,
     select: (id) =>
         set((state) => {
+            const ui = (state as LayersSlice & {
+                ui?: { roofShapeMode?: 'normal' | 'trapezio' };
+            }).ui;
+            // Trapez editing owns the selected roof until the user explicitly
+            // returns to Normal. This central guard also protects callers that
+            // do not participate in canvas hit-testing (sidebar, overview, etc.).
+            if (
+                ui?.roofShapeMode === 'trapezio' &&
+                state.selectedId &&
+                id !== state.selectedId
+            ) {
+                return state;
+            }
             if (state.selectedId === id) return { selectedId: id };
             // A roof context switch invalidates every roof-local child
             // selection. The objects themselves remain untouched.
@@ -82,6 +89,20 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
             } as Partial<LayersSlice>;
         }),
 });
+
+function removeRoofFromState(state: LayersSlice, id: string): Partial<LayersSlice> {
+    const selectedRoofRemoved = state.selectedId === id;
+    const ui = (state as LayersSlice & {
+        ui?: { roofShapeMode?: 'normal' | 'trapezio' } & Record<string, unknown>;
+    }).ui;
+    return {
+        layers: state.layers.filter((layer) => layer.id !== id),
+        selectedId: selectedRoofRemoved ? undefined : state.selectedId,
+        ...(selectedRoofRemoved && ui
+            ? { ui: { ...ui, roofShapeMode: 'normal' } }
+            : {}),
+    } as Partial<LayersSlice>;
+}
 
 function normalizeRoofPatch(roof: RoofArea, patch: Partial<RoofArea> | undefined): RoofArea {
     if (!patch) return roof;

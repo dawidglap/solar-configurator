@@ -109,6 +109,7 @@ const DEFAULT_UI = {
   showPanelsInBuilding: true,
   showModulePreview: true,
   showFieldDimensions: false,
+  roofShapeMode: 'normal' as const,
 };
 
 function createDefaultModules(
@@ -396,7 +397,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             perRoofAngles: {},
           },
           roofPlanningDrafts: {},
-          ui: { ...s.ui, showModulePreview: true },
+          ui: { ...s.ui, showModulePreview: true, roofShapeMode: 'normal' },
         }));
         history.clear();
       },

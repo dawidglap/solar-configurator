@@ -59,6 +59,7 @@ import {
   type MarqueePanelCandidate,
 } from "../modules/panels/panelMarqueeSelection";
 import RoofShapesLayer from "./RoofShapesLayer";
+import RoofTrapezInteractionOverlay from "./RoofTrapezInteractionOverlay";
 import RoofHudOverlay from "./RoofHudOverlay";
 import { useContainerSize } from "../canvas/hooks/useContainerSize";
 import { useBaseImage } from "../canvas/hooks/useBaseImage";
@@ -238,6 +239,8 @@ export default function CanvasStage() {
   const select = usePlannerV2Store((s) => s.select);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
   const rightOpen = usePlannerV2Store((s) => s.ui.rightPanelOpen);
+  const shapeMode = usePlannerV2Store((s) => s.ui.roofShapeMode);
+  const setUI = usePlannerV2Store((s) => s.setUI);
   const modules = usePlannerV2Store((s) => s.modules);
   const allPanels = usePlannerV2Store((s) => s.panels);
   const roofPlanningDrafts = usePlannerV2Store((s) => s.roofPlanningDrafts);
@@ -283,7 +286,6 @@ export default function CanvasStage() {
   });
 
   // UI states
-  const [shapeMode, setShapeMode] = useState<"normal" | "trapezio">("normal");
   const [draggingVertex, setDraggingVertex] = useState(false);
   const [draggingPanel, setDraggingPanel] = useState(false);
   const [selectedPanelInstId, setSelectedPanelInstId] = useState<
@@ -388,6 +390,9 @@ export default function CanvasStage() {
   const selectedRoof = useMemo(
     () => layers.find((l) => l.id === selectedId) ?? null,
     [layers, selectedId],
+  );
+  const exclusiveTrapez = Boolean(
+    step === "building" && shapeMode === "trapezio" && selectedRoof,
   );
   const selectedRoofPlanning = selectedRoof
     ? resolveSurfacePlanning(selectedRoof.surfacePlanning)
@@ -521,10 +526,13 @@ export default function CanvasStage() {
     }
   }, [activeThermalFields, selectedThermalFieldKey]);
 
-  // reset shapeMode on selection change
+  // A missing roof or leaving Gebäudeplanung ends the exclusive edit session.
+  // Roof selection itself is locked centrally while this mode is active.
   useEffect(() => {
-    setShapeMode("normal");
-  }, [selectedId]);
+    if (shapeMode === "trapezio" && (step !== "building" || !selectedRoof)) {
+      setUI({ roofShapeMode: "normal" });
+    }
+  }, [selectedRoof, setUI, shapeMode, step]);
 
   // subito sotto gli altri useEffect
   useEffect(() => {
@@ -1453,11 +1461,11 @@ export default function CanvasStage() {
                   width={img.naturalWidth}
                   height={img.naturalHeight}
                   fill="rgba(0,0,0,0.001)"
-                  listening={tool !== "fill-area"}
+                  listening={tool !== "fill-area" && !exclusiveTrapez}
                   name="bg-catcher"
                   onClick={(event) => {
                     if (!isPrimaryPointerButton(event?.evt?.button)) return;
-                    if (drawingCapturesPointer) return;
+                    if (drawingCapturesPointer || exclusiveTrapez) return;
                     const st = usePlannerV2Store.getState();
                     st.setSelectedZone?.(undefined);
                     st.clearPanelSelection?.();
@@ -1496,7 +1504,7 @@ export default function CanvasStage() {
                     onThermalFieldsChange={showFieldDimensions ? setAdvancedPreviewThermalFields : undefined}
                   />
                 )}
-                <Group listening={!drawingCapturesPointer}>
+                <Group listening={!drawingCapturesPointer && !exclusiveTrapez}>
                   <SonnendachOverlayKonva />
                 </Group>
 
@@ -1520,7 +1528,9 @@ export default function CanvasStage() {
                     onHandlesDragEnd={() => setDraggingVertex(false)}
                     areaLabel={areaLabel}
                   />
+                </Group>
 
+                <Group listening={!drawingCapturesPointer && !exclusiveTrapez}>
                   {layers.map((l) => (
                     <ZonesLayer
                       key={l.id}
@@ -1549,7 +1559,7 @@ export default function CanvasStage() {
                         strokeWidth={isSel ? 2 : 1}
                         lineCap="round"
                         lineJoin="round"
-                        listening={!drawingCapturesPointer}
+                        listening={!drawingCapturesPointer && !exclusiveTrapez}
                         onMouseDown={(event) => {
                           const state = usePlannerV2Store.getState();
                           roofSwitchSnowGuardRef.current = undefined;
@@ -1684,6 +1694,34 @@ export default function CanvasStage() {
                 )}
               </Group>
             </Layer>
+            {exclusiveTrapez && selectedRoof && (
+              <Layer
+                scaleX={layerScale}
+                scaleY={layerScale}
+                listening
+                perfectDrawEnabled={false}
+                name="roof-trapez-exclusive-layer"
+              >
+                <Group
+                  name="viewport-rotated-content"
+                  x={img.naturalWidth / 2}
+                  y={img.naturalHeight / 2}
+                  offsetX={img.naturalWidth / 2}
+                  offsetY={img.naturalHeight / 2}
+                  rotation={rotateDeg}
+                >
+                  <RoofTrapezInteractionOverlay
+                    roof={selectedRoof}
+                    roofs={layers}
+                    imgW={snap.width ?? img.naturalWidth}
+                    imgH={snap.height ?? img.naturalHeight}
+                    toImg={toImgCoords}
+                    onDragStart={() => setDraggingVertex(true)}
+                    onDragEnd={() => setDraggingVertex(false)}
+                  />
+                </Group>
+              </Layer>
+            )}
           </Stage>
           <PanelMarqueeOverlay ref={marqueeOverlayRef} />
           <ScreenGrid
@@ -1803,7 +1841,9 @@ export default function CanvasStage() {
         view={view}
         shapeMode={shapeMode}
         onToggleShape={() =>
-          setShapeMode((prev) => (prev === "normal" ? "trapezio" : "normal"))
+          setUI({
+            roofShapeMode: shapeMode === "normal" ? "trapezio" : "normal",
+          })
         }
         canToggleShape={step !== "modules"}
       />

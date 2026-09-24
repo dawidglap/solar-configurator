@@ -29,6 +29,8 @@ export type UIState = {
     showModulePreview: boolean;
     /** View-only toolbar toggle; intentionally excluded from planning persistence. */
     showFieldDimensions: boolean;
+    /** View-only roof interaction mode; intentionally excluded from planning persistence. */
+    roofShapeMode: 'normal' | 'trapezio';
 };
 
 export type Tool =

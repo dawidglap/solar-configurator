@@ -21,6 +21,7 @@ export const createUiSlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
         showPanelsInBuilding: true,
         showModulePreview: true,
         showFieldDimensions: false,
+        roofShapeMode: 'normal',
     },
 
     setUI: (partial) =>

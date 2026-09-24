@@ -9,7 +9,6 @@ import {
   Circle as KonvaCircle,
   Rect as KonvaRect,
 } from "react-konva";
-import RoofHandlesKonva from "./RoofHandlesKonva";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { rotateAround } from "@/components_v2/roofs/alignment";
 import { FaRotate } from "react-icons/fa6";
@@ -163,7 +162,6 @@ function stagePxToImgPx(
   const sy = Math.hypot(by.x - a.x, by.y - a.y);
   return Math.max(sx, sy); // fattore "px stage -> px immagine"
 }
-type SnapTarget = { roofId: string; index: number; x: number; y: number };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ANGLES AT VERTICES (per mostrare 30/45/60/90)
@@ -284,6 +282,7 @@ export default function RoofShapesLayer({
   const removeRoof = usePlannerV2Store((s) => s.removeRoof);
   const step = usePlannerV2Store((s) => s.step);
   const roofsLocked = step === "modules";
+  const exclusiveTrapez = !roofsLocked && shapeMode === "trapezio" && Boolean(selectedId);
   const tool = usePlannerV2Store((s) => s.tool);
   const setTool = usePlannerV2Store((s) => s.setTool);
 
@@ -438,24 +437,6 @@ export default function RoofShapesLayer({
   const ROT_KNOB_OFFSET = toImgPx(KNOB_OFFSET_S);
   const HANDLE_SZ = toImgPx(HANDLE_SIZE_S);
 
-  // SNAP CONFIG
-  const SNAP_RADIUS_STAGE = 6;
-  const snapRadiusImg = useMemo(
-    () => SNAP_RADIUS_STAGE * stagePxToImgPx(toImg, 1),
-    [toImg],
-  );
-
-  // Candidati snap
-  const getSnapTargets = useMemo(() => {
-    const all: SnapTarget[] = [];
-    for (const L of layers) {
-      L.points.forEach((p, i) => {
-        all.push({ roofId: L.id, index: i, x: p.x, y: p.y });
-      });
-    }
-    return () => all;
-  }, [layers]);
-
   // subito prima del return
   const topHandles: React.ReactElement[] = [];
 
@@ -468,7 +449,7 @@ export default function RoofShapesLayer({
         width={imgW}
         height={imgH}
         fill="rgba(0,0,0,0)"
-        listening
+        listening={!exclusiveTrapez}
         onClick={() => {
           // solo quando siamo GIÀ in modalità selezione
           if (tool !== "select") return;
@@ -651,7 +632,11 @@ export default function RoofShapesLayer({
         }
 
         return (
-          <KonvaGroup key={r.id} id={`roof-group-${r.id}`}>
+          <KonvaGroup
+            key={r.id}
+            id={`roof-group-${r.id}`}
+            listening={!exclusiveTrapez || sel}
+          >
             <KonvaLine
               id={`roof-shape-${r.id}`}
               points={flat}
@@ -660,6 +645,7 @@ export default function RoofShapesLayer({
               lineCap="round"
               fill={fill}
               onClick={(e) => {
+                if (exclusiveTrapez && !sel) return;
                 // in modalità modules: NIENTE multi-select, ma devo comunque poter selezionare la falda
                 if (roofsLocked) {
                   setGroupSel([]);
@@ -1204,24 +1190,6 @@ export default function RoofShapesLayer({
                 </>
               )}
 
-            {/* Maniglie TRAPEZIO */}
-            {!roofsLocked && sel && shapeMode === "trapezio" && (
-              <RoofHandlesKonva
-                roofId={r.id}
-                points={r.points}
-                imgW={imgW}
-                imgH={imgH}
-                toImg={toImg}
-                getSnapTargets={getSnapTargets}
-                snapRadiusImg={snapRadiusImg}
-                onDragStart={onHandlesDragStart}
-                onDragEnd={onHandlesDragEnd}
-                onChange={(next) => {
-                  plannerHistory.push("move roof vertex");
-                  updateRoof(r.id, { points: next });
-                }}
-              />
-            )}
           </KonvaGroup>
         );
       })}

@@ -90,6 +90,7 @@ export default function ModulesPanel() {
   const showPanelsInBuilding = usePlannerV2Store(
     (s) => s.ui.showPanelsInBuilding,
   );
+  const roofShapeMode = usePlannerV2Store((s) => s.ui.roofShapeMode);
   const setUI = usePlannerV2Store((s) => s.setUI);
 
   // --- Moduli / pannelli ---
@@ -457,6 +458,11 @@ export default function ModulesPanel() {
     disabled?: boolean;
   }) => {
     if (input.disabled) return;
+    if (
+      roofShapeMode === "trapezio" &&
+      selectedId &&
+      input.roofId !== selectedId
+    ) return;
     select(input.roofId);
     setTempVal(input.value == null ? "" : String(Math.round(input.value * 100) / 100));
     if (input.field === "az") {
@@ -469,7 +475,7 @@ export default function ModulesPanel() {
       }
     }
     setEditing({ id: input.roofId, field: input.field });
-  }, [select]);
+  }, [roofShapeMode, select, selectedId]);
 
   const buildRequestedModuleMode = useCallback((mode: "portrait" | "landscape" | "south" | "east-west"): {
     draft: Parameters<typeof setRoofPlanningDraft>[1];
@@ -699,6 +705,7 @@ export default function ModulesPanel() {
               {layers.map((l, i) => {
                 const roofId = l.id;
                 const active = selectedId === roofId;
+                const rowLocked = roofShapeMode === "trapezio" && Boolean(selectedId) && !active;
 
                 const rowPlanning = resolveSurfacePlanning(l.surfacePlanning);
                 const rowKind = l.roofKind ?? (
@@ -726,19 +733,25 @@ export default function ModulesPanel() {
                 const srcBadge =
                   src === "sonnendach" ? "S" : src === "manual" ? "M" : "";
                 return (
-                  <li key={roofId}>
+                  <li key={roofId} inert={rowLocked ? true : undefined}>
                     <div
-                      onClick={() => select(roofId)}
+                      onClick={() => {
+                        if (!rowLocked) select(roofId);
+                      }}
                       data-roof-list-row
+                      aria-disabled={rowLocked || undefined}
                       className={[
                         "grid min-h-9 grid-cols-[28px_42px_48px_minmax(70px,1fr)_32px] items-center px-1",
                         active
                           ? "bg-primary/15 text-primary ring-1 ring-primary/30"
-                          : "glass-row text-foreground",
+                          : rowLocked
+                            ? "glass-row cursor-not-allowed text-foreground opacity-55"
+                            : "glass-row text-foreground",
                       ].join(" ")}
                     >
                       {/* D1/D2 */}
                       <button
+                        disabled={rowLocked}
                         onClick={() => select(roofId)}
                         title={l.name ?? `D${i + 1}`}
                         aria-label={`Ebene auswählen: ${l.name ?? `D${i + 1}`}`}
