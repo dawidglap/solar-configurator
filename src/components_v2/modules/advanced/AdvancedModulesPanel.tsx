@@ -53,6 +53,17 @@ const fmt = (value: number, digits = 2) =>
 
 const normalizeAzimuth = (value: number) => ((value % 360) + 360) % 360;
 
+function resolveSupportedMountingOrientation(config: AdvancedSurfacePlanningV1) {
+  const systemId = config.advanced.system.systemId;
+  if (systemId === K2_S_DOME_SYSTEM_ID || systemId === GENERIC_SOUTH_SYSTEM_ID) {
+    return "south" as const;
+  }
+  if (systemId === K2_D_DOME_SYSTEM_ID || systemId === GENERIC_EAST_WEST_SYSTEM_ID) {
+    return "east-west" as const;
+  }
+  return null;
+}
+
 function MetricCommitInput({
   id,
   value,
@@ -177,9 +188,14 @@ export default function AdvancedModulesPanel({
     (state) => state.companyPlannerDefaults,
   );
   const clearDraft = usePlannerV2Store((state) => state.clearRoofPlanningDraft);
-  const commitRoofLayout = usePlannerV2Store((state) => state.commitRoofLayout);
   const [spacingError, setSpacingError] = React.useState<string | null>(null);
   const [companyDefaultsOpen, setCompanyDefaultsOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    // A committed replacement (for example Vollbelegung), a draft change or
+    // a selected-roof change invalidates any message from an older candidate.
+    setSpacingError(null);
+  }, [config, roof.id, roof.surfacePlanning]);
 
   const update = React.useCallback(
     (next: AdvancedSurfacePlanningV1) => {
@@ -254,17 +270,34 @@ export default function AdvancedModulesPanel({
       }
       return value > DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.min && value <= DEFAULT_FLAT_SYSTEM_SPACING_RANGE_M.max;
     });
-    if (!valuesAreValid || !isSupportedSystem || !(mppImage && mppImage > 0)) {
+    if (!valuesAreValid) {
       setSpacingError("Bitte einen gültigen Wert eingeben.");
       return false;
     }
+
+    // Input events can run before React has rendered a preceding Vollbelegung
+    // or spacing commit. The store snapshot is therefore the authoritative
+    // baseline for every reflow; props are presentation state only here.
+    const state = usePlannerV2Store.getState();
+    const currentRoof = state.layers.find((candidate) => candidate.id === roof.id);
+    const currentResolved = resolveSurfacePlanning(currentRoof?.surfacePlanning);
+    const currentDraft = state.roofPlanningDrafts[roof.id];
+    const currentConfig = currentResolved.status === "supported-advanced"
+      ? currentResolved.config
+      : currentDraft?.targetMode === "advanced"
+        ? currentDraft.config
+        : config;
+    const currentOrientation = resolveSupportedMountingOrientation(currentConfig);
+    const currentMppImage = state.snapshot.mppImage;
+    if (!currentRoof || !currentOrientation || !(currentMppImage && currentMppImage > 0)) {
+      setSpacingError("Die aktuelle Belegung ist inkonsistent und kann nicht sicher angepasst werden.");
+      return false;
+    }
     const next = updateDefaultFlatSystem({
-      config,
-      orientation,
+      config: currentConfig,
+      orientation: currentOrientation,
       ...values,
     });
-    const resolved = resolveSurfacePlanning(roof.surfacePlanning);
-    const previousConfig = resolved.status === "supported-advanced" ? resolved.config : config;
     if (
       (values.rowSpaceM !== undefined && Math.abs(getAdvancedRowSpaceM(next) - values.rowSpaceM) > 1e-6) ||
       (values.serviceCorridorM !== undefined && values.rowSpaceM === undefined && Math.abs(getAdvancedServiceCorridorM(next) - values.serviceCorridorM) > 1e-6)
@@ -273,29 +306,34 @@ export default function AdvancedModulesPanel({
       return false;
     }
     const candidate = buildAdvancedExistingLayoutReflow({
-      roof,
-      currentPanels: panels,
-      previousConfig,
-      nextConfig: withEffectiveAdvancedThermalLimits(next, companyPlannerDefaults),
-      mppImage,
-      zones,
-      snowGuards,
+      roof: currentRoof,
+      currentPanels: state.panels,
+      previousConfig: currentConfig,
+      nextConfig: withEffectiveAdvancedThermalLimits(next, state.companyPlannerDefaults),
+      mppImage: currentMppImage,
+      zones: state.zones,
+      snowGuards: state.snowGuards,
       pruneInvalidUnits: options?.authoritativeServiceCorridor === true,
     });
     if (!candidate) {
-      setSpacingError("Die bestehende Belegung passt mit diesem Wert nicht vollständig auf die Dachfläche.");
-      toast.error("Abstand nicht übernommen: Die bestehende Belegung wäre ungültig.");
+      const message = options?.authoritativeServiceCorridor
+        ? "Der Wartungsgang konnte wegen inkonsistenter Belegungsdaten nicht sicher übernommen werden."
+        : "Die bestehende Belegung passt mit diesem Wert nicht vollständig auf die Dachfläche.";
+      setSpacingError(message);
+      toast.error(options?.authoritativeServiceCorridor
+        ? "Wartungsgang nicht übernommen: Belegungsdaten prüfen."
+        : "Abstand nicht übernommen: Die bestehende Belegung wäre ungültig.");
       return false;
     }
     setSpacingError(null);
     plannerHistory.push("Abstände ändern");
-    commitRoofLayout({
-      roofId: roof.id,
+    state.commitRoofLayout({
+      roofId: currentRoof.id,
       panels: candidate.panels,
       surfacePlanning: candidate.surfacePlanning,
     });
     if (options?.authoritativeServiceCorridor) {
-      const previousRoofPanels = panels.filter((panel) => panel.roofId === roof.id);
+      const previousRoofPanels = state.panels.filter((panel) => panel.roofId === currentRoof.id);
       const removedModuleCount = previousRoofPanels.length - candidate.panels.length;
       if (removedModuleCount > 0) {
         const retainedBlockKeys = new Set(candidate.panels.map((panel) => panel.advanced?.blockKey));
@@ -306,14 +344,14 @@ export default function AdvancedModulesPanel({
             .filter((key): key is string => typeof key === "string"),
         ).size;
         toast.success(
-          orientation === "east-west"
+          currentOrientation === "east-west"
             ? `Wartungsgang übernommen · ${removedBlockCount} ${removedBlockCount === 1 ? "Block" : "Blöcke"} / ${removedModuleCount} Module entfernt`
             : `Wartungsgang übernommen · ${removedModuleCount} ${removedModuleCount === 1 ? "Modul" : "Module"} entfernt`,
         );
       }
     }
     return true;
-  }, [companyPlannerDefaults, config, commitRoofLayout, isSupportedSystem, mppImage, orientation, panels, roof, snowGuards, zones]);
+  }, [config, roof.id]);
 
   const commitSpacingChange = React.useCallback((
     field: "rowSpaceM" | "serviceCorridorM" | "moduleGapM" | "nominalTiltDeg",

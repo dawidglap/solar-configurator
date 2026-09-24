@@ -80,6 +80,29 @@ function initial() {
   return generated;
 }
 
+function initialGenericEastWest(serviceCorridorM = 0.2) {
+  const config = updateDefaultFlatSystem({
+    config: setAdvancedMountingOrientation({
+      config: createInitialAdvancedPlanning({ panel: PANEL, standardModules: MODULES }),
+      orientation: "east-west",
+    }),
+    orientation: "east-west",
+    serviceCorridorM,
+  });
+  const generated = buildDirectAdvancedRoofLayout({
+    roof: ROOF,
+    config,
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    maximizeCoverage: true,
+    layoutRunId: `generic-${serviceCorridorM}`,
+    createPanelId: (index) => `generic-panel-${index}`,
+  });
+  assert.ok(generated);
+  return generated;
+}
+
 test("Wartungsgang input accepts every finite value from 1 mm without an artificial maximum", () => {
   for (const value of [0.001, 0.01, 0.1, 0.7, 1, 1.25, 100]) {
     assert.equal(isValidAdvancedServiceCorridorM(value), true);
@@ -171,6 +194,62 @@ test("authoritative Wartungsgang prunes exactly one outer row instead of rejecti
   });
 });
 
+test("Vollbelegung 0.20 -> 0.25 -> 0.30 uses each committed result as the next authoritative baseline", () => {
+  const generated = initialGenericEastWest(0.2);
+  assert.equal(generated.panels.length, 392);
+  assert.equal(new Set(generated.panels.map((panel) => panel.advanced?.blockKey)).size, 196);
+
+  const applyCorridor = (
+    currentPanels: typeof generated.panels,
+    currentConfig: typeof generated.config,
+    serviceCorridorM: number,
+  ) => {
+    const nextConfig = updateDefaultFlatSystem({
+      config: currentConfig,
+      orientation: "east-west",
+      serviceCorridorM,
+    });
+    const candidate = buildAdvancedExistingLayoutReflow({
+      roof: { ...ROOF, surfacePlanning: currentConfig },
+      currentPanels,
+      previousConfig: currentConfig,
+      nextConfig,
+      mppImage: 0.1,
+      zones: [],
+      snowGuards: [],
+      pruneInvalidUnits: true,
+    });
+    assert.ok(candidate);
+    assert.ok(Math.abs(getAdvancedServiceCorridorM(candidate.surfacePlanning as typeof nextConfig) - serviceCorridorM) < 1e-9);
+    return candidate as { panels: typeof generated.panels; surfacePlanning: typeof generated.config };
+  };
+
+  const at025 = applyCorridor(generated.panels, generated.config, 0.25);
+  assert.equal(at025.panels.length, 364);
+  assert.equal(new Set(at025.panels.map((panel) => panel.advanced?.blockKey)).size, 182);
+
+  const at030 = applyCorridor(at025.panels, at025.surfacePlanning, 0.3);
+  assert.equal(at030.panels.length, 364);
+  assert.equal(new Set(at030.panels.map((panel) => panel.advanced?.blockKey)).size, 182);
+
+  const at015 = applyCorridor(at030.panels, at030.surfacePlanning, 0.15);
+  assert.equal(at015.panels.length, 364);
+  const at040 = applyCorridor(at015.panels, at015.surfacePlanning, 0.4);
+  assert.equal(at040.panels.length, 364);
+
+  for (const layout of [at025, at030, at015, at040]) {
+    const grouped = new Map<string, number[]>();
+    layout.panels.forEach((panel) => {
+      assert.ok(panel.advanced?.blockKey);
+      grouped.set(panel.advanced.blockKey, [
+        ...(grouped.get(panel.advanced.blockKey) ?? []),
+        panel.advanced.slotIndex,
+      ]);
+    });
+    grouped.forEach((slots) => assert.deepEqual(slots.sort(), [0, 1]));
+  }
+});
+
 test("authoritative Wartungsgang removes only a D-Dome block colliding with a Hindernis", () => {
   const current = initial();
   const next = updateDefaultFlatSystem({ config: current.config, orientation: "east-west", serviceCorridorM: 0.4 });
@@ -207,6 +286,64 @@ test("authoritative Wartungsgang removes only a D-Dome block colliding with a Hi
   assert.ok(result);
   assert.equal(result.panels.length, baseline.panels.length - 2);
   assert.equal(result.panels.some((panel) => panel.advanced?.blockKey === targetKey), false);
+});
+
+test("decreasing Wartungsgang accepts the value and prunes two obstacle-hit D-Dome blocks atomically", () => {
+  const current = initialGenericEastWest(0.2);
+  const next = updateDefaultFlatSystem({
+    config: current.config,
+    orientation: "east-west",
+    serviceCorridorM: 0.1,
+  });
+  const baseline = buildAdvancedExistingLayoutReflow({
+    roof: { ...ROOF, surfacePlanning: current.config },
+    currentPanels: current.panels,
+    previousConfig: current.config,
+    nextConfig: next,
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    pruneInvalidUnits: true,
+  });
+  assert.ok(baseline);
+  const targetKeys = [...new Set(baseline.panels.map((panel) => panel.advanced?.blockKey))]
+    .filter((key): key is string => typeof key === "string")
+    .slice(0, 2);
+  assert.equal(targetKeys.length, 2);
+  const zones = targetKeys.map((blockKey, index) => {
+    const block = baseline.panels.filter((panel) => panel.advanced?.blockKey === blockKey);
+    const center = {
+      x: block.reduce((sum, panel) => sum + panel.cx, 0) / block.length,
+      y: block.reduce((sum, panel) => sum + panel.cy, 0) / block.length,
+    };
+    return {
+      roofId: ROOF.id,
+      id: `obstacle-${index}`,
+      type: "reserved",
+      points: [
+        { x: center.x - 1, y: center.y - 1 },
+        { x: center.x + 1, y: center.y - 1 },
+        { x: center.x + 1, y: center.y + 1 },
+        { x: center.x - 1, y: center.y + 1 },
+      ],
+    };
+  });
+  const result = buildAdvancedExistingLayoutReflow({
+    roof: { ...ROOF, surfacePlanning: current.config },
+    currentPanels: current.panels,
+    previousConfig: current.config,
+    nextConfig: next,
+    mppImage: 0.1,
+    zones,
+    snowGuards: [],
+    pruneInvalidUnits: true,
+  });
+  assert.ok(result);
+  assert.equal(result.panels.length, baseline.panels.length - 4);
+  assert.ok(Math.abs(getAdvancedServiceCorridorM(result.surfacePlanning as typeof next) - 0.1) < 1e-9);
+  targetKeys.forEach((blockKey) => {
+    assert.equal(result.panels.some((panel) => panel.advanced?.blockKey === blockKey), false);
+  });
 });
 
 test("authoritative Wartungsgang may commit an empty valid subset", () => {
