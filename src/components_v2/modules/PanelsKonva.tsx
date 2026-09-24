@@ -40,10 +40,9 @@ import { history as plannerHistory } from '../state/history';
 import MultiSelectionDragHandle from './panels/MultiSelectionDragHandle';
 import { resolveDirectLayoutTargets } from './panels/directLayoutGeometry';
 import {
-  resolveDDomeLocalArrowAzimuth,
   resolveFlatSouthArrowAzimuth,
+  resolveOutwardBlockArrowAzimuths,
   resolvePitchedRoofArrowAzimuth,
-  resolveReferenceEdgeOpposingArrowAzimuths,
 } from './panels/moduleSlope';
 import {
   isPrimaryPointerButton,
@@ -195,19 +194,16 @@ export default function PanelsKonva(props: {
   const opposingArrowAzimuths = React.useMemo(() => {
     if (!roof || isPitchedRoof) return new Map<string, number>();
     const opposing = panels.filter((panel) =>
+      panel.advanced?.systemId === K2_D_DOME_SYSTEM_ID ||
       panel.advanced?.systemId === GENERIC_EAST_WEST_SYSTEM_ID,
     );
-    return resolveReferenceEdgeOpposingArrowAzimuths({
-      roofPolygon: roof.points,
-      referenceEdgeIndex: roof.referenceEdgeIndex,
-      members: opposing.map((panel) => ({
-        id: panel.id,
-        blockKey: panel.advanced?.blockKey,
-        slotIndex: panel.advanced?.slotIndex,
-        cx: panel.cx,
-        cy: panel.cy,
-      })),
-    });
+    return resolveOutwardBlockArrowAzimuths(opposing.map((panel) => ({
+      id: panel.id,
+      blockKey: panel.advanced?.blockKey,
+      slotIndex: panel.advanced?.slotIndex,
+      cx: panel.cx,
+      cy: panel.cy,
+    })));
   }, [isPitchedRoof, panels, roof]);
   const committedAdvancedDefinition = React.useMemo(
     () => committedAdvancedConfig ? resolveManualAdvancedBlockDefinition(committedAdvancedConfig) : null,
@@ -906,9 +902,7 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
             rotationDeg={rotationDeg}
             slopeArrowAzimuthDeg={isPitchedRoof
               ? pitchedArrowAzimuthDeg
-              : p.advanced?.systemId === K2_D_DOME_SYSTEM_ID
-                ? resolveDDomeLocalArrowAzimuth(rotationDeg)
-                : opposingArrowAzimuths.get(p.id) ?? flatSouthArrowAzimuthDeg}
+              : opposingArrowAzimuths.get(p.id) ?? flatSouthArrowAzimuthDeg}
             selected={sel}
             image={img}
             onStartDrag={startPanelDrag}

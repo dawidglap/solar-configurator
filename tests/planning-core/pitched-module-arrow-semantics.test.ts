@@ -7,11 +7,10 @@ import {
   resolveStandardFirstFrameCanvasAngle,
 } from "../../src/components_v2/modules/legacyStandardApplicationPolicy";
 import {
-  resolveDDomeLocalArrowAzimuth,
   resolveFlatSouthArrowAzimuth,
   resolveModuleSlopeArrowAzimuth,
+  resolveOutwardBlockArrowAzimuths,
   resolvePitchedRoofArrowAzimuth,
-  resolveReferenceEdgeOpposingArrowAzimuths,
 } from "../../src/components_v2/modules/panels/moduleSlope";
 
 const topFirstRoof = {
@@ -129,61 +128,44 @@ test("viewport rotation is absent from the physical arrow domain model", () => {
   for (const _viewportRotation of [0, 37, 90, 180]) assert.equal(arrow, 180);
 });
 
-test("East-West arrows follow Referenzkante and ignore panel geometry rotation", () => {
+test("East-West arrows point from the shared ridge toward each module outer edge", () => {
   const members = [
     { id: "slot-0", blockKey: "b", slotIndex: 0, cx: -1, cy: 0 },
     { id: "slot-1", blockKey: "b", slotIndex: 1, cx: 1, cy: 0 },
   ];
-  const horizontal = resolveReferenceEdgeOpposingArrowAzimuths({
-    members,
-    roofPolygon: topFirstRoof.points,
-    referenceEdgeIndex: 0,
-  });
-  assert.equal(horizontal.get("slot-0"), 90);
-  assert.equal(horizontal.get("slot-1"), 270);
+  const horizontal = resolveOutwardBlockArrowAzimuths(members);
+  assert.equal(horizontal.get("slot-0"), 270);
+  assert.equal(horizontal.get("slot-1"), 90);
 
-  const geometryRotatedNinety = resolveReferenceEdgeOpposingArrowAzimuths({
-    members: members.map((member) => ({ ...member, cx: -member.cy, cy: member.cx })),
-    roofPolygon: topFirstRoof.points,
-    referenceEdgeIndex: 0,
-  });
-  assert.deepEqual([...geometryRotatedNinety], [...horizontal]);
+  const geometryRotatedNinety = resolveOutwardBlockArrowAzimuths(
+    members.map((member) => ({ ...member, cx: -member.cy, cy: member.cx })),
+  );
+  assert.equal(geometryRotatedNinety.get("slot-0"), 0);
+  assert.equal(geometryRotatedNinety.get("slot-1"), 180);
 });
 
-test("D-Dome arrows rotate module-locally with every Feinjustierung delta", () => {
-  const initialPanelAngles = [90, 270];
-  const initialArrowAngles = initialPanelAngles.map((angle) =>
-    resolveDDomeLocalArrowAzimuth(angle)!,
-  );
-  assert.equal(normalize(initialArrowAngles[1] - initialArrowAngles[0]), 180);
-
-  for (const delta of [90, -90, 180]) {
-    const nextPanelAngles = initialPanelAngles.map((angle) => normalize(angle + delta));
-    const nextArrowAngles = nextPanelAngles.map((angle) =>
-      resolveDDomeLocalArrowAzimuth(angle)!,
-    );
-    assert.equal(normalize(nextArrowAngles[1] - nextArrowAngles[0]), 180);
-    for (let slot = 0; slot < 2; slot += 1) {
-      assert.equal(
-        normalize(nextArrowAngles[slot] - initialArrowAngles[slot]),
-        normalize(nextPanelAngles[slot] - initialPanelAngles[slot]),
-      );
-    }
+test("D-Dome arrows stay module-local and outward through a complete rotation", () => {
+  const initial = [
+    { id: "slot-0", blockKey: "b", slotIndex: 0, cx: -1, cy: 0 },
+    { id: "slot-1", blockKey: "b", slotIndex: 1, cx: 1, cy: 0 },
+  ];
+  for (const delta of [0, 90, 180, 270, 360]) {
+    const radians = delta * Math.PI / 180;
+    const rotated = initial.map((member) => ({
+      ...member,
+      cx: member.cx * Math.cos(radians) - member.cy * Math.sin(radians),
+      cy: member.cx * Math.sin(radians) + member.cy * Math.cos(radians),
+    }));
+    const arrows = resolveOutwardBlockArrowAzimuths(rotated);
+    assert.equal(normalize(arrows.get("slot-1")! - arrows.get("slot-0")!), 180);
+    rotated.forEach((member) => {
+      const expected = normalize(Math.atan2(member.cx, -member.cy) * 180 / Math.PI);
+      assert.ok(Math.abs(normalize(arrows.get(member.id)! - expected)) < 1e-9);
+    });
   }
 });
 
-test("changing Referenzkante rotates East-West arrows and South uses its inward normal", () => {
-  const members = [
-    { id: "slot-0", slotIndex: 0, cx: 0, cy: 0 },
-    { id: "slot-1", slotIndex: 1, cx: 0, cy: 0 },
-  ];
-  const vertical = resolveReferenceEdgeOpposingArrowAzimuths({
-    members,
-    roofPolygon: topFirstRoof.points,
-    referenceEdgeIndex: 1,
-  });
-  assert.equal(vertical.get("slot-0"), 180);
-  assert.equal(vertical.get("slot-1"), 0);
+test("South keeps using the Referenzkante inward normal", () => {
   assert.equal(resolveFlatSouthArrowAzimuth({
     roofPolygon: topFirstRoof.points,
     referenceEdgeIndex: 0,
@@ -212,13 +194,13 @@ test("committed, preview and manual render paths use canonical physical arrows",
     "utf8",
   );
   assert.match(panelsKonva, /resolvePitchedRoofArrowAzimuth/);
-  assert.match(panelsKonva, /resolveDDomeLocalArrowAzimuth/);
-  assert.match(panelsKonva, /resolveReferenceEdgeOpposingArrowAzimuths/);
+  assert.match(panelsKonva, /resolveOutwardBlockArrowAzimuths/);
   assert.match(canvasStage, /slopeArrowAzimuthDeg=\{standardSlopeArrowAzimuthDeg\}/);
   assert.match(manualPlacement, /resolvePitchedRoofArrowAzimuth/);
-  assert.match(manualPlacement, /resolveDDomeLocalArrowAzimuth/);
-  assert.match(advancedPreview, /resolveReferenceEdgeOpposingArrowAzimuths/);
-  assert.match(advancedPreview, /resolveDDomeLocalArrowAzimuth/);
+  assert.match(manualPlacement, /resolveOutwardBlockArrowAzimuths/);
+  assert.match(advancedPreview, /resolveOutwardBlockArrowAzimuths/);
+  assert.doesNotMatch(panelsKonva, /resolveDDomeLocalArrowAzimuth/);
+  assert.doesNotMatch(advancedPreview, /resolveReferenceEdgeOpposingArrowAzimuths/);
   assert.doesNotMatch(panelItem, /visualRotationDeg - rotationDeg/);
   assert.doesNotMatch(panelsKonva, /slopeArrowLocalOffsetDeg/);
 });

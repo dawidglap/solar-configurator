@@ -18,9 +18,8 @@ import { usePlannerV2Store } from "../../state/plannerV2Store";
 import { computeAdvancedPlanningPreview } from "./advancedPlanningApplication";
 import ModuleSlopeArrow from "../panels/ModuleSlopeArrow";
 import {
-  resolveDDomeLocalArrowAzimuth,
   resolveFlatSouthArrowAzimuth,
-  resolveReferenceEdgeOpposingArrowAzimuths,
+  resolveOutwardBlockArrowAzimuths,
 } from "../panels/moduleSlope";
 import type { ThermalFieldDisplayInput } from "../thermalFields/thermalFieldDisplay";
 import { withEffectiveAdvancedThermalLimits } from "./advancedThermalDefaults";
@@ -158,18 +157,14 @@ export default function AdvancedPreviewLayer({
   const isSouthSystem =
     system.systemId === K2_S_DOME_SYSTEM_ID ||
     system.systemId === GENERIC_SOUTH_SYSTEM_ID;
-  const outwardArrowAzimuths = system.systemId === GENERIC_EAST_WEST_SYSTEM_ID && preview
-    ? resolveReferenceEdgeOpposingArrowAzimuths({
-        roofPolygon: roof.points,
-        referenceEdgeIndex: roof.referenceEdgeIndex,
-        members: preview.modules.map((module) => ({
-          id: `${module.blockKey}:${module.slotIndex}`,
-          blockKey: module.blockKey,
-          slotIndex: module.slotIndex,
-          cx: module.cx,
-          cy: module.cy,
-        })),
-      })
+  const outwardArrowAzimuths = isOpposingSystem && preview
+    ? resolveOutwardBlockArrowAzimuths(preview.modules.map((module) => ({
+        id: `${module.blockKey}:${module.slotIndex}`,
+        blockKey: module.blockKey,
+        slotIndex: module.slotIndex,
+        cx: module.cx,
+        cy: module.cy,
+      })))
     : new Map<string, number>();
   const southArrowAzimuthDeg = isSouthSystem
     ? resolveFlatSouthArrowAzimuth({
@@ -226,10 +221,8 @@ export default function AdvancedPreviewLayer({
                   wPx={module.wPx}
                   hPx={module.hPx}
                   panelRotationDeg={module.angleDeg}
-                  arrowAzimuthDeg={system.systemId === K2_D_DOME_SYSTEM_ID
-                    ? resolveDDomeLocalArrowAzimuth(module.angleDeg)
-                    : outwardArrowAzimuths.get(`${module.blockKey}:${module.slotIndex}`) ??
-                      southArrowAzimuthDeg}
+                  arrowAzimuthDeg={outwardArrowAzimuths.get(`${module.blockKey}:${module.slotIndex}`) ??
+                    southArrowAzimuthDeg}
                 />
               </Group>
             );

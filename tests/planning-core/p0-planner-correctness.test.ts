@@ -41,24 +41,37 @@ test("D-Dome arrow invariant is horizontal, opposite and outward", () => {
   assert.equal(angleDifference(arrows.get("left")!, arrows.get("right")!), 180);
 });
 
-test("D-Dome arrows stay outward after +37/+90/+180 rotations and endpoint reversal", () => {
-  for (const degrees of [37, 90, 180]) {
+test("D-Dome arrows stay outward at 0/90/180/270/360 and after saved-layout reload", () => {
+  const initial = [
+    { id: "a", blockKey: "saved:block", slotIndex: 0, cx: -1, cy: 0 },
+    { id: "b", blockKey: "saved:block", slotIndex: 1, cx: 1, cy: 0 },
+  ];
+  const initialSnapshot = structuredClone(initial);
+  const initialArrows = resolveOutwardBlockArrowAzimuths(initial);
+  for (const degrees of [0, 90, 180, 270, 360]) {
     const left = rotate({ x: -1, y: 0 }, degrees);
     const right = rotate({ x: 1, y: 0 }, degrees);
     const forward = resolveOutwardBlockArrowAzimuths([
-      { id: "a", blockKey: "edge:p1-p2", cx: left.x, cy: left.y },
-      { id: "b", blockKey: "edge:p1-p2", cx: right.x, cy: right.y },
+      { id: "a", blockKey: "edge:p1-p2", slotIndex: 0, cx: left.x, cy: left.y },
+      { id: "b", blockKey: "edge:p1-p2", slotIndex: 1, cx: right.x, cy: right.y },
     ]);
     const reversed = resolveOutwardBlockArrowAzimuths([
-      { id: "a", blockKey: "edge:p2-p1", cx: left.x, cy: left.y },
-      { id: "b", blockKey: "edge:p2-p1", cx: right.x, cy: right.y },
+      { id: "a", blockKey: "edge:p2-p1", slotIndex: 0, cx: left.x, cy: left.y },
+      { id: "b", blockKey: "edge:p2-p1", slotIndex: 1, cx: right.x, cy: right.y },
     ]);
     assert.equal(angleDifference(forward.get("a")!, forward.get("b")!), 180);
     assert.equal(forward.get("a"), reversed.get("a"));
     assert.equal(forward.get("b"), reversed.get("b"));
     const centerToLeftAzimuth = normalize(Math.atan2(left.x, -left.y) * 180 / Math.PI);
     assert.ok(angleDifference(forward.get("a")!, centerToLeftAzimuth) < 1e-9);
+    if (degrees === 360) {
+      assert.ok(angleDifference(forward.get("a")!, initialArrows.get("a")!) < 1e-9);
+      assert.ok(angleDifference(forward.get("b")!, initialArrows.get("b")!) < 1e-9);
+    }
   }
+  const loaded = JSON.parse(JSON.stringify(initial));
+  assert.deepEqual([...resolveOutwardBlockArrowAzimuths(loaded)], [...initialArrows]);
+  assert.deepEqual(initial, initialSnapshot, "arrow derivation must not mutate panel geometry");
 });
 
 test("Vollbelegung improves the real D-Dome 17.8 x 10.9 m phase regression with no residual grid cell", () => {

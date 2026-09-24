@@ -44,32 +44,6 @@ export type BlockArrowMember = {
   cy: number;
 };
 
-/**
- * Resolves the two opposing East-West directions from the selected physical
- * Referenzkante. Panel positions and rotations deliberately do not participate.
- */
-export function resolveReferenceEdgeOpposingArrowAzimuths(input: {
-  members: readonly BlockArrowMember[];
-  roofPolygon: Array<{ x: number; y: number }>;
-  referenceEdgeIndex?: number;
-}): ReadonlyMap<string, number> {
-  const edge = resolveCanonicalRoofReferenceEdge({
-    points: input.roofPolygon,
-    requestedIndex: input.referenceEdgeIndex,
-    roofKind: "flat",
-  });
-  if (!edge) return new Map();
-  const result = new Map<string, number>();
-  for (const member of input.members) {
-    if (!Number.isInteger(member.slotIndex)) continue;
-    result.set(
-      member.id,
-      normalizeAzimuth(edge.geographicAzimuthDeg + ((member.slotIndex as number) % 2) * 180),
-    );
-  }
-  return result;
-}
-
 /** South-facing flat systems use the inward normal of the Referenzkante. */
 export function resolveFlatSouthArrowAzimuth(input: {
   roofPolygon: Array<{ x: number; y: number }>;
@@ -108,14 +82,14 @@ export function resolveOutwardBlockArrowAzimuths(
 
   const result = new Map<string, number>();
   for (const group of byBlock.values()) {
-    if (group.length < 2) continue;
-    const center = group.reduce(
-      (sum, member) => ({
-        x: sum.x + member.cx / group.length,
-        y: sum.y + member.cy / group.length,
-      }),
-      { x: 0, y: 0 },
-    );
+    // An East-West/D-Dome block has exactly two faces sharing one ridge.
+    // Requiring the complete pair avoids inventing a downhill direction for a
+    // corrupt/partial block and keeps the result independent from slot naming.
+    if (group.length !== 2) continue;
+    const center = {
+      x: (group[0].cx + group[1].cx) / 2,
+      y: (group[0].cy + group[1].cy) / 2,
+    };
     for (const member of group) {
       const dx = member.cx - center.x;
       const dy = member.cy - center.y;
@@ -137,17 +111,6 @@ export function resolvePanelLocalArrowAzimuth(panelRotationCanvasDeg: number): n
     : undefined;
 }
 
-/**
- * D-Dome is the flat-system exception whose downhill arrow is rigidly attached
- * to each module face. The generated slot rotations already encode the two
- * opposed downhill directions, so subsequent whole-layout rotations must use
- * the current panel rotation instead of re-resolving from the Referenzkante.
- */
-export function resolveDDomeLocalArrowAzimuth(
-  panelRotationCanvasDeg: number,
-): number | undefined {
-  return resolvePanelLocalArrowAzimuth(panelRotationCanvasDeg);
-}
 import {
   resolveCanonicalRoofReferenceEdge,
 } from "@/lib/planning-core/geometry-v2";
