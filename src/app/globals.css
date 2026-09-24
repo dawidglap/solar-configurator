@@ -51,6 +51,8 @@
 
 :root,
 :root[data-theme="default"] {
+  /* Shared planner properties/sidebar width: 264px legacy + 18.2%. */
+  --propW: 312px;
   --background: 214 46% 24%;
   --foreground: 210 34% 97%;
   --card: 214 52% 33%;

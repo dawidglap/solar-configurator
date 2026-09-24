@@ -10,6 +10,10 @@ const roofListSource = source.slice(
   source.indexOf("data-roof-list-header"),
   source.indexOf('{step === "building" && panels.length > 0'),
 );
+const globalStyles = readFileSync(
+  new URL("../../src/app/globals.css", import.meta.url),
+  "utf8",
+);
 
 test("roof list exposes explicit compact property columns without native number spinners", () => {
   for (const label of ["Dach", "Fläche", "Neigung", "Ausrichtung"]) {
@@ -45,12 +49,19 @@ test("building and module planning share one canonical roof-list structure", () 
   assert.equal(source.match(/data-roof-list-header/g)?.length, 1);
   assert.equal(source.match(/data-roof-list-row/g)?.length, 1);
   assert.equal(roofListSource.includes('step === "building" ? (\n              <div'), false);
-  for (const label of ["Dach", "Fläche", "Neigung", "Ausrichtung"]) {
+  for (const label of ["Dach", "Fläche", "Module", "kWp", "Neigung", "Ausrichtung"]) {
     assert.ok(roofListSource.includes(`>${label}</div>`));
   }
   assert.equal(roofListSource.includes(">Dachfläche</div>"), false);
-  assert.equal(roofListSource.includes("<span>Module</span>"), false);
-  assert.equal(roofListSource.includes(">kWp</div>"), false);
+  assert.ok(source.includes("buildCommittedRoofStatsByRoof"));
+  assert.ok(roofListSource.includes("committedRoofStats.get(roofId)"));
+  assert.ok(roofListSource.includes("{moduleCount}"));
+  assert.ok(roofListSource.includes("{kwpLabel}"));
+});
+
+test("planner sidebar uses one shared width token enlarged from 264px to 312px", () => {
+  assert.ok(globalStyles.includes("--propW: 312px"));
+  assert.equal(source.includes("max-w-[240px]"), false);
 });
 
 test("flat, pitched and multiple roofs use the same canonical row values in both steps", () => {

@@ -58,6 +58,7 @@ import { buildStandardExistingLayoutReflow } from "../modules/panels/existingLay
 import { formatDisplayAngleDeg } from "../roof/angleDisplay";
 import CompanySpacingDefaultsDialog from "../modules/advanced/CompanySpacingDefaultsDialog";
 import { withEffectiveAdvancedThermalLimits } from "../modules/advanced/advancedThermalDefaults";
+import { buildCommittedRoofStatsByRoof } from "@/lib/planning-core/overview";
 
 type Pt = { x: number; y: number };
 
@@ -77,6 +78,11 @@ const SHOW_MODULE_ORIENTATION_READOUT = false;
 // controls from Modulplanung. Keep the render path and domain logic for a
 // possible re-enable; this flag is presentation-only.
 const SHOW_PITCHED_MODULE_TILT_CONTROLS = false;
+
+const roofPowerFormatter = new Intl.NumberFormat("de-DE", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 export default function ModulesPanel() {
   // --- Layers / selezione tetto ---
@@ -133,6 +139,21 @@ export default function ModulesPanel() {
   const [spacingXText, setSpacingXText] = React.useState("");
   const [spacingYText, setSpacingYText] = React.useState("");
   const [pitchedCompanyDefaultsOpen, setPitchedCompanyDefaultsOpen] = React.useState(false);
+
+  const committedRoofStats = React.useMemo(
+    () =>
+      buildCommittedRoofStatsByRoof({
+        roofs: layers,
+        panels,
+        catalogModules: catalogPanels.map((panel) => ({
+          id: panel.id,
+          brand: panel.brand,
+          model: panel.model,
+          powerW: panel.wp,
+        })),
+      }),
+    [catalogPanels, layers, panels],
+  );
 
   const selectedRoof = React.useMemo(
     () => layers.find((roof) => roof.id === selectedId),
@@ -667,7 +688,7 @@ export default function ModulesPanel() {
   }, [pendingLayoutMode, regeneratePristineLayout, selectedRoof]);
 
   return (
-    <div className="w-full max-w-[240px] space-y-4 p-2 text-foreground">
+    <div className="w-full space-y-4 p-2 text-foreground">
       {/* === EBENEN (tabella compatta) === */}
       <div className="px-0">
         <div className={`${labelSm} mb-2`}>
@@ -691,13 +712,16 @@ export default function ModulesPanel() {
           <div className="text-[10px]">
             <div
               data-roof-list-header
-              className="grid h-8 grid-cols-[28px_42px_48px_minmax(70px,1fr)_32px] items-end px-1 pb-1 text-[8px] font-medium leading-none text-muted-foreground"
+              className="grid h-8 grid-cols-[24px_34px_36px_40px_42px_minmax(64px,1fr)_18px_18px] items-end pb-1 text-[8px] font-medium leading-none text-muted-foreground"
             >
               <div>Dach</div>
               <div className="text-right">Fläche</div>
+              <div className="text-right">Module</div>
+              <div className="text-right">kWp</div>
               <div className="text-center">Neigung</div>
               <div className="text-center">Ausrichtung</div>
-              <div />
+              <div className="text-center">S</div>
+              <div className="text-center">×</div>
             </div>
 
             {/* Righe (monolinea) */}
@@ -732,6 +756,14 @@ export default function ModulesPanel() {
                 const src = l.source;
                 const srcBadge =
                   src === "sonnendach" ? "S" : src === "manual" ? "M" : "";
+                const roofStats = committedRoofStats.get(roofId);
+                const moduleCount = roofStats?.moduleCount ?? 0;
+                const kwpLabel =
+                  moduleCount === 0
+                    ? roofPowerFormatter.format(0)
+                    : roofStats?.power.complete
+                      ? roofPowerFormatter.format(roofStats.power.kwp ?? 0)
+                      : "—";
                 return (
                   <li key={roofId} inert={rowLocked ? true : undefined}>
                     <div
@@ -741,7 +773,7 @@ export default function ModulesPanel() {
                       data-roof-list-row
                       aria-disabled={rowLocked || undefined}
                       className={[
-                        "grid min-h-9 grid-cols-[28px_42px_48px_minmax(70px,1fr)_32px] items-center px-1",
+                        "grid min-h-9 grid-cols-[24px_34px_36px_40px_42px_minmax(64px,1fr)_18px_18px] items-center",
                         active
                           ? "bg-primary/15 text-primary ring-1 ring-primary/30"
                           : rowLocked
@@ -770,11 +802,20 @@ export default function ModulesPanel() {
                           correctForTilt
                         />
                       </div>
+                      <div className="tabular-nums text-right opacity-80">
+                        {moduleCount}
+                      </div>
+                      <div
+                        className="tabular-nums text-right opacity-80"
+                        title={kwpLabel === "—" ? "Leistungsdaten nicht vollständig" : undefined}
+                      >
+                        {kwpLabel}
+                      </div>
                       <div className="flex justify-center px-0.5">
                         {step === "building" ? (
                           editing?.id === roofId &&
                             editing.field === "tilt" ? (
-                              <span className="flex h-7 w-[44px] items-center rounded-md border border-primary bg-background/70 px-1 ring-1 ring-primary/30">
+                              <span className="flex h-7 w-full items-center rounded-md border border-primary bg-background/70 px-1 ring-1 ring-primary/30">
                                 <input
                                   autoFocus
                                   type="text"
@@ -811,13 +852,13 @@ export default function ModulesPanel() {
                                 })}
                                 title={rowKind === "flat" ? "Flachdach: Neigung 0°" : "Dachneigung bearbeiten"}
                                 aria-label={`Dachneigung für D${i + 1} bearbeiten`}
-                                className="flex h-7 w-[44px] items-center justify-center rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums transition hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-55"
+                                className="flex h-7 w-full items-center justify-center rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums transition hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-55"
                               >
                                 {tiltShort != null ? `${tiltShort}°` : "—"}
                               </button>
                             )
                         ) : (
-                          <div className="flex h-7 w-[44px] items-center justify-center rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums">
+                          <div className="flex h-7 w-full items-center justify-center rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums">
                             {tiltShort != null ? `${tiltShort}°` : "—"}
                           </div>
                         )}
@@ -854,7 +895,7 @@ export default function ModulesPanel() {
                         )}
                       </div>
 
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex items-center justify-center">
                         {srcBadge && (
                           <span
                             className={[
@@ -868,6 +909,8 @@ export default function ModulesPanel() {
                             {srcBadge}
                           </span>
                         )}
+                      </div>
+                      <div className="flex items-center justify-center">
                         {step === "building" && (
                           <button
                             onClick={(event) => {

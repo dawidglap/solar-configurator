@@ -103,6 +103,11 @@ export type PlanningOverview = {
   roofs: PlanningOverviewRoof[];
 };
 
+export type CommittedRoofStats = {
+  moduleCount: number;
+  power: PlanningOverviewPower;
+};
+
 export type BuildPlanningOverviewInput = {
   roofs: readonly PlanningOverviewRoofInput[];
   panels: readonly PlanningOverviewPanelInput[];
@@ -170,6 +175,69 @@ function powerSummary(input: {
     missingPanelCount,
     complete: missingPanelCount === 0,
   };
+}
+
+function groupCommittedPanelsByRoof(
+  roofs: readonly PlanningOverviewRoofInput[],
+  panels: readonly PlanningOverviewPanelInput[],
+): Map<string, PlanningOverviewPanelInput[]> {
+  const grouped = new Map(
+    roofs.map((roof) => [roof.id, [] as PlanningOverviewPanelInput[]]),
+  );
+  for (const panel of panels) {
+    grouped.get(panel.roofId)?.push(panel);
+  }
+  return grouped;
+}
+
+function buildCommittedRoofStatsFromGroups(input: {
+  roofs: readonly PlanningOverviewRoofInput[];
+  panelsByRoof: ReadonlyMap<string, readonly PlanningOverviewPanelInput[]>;
+  catalogModules?: readonly PlanningOverviewCatalogModule[];
+}): Map<string, CommittedRoofStats> {
+  const catalogById = new Map(
+    (input.catalogModules ?? []).map((module) => [module.id, module]),
+  );
+  return new Map(
+    input.roofs.map((roof) => {
+      const committedPanels = input.panelsByRoof.get(roof.id) ?? [];
+      const resolution = resolveSurfacePlanning(roof.surfacePlanning);
+      const roofModulePowerW =
+        resolution.status === "supported-advanced"
+          ? resolution.config.advanced.module.powerW
+          : resolution.status === "unsupported-advanced" ||
+              resolution.status === "invalid-advanced"
+            ? rawModulePowerW(resolution.raw)
+            : undefined;
+      return [
+        roof.id,
+        {
+          moduleCount: committedPanels.length,
+          power: powerSummary({
+            panels: committedPanels,
+            roofModulePowerW,
+            catalogById,
+          }),
+        },
+      ];
+    }),
+  );
+}
+
+/**
+ * Canonical committed module and power totals grouped per roof.
+ * Draft/preview layouts are intentionally not part of this input.
+ */
+export function buildCommittedRoofStatsByRoof(input: {
+  roofs: readonly PlanningOverviewRoofInput[];
+  panels: readonly PlanningOverviewPanelInput[];
+  catalogModules?: readonly PlanningOverviewCatalogModule[];
+}): Map<string, CommittedRoofStats> {
+  return buildCommittedRoofStatsFromGroups({
+    roofs: input.roofs,
+    panelsByRoof: groupCommittedPanelsByRoof(input.roofs, input.panels),
+    catalogModules: input.catalogModules,
+  });
 }
 
 function combinePower(summaries: readonly PlanningOverviewPower[]): PlanningOverviewPower {
@@ -274,10 +342,15 @@ export function buildPlanningOverview(
     (input.catalogModules ?? []).map((module) => [module.id, module]),
   );
   const dirtyRoofIds = new Set(input.dirtyRoofIds ?? []);
+  const committedPanelsByRoof = groupCommittedPanelsByRoof(input.roofs, input.panels);
+  const committedStatsByRoof = buildCommittedRoofStatsFromGroups({
+    roofs: input.roofs,
+    panelsByRoof: committedPanelsByRoof,
+    catalogModules: input.catalogModules,
+  });
   const roofs = input.roofs.map((roof, roofIndex): PlanningOverviewRoof => {
-    const committedPanels = input.panels.filter(
-      (panel) => panel.roofId === roof.id,
-    );
+    const committedPanels = committedPanelsByRoof.get(roof.id) ?? [];
+    const committedStats = committedStatsByRoof.get(roof.id)!;
     const resolution = resolveSurfacePlanning(roof.surfacePlanning);
     const warnings: PlanningOverviewWarning[] = [];
     let surfaceKind: SurfaceKind = "pitched";
@@ -296,7 +369,6 @@ export function buildPlanningOverview(
     let marginM: number | undefined;
     let rowSpaceM: number | undefined;
     let serviceCorridorM: number | undefined;
-    let roofModulePowerW: number | undefined;
     let configuredPanelSpecId: string | undefined;
 
     if (resolution.status === "supported-standard") {
@@ -310,7 +382,6 @@ export function buildPlanningOverview(
       surfaceKind = config.surface.kind;
       systemId = system.systemId;
       marginM = advanced.layout.marginM;
-      roofModulePowerW = advanced.module.powerW;
       configuredPanelSpecId = advanced.module.panelSpecId;
       blockCount = uniqueBlockCount(committedPanels);
       if (
@@ -411,7 +482,6 @@ export function buildPlanningOverview(
       configurationStatus =
         resolution.status === "unsupported-advanced" ? "unsupported" : "invalid";
       surfaceKind = rawSurfaceKind(resolution.raw) ?? "flat";
-      roofModulePowerW = rawModulePowerW(resolution.raw);
       blockCount = uniqueBlockCount(committedPanels);
       warnings.push(
         ...resolution.issues.map((current) => ({
@@ -431,11 +501,7 @@ export function buildPlanningOverview(
       );
     }
 
-    const power = powerSummary({
-      panels: committedPanels,
-      roofModulePowerW,
-      catalogById,
-    });
+    const power = committedStats.power;
     const catalogIds = new Set(
       [
         configuredPanelSpecId,
@@ -461,7 +527,7 @@ export function buildPlanningOverview(
       ...(orientationAzimuthDeg ? { orientationAzimuthDeg } : {}),
       ...(nominalTiltDeg !== undefined ? { nominalTiltDeg } : {}),
       arrangement,
-      moduleCount: committedPanels.length,
+      moduleCount: committedStats.moduleCount,
       ...(blockCount !== undefined ? { blockCount } : {}),
       ...(montageFieldCount !== undefined ? { montageFieldCount } : {}),
       ...(thermalFieldCount !== undefined ? { thermalFieldCount } : {}),

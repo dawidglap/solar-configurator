@@ -14,6 +14,7 @@ import {
 } from "../../src/lib/planning-core/advanced";
 import { GEOMETRY_V2_ENGINE_VERSION } from "../../src/lib/planning-core/geometry-v2";
 import {
+  buildCommittedRoofStatsByRoof,
   buildPlanningOverview,
   type PlanningOverviewPanelInput,
   type PlanningOverviewRoofInput,
@@ -164,6 +165,50 @@ test("mixed committed planning produces 3 roofs, 52 modules and 22.88 kWp", () =
   assert.equal(overview.roofs[0].surfaceKind, "pitched");
   assert.equal(overview.roofs[0].systemId, undefined);
   assert.deepEqual(overview.roofs[0].roofDimensions, { lengthM: 12, widthM: 6 });
+});
+
+test("committed roof stats update per roof after panel deletion without counting drafts", () => {
+  const roofs = [rectangleRoof("a"), rectangleRoof("b")];
+  const committed = [
+    ...standardPanels("a", 3),
+    ...standardPanels("b", 2),
+  ];
+  const initial = buildCommittedRoofStatsByRoof({
+    roofs,
+    panels: committed,
+    catalogModules: CATALOG,
+  });
+  assert.deepEqual(
+    [...initial].map(([roofId, stats]) => [roofId, stats.moduleCount, stats.power.kwp]),
+    [
+      ["a", 3, 1.32],
+      ["b", 2, 0.88],
+    ],
+  );
+
+  const afterDelete = buildCommittedRoofStatsByRoof({
+    roofs,
+    panels: committed.slice(0, -1),
+    catalogModules: CATALOG,
+  });
+  assert.equal(afterDelete.get("a")?.moduleCount, 3);
+  assert.equal(afterDelete.get("a")?.power.kwp, 1.32);
+  assert.equal(afterDelete.get("b")?.moduleCount, 1);
+  assert.equal(afterDelete.get("b")?.power.kwp, 0.44);
+});
+
+test("committed roof stats count D-Dome PanelInstances, not K2 block pairs", () => {
+  const roof = rectangleRoof(
+    "d",
+    k2Config({ system: "d", quantity: { blocksPerRow: 5, rowCount: 3 } }),
+  );
+  const stats = buildCommittedRoofStatsByRoof({
+    roofs: [roof],
+    panels: advancedPanels({ roofId: "d", blockCount: 15, modulesPerBlock: 2 }),
+    catalogModules: CATALOG,
+  }).get("d");
+  assert.equal(stats?.moduleCount, 30);
+  assert.equal(stats?.power.kwp, 13.2);
 });
 
 test("K2 overview derives Montagefelder only from committed panel metadata", () => {
