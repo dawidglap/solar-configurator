@@ -18,6 +18,7 @@ import { usePlannerV2Store } from "../../state/plannerV2Store";
 import { computeAdvancedPlanningPreview } from "./advancedPlanningApplication";
 import ModuleSlopeArrow from "../panels/ModuleSlopeArrow";
 import {
+  resolveDDomeLocalArrowAzimuth,
   resolveFlatSouthArrowAzimuth,
   resolveReferenceEdgeOpposingArrowAzimuths,
 } from "../panels/moduleSlope";
@@ -157,7 +158,7 @@ export default function AdvancedPreviewLayer({
   const isSouthSystem =
     system.systemId === K2_S_DOME_SYSTEM_ID ||
     system.systemId === GENERIC_SOUTH_SYSTEM_ID;
-  const outwardArrowAzimuths = isOpposingSystem && preview
+  const outwardArrowAzimuths = system.systemId === GENERIC_EAST_WEST_SYSTEM_ID && preview
     ? resolveReferenceEdgeOpposingArrowAzimuths({
         roofPolygon: roof.points,
         referenceEdgeIndex: roof.referenceEdgeIndex,
@@ -225,8 +226,10 @@ export default function AdvancedPreviewLayer({
                   wPx={module.wPx}
                   hPx={module.hPx}
                   panelRotationDeg={module.angleDeg}
-                  arrowAzimuthDeg={outwardArrowAzimuths.get(`${module.blockKey}:${module.slotIndex}`) ??
-                    southArrowAzimuthDeg}
+                  arrowAzimuthDeg={system.systemId === K2_D_DOME_SYSTEM_ID
+                    ? resolveDDomeLocalArrowAzimuth(module.angleDeg)
+                    : outwardArrowAzimuths.get(`${module.blockKey}:${module.slotIndex}`) ??
+                      southArrowAzimuthDeg}
                 />
               </Group>
             );

@@ -136,6 +136,18 @@ export function resolvePanelLocalArrowAzimuth(panelRotationCanvasDeg: number): n
     ? normalizeAzimuth(panelRotationCanvasDeg)
     : undefined;
 }
+
+/**
+ * D-Dome is the flat-system exception whose downhill arrow is rigidly attached
+ * to each module face. The generated slot rotations already encode the two
+ * opposed downhill directions, so subsequent whole-layout rotations must use
+ * the current panel rotation instead of re-resolving from the Referenzkante.
+ */
+export function resolveDDomeLocalArrowAzimuth(
+  panelRotationCanvasDeg: number,
+): number | undefined {
+  return resolvePanelLocalArrowAzimuth(panelRotationCanvasDeg);
+}
 import {
   resolveCanonicalRoofReferenceEdge,
 } from "@/lib/planning-core/geometry-v2";

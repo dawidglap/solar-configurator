@@ -19,6 +19,7 @@ import { plannerTheme } from "../theme/plannerTheme";
 import ModuleSprite from "./ModuleSprite";
 import ModuleSlopeArrow from "./panels/ModuleSlopeArrow";
 import {
+  resolveDDomeLocalArrowAzimuth,
   resolveFlatSouthArrowAzimuth,
   resolvePitchedRoofArrowAzimuth,
   resolveReferenceEdgeOpposingArrowAzimuths,
@@ -314,8 +315,8 @@ export default function ManualPlacementLayer({
   };
 
   const valid = candidate?.valid ?? false;
-  const opposingCandidate = advancedConfig?.advanced.system.systemId === K2_D_DOME_SYSTEM_ID ||
-    advancedConfig?.advanced.system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
+  const isDDomeCandidate = advancedConfig?.advanced.system.systemId === K2_D_DOME_SYSTEM_ID;
+  const opposingCandidate = advancedConfig?.advanced.system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
   const candidateArrowAzimuths = candidate && opposingCandidate
     ? resolveReferenceEdgeOpposingArrowAzimuths({
         roofPolygon: roof.points,
@@ -397,8 +398,10 @@ export default function ManualPlacementLayer({
                   wPx={module.wPx}
                   hPx={module.hPx}
                   panelRotationDeg={module.angleDeg}
-                  arrowAzimuthDeg={candidateArrowAzimuths.get(String(module.slotIndex)) ??
-                    pitchedArrowAzimuthDeg ?? southArrowAzimuthDeg}
+                  arrowAzimuthDeg={isDDomeCandidate
+                    ? resolveDDomeLocalArrowAzimuth(module.angleDeg)
+                    : candidateArrowAzimuths.get(String(module.slotIndex)) ??
+                      pitchedArrowAzimuthDeg ?? southArrowAzimuthDeg}
                 />
               </Group>
             );

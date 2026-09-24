@@ -40,6 +40,7 @@ import { history as plannerHistory } from '../state/history';
 import MultiSelectionDragHandle from './panels/MultiSelectionDragHandle';
 import { resolveDirectLayoutTargets } from './panels/directLayoutGeometry';
 import {
+  resolveDDomeLocalArrowAzimuth,
   resolveFlatSouthArrowAzimuth,
   resolvePitchedRoofArrowAzimuth,
   resolveReferenceEdgeOpposingArrowAzimuths,
@@ -194,7 +195,6 @@ export default function PanelsKonva(props: {
   const opposingArrowAzimuths = React.useMemo(() => {
     if (!roof || isPitchedRoof) return new Map<string, number>();
     const opposing = panels.filter((panel) =>
-      panel.advanced?.systemId === K2_D_DOME_SYSTEM_ID ||
       panel.advanced?.systemId === GENERIC_EAST_WEST_SYSTEM_ID,
     );
     return resolveReferenceEdgeOpposingArrowAzimuths({
@@ -906,7 +906,9 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
             rotationDeg={rotationDeg}
             slopeArrowAzimuthDeg={isPitchedRoof
               ? pitchedArrowAzimuthDeg
-              : opposingArrowAzimuths.get(p.id) ?? flatSouthArrowAzimuthDeg}
+              : p.advanced?.systemId === K2_D_DOME_SYSTEM_ID
+                ? resolveDDomeLocalArrowAzimuth(rotationDeg)
+                : opposingArrowAzimuths.get(p.id) ?? flatSouthArrowAzimuthDeg}
             selected={sel}
             image={img}
             onStartDrag={startPanelDrag}

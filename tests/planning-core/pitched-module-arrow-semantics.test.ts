@@ -7,6 +7,7 @@ import {
   resolveStandardFirstFrameCanvasAngle,
 } from "../../src/components_v2/modules/legacyStandardApplicationPolicy";
 import {
+  resolveDDomeLocalArrowAzimuth,
   resolveFlatSouthArrowAzimuth,
   resolveModuleSlopeArrowAzimuth,
   resolvePitchedRoofArrowAzimuth,
@@ -22,6 +23,10 @@ const topFirstRoof = {
   ],
   referenceEdgeIndex: 0,
 };
+
+function normalize(value: number): number {
+  return ((value % 360) + 360) % 360;
+}
 
 test("FIRST defines a canonical downhill arrow independent from panels", () => {
   const base = resolveStandardFirstFrameCanvasAngle({
@@ -145,6 +150,28 @@ test("East-West arrows follow Referenzkante and ignore panel geometry rotation",
   assert.deepEqual([...geometryRotatedNinety], [...horizontal]);
 });
 
+test("D-Dome arrows rotate module-locally with every Feinjustierung delta", () => {
+  const initialPanelAngles = [90, 270];
+  const initialArrowAngles = initialPanelAngles.map((angle) =>
+    resolveDDomeLocalArrowAzimuth(angle)!,
+  );
+  assert.equal(normalize(initialArrowAngles[1] - initialArrowAngles[0]), 180);
+
+  for (const delta of [90, -90, 180]) {
+    const nextPanelAngles = initialPanelAngles.map((angle) => normalize(angle + delta));
+    const nextArrowAngles = nextPanelAngles.map((angle) =>
+      resolveDDomeLocalArrowAzimuth(angle)!,
+    );
+    assert.equal(normalize(nextArrowAngles[1] - nextArrowAngles[0]), 180);
+    for (let slot = 0; slot < 2; slot += 1) {
+      assert.equal(
+        normalize(nextArrowAngles[slot] - initialArrowAngles[slot]),
+        normalize(nextPanelAngles[slot] - initialPanelAngles[slot]),
+      );
+    }
+  }
+});
+
 test("changing Referenzkante rotates East-West arrows and South uses its inward normal", () => {
   const members = [
     { id: "slot-0", slotIndex: 0, cx: 0, cy: 0 },
@@ -185,10 +212,13 @@ test("committed, preview and manual render paths use canonical physical arrows",
     "utf8",
   );
   assert.match(panelsKonva, /resolvePitchedRoofArrowAzimuth/);
+  assert.match(panelsKonva, /resolveDDomeLocalArrowAzimuth/);
   assert.match(panelsKonva, /resolveReferenceEdgeOpposingArrowAzimuths/);
   assert.match(canvasStage, /slopeArrowAzimuthDeg=\{standardSlopeArrowAzimuthDeg\}/);
   assert.match(manualPlacement, /resolvePitchedRoofArrowAzimuth/);
+  assert.match(manualPlacement, /resolveDDomeLocalArrowAzimuth/);
   assert.match(advancedPreview, /resolveReferenceEdgeOpposingArrowAzimuths/);
+  assert.match(advancedPreview, /resolveDDomeLocalArrowAzimuth/);
   assert.doesNotMatch(panelItem, /visualRotationDeg - rotationDeg/);
   assert.doesNotMatch(panelsKonva, /slopeArrowLocalOffsetDeg/);
 });
