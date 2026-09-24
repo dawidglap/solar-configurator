@@ -77,6 +77,36 @@ test("no-roof module shell stays neutral and roof-dependent tools remain guarded
   assert.match(toolbar, /disabled=\{!canUseModulesTools \|\| !selectedId\}/);
 });
 
+test("Feinjustierung is the final interactive sidebar section before the disclaimer", () => {
+  const modulesPanel = readFileSync(
+    new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const advancedPanel = readFileSync(
+    new URL("../../src/components_v2/modules/advanced/AdvancedModulesPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const disclaimer = "Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.";
+
+  const neutralStart = modulesPanel.indexOf('data-testid="module-planning-neutral-shell"');
+  const neutralEnd = modulesPanel.indexOf('{step === "building" && selectedRoof', neutralStart);
+  const neutralShell = modulesPanel.slice(neutralStart, neutralEnd);
+  assert.ok(neutralShell.indexOf("Modulabstand") < neutralShell.indexOf("Feinjustierung"));
+  assert.ok(neutralShell.indexOf("Feinjustierung") < neutralShell.indexOf(disclaimer));
+  assert.equal(neutralShell.match(/Feinjustierung/g)?.length, 1);
+
+  const standardStart = modulesPanel.indexOf('{step === "modules" && selectedRoof && displayMode === "standard"');
+  const standardEnd = modulesPanel.indexOf("<RoofTypeChangeDialog", standardStart);
+  const standardSidebar = modulesPanel.slice(standardStart, standardEnd);
+  assert.ok(standardSidebar.indexOf("Modulabstand") < standardSidebar.indexOf("Feinjustierung"));
+  assert.ok(standardSidebar.indexOf("Feinjustierung") < standardSidebar.indexOf(disclaimer));
+  assert.equal(standardSidebar.match(/Feinjustierung/g)?.length, 1);
+
+  assert.ok(advancedPanel.indexOf("Abstände") < advancedPanel.indexOf("Feinjustierung"));
+  assert.ok(advancedPanel.indexOf("Feinjustierung") < advancedPanel.indexOf(disclaimer));
+  assert.equal(advancedPanel.match(/Feinjustierung/g)?.length, 1);
+});
+
 test("customizable default-system controls remain contextual to the flat-roof panel", () => {
   const modulesPanel = readFileSync(
     new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),

@@ -1023,6 +1023,29 @@ export default function ModulesPanel() {
             </select>
           </section>
 
+          <section className="space-y-2 border-b border-border/60 pb-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className={labelSm}>Modulabstand</span>
+              <span className="text-[9px] text-muted-foreground">Firmenstandard</span>
+            </div>
+            <fieldset disabled className="grid grid-cols-2 gap-2">
+              <label className="space-y-1 text-[10px] text-muted-foreground">
+                Horizontal
+                <span className="flex items-center gap-1">
+                  <input className={`${inputBase} disabled:cursor-not-allowed disabled:opacity-65`} value={companyPlannerDefaults.moduleSpacing.horizontalMm} readOnly />
+                  <span>mm</span>
+                </span>
+              </label>
+              <label className="space-y-1 text-[10px] text-muted-foreground">
+                Vertikal
+                <span className="flex items-center gap-1">
+                  <input className={`${inputBase} disabled:cursor-not-allowed disabled:opacity-65`} value={companyPlannerDefaults.moduleSpacing.verticalMm} readOnly />
+                  <span>mm</span>
+                </span>
+              </label>
+            </fieldset>
+          </section>
+
           <section className="space-y-3 border-b border-border/60 pb-4">
             {SHOW_MODULE_ORIENTATION_READOUT && (
               <>
@@ -1056,29 +1079,6 @@ export default function ModulesPanel() {
                 </div>
               </fieldset>
             </div>
-          </section>
-
-          <section className="space-y-2 border-b border-border/60 pb-4">
-            <div className="flex items-center justify-between gap-2">
-              <span className={labelSm}>Modulabstand</span>
-              <span className="text-[9px] text-muted-foreground">Firmenstandard</span>
-            </div>
-            <fieldset disabled className="grid grid-cols-2 gap-2">
-              <label className="space-y-1 text-[10px] text-muted-foreground">
-                Horizontal
-                <span className="flex items-center gap-1">
-                  <input className={`${inputBase} disabled:cursor-not-allowed disabled:opacity-65`} value={companyPlannerDefaults.moduleSpacing.horizontalMm} readOnly />
-                  <span>mm</span>
-                </span>
-              </label>
-              <label className="space-y-1 text-[10px] text-muted-foreground">
-                Vertikal
-                <span className="flex items-center gap-1">
-                  <input className={`${inputBase} disabled:cursor-not-allowed disabled:opacity-65`} value={companyPlannerDefaults.moduleSpacing.verticalMm} readOnly />
-                  <span>mm</span>
-                </span>
-              </label>
-            </fieldset>
           </section>
 
           <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">
@@ -1268,20 +1268,6 @@ export default function ModulesPanel() {
             </section>
           )}
 
-          <section className="space-y-3 border-b border-border/60 pb-4">
-            {SHOW_MODULE_ORIENTATION_READOUT && (
-              <h3 className={labelSm}>Ausrichtung</h3>
-            )}
-            <div className="rounded-xl border border-border/60 text-[10px]">
-              <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">
-                Feinjustierung
-              </div>
-              <div className="space-y-3 border-t border-border/60 p-3">
-                <DirectLayoutControl roofId={selectedRoof.id} />
-              </div>
-            </div>
-          </section>
-
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <span className={labelSm}>Modulabstand</span>
@@ -1344,6 +1330,20 @@ export default function ModulesPanel() {
                 <span>mm</span>
               </span>
             </label>
+            </div>
+          </section>
+
+          <section className="space-y-3 border-b border-border/60 pb-4">
+            {SHOW_MODULE_ORIENTATION_READOUT && (
+              <h3 className={labelSm}>Ausrichtung</h3>
+            )}
+            <div className="rounded-xl border border-border/60 text-[10px]">
+              <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">
+                Feinjustierung
+              </div>
+              <div className="space-y-3 border-t border-border/60 p-3">
+                <DirectLayoutControl roofId={selectedRoof.id} />
+              </div>
             </div>
           </section>
 

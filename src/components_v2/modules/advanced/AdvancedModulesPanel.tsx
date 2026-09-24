@@ -404,28 +404,6 @@ export default function AdvancedModulesPanel({
         </select>
       </section>
 
-      <section className="space-y-3 border-b border-border/60 pb-4">
-        {SHOW_MODULE_ORIENTATION_READOUT && (
-          <>
-            <h3 className={labelClass}>Ausrichtung</h3>
-            <div className="flex items-center justify-between rounded-lg bg-muted/15 px-3 py-2 text-[10px]">
-              <span className="text-muted-foreground">Modulausrichtung</span>
-              <strong>{isOpposingSystem ? `${fmt(azimuth, 0)}° / ${fmt(normalizeAzimuth(azimuth + 180), 0)}°` : `${fmt(azimuth, 0)}°`}</strong>
-            </div>
-          </>
-        )}
-        <div className="rounded-xl border border-border/60 text-[10px]">
-          <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">Feinjustierung</div>
-          <div className="space-y-3 border-t border-border/60 p-3">
-            <DirectLayoutControl roofId={roof.id} />
-            <div className="border-t border-border/60 pt-2 text-muted-foreground"><p>System: Standardsystem</p></div>
-            {preview.warnings.some((warning) => warning.code.includes("block-size")) && (
-              <p className="text-amber-700 dark:text-amber-300">Die K2 Blockgrösse überschreitet die dokumentierte Systemgrenze.</p>
-            )}
-          </div>
-        </div>
-      </section>
-
       <section className="space-y-2 border-b border-border/60 pb-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
@@ -467,6 +445,28 @@ export default function AdvancedModulesPanel({
           if (roof.surfacePlanning === undefined && !isDraft) update(config);
         }}
       />
+
+      <section className="space-y-3 border-b border-border/60 pb-4">
+        {SHOW_MODULE_ORIENTATION_READOUT && (
+          <>
+            <h3 className={labelClass}>Ausrichtung</h3>
+            <div className="flex items-center justify-between rounded-lg bg-muted/15 px-3 py-2 text-[10px]">
+              <span className="text-muted-foreground">Modulausrichtung</span>
+              <strong>{isOpposingSystem ? `${fmt(azimuth, 0)}° / ${fmt(normalizeAzimuth(azimuth + 180), 0)}°` : `${fmt(azimuth, 0)}°`}</strong>
+            </div>
+          </>
+        )}
+        <div className="rounded-xl border border-border/60 text-[10px]">
+          <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">Feinjustierung</div>
+          <div className="space-y-3 border-t border-border/60 p-3">
+            <DirectLayoutControl roofId={roof.id} />
+            <div className="border-t border-border/60 pt-2 text-muted-foreground"><p>System: Standardsystem</p></div>
+            {preview.warnings.some((warning) => warning.code.includes("block-size")) && (
+              <p className="text-amber-700 dark:text-amber-300">Die K2 Blockgrösse überschreitet die dokumentierte Systemgrenze.</p>
+            )}
+          </div>
+        </div>
+      </section>
 
       <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">
         Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.
