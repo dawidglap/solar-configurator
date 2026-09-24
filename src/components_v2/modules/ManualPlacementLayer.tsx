@@ -8,7 +8,9 @@ import toast from "react-hot-toast";
 
 import {
   GENERIC_EAST_WEST_SYSTEM_ID,
+  GENERIC_SOUTH_SYSTEM_ID,
   K2_D_DOME_SYSTEM_ID,
+  K2_S_DOME_SYSTEM_ID,
   resolveSurfacePlanning,
   type AdvancedSurfacePlanningV1,
 } from "@/lib/planning-core/advanced";
@@ -17,8 +19,9 @@ import { plannerTheme } from "../theme/plannerTheme";
 import ModuleSprite from "./ModuleSprite";
 import ModuleSlopeArrow from "./panels/ModuleSlopeArrow";
 import {
-  PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG,
-  resolveOutwardBlockArrowAzimuths,
+  resolveFlatSouthArrowAzimuth,
+  resolvePitchedRoofArrowAzimuth,
+  resolveReferenceEdgeOpposingArrowAzimuths,
 } from "./panels/moduleSlope";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import {
@@ -314,15 +317,32 @@ export default function ManualPlacementLayer({
   const opposingCandidate = advancedConfig?.advanced.system.systemId === K2_D_DOME_SYSTEM_ID ||
     advancedConfig?.advanced.system.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
   const candidateArrowAzimuths = candidate && opposingCandidate
-    ? resolveOutwardBlockArrowAzimuths(candidate.modules.map((module) => ({
-        id: String(module.slotIndex),
-        blockKey: "candidate",
-        cx: module.cx,
-        cy: module.cy,
-      })))
+    ? resolveReferenceEdgeOpposingArrowAzimuths({
+        roofPolygon: roof.points,
+        referenceEdgeIndex: roof.referenceEdgeIndex,
+        members: candidate.modules.map((module) => ({
+          id: String(module.slotIndex),
+          blockKey: "candidate",
+          slotIndex: module.slotIndex,
+          cx: module.cx,
+          cy: module.cy,
+        })),
+      })
     : new Map<string, number>();
-  const pitchedArrowLocalOffsetDeg = session.kind === "standard-module"
-    ? PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG
+  const pitchedArrowAzimuthDeg = session.kind === "standard-module"
+    ? resolvePitchedRoofArrowAzimuth({
+        roofPolygon: roof.points,
+        referenceEdgeIndex: roof.referenceEdgeIndex,
+      })
+    : undefined;
+  const isSouthCandidate =
+    advancedConfig?.advanced.system.systemId === K2_S_DOME_SYSTEM_ID ||
+    advancedConfig?.advanced.system.systemId === GENERIC_SOUTH_SYSTEM_ID;
+  const southArrowAzimuthDeg = isSouthCandidate
+    ? resolveFlatSouthArrowAzimuth({
+        roofPolygon: roof.points,
+        referenceEdgeIndex: roof.referenceEdgeIndex,
+      })
     : undefined;
   const stroke = valid ? plannerTheme.primary : plannerTheme.danger;
   const inverseScale = 1 / Math.max(stageScale, 0.01);
@@ -377,8 +397,8 @@ export default function ManualPlacementLayer({
                   wPx={module.wPx}
                   hPx={module.hPx}
                   panelRotationDeg={module.angleDeg}
-                  arrowAzimuthDeg={candidateArrowAzimuths.get(String(module.slotIndex))}
-                  localArrowOffsetDeg={pitchedArrowLocalOffsetDeg}
+                  arrowAzimuthDeg={candidateArrowAzimuths.get(String(module.slotIndex)) ??
+                    pitchedArrowAzimuthDeg ?? southArrowAzimuthDeg}
                 />
               </Group>
             );

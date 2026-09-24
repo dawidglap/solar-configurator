@@ -19,7 +19,6 @@ export type PanelItemProps = {
   hPx: number;
   rotationDeg: number;
   slopeArrowAzimuthDeg?: number;
-  slopeArrowLocalOffsetDeg?: number;
   selected: boolean;
   image?: HTMLImageElement | null;
   onStartDrag: (panelId: string, e: any) => void;
@@ -31,7 +30,7 @@ const DRAG_THRESHOLD_PX = 3; // piccola soglia per distinguere click vs drag
 const INTERACTIVE_NAME = 'interactive-panel';
 
 export const PanelItem: React.FC<PanelItemProps> = React.memo(
-  ({ id, cx, cy, wPx, hPx, rotationDeg, slopeArrowAzimuthDeg, slopeArrowLocalOffsetDeg, selected, image, onStartDrag, onSelect, onRoutePointerDown }) => {
+  ({ id, cx, cy, wPx, hPx, rotationDeg, slopeArrowAzimuthDeg, selected, image, onStartDrag, onSelect, onRoutePointerDown }) => {
     const transient = React.useSyncExternalStore(
       React.useCallback((listener) => subscribeTransientPanelGeometry(id, listener), [id]),
       React.useCallback(() => getTransientPanelGeometry(id), [id]),
@@ -204,10 +203,7 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
           wPx={wPx}
           hPx={hPx}
           panelRotationDeg={visualRotationDeg}
-          localArrowOffsetDeg={slopeArrowLocalOffsetDeg}
-          arrowAzimuthDeg={slopeArrowAzimuthDeg == null
-            ? undefined
-            : slopeArrowAzimuthDeg + (visualRotationDeg - rotationDeg)}
+          arrowAzimuthDeg={slopeArrowAzimuthDeg}
         />
 
         {selected && (

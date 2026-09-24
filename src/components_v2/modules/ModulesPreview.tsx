@@ -23,7 +23,6 @@ type Props = {
   mppImage: number;                        // metri/px
   azimuthDeg?: number;                     // 0=N(↑), 90=E(→)
   slopeArrowAzimuthDeg?: number;           // geographic roof-downhill direction
-  slopeArrowLocalOffsetDeg?: number;       // arrow fixed in the panel's local frame
   orientation: 'portrait' | 'landscape';
   panelSizeM: { w: number; h: number };    // metri (w=lato corto, h=lato lungo)
   spacingM: number;                        // metri fra moduli
@@ -117,7 +116,6 @@ export default function ModulesPreview({
   mppImage,
   azimuthDeg,
   slopeArrowAzimuthDeg,
-  slopeArrowLocalOffsetDeg,
   orientation,
   panelSizeM,
   spacingM,
@@ -415,7 +413,6 @@ export default function ModulesPreview({
             hPx={r.hPx}
             panelRotationDeg={r.angleDeg}
             arrowAzimuthDeg={slopeArrowAzimuthDeg}
-            localArrowOffsetDeg={slopeArrowLocalOffsetDeg}
           />
         </Group>
       ))}

@@ -7,9 +7,10 @@ import {
   resolveStandardFirstFrameCanvasAngle,
 } from "../../src/components_v2/modules/legacyStandardApplicationPolicy";
 import {
-  PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG,
+  resolveFlatSouthArrowAzimuth,
   resolveModuleSlopeArrowAzimuth,
-  resolveOutwardBlockArrowAzimuths,
+  resolvePitchedRoofArrowAzimuth,
+  resolveReferenceEdgeOpposingArrowAzimuths,
 } from "../../src/components_v2/modules/panels/moduleSlope";
 
 const topFirstRoof = {
@@ -22,47 +23,42 @@ const topFirstRoof = {
   referenceEdgeIndex: 0,
 };
 
-test("FIRST defines a panel base whose local +Y points into the pitched roof", () => {
+test("FIRST defines a canonical downhill arrow independent from panels", () => {
   const base = resolveStandardFirstFrameCanvasAngle({
     roofPolygon: topFirstRoof.points,
     referenceEdgeIndex: topFirstRoof.referenceEdgeIndex,
   });
   assert.equal(base, 0);
-  assert.equal(resolveModuleSlopeArrowAzimuth({
-    panelRotationCanvasDeg: base!,
-    localArrowOffsetDeg: PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG,
+  assert.equal(resolvePitchedRoofArrowAzimuth({
+    roofPolygon: topFirstRoof.points,
+    referenceEdgeIndex: topFirstRoof.referenceEdgeIndex,
   }), 180);
 });
 
-test("reversing polygon/FIRST endpoints preserves the physical base and arrow", () => {
+test("reversing polygon/FIRST endpoints preserves the physical arrow", () => {
   const reversed = {
     points: [...topFirstRoof.points].reverse(),
     referenceEdgeIndex: 2,
   };
-  const base = resolveStandardFirstFrameCanvasAngle({
+  assert.equal(resolvePitchedRoofArrowAzimuth({
     roofPolygon: reversed.points,
     referenceEdgeIndex: reversed.referenceEdgeIndex,
-  });
-  assert.equal(base, 0);
-  assert.equal(resolveModuleSlopeArrowAzimuth({
-    panelRotationCanvasDeg: base!,
-    localArrowOffsetDeg: PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG,
   }), 180);
 });
 
-test("choosing another FIRST recomputes the base frame deterministically", () => {
-  assert.equal(resolveStandardFirstFrameCanvasAngle({
+test("choosing another FIRST recomputes the downhill direction", () => {
+  assert.equal(resolvePitchedRoofArrowAzimuth({
     roofPolygon: topFirstRoof.points,
     referenceEdgeIndex: 0,
-  }), 0);
-  assert.equal(resolveStandardFirstFrameCanvasAngle({
+  }), 180);
+  assert.equal(resolvePitchedRoofArrowAzimuth({
     roofPolygon: topFirstRoof.points,
     referenceEdgeIndex: 1,
-  }), 90);
-  assert.equal(resolveStandardFirstFrameCanvasAngle({
+  }), 270);
+  assert.equal(resolvePitchedRoofArrowAzimuth({
     roofPolygon: topFirstRoof.points,
     referenceEdgeIndex: 2,
-  }), 180);
+  }), 0);
 });
 
 test("new relative fine adjustment follows FIRST while legacy absolute angle remains compatible", () => {
@@ -84,32 +80,30 @@ test("new relative fine adjustment follows FIRST while legacy absolute angle rem
   assert.equal(legacy, 17);
 });
 
-test("+/-90 and +180 rotate the module and its local arrow by the same delta", () => {
-  const base = 23.5;
-  const arrow = resolveModuleSlopeArrowAzimuth({
-    panelRotationCanvasDeg: base,
-    localArrowOffsetDeg: PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG,
+test("+/-90 and +180 rotate the panel but not the physical arrow", () => {
+  const physicalArrowAzimuthDeg = resolvePitchedRoofArrowAzimuth({
+    roofPolygon: topFirstRoof.points,
+    referenceEdgeIndex: 0,
   });
-  for (const delta of [-90, 90, 180]) {
-    const rotated = resolveModuleSlopeArrowAzimuth({
-      panelRotationCanvasDeg: base + delta,
-      localArrowOffsetDeg: PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG,
-    });
-    assert.equal(rotated, ((arrow! + delta) % 360 + 360) % 360);
+  for (const panelRotationCanvasDeg of [23.5, -66.5, 113.5, 203.5]) {
+    assert.equal(resolveModuleSlopeArrowAzimuth({
+      panelRotationCanvasDeg,
+      physicalArrowAzimuthDeg,
+    }), 180);
   }
 });
 
-test("portrait and landscape use the same canonical local downhill axis", () => {
-  for (const _orientation of ["portrait", "landscape"] as const) {
+test("portrait and landscape retain the same FIRST-derived downhill arrow", () => {
+  for (const panelRotationCanvasDeg of [0, 90]) {
     assert.equal(resolveModuleSlopeArrowAzimuth({
-      panelRotationCanvasDeg: 90,
-      localArrowOffsetDeg: PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG,
-    }), 270);
+      panelRotationCanvasDeg,
+      physicalArrowAzimuthDeg: 180,
+    }), 180);
   }
 });
 
 test("irregular pitched polygon still chooses the inward FIRST normal", () => {
-  const base = resolveStandardFirstFrameCanvasAngle({
+  assert.equal(resolvePitchedRoofArrowAzimuth({
     roofPolygon: [
       { x: 0, y: 0 },
       { x: 12, y: 0 },
@@ -119,36 +113,57 @@ test("irregular pitched polygon still chooses the inward FIRST normal", () => {
       { x: 0, y: 5 },
     ],
     referenceEdgeIndex: 0,
-  });
-  assert.equal(base, 0);
-  assert.equal(resolveModuleSlopeArrowAzimuth({
-    panelRotationCanvasDeg: base!,
-    localArrowOffsetDeg: PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG,
   }), 180);
 });
 
-test("viewport rotation is absent from the panel/arrow domain model", () => {
-  const panel = 37;
-  const arrow = resolveModuleSlopeArrowAzimuth({
-    panelRotationCanvasDeg: panel,
-    localArrowOffsetDeg: PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG,
+test("viewport rotation is absent from the physical arrow domain model", () => {
+  const arrow = resolvePitchedRoofArrowAzimuth({
+    roofPolygon: topFirstRoof.points,
+    referenceEdgeIndex: 0,
   });
-  for (const _viewportRotation of [0, 37, 90, 180]) {
-    assert.equal(arrow, 217);
-  }
+  for (const _viewportRotation of [0, 37, 90, 180]) assert.equal(arrow, 180);
 });
 
-test("flat South fallback and D-Dome opposing arrows remain unchanged", () => {
-  assert.equal(resolveModuleSlopeArrowAzimuth({ panelRotationCanvasDeg: 180 }), 180);
-  const dDome = resolveOutwardBlockArrowAzimuths([
-    { id: "west", blockKey: "b", cx: -1, cy: 0 },
-    { id: "east", blockKey: "b", cx: 1, cy: 0 },
-  ]);
-  assert.equal(dDome.get("west"), 270);
-  assert.equal(dDome.get("east"), 90);
+test("East-West arrows follow Referenzkante and ignore panel geometry rotation", () => {
+  const members = [
+    { id: "slot-0", blockKey: "b", slotIndex: 0, cx: -1, cy: 0 },
+    { id: "slot-1", blockKey: "b", slotIndex: 1, cx: 1, cy: 0 },
+  ];
+  const horizontal = resolveReferenceEdgeOpposingArrowAzimuths({
+    members,
+    roofPolygon: topFirstRoof.points,
+    referenceEdgeIndex: 0,
+  });
+  assert.equal(horizontal.get("slot-0"), 90);
+  assert.equal(horizontal.get("slot-1"), 270);
+
+  const geometryRotatedNinety = resolveReferenceEdgeOpposingArrowAzimuths({
+    members: members.map((member) => ({ ...member, cx: -member.cy, cy: member.cx })),
+    roofPolygon: topFirstRoof.points,
+    referenceEdgeIndex: 0,
+  });
+  assert.deepEqual([...geometryRotatedNinety], [...horizontal]);
 });
 
-test("committed, preview and manual pitched render paths share the local arrow offset", () => {
+test("changing Referenzkante rotates East-West arrows and South uses its inward normal", () => {
+  const members = [
+    { id: "slot-0", slotIndex: 0, cx: 0, cy: 0 },
+    { id: "slot-1", slotIndex: 1, cx: 0, cy: 0 },
+  ];
+  const vertical = resolveReferenceEdgeOpposingArrowAzimuths({
+    members,
+    roofPolygon: topFirstRoof.points,
+    referenceEdgeIndex: 1,
+  });
+  assert.equal(vertical.get("slot-0"), 180);
+  assert.equal(vertical.get("slot-1"), 0);
+  assert.equal(resolveFlatSouthArrowAzimuth({
+    roofPolygon: topFirstRoof.points,
+    referenceEdgeIndex: 0,
+  }), 180);
+});
+
+test("committed, preview and manual render paths use canonical physical arrows", () => {
   const panelsKonva = readFileSync(
     new URL("../../src/components_v2/modules/PanelsKonva.tsx", import.meta.url),
     "utf8",
@@ -161,8 +176,19 @@ test("committed, preview and manual pitched render paths share the local arrow o
     new URL("../../src/components_v2/modules/ManualPlacementLayer.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(panelsKonva, /slopeArrowLocalOffsetDeg=\{isPitchedRoof/);
-  assert.match(canvasStage, /slopeArrowLocalOffsetDeg=\{PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG\}/);
-  assert.match(manualPlacement, /localArrowOffsetDeg=\{pitchedArrowLocalOffsetDeg\}/);
-  assert.doesNotMatch(panelsKonva, /lockSlopeArrowToRoof/);
+  const advancedPreview = readFileSync(
+    new URL("../../src/components_v2/modules/advanced/AdvancedPreviewLayer.tsx", import.meta.url),
+    "utf8",
+  );
+  const panelItem = readFileSync(
+    new URL("../../src/components_v2/modules/panels/PanelItem.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(panelsKonva, /resolvePitchedRoofArrowAzimuth/);
+  assert.match(panelsKonva, /resolveReferenceEdgeOpposingArrowAzimuths/);
+  assert.match(canvasStage, /slopeArrowAzimuthDeg=\{standardSlopeArrowAzimuthDeg\}/);
+  assert.match(manualPlacement, /resolvePitchedRoofArrowAzimuth/);
+  assert.match(advancedPreview, /resolveReferenceEdgeOpposingArrowAzimuths/);
+  assert.doesNotMatch(panelItem, /visualRotationDeg - rotationDeg/);
+  assert.doesNotMatch(panelsKonva, /slopeArrowLocalOffsetDeg/);
 });

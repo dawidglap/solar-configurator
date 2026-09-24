@@ -14,26 +14,78 @@ function normalizeAzimuth(azimuthDeg: number): number {
 export function resolveModuleSlopeArrowAzimuth(input: {
   panelRotationCanvasDeg: number;
   physicalArrowAzimuthDeg?: number;
-  localArrowOffsetDeg?: number;
 }): number | undefined {
   return resolvePanelLocalArrowAzimuth(
-    input.physicalArrowAzimuthDeg ??
-      input.panelRotationCanvasDeg + (input.localArrowOffsetDeg ?? 0),
+    input.physicalArrowAzimuthDeg ?? input.panelRotationCanvasDeg,
   );
 }
 
 /**
- * The pitched-module arrow is fixed to local +Y. The Konva Arrow primitive
- * points toward local -Y at zero rotation, therefore +180° expresses +Y.
+ * Resolves the physical FIRST-to-Traufe direction independently from any
+ * panel orientation. The canonical FIRST frame has local +Y facing into the
+ * roof; the Konva arrow azimuth for that direction is frame + 180 degrees.
  */
-export const PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG = 180;
+export function resolvePitchedRoofArrowAzimuth(input: {
+  roofPolygon: Array<{ x: number; y: number }>;
+  referenceEdgeIndex?: number;
+}): number | undefined {
+  const firstFrameDeg = resolveStandardFirstFrameCanvasAngle({
+    roofPolygon: input.roofPolygon,
+    referenceEdgeIndex: input.referenceEdgeIndex,
+  });
+  return firstFrameDeg == null ? undefined : normalizeAzimuth(firstFrameDeg + 180);
+}
 
 export type BlockArrowMember = {
   id: string;
   blockKey?: string;
+  slotIndex?: number;
   cx: number;
   cy: number;
 };
+
+/**
+ * Resolves the two opposing East-West directions from the selected physical
+ * Referenzkante. Panel positions and rotations deliberately do not participate.
+ */
+export function resolveReferenceEdgeOpposingArrowAzimuths(input: {
+  members: readonly BlockArrowMember[];
+  roofPolygon: Array<{ x: number; y: number }>;
+  referenceEdgeIndex?: number;
+}): ReadonlyMap<string, number> {
+  const edge = resolveCanonicalRoofReferenceEdge({
+    points: input.roofPolygon,
+    requestedIndex: input.referenceEdgeIndex,
+    roofKind: "flat",
+  });
+  if (!edge) return new Map();
+  const result = new Map<string, number>();
+  for (const member of input.members) {
+    if (!Number.isInteger(member.slotIndex)) continue;
+    result.set(
+      member.id,
+      normalizeAzimuth(edge.geographicAzimuthDeg + ((member.slotIndex as number) % 2) * 180),
+    );
+  }
+  return result;
+}
+
+/** South-facing flat systems use the inward normal of the Referenzkante. */
+export function resolveFlatSouthArrowAzimuth(input: {
+  roofPolygon: Array<{ x: number; y: number }>;
+  referenceEdgeIndex?: number;
+}): number | undefined {
+  const edge = resolveCanonicalRoofReferenceEdge({
+    points: input.roofPolygon,
+    requestedIndex: input.referenceEdgeIndex,
+    roofKind: "flat",
+  });
+  if (!edge) return undefined;
+  return resolveRoofEdgeInwardNormal({
+    roofPoints: input.roofPolygon,
+    edge,
+  })?.geographicAzimuthDeg;
+}
 
 /**
  * Resolves the physical downhill direction for opposing module pairs.
@@ -76,13 +128,16 @@ export function resolveOutwardBlockArrowAzimuths(
 }
 
 /**
- * Legacy flat-roof fallback: a panel is rendered around its centre with its
- * forward/top on local -Y, so its canvas rotation is also the arrow azimuth.
- * Schrägdach passes PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG so the arrow stays
- * rigidly attached to the panel through every layout rotation.
+ * Legacy fallback for documents without a canonical roof/system arrow source.
+ * New pitched and supported flat-system paths pass physicalArrowAzimuthDeg.
  */
 export function resolvePanelLocalArrowAzimuth(panelRotationCanvasDeg: number): number | undefined {
   return Number.isFinite(panelRotationCanvasDeg)
     ? normalizeAzimuth(panelRotationCanvasDeg)
     : undefined;
 }
+import {
+  resolveCanonicalRoofReferenceEdge,
+} from "@/lib/planning-core/geometry-v2";
+import { resolveRoofEdgeInwardNormal } from "@/lib/planning-core/advanced";
+import { resolveStandardFirstFrameCanvasAngle } from "../legacyStandardApplicationPolicy";

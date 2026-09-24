@@ -24,7 +24,9 @@ import { resolveRoofEdgeMarginM } from '@/lib/planning/roofProperties';
 import type { PanelInstance } from '@/types/planner';
 import {
   GENERIC_EAST_WEST_SYSTEM_ID,
+  GENERIC_SOUTH_SYSTEM_ID,
   K2_D_DOME_SYSTEM_ID,
+  K2_S_DOME_SYSTEM_ID,
   resolveSurfacePlanning,
 } from '@/lib/planning-core/advanced';
 import {
@@ -38,8 +40,9 @@ import { history as plannerHistory } from '../state/history';
 import MultiSelectionDragHandle from './panels/MultiSelectionDragHandle';
 import { resolveDirectLayoutTargets } from './panels/directLayoutGeometry';
 import {
-  PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG,
-  resolveOutwardBlockArrowAzimuths,
+  resolveFlatSouthArrowAzimuth,
+  resolvePitchedRoofArrowAzimuth,
+  resolveReferenceEdgeOpposingArrowAzimuths,
 } from './panels/moduleSlope';
 import {
   isPrimaryPointerButton,
@@ -86,19 +89,6 @@ export default function PanelsKonva(props: {
     () => allPanels.filter((p) => p.roofId === roofId),
     [allPanels, roofId]
   );
-  const opposingArrowAzimuths = React.useMemo(() => {
-    const opposing = panels.filter((panel) =>
-      panel.advanced?.systemId === K2_D_DOME_SYSTEM_ID ||
-      panel.advanced?.systemId === GENERIC_EAST_WEST_SYSTEM_ID,
-    );
-    return resolveOutwardBlockArrowAzimuths(opposing.map((panel) => ({
-      id: panel.id,
-      blockKey: panel.advanced?.blockKey,
-      cx: panel.cx,
-      cy: panel.cy,
-    })));
-  }, [panels]);
-
   const routePanelPointerDown = React.useCallback((_panelId: string, event: any) => {
     const state = usePlannerV2Store.getState();
     const action = resolveRoofLocalPointerAction({
@@ -179,6 +169,46 @@ export default function PanelsKonva(props: {
     return roof.roofKind === 'pitched' ||
       (roof.roofKind == null && committedAdvancedConfig == null);
   }, [committedAdvancedConfig, roof]);
+  const pitchedArrowAzimuthDeg = React.useMemo(
+    () => isPitchedRoof && roof
+      ? resolvePitchedRoofArrowAzimuth({
+          roofPolygon: roof.points,
+          referenceEdgeIndex: roof.referenceEdgeIndex,
+        })
+      : undefined,
+    [isPitchedRoof, roof],
+  );
+  const flatSouthArrowAzimuthDeg = React.useMemo(() => {
+    if (!roof || isPitchedRoof) return undefined;
+    const hasSouthPanels = panels.some((panel) =>
+      panel.advanced?.systemId === K2_S_DOME_SYSTEM_ID ||
+      panel.advanced?.systemId === GENERIC_SOUTH_SYSTEM_ID,
+    );
+    return hasSouthPanels
+      ? resolveFlatSouthArrowAzimuth({
+          roofPolygon: roof.points,
+          referenceEdgeIndex: roof.referenceEdgeIndex,
+        })
+      : undefined;
+  }, [isPitchedRoof, panels, roof]);
+  const opposingArrowAzimuths = React.useMemo(() => {
+    if (!roof || isPitchedRoof) return new Map<string, number>();
+    const opposing = panels.filter((panel) =>
+      panel.advanced?.systemId === K2_D_DOME_SYSTEM_ID ||
+      panel.advanced?.systemId === GENERIC_EAST_WEST_SYSTEM_ID,
+    );
+    return resolveReferenceEdgeOpposingArrowAzimuths({
+      roofPolygon: roof.points,
+      referenceEdgeIndex: roof.referenceEdgeIndex,
+      members: opposing.map((panel) => ({
+        id: panel.id,
+        blockKey: panel.advanced?.blockKey,
+        slotIndex: panel.advanced?.slotIndex,
+        cx: panel.cx,
+        cy: panel.cy,
+      })),
+    });
+  }, [isPitchedRoof, panels, roof]);
   const committedAdvancedDefinition = React.useMemo(
     () => committedAdvancedConfig ? resolveManualAdvancedBlockDefinition(committedAdvancedConfig) : null,
     [committedAdvancedConfig],
@@ -874,10 +904,9 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
             wPx={p.wPx}
             hPx={p.hPx}
             rotationDeg={rotationDeg}
-            slopeArrowAzimuthDeg={opposingArrowAzimuths.get(p.id)}
-            slopeArrowLocalOffsetDeg={isPitchedRoof
-              ? PITCHED_MODULE_LOCAL_ARROW_OFFSET_DEG
-              : undefined}
+            slopeArrowAzimuthDeg={isPitchedRoof
+              ? pitchedArrowAzimuthDeg
+              : opposingArrowAzimuths.get(p.id) ?? flatSouthArrowAzimuthDeg}
             selected={sel}
             image={img}
             onStartDrag={startPanelDrag}
