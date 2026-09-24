@@ -201,6 +201,7 @@ export default function PanelsKonva(props: {
       id: panel.id,
       blockKey: panel.advanced?.blockKey,
       slotIndex: panel.advanced?.slotIndex,
+      moduleFaceAzimuthDeg: panel.advanced?.moduleFaceAzimuthDeg,
       cx: panel.cx,
       cy: panel.cy,
     })));

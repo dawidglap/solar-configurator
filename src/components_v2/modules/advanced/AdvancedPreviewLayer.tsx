@@ -162,6 +162,7 @@ export default function AdvancedPreviewLayer({
         id: `${module.blockKey}:${module.slotIndex}`,
         blockKey: module.blockKey,
         slotIndex: module.slotIndex,
+        moduleFaceAzimuthDeg: module.faceAzimuthDeg,
         cx: module.cx,
         cy: module.cy,
       })))

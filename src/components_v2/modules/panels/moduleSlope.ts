@@ -40,6 +40,8 @@ export type BlockArrowMember = {
   id: string;
   blockKey?: string;
   slotIndex?: number;
+  /** Stable physical face identity persisted on Advanced panel instances. */
+  moduleFaceAzimuthDeg?: number;
   cx: number;
   cy: number;
 };
@@ -83,9 +85,19 @@ export function resolveOutwardBlockArrowAzimuths(
   const result = new Map<string, number>();
   for (const group of byBlock.values()) {
     // An East-West/D-Dome block has exactly two faces sharing one ridge.
-    // Requiring the complete pair avoids inventing a downhill direction for a
-    // corrupt/partial block and keeps the result independent from slot naming.
-    if (group.length !== 2) continue;
+    // Keep the established centre-to-module geometry for complete pairs so
+    // their initial rendering is unchanged. A user may deliberately delete
+    // either physical module, however; in that partial state the survivor's
+    // persisted face azimuth is authoritative and must not be re-inferred or
+    // renumbered from the remaining array membership.
+    if (group.length !== 2) {
+      for (const member of group) {
+        if (Number.isFinite(member.moduleFaceAzimuthDeg)) {
+          result.set(member.id, normalizeAzimuth(member.moduleFaceAzimuthDeg!));
+        }
+      }
+      continue;
+    }
     const center = {
       x: (group[0].cx + group[1].cx) / 2,
       y: (group[0].cy + group[1].cy) / 2,

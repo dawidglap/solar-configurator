@@ -322,6 +322,7 @@ export default function ManualPlacementLayer({
         id: String(module.slotIndex),
         blockKey: "candidate",
         slotIndex: module.slotIndex,
+        moduleFaceAzimuthDeg: module.faceAzimuthDeg,
         cx: module.cx,
         cy: module.cy,
       })))
