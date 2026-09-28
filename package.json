@@ -39,6 +39,7 @@
     "test:planning-legacy": "tsx --test tests/planning-core/*.test.ts",
     "test:snow-protection-persistence": "tsx scripts/test-snow-protection-persistence.ts",
     "test:snow-protection-catalog": "tsx --test tests/snowProtectionCatalog.test.ts",
+    "test:snow-guard-input": "tsx --test tests/snowGuardLengthInput.test.ts",
     "backfill:auftrag-pipeline": "npx tsx scripts/backfill-auftrag-pipeline.ts",
     "backfill:company-subscriptions": "npx tsx scripts/backfill-company-subscriptions.ts",
     "backfill:invoice-dunning-status": "npx tsx scripts/backfill-invoice-dunning-status.ts",

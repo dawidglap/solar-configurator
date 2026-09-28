@@ -340,12 +340,25 @@ export default function TopToolbar() {
 
       if (next.some((segment) => !segment.roofId)) {
         toast.error("Bitte zuerst eine Dachfläche auswählen.");
-        return;
+        return false;
       }
 
       setManualSnowProtectionSegments(next);
+      return true;
     },
     [layers, selectedId, setManualSnowProtectionSegments, snowProtection.manualSegments],
+  );
+  const commitSnowSegments = useCallback(
+    async (segments: SnowSegment[]) => {
+      if (!planningId) {
+        throw new Error("Fehlende planningId in der URL.");
+      }
+      if (!persistSnowSegments(segments)) {
+        throw new Error("Bitte zuerst eine Dachfläche auswählen.");
+      }
+      await savePlannerToDb(planningId);
+    },
+    [persistSnowSegments, planningId],
   );
 
   /* ───────────────── Bottoni icona+tooltip (portal) ───────────────── */
@@ -923,8 +936,8 @@ export default function TopToolbar() {
       <SnowGuardCostDialog
         open={isSnowDialogOpen}
         onClose={() => setIsSnowDialogOpen(false)}
+        onCommit={commitSnowSegments}
         segments={snowSegments}
-        setSegments={persistSnowSegments}
         pricePerM={SNOW_PRICE_PER_M}
       />
 
