@@ -79,9 +79,10 @@ test("contextual help and compact roof-list property controls remain visible in 
   assert.ok(help.includes("Hindernis zeichnen"));
   assert.ok(panel.includes("RoofMarginControl"));
   assert.ok(panel.includes("<div>Dach</div>"));
-  assert.ok(panel.includes(">Fläche</div>"));
-  assert.ok(panel.includes(">Neigung</div>"));
-  assert.ok(panel.includes(">Ausrichtung</div>"));
+  assert.ok(panel.includes('aria-label="Fläche"'));
+  assert.ok(panel.includes('aria-label="Module"'));
+  assert.ok(panel.includes('aria-label="Neigung"'));
+  assert.ok(panel.includes('aria-label="Ausrichtung"'));
   assert.ok(panel.includes("Benutzerdefiniert…"));
   assert.ok(panel.includes("ROOF_DIRECTION_CHOICES.map"));
   assert.ok(panel.includes('inputMode="decimal"'));
@@ -99,9 +100,26 @@ test("contextual help and compact roof-list property controls remain visible in 
   assert.equal(marginControl.includes("Gefällerichtung"), false);
   assert.ok(dimensions.includes("NumericFieldWithSuffix"));
   assert.ok(dimensions.includes(">Kanten</p>"));
-  assert.ok(dimensions.includes("getPitchedRoofEdgeRoles"));
+  assert.ok(dimensions.includes("RoofEdgeField"));
   assert.ok(dimensions.includes("hiding roof-edge orientation readout from sidebar"));
   assert.equal(compass.includes("+ rotateDeg"), false);
+});
+
+test("pitched and flat roof edge fields share canonical labels and one visual component", () => {
+  const dimensions = readFileSync(
+    new URL("../../src/components_v2/panels/RoofDimensionsControl.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(dimensions.includes("getPitchedRoofEdgeRoles"), false);
+  assert.equal(dimensions.includes("Ortgang links"), false);
+  assert.equal(dimensions.includes("Ortgang rechts"), false);
+  assert.equal(dimensions.includes('eaves: "Traufe"'), false);
+  assert.match(dimensions, /const label = `Kante \$\{segment\.segmentIndex \+ 1\}`/);
+  assert.match(dimensions, /value=\{dimensionFormatter\.format\(segment\.lengthM\)\}\s+readOnly/);
+  assert.equal((dimensions.match(/<RoofEdgeField/g) ?? []).length, 2);
+  assert.match(dimensions, /roofKind === "pitched" \? "First" : "Referenzkante"/);
+  assert.match(dimensions, /label: `Kante \$\{segment\.segmentIndex \+ 1\} · \$\{formatDimensionM\(segment\.lengthM\)\}`/);
 });
 
 test("the Randabstand band is rendered in both building and module planning", () => {

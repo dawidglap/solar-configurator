@@ -9,11 +9,11 @@ import {
   MIN_EDITABLE_ROOF_DIMENSION_M,
   analyzeRectangularRoof,
   analyzeRoofSegments,
-  getPitchedRoofEdgeRoles,
   resolveRoofGeometricOrientationDeg,
   resolveRoofReferenceEdgeIndex,
   resizeRectangularRoof,
   resizeRoofSegment,
+  type RoofSegmentDimension,
 } from "@/lib/planning-core/geometry-v2";
 import type { RoofArea } from "@/types/planner";
 import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
@@ -42,13 +42,53 @@ const dimensionFormatter = new Intl.NumberFormat("de-DE", {
 
 type RoofKind = "pitched" | "flat" | "green";
 
-const EDGE_ROLE_LABELS = {
-  first: "First",
-  eaves: "Traufe",
-  "gable-left": "Ortgang links",
-  "gable-right": "Ortgang rechts",
-  edge: undefined,
-} as const;
+type RoofEdgeFieldProps = {
+  roofId: string;
+  segment: RoofSegmentDimension;
+  value: string;
+  readOnly?: boolean;
+  highlighted?: boolean;
+  onChange?: React.ChangeEventHandler<HTMLInputElement>;
+  onBlur?: React.FocusEventHandler<HTMLInputElement>;
+  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
+};
+
+function RoofEdgeField({
+  roofId,
+  segment,
+  value,
+  readOnly = false,
+  highlighted = false,
+  onChange,
+  onBlur,
+  onKeyDown,
+}: RoofEdgeFieldProps) {
+  const label = `Kante ${segment.segmentIndex + 1}`;
+  return (
+    <div className="min-w-0 space-y-2">
+      <label
+        htmlFor={`roof-edge-${roofId}-${segment.segmentIndex}`}
+        className={`${fieldLabelClass} truncate ${highlighted ? "font-medium text-primary" : ""}`}
+      >
+        {label}
+      </label>
+      <NumericFieldWithSuffix
+        id={`roof-edge-${roofId}-${segment.segmentIndex}`}
+        aria-label={`${label} (m)`}
+        aria-readonly={readOnly || undefined}
+        data-stop-hotkeys="true"
+        inputMode={readOnly ? undefined : "decimal"}
+        suffix="m"
+        value={value}
+        readOnly={readOnly}
+        tabIndex={readOnly ? -1 : undefined}
+        onChange={onChange}
+        onBlur={onBlur}
+        onKeyDown={onKeyDown}
+      />
+    </div>
+  );
+}
 
 function EmptyRoofDimensionsControl() {
   return (
@@ -152,18 +192,6 @@ function PopulatedRoofDimensionsControl({
     requestedIndex: roof.referenceEdgeIndex,
     roofKind,
   });
-  const pitchedRoles = React.useMemo(
-    () => getPitchedRoofEdgeRoles({
-      points: roof.points,
-      referenceEdgeIndex,
-    }),
-    [referenceEdgeIndex, roof.points],
-  );
-  const edgeLabel = (edgeIndex: number) => {
-    if (roofKind !== "pitched") return `Kante ${edgeIndex + 1}`;
-    const role = pitchedRoles.get(edgeIndex) ?? "edge";
-    return EDGE_ROLE_LABELS[role] ?? `Kante ${edgeIndex + 1}`;
-  };
   const formatDimensionM = (value: number) => `${dimensionFormatter.format(value)} m`;
   const changeReferenceEdge = (nextReferenceEdgeIndex: number) => {
     let nextModules = modules;
@@ -323,47 +351,36 @@ function PopulatedRoofDimensionsControl({
                 roofKind === "pitched" &&
                 segment.segmentIndex === referenceEdgeIndex;
               return (
-                <div key={segment.segmentIndex} className="min-w-0 space-y-2">
-                  <label
-                    htmlFor={`roof-edge-${roof.id}-${segment.segmentIndex}`}
-                    className={`${fieldLabelClass} truncate ${
-                      isFirst ? "font-medium text-primary" : ""
-                    }`}
-                  >
-                    {edgeLabel(segment.segmentIndex)}
-                  </label>
-                  <NumericFieldWithSuffix
-                    id={`roof-edge-${roof.id}-${segment.segmentIndex}`}
-                    aria-label={`${edgeLabel(segment.segmentIndex)} (m)`}
-                    data-stop-hotkeys="true"
-                    inputMode="decimal"
-                    suffix="m"
-                    value={segmentInputs[segment.segmentIndex] ?? ""}
-                    onChange={(event) =>
-                      setSegmentInputs((current) => {
-                        const next = [...current];
-                        next[segment.segmentIndex] = event.target.value;
-                        return next;
-                      })
+                <RoofEdgeField
+                  key={segment.segmentIndex}
+                  roofId={roof.id}
+                  segment={segment}
+                  value={segmentInputs[segment.segmentIndex] ?? ""}
+                  highlighted={isFirst}
+                  onChange={(event) =>
+                    setSegmentInputs((current) => {
+                      const next = [...current];
+                      next[segment.segmentIndex] = event.target.value;
+                      return next;
+                    })
+                  }
+                  onBlur={() => commitSegment(segment.segmentIndex)}
+                  onKeyDown={(event) => {
+                    event.stopPropagation();
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      cancelSegmentBlur.current = segment.segmentIndex;
+                      setSegmentInputs(
+                        segments.map((item) => item.lengthM.toFixed(2)),
+                      );
+                      setError(undefined);
+                      event.currentTarget.blur();
                     }
-                    onBlur={() => commitSegment(segment.segmentIndex)}
-                    onKeyDown={(event) => {
-                      event.stopPropagation();
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        event.currentTarget.blur();
-                      } else if (event.key === "Escape") {
-                        event.preventDefault();
-                        cancelSegmentBlur.current = segment.segmentIndex;
-                        setSegmentInputs(
-                          segments.map((item) => item.lengthM.toFixed(2)),
-                        );
-                        setError(undefined);
-                        event.currentTarget.blur();
-                      }
-                    }}
-                  />
-                </div>
+                  }}
+                />
               );
             })}
           </div>
@@ -478,24 +495,14 @@ function PopulatedRoofDimensionsControl({
               roofKind === "pitched" &&
               segment.segmentIndex === referenceEdgeIndex;
             return (
-              <div
+              <RoofEdgeField
                 key={segment.segmentIndex}
-                className={[
-                  "min-h-14 min-w-0 rounded-lg border bg-muted/10 px-3 py-2",
-                  isFirst
-                    ? "border-primary/45 bg-primary/5"
-                    : "border-border/50",
-                ].join(" ")}
-              >
-                <p
-                  className={`truncate text-[10px] ${isFirst ? "font-medium text-primary" : "text-muted-foreground"}`}
-                >
-                  {edgeLabel(segment.segmentIndex)}
-                </p>
-                <p className="mt-1 whitespace-nowrap text-[11px] font-semibold tabular-nums text-foreground">
-                  {formatDimensionM(segment.lengthM)}
-                </p>
-              </div>
+                roofId={roof.id}
+                segment={segment}
+                value={dimensionFormatter.format(segment.lengthM)}
+                readOnly
+                highlighted={isFirst}
+              />
             );
           })}
         </div>
