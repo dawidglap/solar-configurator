@@ -111,6 +111,8 @@ import {
   BUILDING_REVEAL_REQUEST_EVENT,
   type BuildingRevealRequest,
 } from "./buildingRevealEvent";
+import LocationMarkerKonva from "./LocationMarkerKonva";
+import { shouldShowLocationMarker } from "./locationMarkerModel";
 
 const BUILDING_REVEAL_DURATION_MS = 1100;
 
@@ -189,6 +191,8 @@ export default function CanvasStage() {
   }, []);
   useEffect(() => {
     window.__helionicCaptureProjectSnapshot = async () => {
+      let locationMarkerLayer: Konva.Node | undefined;
+      let markerWasVisible = false;
       try {
         const stage = stageRef.current?.getStage?.();
 
@@ -196,6 +200,12 @@ export default function CanvasStage() {
           console.warn("[Planner] No Konva stage available for snapshot");
           return null;
         }
+
+        // The address pin is navigation-only and must not enter cached/PDF snapshots.
+        locationMarkerLayer = stage.findOne(".location-marker-layer") as Konva.Node | undefined;
+        markerWasVisible = locationMarkerLayer?.visible() ?? false;
+        locationMarkerLayer?.visible(false);
+        stage.draw();
 
         const dataUrl = stage.toDataURL({
           pixelRatio: 1,
@@ -211,6 +221,11 @@ export default function CanvasStage() {
       } catch (err) {
         console.warn("[Planner] Snapshot capture failed:", err);
         return null;
+      } finally {
+        if (locationMarkerLayer) {
+          locationMarkerLayer.visible(markerWasVisible);
+          locationMarkerLayer.getStage()?.batchDraw();
+        }
       }
     };
 
@@ -239,6 +254,10 @@ export default function CanvasStage() {
   const addRoof = usePlannerV2Store((s) => s.addRoof);
   const select = usePlannerV2Store((s) => s.select);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
+  const explicitRoofSelectionVersion = usePlannerV2Store(
+    (s) => s.explicitRoofSelectionVersion,
+  );
+  const address = usePlannerV2Store((s) => s.address);
   const rightOpen = usePlannerV2Store((s) => s.ui.rightPanelOpen);
   const shapeMode = usePlannerV2Store((s) => s.ui.roofShapeMode);
   const setUI = usePlannerV2Store((s) => s.setUI);
@@ -751,6 +770,11 @@ export default function CanvasStage() {
       }
       stage.find(".viewport-rotated-content").forEach((node: Konva.Node) => {
         node.rotation(camera.rotationDeg);
+      });
+      stage.find(".location-marker-upright").forEach((node: Konva.Node) => {
+        const inverseScale = 1 / Math.max(camera.scale, 0.01);
+        node.scale({ x: inverseScale, y: inverseScale });
+        node.rotation(-camera.rotationDeg);
       });
       stage.batchDraw();
       syncTransientView({
@@ -1690,6 +1714,35 @@ export default function CanvasStage() {
                 )}
               </Group>
             </Layer>
+            {shouldShowLocationMarker({
+              selectedRoofId: selectedId,
+              explicitRoofSelectionVersion,
+            }) ? (
+              <Layer
+                scaleX={layerScale}
+                scaleY={layerScale}
+                listening={false}
+                perfectDrawEnabled={false}
+                name="location-marker-layer"
+              >
+                <Group
+                  name="viewport-rotated-content"
+                  x={img.naturalWidth / 2}
+                  y={img.naturalHeight / 2}
+                  offsetX={img.naturalWidth / 2}
+                  offsetY={img.naturalHeight / 2}
+                  rotation={rotateDeg}
+                  listening={false}
+                >
+                  <LocationMarkerKonva
+                    snapshot={snap}
+                    address={address}
+                    viewportScale={layerScale}
+                    canvasRotationDeg={rotateDeg}
+                  />
+                </Group>
+              </Layer>
+            ) : null}
             {exclusiveTrapez && selectedRoof && (
               <Layer
                 scaleX={layerScale}

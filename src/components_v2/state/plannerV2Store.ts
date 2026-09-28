@@ -197,6 +197,7 @@ function createInitialPlannerState() {
 
     layers: [],
     selectedId: undefined as string | undefined,
+    explicitRoofSelectionVersion: 0,
 
     panels: [],
     selectedPanelIds: [] as string[],
@@ -391,6 +392,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           roofAlign: { rotDeg: 0, pivotPx: undefined },
 
           selectedId: undefined,
+          explicitRoofSelectionVersion: 0,
           selectedZoneId: undefined,
           selectedPanelIds: [],
 
@@ -523,6 +525,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
 
             layers: Array.isArray(saved.layers) ? saved.layers : [],
             selectedId: undefined,
+            explicitRoofSelectionVersion: 0,
 
             zones: Array.isArray(saved.zones) ? saved.zones : [],
             selectedZoneId: undefined,

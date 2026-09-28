@@ -24,6 +24,8 @@ export type LayersSlice = {
     removeRoof: (id: string) => void;  // preferito
 
     selectedId?: string;
+    /** Session-only signal: addRoof may auto-select, select(id) records explicit intent. */
+    explicitRoofSelectionVersion: number;
     select: (id?: string) => void;
 };
 
@@ -63,6 +65,7 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
         set((st) => removeRoofFromState(st, id)),
 
     selectedId: undefined,
+    explicitRoofSelectionVersion: 0,
     select: (id) =>
         set((state) => {
             const ui = (state as LayersSlice & {
@@ -78,11 +81,17 @@ export const createLayersSlice: StateCreator<LayersSlice, [], [], LayersSlice> =
             ) {
                 return state;
             }
-            if (state.selectedId === id) return { selectedId: id };
+            const explicitRoofSelectionVersion = id
+                ? state.explicitRoofSelectionVersion + 1
+                : state.explicitRoofSelectionVersion;
+            if (state.selectedId === id) {
+                return { selectedId: id, explicitRoofSelectionVersion };
+            }
             // A roof context switch invalidates every roof-local child
             // selection. The objects themselves remain untouched.
             return {
                 selectedId: id,
+                explicitRoofSelectionVersion,
                 selectedPanelIds: [],
                 selectedZoneId: undefined,
                 selectedSnowGuardId: undefined,
