@@ -280,7 +280,7 @@ export async function POST(req: Request, { params }: Params) {
         orderGeneratedAt,
         sections: resolveReportSections(planning),
       });
-      const totalInklMwst = Number(commercial?.totalInvestmentChf ?? 0);
+      const totalInklMwst = Number(commercial?.grossPriceChf ?? 0);
       const signedAt = planning?.offerSignedAt instanceof Date
         ? planning.offerSignedAt
         : new Date(planning?.offerSignedAt);

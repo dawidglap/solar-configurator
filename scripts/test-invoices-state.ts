@@ -46,6 +46,7 @@ async function main() {
       email: "invoice.tester@example.com",
       activeCompanyId: companyId,
       role: "admin",
+      sessionVersion: 0,
     },
     secret,
   );
@@ -53,6 +54,16 @@ async function main() {
   try {
     await client.connect();
     const db = client.db();
+    await db.collection("users").insertOne({
+      _id: new ObjectId(userId),
+      email: "invoice.tester@example.com",
+      firstName: "Invoice",
+      lastName: "Tester",
+      status: "active",
+      sessionVersion: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     await db.collection("companies").insertOne({
       _id: companyObjectId,
       name: "Invoices Test Company",
@@ -380,6 +391,7 @@ async function main() {
     await client.db().collection("invoices").deleteMany({ companyId }).catch(() => {});
     await client.db().collection("plannings").deleteMany({ _id: planningId }).catch(() => {});
     await client.db().collection("companies").deleteOne({ _id: companyObjectId }).catch(() => {});
+    await client.db().collection("users").deleteOne({ _id: new ObjectId(userId) }).catch(() => {});
     await getMongoClient().then((sharedClient) => sharedClient.close()).catch(() => {});
     await client.close().catch(() => {});
   }

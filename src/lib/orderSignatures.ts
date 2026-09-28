@@ -1038,7 +1038,7 @@ export async function buildPublicSignatureOrder(args: {
     customerEmail: resolveCustomerEmail(args.planning, customer),
     projectTitle: safeString(args.planning?.title) || safeString(args.planning?.planningNumber),
     objectAddress: resolveObjectAddress(args.planning),
-    totalInklMwst: Number(commercial?.totalInvestmentChf ?? 0),
+    totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
     subsidyChf: Number(commercial?.subsidyChf ?? 0),
     effectiveCostChf: Number(commercial?.effectiveCostChf ?? 0),
     optionalTotalChf: Number(commercial?.optionalTotalChf ?? 0),
@@ -1046,7 +1046,7 @@ export async function buildPublicSignatureOrder(args: {
       ? commercial.optionalItems
       : [],
     currency: "CHF",
-    payments: normalizeSignaturePayments(args.planning, Number(commercial?.totalInvestmentChf ?? 0)),
+    payments: normalizeSignaturePayments(args.planning, Number(commercial?.grossPriceChf ?? 0)),
     pdfUrl: canReadPdf
       ? `${apiBase}/api/public/signature/${encodeURIComponent(args.token)}/pdf`
       : null,

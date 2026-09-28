@@ -1022,7 +1022,9 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     pdfBytes: Buffer.from(pdfBytes),
     fileName: `${identifiers.fileStem}.pdf`,
     pricing: {
-      totalInklMwst: totalInvestmentChf,
+      // Contractual gross amount owed to SOLA. Subsidies remain informational
+      // and must never reduce invoices or contractual payment schedules.
+      totalInklMwst: grossPriceChf,
       totalInvestmentChf,
       effectiveCostChf,
     },

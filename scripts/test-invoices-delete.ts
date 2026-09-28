@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { MongoClient, ObjectId } from "mongodb";
 import { DELETE as deleteInvoice } from "../src/app/api/invoices/[invoiceId]/route";
 import { resyncOrderInvoices } from "../src/lib/invoices";
+import { getMongoClient } from "../src/lib/db";
 
 function sign(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
@@ -37,6 +38,7 @@ async function main() {
       email: "delete.tester@example.com",
       activeCompanyId: companyId,
       role: "admin",
+      sessionVersion: 0,
     },
     secret,
   );
@@ -54,6 +56,17 @@ async function main() {
     await client.connect();
     const db = client.db();
     const now = new Date();
+
+    await db.collection("users").insertOne({
+      _id: new ObjectId(userId),
+      email: "delete.tester@example.com",
+      firstName: "Delete",
+      lastName: "Tester",
+      status: "active",
+      sessionVersion: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     await db.collection("companies").insertOne({
       _id: companyObjectId,
@@ -443,6 +456,7 @@ async function main() {
         userId,
         name: "Delete Tester",
         email: "delete.tester@example.com",
+        sessionVersion: 0,
       } as any,
       orderId: gapOrderId,
       orderGeneratedAt: now,
@@ -462,6 +476,14 @@ async function main() {
 
     console.log("test-invoices-delete: ok");
   } finally {
+    const db = client.db();
+    await db.collection("planningFiles").deleteMany({ companyId }).catch(() => {});
+    await db.collection("invoice_events").deleteMany({ companyId }).catch(() => {});
+    await db.collection("invoices").deleteMany({ companyId }).catch(() => {});
+    await db.collection("plannings").deleteMany({ companyId }).catch(() => {});
+    await db.collection("companies").deleteOne({ _id: companyObjectId }).catch(() => {});
+    await db.collection("users").deleteOne({ _id: new ObjectId(userId) }).catch(() => {});
+    await getMongoClient().then((sharedClient) => sharedClient.close()).catch(() => {});
     await client.close();
   }
 }

@@ -704,6 +704,14 @@ export async function resyncOrderInvoices(args: {
     };
   }
 
+  if (existingRechnungen.some((invoice) => normalizeInvoiceStatus(invoice?.status) !== "entwurf")) {
+    return {
+      ok: false as const,
+      status: 409,
+      message: "Bereits ausgegebene Rechnungen können nicht synchronisiert werden.",
+    };
+  }
+
   if (existingRechnungen.length === 0) {
     const created = await createInvoicesForOrderIfMissing(args);
     return {

@@ -28,7 +28,7 @@ function buildPlanningDoc(args: { companyId: string; planningId: ObjectId; withP
       customerName: "Test Kunde",
       moduleCount: 20,
       selectedPanelId: "",
-      dcPowerKw: 8.2,
+      dcPowerKw: 0,
       roofCount: 1,
       hasSnapshot: false,
       lastCalculatedAt: null,
@@ -43,10 +43,11 @@ function buildPlanningDoc(args: { companyId: string; planningId: ObjectId; withP
       parts: {
         items: [
           {
-            category: "module",
-            name: "PV-Modul",
-            quantity: 20,
-            unitPriceNet: 500,
+            category: "service",
+            name: "Photovoltaikanlage",
+            quantity: 1,
+            unitPriceNet: 18_501.39,
+            lineTotalNet: 18_501.39,
           },
         ],
         reportSections: {
@@ -57,11 +58,16 @@ function buildPlanningDoc(args: { companyId: string; planningId: ObjectId; withP
       },
       angebot: {
         payments: args.withPayments
-          ? [{ pct: 100, label: "Schlussrechnung" }]
+          ? [
+              { pct: 50, label: "Anzahlung" },
+              { pct: 40, label: "Zwischenrate" },
+              { pct: 10, label: "Schlussrechnung" },
+            ]
           : [],
       },
       reportOptions: {
         mwstIncluded: true,
+        manualAdditionalSubsidyChf: 3_000,
       },
     },
     createdAt: new Date(),
@@ -72,18 +78,20 @@ function buildPlanningDoc(args: { companyId: string; planningId: ObjectId; withP
 async function callGenerateOrder(args: {
   planningId: string;
   companyId: string;
+  userId: string;
   secret: string;
 }) {
   const cookie = buildSessionCookie(
     {
-      userId: new ObjectId().toString(),
-      id: new ObjectId().toString(),
+      userId: args.userId,
+      id: args.userId,
       firstName: "Test",
       lastName: "Admin",
       name: "Test Admin",
       email: "admin@example.com",
       activeCompanyId: args.companyId,
       role: "admin",
+      sessionVersion: 0,
     },
     args.secret,
   );
@@ -124,10 +132,22 @@ async function main() {
   const missingIbanPlanningId = new ObjectId();
   const missingPaymentsCompanyId = new ObjectId().toString();
   const missingPaymentsPlanningId = new ObjectId();
+  const userId = new ObjectId().toString();
 
   try {
     await client.connect();
     const db = client.db();
+
+    await db.collection("users").insertOne({
+      _id: new ObjectId(userId),
+      email: "admin@example.com",
+      firstName: "Test",
+      lastName: "Admin",
+      status: "active",
+      sessionVersion: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     await db.collection("companies").insertMany([
       {
@@ -185,6 +205,7 @@ async function main() {
     const happy = await callGenerateOrder({
       planningId: happyPlanningId.toString(),
       companyId,
+      userId,
       secret,
     });
     assert.equal(happy.status, 200, `happy-path failed: ${JSON.stringify(happy.json)}`);
@@ -192,20 +213,39 @@ async function main() {
     assert.equal(typeof happy.json?.orderId, "string");
     assert.equal(happy.json?.order?.currentStepKey, "gewonnen");
     assert.ok(Array.isArray(happy.json?.stepsState));
+    assert.deepEqual(
+      happy.json?.invoices?.map((invoice: any) => ({
+        label: invoice.rateLabel,
+        amount: invoice.amount,
+      })),
+      [
+        { label: "Anzahlung", amount: 10_000 },
+        { label: "Zwischenrate", amount: 8_000 },
+        { label: "Schlussrechnung", amount: 2_000 },
+      ],
+      "Förderungen must not reduce the contractual CHF 20'000 invoice schedule",
+    );
 
     const happyRepeat = await callGenerateOrder({
       planningId: happyPlanningId.toString(),
       companyId,
+      userId,
       secret,
     });
     assert.equal(happyRepeat.status, 409, `repeat failed: ${JSON.stringify(happyRepeat.json)}`);
     assert.equal(happyRepeat.json?.ok, true);
     assert.equal(happyRepeat.json?.alreadyGenerated, true);
     assert.equal(happyRepeat.json?.orderId, happy.json?.orderId);
+    assert.deepEqual(
+      happyRepeat.json?.invoices?.map((invoice: any) => invoice.amount),
+      [10_000, 8_000, 2_000],
+      "repeating generation must keep the existing invoices unchanged",
+    );
 
     const missingIban = await callGenerateOrder({
       planningId: missingIbanPlanningId.toString(),
       companyId: missingIbanCompanyId,
+      userId,
       secret,
     });
     assert.equal(missingIban.status, 400, `missing-iban failed: ${JSON.stringify(missingIban.json)}`);
@@ -215,6 +255,7 @@ async function main() {
     const missingPayments = await callGenerateOrder({
       planningId: missingPaymentsPlanningId.toString(),
       companyId: missingPaymentsCompanyId,
+      userId,
       secret,
     });
     assert.equal(
@@ -248,6 +289,7 @@ async function main() {
     await client.db().collection("companies").deleteMany({
       _id: { $in: [new ObjectId(companyId), new ObjectId(missingIbanCompanyId), new ObjectId(missingPaymentsCompanyId)] },
     }).catch(() => {});
+    await client.db().collection("users").deleteOne({ _id: new ObjectId(userId) }).catch(() => {});
     await getMongoClient().then((sharedClient) => sharedClient.close()).catch(() => {});
     await client.close().catch(() => {});
   }

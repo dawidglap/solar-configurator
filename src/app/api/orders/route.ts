@@ -339,7 +339,7 @@ export async function GET(req: Request) {
           customerId: safeString(doc?.customerId) || null,
           customerName: customerNameFromPlanning(doc),
           projectTitle: safeString(doc?.title) || safeString(doc?.planningNumber),
-          totalInklMwst: commercial.totalInvestmentChf,
+          totalInklMwst: commercial.grossPriceChf,
           plannedRatesCount: plannedRates.ok ? plannedRates.items.length : 0,
           createdByUserId:
             safeString(doc?.responsibleUser?._id?.toString?.() ?? doc?.createdByUserId ?? doc?.orderGeneratedByUserId) ||

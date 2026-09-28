@@ -7,6 +7,7 @@ import { PATCH as patchInvoice } from "../src/app/api/invoices/[invoiceId]/route
 import { POST as createMahnung } from "../src/app/api/invoices/[invoiceId]/mahnung/route";
 import { POST as renderInvoicePdf } from "../src/app/api/invoices/[invoiceId]/pdf/route";
 import { GET as getOrders } from "../src/app/api/orders/route";
+import { getMongoClient } from "../src/lib/db";
 
 function sign(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
@@ -94,6 +95,7 @@ async function main() {
       email: "storno.tester@example.com",
       activeCompanyId: companyId,
       role: "admin",
+      sessionVersion: 0,
     },
     secret,
   );
@@ -102,6 +104,17 @@ async function main() {
     await client.connect();
     const db = client.db();
     const now = new Date();
+
+    await db.collection("users").insertOne({
+      _id: new ObjectId(userId),
+      email: "storno.tester@example.com",
+      firstName: "Storno",
+      lastName: "Tester",
+      status: "active",
+      sessionVersion: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     await db.collection("companies").insertOne({
       _id: companyObjectId,
@@ -332,6 +345,14 @@ async function main() {
 
     console.log("test-invoices-storno: ok");
   } finally {
+    const db = client.db();
+    await db.collection("planningFiles").deleteMany({ companyId }).catch(() => {});
+    await db.collection("invoice_events").deleteMany({ companyId }).catch(() => {});
+    await db.collection("invoices").deleteMany({ companyId }).catch(() => {});
+    await db.collection("plannings").deleteMany({ _id: planningId }).catch(() => {});
+    await db.collection("companies").deleteOne({ _id: companyObjectId }).catch(() => {});
+    await db.collection("users").deleteOne({ _id: new ObjectId(userId) }).catch(() => {});
+    await getMongoClient().then((sharedClient) => sharedClient.close()).catch(() => {});
     await client.close();
   }
 }

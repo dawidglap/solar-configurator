@@ -233,7 +233,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       orderId: offerNumber,
       customerName,
       projectTitle,
-      totalInklMwst: Number(commercial?.totalInvestmentChf ?? 0),
+      totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
       signerName,
       signerEmail,
       place: protocolPlace,
@@ -306,7 +306,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const withdrawalUntil = withdrawalRightApplies
       ? new Date(signedAt.getTime() + 14 * 86_400_000)
       : null;
-    const payments = normalizeSignaturePayments(planning, Number(commercial?.totalInvestmentChf ?? 0));
+    const payments = normalizeSignaturePayments(planning, Number(commercial?.grossPriceChf ?? 0));
     const confirmationBasePdf = await createOfferConfirmationPdf({
       sourcePdf: orderPdf,
       orderId,
@@ -315,7 +315,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       projectTitle,
       signerName,
       signedAt,
-      totalInklMwst: Number(commercial?.totalInvestmentChf ?? 0),
+      totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
       payments,
       propertyStreet,
       propertyHouseNumber,
@@ -335,7 +335,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       orderId,
       customerName,
       projectTitle,
-      totalInklMwst: Number(commercial?.totalInvestmentChf ?? 0),
+      totalInklMwst: Number(commercial?.grossPriceChf ?? 0),
       signerName,
       signerEmail,
       place: protocolPlace,

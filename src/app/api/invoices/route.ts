@@ -560,7 +560,7 @@ export async function POST(req: Request) {
       : null;
 
     const commercial = await computePlanningCommercialSummary(db, planningAny);
-    const orderTotalChf = Number(commercial?.totalInvestmentChf ?? 0);
+    const orderTotalChf = Number(commercial?.grossPriceChf ?? 0);
     const existingOrderInvoices = await invoices
       .find({
         companyId,
