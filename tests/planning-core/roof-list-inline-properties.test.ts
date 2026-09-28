@@ -16,9 +16,15 @@ const globalStyles = readFileSync(
 );
 
 test("roof list exposes explicit compact property columns without native number spinners", () => {
-  for (const label of ["Dach", "Fläche", "Neigung", "Ausrichtung"]) {
-    assert.ok(source.includes(`>${label}</div>`));
+  assert.ok(source.includes(">Dach</div>"));
+  for (const label of ["Fläche", "Module", "Neigung", "Ausrichtung"]) {
+    assert.ok(roofListSource.includes(`aria-label="${label}"`));
+    assert.ok(roofListSource.includes(`title="${label}"`));
   }
+  assert.match(roofListSource, /m<sup[^>]*>2<\/sup>/);
+  assert.ok(roofListSource.includes("<Grid3X3"));
+  assert.ok(roofListSource.includes("<TriangleRight"));
+  assert.ok(roofListSource.includes("<Compass"));
   assert.ok(source.includes('type="text"'));
   assert.ok(source.includes('inputMode="decimal"'));
   assert.equal(source.includes('title="Neigung (°)"'), false);
@@ -49,8 +55,9 @@ test("building and module planning share one canonical roof-list structure", () 
   assert.equal(source.match(/data-roof-list-header/g)?.length, 1);
   assert.equal(source.match(/data-roof-list-row/g)?.length, 1);
   assert.equal(roofListSource.includes('step === "building" ? (\n              <div'), false);
-  for (const label of ["Dach", "Fläche", "Module", "kWp", "Neigung", "Ausrichtung"]) {
-    assert.ok(roofListSource.includes(`>${label}</div>`));
+  for (const label of ["Dach", "kWp"]) assert.ok(roofListSource.includes(`>${label}</div>`));
+  for (const label of ["Fläche", "Module", "Neigung", "Ausrichtung"]) {
+    assert.ok(roofListSource.includes(`aria-label="${label}"`));
   }
   assert.equal(roofListSource.includes(">Dachfläche</div>"), false);
   assert.ok(source.includes("buildCommittedRoofStatsByRoof"));

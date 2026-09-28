@@ -6,7 +6,7 @@ import { nanoid } from "nanoid";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import RoofAreaInfo from "../ui/RoofAreaInfo";
 import DetectedRoofsImport from "../panels/DetectedRoofsImport";
-import { Eye, EyeOff, Settings2 } from "lucide-react";
+import { Compass, Eye, EyeOff, Grid3X3, Settings2, TriangleRight } from "lucide-react";
 import toast from "react-hot-toast";
 
 import {
@@ -716,11 +716,32 @@ export default function ModulesPanel() {
               className="grid h-8 grid-cols-[24px_34px_36px_40px_42px_minmax(64px,1fr)_18px_18px] items-end pb-1 text-[8px] font-medium leading-none text-muted-foreground"
             >
               <div>Dach</div>
-              <div className="text-right">Fläche</div>
-              <div className="text-right">Module</div>
+              <div className="flex justify-end">
+                <span
+                  role="img"
+                  aria-label="Fläche"
+                  title="Fläche"
+                  className="inline-flex items-start text-[10px] font-semibold leading-none"
+                >
+                  m<sup className="text-[7px] leading-none">2</sup>
+                </span>
+              </div>
+              <div className="flex justify-end">
+                <span role="img" aria-label="Module" title="Module">
+                  <Grid3X3 className="h-3 w-3" aria-hidden="true" />
+                </span>
+              </div>
               <div className="text-right">kWp</div>
-              <div className="text-center">Neigung</div>
-              <div className="text-center">Ausrichtung</div>
+              <div className="flex justify-center">
+                <span role="img" aria-label="Neigung" title="Neigung">
+                  <TriangleRight className="h-3 w-3" aria-hidden="true" />
+                </span>
+              </div>
+              <div className="flex justify-center">
+                <span role="img" aria-label="Ausrichtung" title="Ausrichtung">
+                  <Compass className="h-3 w-3" aria-hidden="true" />
+                </span>
+              </div>
               <div className="text-center">S</div>
               <div className="text-center">×</div>
             </div>
