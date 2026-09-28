@@ -3,6 +3,10 @@ import bcrypt from "bcryptjs";
 import { getCorsHeaders } from "@/lib/cors";
 import { buildNewCompanySubscriptionDefaults, buildUniqueCompanySlug } from "@/lib/subscription";
 import { ensureCompanyAuftragPipelineTemplate } from "@/lib/auftragPipeline";
+import {
+  ensureCompanySnowProtectionCatalogItem,
+  ensureSnowProtectionUniqueIndex,
+} from "@/lib/snowProtectionCatalog";
 
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
@@ -31,6 +35,7 @@ export async function POST(req: Request) {
 
     const companies = db.collection("companies");
     const users = db.collection("users");
+    await ensureSnowProtectionUniqueIndex(db);
 
     // Evita di creare due volte lo stesso owner
     const existing = await users.findOne({ email: OWNER_EMAIL });
@@ -51,6 +56,7 @@ export async function POST(req: Request) {
       createdAt: now,
       updatedAt: now,
     });
+    await ensureCompanySnowProtectionCatalogItem(db, companyRes.insertedId);
     await ensureCompanyAuftragPipelineTemplate(db, companyRes.insertedId, {
       id: "bootstrap",
       fullName: "Bootstrap",

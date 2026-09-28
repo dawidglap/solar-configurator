@@ -20,6 +20,10 @@ import {
 } from "@/lib/subscription";
 import { ensureCompanyAuftragPipelineTemplate } from "@/lib/auftragPipeline";
 import { isCurrentSessionValid } from "@/lib/userProfiles";
+import {
+  ensureCompanySnowProtectionCatalogItem,
+  ensureSnowProtectionUniqueIndex,
+} from "@/lib/snowProtectionCatalog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -176,6 +180,7 @@ export async function POST(req: Request) {
     const companies = db.collection("companies");
     const users = db.collection("users");
     await ensureCompanySubscriptionIndexes(db);
+    await ensureSnowProtectionUniqueIndex(db);
 
     const existingUser = await users.findOne({ email: ownerEmail }, { projection: { _id: 1 } });
     if (existingUser) {
@@ -199,6 +204,7 @@ export async function POST(req: Request) {
     };
 
     const companyRes = await companies.insertOne(companyDoc);
+    await ensureCompanySnowProtectionCatalogItem(db, companyRes.insertedId);
     await ensureCompanyAuftragPipelineTemplate(db, companyRes.insertedId, {
       id: session.userId || "",
       fullName: safeString(session.name) || "System",

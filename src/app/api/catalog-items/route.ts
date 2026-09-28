@@ -3,6 +3,12 @@ import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
+import {
+  ensureCompanySnowProtectionCatalogItem,
+  ensureSnowProtectionUniqueIndex,
+  getPlannerRole,
+  SNOW_PROTECTION_PLANNER_ROLE,
+} from "@/lib/snowProtectionCatalog";
 
 export const runtime = "nodejs";
 
@@ -226,6 +232,23 @@ export async function POST(req: Request) {
     if (subscriptionError) return subscriptionError;
     const collection = db.collection("catalogItems");
 
+    if (getPlannerRole(doc.metadata) === SNOW_PROTECTION_PLANNER_ROLE) {
+      await ensureSnowProtectionUniqueIndex(db);
+      const ensured = await ensureCompanySnowProtectionCatalogItem(
+        db,
+        session.activeCompanyId,
+      );
+      return jsonResponse(
+        origin,
+        {
+          ok: true,
+          itemId: String(ensured.item._id),
+          created: ensured.created,
+        },
+        200,
+      );
+    }
+
     const res = await collection.insertOne(doc);
 
     return jsonResponse(
@@ -238,6 +261,13 @@ export async function POST(req: Request) {
     );
   } catch (e: any) {
     console.error("CREATE CATALOG ITEM ERROR:", e);
+    if (e?.code === 11000 || e?.code === "SNOW_PROTECTION_DUPLICATES") {
+      return jsonResponse(
+        origin,
+        { ok: false, error: "A snow protection product already exists for this company" },
+        409,
+      );
+    }
     return jsonResponse(
       origin,
       { ok: false, error: e?.message ?? "Unknown error" },

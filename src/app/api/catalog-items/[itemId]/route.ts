@@ -4,6 +4,13 @@ import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
+import {
+  canDeleteCatalogItem,
+  isSnowProtectionRoleAssignmentBlocked,
+  preserveSnowProtectionPlannerRole,
+  preserveSnowProtectionTechnicalFields,
+  SNOW_PROTECTION_PLANNER_ROLE,
+} from "@/lib/snowProtectionCatalog";
 
 export const runtime = "nodejs";
 
@@ -226,12 +233,34 @@ export async function PATCH(
     if (subscriptionError) return subscriptionError;
     const collection = db.collection("catalogItems");
 
+    const existing = await collection.findOne({
+      _id: objectId,
+      companyId: session.activeCompanyId,
+    });
+
+    if (!existing) {
+      return jsonResponse(origin, { ok: false, error: "Catalog item not found" }, 404);
+    }
+
+    if (body?.metadata && typeof body.metadata === "object") {
+      if (isSnowProtectionRoleAssignmentBlocked(existing, body.metadata)) {
+        return jsonResponse(
+          origin,
+          { ok: false, error: "The snow protection planner role is reserved" },
+          409,
+        );
+      }
+      setObj.metadata = preserveSnowProtectionPlannerRole(existing.metadata, body.metadata);
+    }
+
+    const protectedSetObj = preserveSnowProtectionTechnicalFields(existing, setObj);
+
     const res = await collection.updateOne(
       {
         _id: objectId,
         companyId: session.activeCompanyId,
       },
-      { $set: setObj },
+      { $set: protectedSetObj },
     );
 
     if (res.matchedCount === 0) {
@@ -287,11 +316,31 @@ export async function DELETE(
 
   try {
     const db = await getDb();
+    const subscriptionError = await enforceActiveSubscription(db, origin, session as any);
+    if (subscriptionError) return subscriptionError;
     const collection = db.collection("catalogItems");
+
+    const existing = await collection.findOne({
+      _id: objectId,
+      companyId: session.activeCompanyId,
+    });
+
+    if (!existing) {
+      return jsonResponse(origin, { ok: false, error: "Catalog item not found" }, 404);
+    }
+
+    if (!canDeleteCatalogItem(existing)) {
+      return jsonResponse(
+        origin,
+        { ok: false, error: "The standard snow protection product cannot be deleted" },
+        409,
+      );
+    }
 
     const res = await collection.deleteOne({
       _id: objectId,
       companyId: session.activeCompanyId,
+      "metadata.plannerRole": { $ne: SNOW_PROTECTION_PLANNER_ROLE },
     });
 
     if (res.deletedCount === 0) {
