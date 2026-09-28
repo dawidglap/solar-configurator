@@ -2,16 +2,14 @@
 
 import React from "react";
 import { usePlannerV2Store } from "./state/plannerV2Store";
-import { resolveRoofFallAzimuth, roofAzimuthCardinal } from "./roof/roofOrientation";
 import {
-  GENERIC_EAST_WEST_SYSTEM_ID,
-  GENERIC_SOUTH_SYSTEM_ID,
-  K2_D_DOME_SYSTEM_ID,
-  K2_S_DOME_SYSTEM_ID,
   resolveSurfacePlanning,
   type AdvancedSurfacePlanningV1,
 } from "@/lib/planning-core/advanced";
-import { resolveInitialSonnendachRoofType } from "./modules/advanced/advancedPlanningApplication";
+import {
+  formatModuleOrientationDirection,
+  resolveModuleOrientationDirections,
+} from "./modules/moduleOrientation";
 
 const TICKS = Array.from({ length: 36 }, (_, i) => i * 10); // alle 10°
 
@@ -49,35 +47,13 @@ export default function CompassHUD({
       : persistedPlanning.status === "supported-advanced"
         ? persistedPlanning.config
         : undefined;
-  const isFlat = roof?.roofKind === "flat" || (
-    roof?.roofKind === undefined && roof != null && (
-      advancedConfig?.surface.kind === "flat" ||
-      resolveInitialSonnendachRoofType(roof) === "flat"
-    )
-  );
-  const system = advancedConfig?.advanced.system;
-  const primaryModuleAzimuthDeg = system?.systemId === K2_S_DOME_SYSTEM_ID ||
-      system?.systemId === GENERIC_SOUTH_SYSTEM_ID
-    ? system.faceAzimuthDeg
-    : system?.systemId === K2_D_DOME_SYSTEM_ID ||
-        system?.systemId === GENERIC_EAST_WEST_SYSTEM_ID
-      ? system.primaryFaceAzimuthDeg
-      : undefined;
-  const opposingModules = system?.systemId === K2_D_DOME_SYSTEM_ID ||
-    system?.systemId === GENERIC_EAST_WEST_SYSTEM_ID;
-  const primaryDirectionDeg = isFlat
-    ? primaryModuleAzimuthDeg
-    : roof
-      ? resolveRoofFallAzimuth(roof)
-      : undefined;
-  const directionDegs = primaryDirectionDeg == null
-    ? []
-    : opposingModules && isFlat
-      ? [primaryDirectionDeg, (primaryDirectionDeg + 180) % 360]
-      : [primaryDirectionDeg];
+  const { isFlat, directionDegs } = resolveModuleOrientationDirections({
+    roof,
+    advancedConfig,
+  });
   const northOnScreenDeg = normalize360(canvasRotationDeg);
   const numericLabel = directionDegs.length ? directionDegs
-    .map((direction) => `${Math.round(direction)}° ${roofAzimuthCardinal(direction)}`)
+    .map(formatModuleOrientationDirection)
     .join(" / ") : null;
 
   return (

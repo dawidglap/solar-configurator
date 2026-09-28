@@ -461,12 +461,14 @@ test("flat roof list and dimensions reuse the canonical geometric-orientation re
   const modulesPanel = readFileSync(new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url), "utf8");
   const dimensions = readFileSync(new URL("../../src/components_v2/panels/RoofDimensionsControl.tsx", import.meta.url), "utf8");
   const compass = readFileSync(new URL("../../src/components_v2/compassHUD.tsx", import.meta.url), "utf8");
+  const moduleOrientation = readFileSync(new URL("../../src/components_v2/modules/moduleOrientation.ts", import.meta.url), "utf8");
   assert.ok(modulesPanel.includes("resolveRoofGeometricOrientationDeg(l.points"));
   assert.ok(dimensions.includes("resolveRoofGeometricOrientationDeg(roof.points"));
   assert.ok(modulesPanel.includes('rowKind === "flat"'));
   assert.ok(modulesPanel.includes('title="Geometrische Dachausrichtung"'));
-  assert.ok(compass.includes('resolveInitialSonnendachRoofType(roof) === "flat"'));
-  assert.ok(compass.includes("isFlat\n    ? primaryModuleAzimuthDeg"));
+  assert.ok(compass.includes("resolveModuleOrientationDirections"));
+  assert.ok(moduleOrientation.includes('resolveInitialSonnendachRoofType(roof) === "flat"'));
+  assert.ok(moduleOrientation.includes("isFlat\n    ? primaryModuleAzimuthDeg"));
 });
 
 test("configuration-only drafts resolve the active mode without materialized panels", () => {
