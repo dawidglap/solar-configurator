@@ -34,6 +34,7 @@ import DirectLayoutControl from "../panels/DirectLayoutControl";
 import { history as plannerHistory } from "../../state/history";
 import { buildAdvancedExistingLayoutReflow } from "../panels/existingLayoutReflow";
 import CompanySpacingDefaultsDialog from "./CompanySpacingDefaultsDialog";
+import SolaSelect from "../../ui/SolaSelect";
 
 const inputClass =
   "glass-input h-8 w-full rounded-lg px-2 text-[11px] focus:ring-1 focus:ring-primary/40";
@@ -450,25 +451,23 @@ export default function AdvancedModulesPanel({
 
       <section className="space-y-2 border-b border-border/60 pb-4">
         <h3 className={labelClass}>Modul</h3>
-        <select
+        <SolaSelect
           id={`advanced-module-${roof.id}`}
-          aria-label="Modul wählen"
+          ariaLabel="Modul wählen"
           title={selectedCatalogPanel
             ? `${selectedCatalogPanel.brand} ${selectedCatalogPanel.model} — ${selectedCatalogPanel.wp} W`
             : undefined}
           className={`${inputClass} min-w-0 truncate`}
           value={moduleId}
-          onChange={(event) => {
-            const panel = catalogPanels.find((item) => item.id === event.target.value);
+          onValueChange={(nextModuleId) => {
+            const panel = catalogPanels.find((item) => item.id === nextModuleId);
             if (panel) update(replaceAdvancedDraftModule({ config, panel }));
           }}
-        >
-          {catalogPanels.map((panel) => (
-            <option key={panel.id} value={panel.id}>
-              {panel.brand} {panel.model} — {panel.wp} W
-            </option>
-          ))}
-        </select>
+          options={catalogPanels.map((panel) => ({
+            value: panel.id,
+            label: `${panel.brand} ${panel.model} — ${panel.wp} W`,
+          }))}
+        />
       </section>
 
       <section className="space-y-2 border-b border-border/60 pb-4">

@@ -28,6 +28,7 @@ import {
 } from "../modules/legacyStandardApplicationPolicy";
 import { buildWholeLayoutReflow } from "../modules/panels/wholeLayoutReflow";
 import { history as plannerHistory } from "../state/history";
+import SolaSelect from "../ui/SolaSelect";
 
 const controlClass =
   "glass-input h-9 w-full rounded-lg px-3 py-0 text-[11px] leading-none focus:ring-1 focus:ring-primary/40";
@@ -62,15 +63,15 @@ function EmptyRoofDimensionsControl() {
         <label className={labelClass} htmlFor="reference-edge-empty">
           First / Referenzkante
         </label>
-        <select
+        <SolaSelect
           id="reference-edge-empty"
           className={controlClass}
           value=""
           disabled
-          aria-label="First oder Referenzkante – keine Dachfläche ausgewählt"
-        >
-          <option value="">—</option>
-        </select>
+          ariaLabel="First oder Referenzkante – keine Dachfläche ausgewählt"
+          options={[]}
+          onValueChange={() => undefined}
+        />
       </div>
       <div className="space-y-3">
         <p className={labelClass}>Kanten</p>
@@ -289,18 +290,17 @@ function PopulatedRoofDimensionsControl({
       <label className={labelClass} htmlFor={`reference-edge-${roof.id}`}>
         {roofKind === "pitched" ? "First" : "Referenzkante"}
       </label>
-      <select
+      <SolaSelect
         id={`reference-edge-${roof.id}`}
         className={controlClass}
-        value={referenceEdgeIndex ?? 0}
-        onChange={(event) => changeReferenceEdge(Number(event.target.value))}
-      >
-        {segments.map((segment) => (
-          <option key={segment.segmentIndex} value={segment.segmentIndex}>
-            Kante {segment.segmentIndex + 1} · {formatDimensionM(segment.lengthM)}
-          </option>
-        ))}
-      </select>
+        value={String(referenceEdgeIndex ?? 0)}
+        ariaLabel={roofKind === "pitched" ? "First wählen" : "Referenzkante wählen"}
+        onValueChange={(nextValue) => changeReferenceEdge(Number(nextValue))}
+        options={segments.map((segment) => ({
+          value: String(segment.segmentIndex),
+          label: `Kante ${segment.segmentIndex + 1} · ${formatDimensionM(segment.lengthM)}`,
+        }))}
+      />
       {/* TODO: Customer requested hiding roof-edge orientation readout from sidebar; keep underlying value for possible re-enable. */}
     </div>
   ) : null;

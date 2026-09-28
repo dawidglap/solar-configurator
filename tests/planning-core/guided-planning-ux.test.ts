@@ -36,7 +36,7 @@ test("guided sidebar exposes primary choices without a dynamic bottom status are
   assert.equal(advancedPanel.includes("Modul ändern"), false);
   assert.equal(advancedPanel.includes("Modul auswählen"), false);
   assert.equal(advancedPanel.includes("modulePickerOpen"), false);
-  assert.match(advancedPanel, /aria-label="Modul wählen"/);
+  assert.match(advancedPanel, /ariaLabel="Modul wählen"/);
   assert.match(advancedPanel, /replaceAdvancedDraftModule\(\{ config, panel \}\)/);
   assert.match(advancedPanel, /className=\{`\$\{inputClass\} min-w-0 truncate`\}/);
   assert.equal(advancedPanel.includes("Parallel zur Dachkante"), false);
@@ -70,7 +70,7 @@ test("no-roof module shell stays neutral and roof-dependent tools remain guarded
   );
 
   assert.match(modulesPanel, /value=\{selectedPanelId \?\? ""\}/);
-  assert.match(modulesPanel, /onChange=\{\(event\) => setSelectedPanel\(event\.target\.value\)\}/);
+  assert.match(modulesPanel, /onValueChange=\{setSelectedPanel\}/);
   assert.match(modulesPanel, /<fieldset disabled/);
   assert.match(modulesPanel, /<strong aria-label="Keine Dachfläche ausgewählt">—<\/strong>/);
   assert.equal(modulesPanel.includes("204°"), false, "the neutral shell cannot retain a previous roof angle");
@@ -104,7 +104,8 @@ test("building planning keeps a null-safe roof-properties shell without selectin
   assert.ok(dimensionsControl.includes('data-testid="empty-roof-properties-shell"'));
   assert.ok(dimensionsControl.includes("First / Referenzkante"));
   assert.ok(dimensionsControl.includes("[1, 2, 3, 4].map"));
-  assert.ok(dimensionsControl.includes('<option value="">—</option>'));
+  assert.ok(dimensionsControl.includes('id="reference-edge-empty"'));
+  assert.ok(dimensionsControl.includes("options={[]}"));
 });
 
 test("Feinjustierung is the final interactive sidebar section before the disclaimer", () => {

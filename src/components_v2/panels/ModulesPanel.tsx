@@ -59,6 +59,7 @@ import { formatDisplayAngleDeg } from "../roof/angleDisplay";
 import CompanySpacingDefaultsDialog from "../modules/advanced/CompanySpacingDefaultsDialog";
 import { withEffectiveAdvancedThermalLimits } from "../modules/advanced/advancedThermalDefaults";
 import { buildCommittedRoofStatsByRoof } from "@/lib/planning-core/overview";
+import SolaSelect from "../ui/SolaSelect";
 
 type Pt = { x: number; y: number };
 
@@ -1051,19 +1052,17 @@ export default function ModulesPanel() {
 
           <section className="space-y-1 border-b border-border/60 pb-4">
             <label htmlFor="panel-select-no-roof" className={labelSm}>Modul</label>
-            <select
+            <SolaSelect
               id="panel-select-no-roof"
-              aria-label="Modul wählen"
+              ariaLabel="Modul wählen"
               value={selectedPanelId ?? ""}
-              onChange={(event) => setSelectedPanel(event.target.value)}
+              onValueChange={setSelectedPanel}
               className={inputBase}
-            >
-              {catalogPanels.map((panel) => (
-                <option key={panel.id} value={panel.id}>
-                  {panel.brand} {panel.model} — {panel.wp} W
-                </option>
-              ))}
-            </select>
+              options={catalogPanels.map((panel) => ({
+                value: panel.id,
+                label: `${panel.brand} ${panel.model} — ${panel.wp} W`,
+              }))}
+            />
           </section>
 
           <section className="space-y-2 border-b border-border/60 pb-4">
@@ -1210,11 +1209,11 @@ export default function ModulesPanel() {
             <label htmlFor="panel-select" className={labelSm}>
               Modul
             </label>
-            <select
+            <SolaSelect
               id="panel-select"
-              aria-label="Modul wählen"
+              ariaLabel="Modul wählen"
               value={displayedPanelId}
-              onChange={(event) => {
+              onValueChange={(nextPanelId) => {
                 setRoofPlanningDraft(selectedRoof.id, {
                   ...(standardDraft ?? createStandardPlanningDraft({
                     panelSpecId: displayedPanelId,
@@ -1222,17 +1221,15 @@ export default function ModulesPanel() {
                     moduleTilt: displayedTiltInput,
                     thermalFieldLimits: displayedThermalLimits.kind === "pitched-grid" ? displayedThermalLimits : undefined,
                   })),
-                  panelSpecId: event.target.value,
+                  panelSpecId: nextPanelId,
                 });
               }}
               className={inputBase}
-            >
-              {catalogPanels.map((panel) => (
-                <option key={panel.id} value={panel.id}>
-                  {panel.brand} {panel.model} — {panel.wp} W
-                </option>
-              ))}
-            </select>
+              options={catalogPanels.map((panel) => ({
+                value: panel.id,
+                label: `${panel.brand} ${panel.model} — ${panel.wp} W`,
+              }))}
+            />
           </section>
 
           <section className="space-y-2">
