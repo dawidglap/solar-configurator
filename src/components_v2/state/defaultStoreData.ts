@@ -44,6 +44,10 @@ export function defaultStoreData() {
     roofAlign: { rotDeg: 0, pivotPx: undefined },
 
     snowGuards: [],
+    snowProtection: {
+      quantityMode: "geometry" as const,
+      manualSegments: [],
+    },
     selectedSnowGuardId: undefined,
 
     // catalog + selezione

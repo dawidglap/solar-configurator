@@ -19,16 +19,73 @@ export type SnowProtectionSummary = {
   byRoof: SnowProtectionRoofSummary[];
 };
 
+export type ManualSnowProtectionSegment = {
+  id: string;
+  roofId?: string;
+  lengthM: number;
+};
+
+export type SnowProtectionConfiguration = {
+  quantityMode: "geometry" | "manual";
+  manualSegments: ManualSnowProtectionSegment[];
+};
+
 type SnowProtectionSummaryInput = {
   snowGuards: readonly unknown[] | null | undefined;
   mppImage: unknown;
   roofIds?: readonly unknown[] | null;
 };
 
+type ResolvedSnowProtectionSummaryInput = SnowProtectionSummaryInput & {
+  snowProtection: unknown;
+};
+
 const SUMMARY_DECIMAL_PLACES = 12;
 
 function normalizeSummaryMetres(value: number): number {
   return Number(value.toFixed(SUMMARY_DECIMAL_PLACES));
+}
+
+export function normalizeSnowProtectionConfiguration(
+  value: unknown,
+): SnowProtectionConfiguration {
+  const candidate = value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : {};
+  const rawSegments = Array.isArray(candidate.manualSegments)
+    ? candidate.manualSegments
+    : Array.isArray(candidate.segments)
+      ? candidate.segments
+      : [];
+  const manualSegments = rawSegments.flatMap((raw): ManualSnowProtectionSegment[] => {
+    if (!raw || typeof raw !== "object") return [];
+    const segment = raw as Record<string, unknown>;
+    const lengthM = Number(segment.lengthM);
+    if (
+      typeof segment.id !== "string" ||
+      !segment.id ||
+      !Number.isFinite(lengthM) ||
+      lengthM < 0
+    ) {
+      return [];
+    }
+    return [{
+      id: segment.id,
+      ...(typeof segment.roofId === "string" && segment.roofId
+        ? { roofId: segment.roofId }
+        : {}),
+      lengthM,
+    }];
+  });
+
+  return {
+    quantityMode:
+      candidate.quantityMode === "manual" ||
+      (candidate.quantityMode !== "geometry" && manualSegments.length > 0)
+        ? "manual"
+        : "geometry",
+    manualSegments,
+  };
 }
 
 function isFinitePoint(value: unknown): value is SnowProtectionPoint {
@@ -127,6 +184,65 @@ export function summarizeSnowProtection({
   };
 }
 
+export function summarizeManualSnowProtection(
+  manualSegments: readonly ManualSnowProtectionSegment[],
+  roofIds?: readonly unknown[] | null,
+): SnowProtectionSummary {
+  const knownRoofIds = Array.isArray(roofIds)
+    ? [
+        ...new Set(
+          roofIds.filter(
+            (id): id is string => typeof id === "string" && id.length > 0,
+          ),
+        ),
+      ]
+    : null;
+  const knownRoofSet = knownRoofIds ? new Set(knownRoofIds) : null;
+  const onlyRoofId = knownRoofIds?.length === 1 ? knownRoofIds[0] : undefined;
+  const lengthByRoof = new Map<string, number>(
+    (knownRoofIds ?? []).map((roofId) => [roofId, 0]),
+  );
+
+  for (const segment of manualSegments) {
+    if (!Number.isFinite(segment.lengthM) || segment.lengthM < 0) continue;
+    const roofId = segment.roofId || onlyRoofId;
+    if (!roofId || (knownRoofSet && !knownRoofSet.has(roofId))) continue;
+    lengthByRoof.set(
+      roofId,
+      (lengthByRoof.get(roofId) ?? 0) + segment.lengthM,
+    );
+  }
+
+  const byRoof = [...lengthByRoof].map(([roofId, lengthM]) => ({
+    roofId,
+    lengthM: normalizeSummaryMetres(lengthM),
+  }));
+
+  return {
+    totalLengthM: normalizeSummaryMetres(
+      byRoof.reduce((total, roof) => total + roof.lengthM, 0),
+    ),
+    byRoof,
+  };
+}
+
+/**
+ * Explicit precedence contract: a persisted manual mode is an override of
+ * geometric quantity. Geometry and manual quantities are never added.
+ */
+export function resolveSnowProtectionSummary({
+  snowProtection,
+  snowGuards,
+  mppImage,
+  roofIds,
+}: ResolvedSnowProtectionSummaryInput): SnowProtectionSummary {
+  const configuration = normalizeSnowProtectionConfiguration(snowProtection);
+  if (configuration.quantityMode === "manual") {
+    return summarizeManualSnowProtection(configuration.manualSegments, roofIds);
+  }
+  return summarizeSnowProtection({ snowGuards, mppImage, roofIds });
+}
+
 /**
  * Resolves current and legacy planning document shapes used by the API.
  */
@@ -160,7 +276,21 @@ export function deriveSnowProtectionSummaryFromPlanning(
     data?.snapshotMppImage ??
     data?.mppImage;
 
-  return summarizeSnowProtection({ snowGuards, mppImage, roofIds });
+  const snowProtection =
+    planner.snowProtection ??
+    data.snowProtection ??
+    (Array.isArray(planner.snowSegments)
+      ? { manualSegments: planner.snowSegments }
+      : Array.isArray(data.snowSegments)
+        ? { manualSegments: data.snowSegments }
+        : undefined);
+
+  return resolveSnowProtectionSummary({
+    snowProtection,
+    snowGuards,
+    mppImage,
+    roofIds,
+  });
 }
 
 /**

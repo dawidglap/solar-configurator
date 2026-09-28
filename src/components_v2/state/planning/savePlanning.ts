@@ -63,6 +63,10 @@ export function buildPlannerPayloadFromStore() {
     layers: s.layers,
     zones: (s as any).zones ?? [],
     snowGuards: (s as any).snowGuards ?? [],
+    snowProtection: (s as any).snowProtection ?? {
+      quantityMode: "geometry",
+      manualSegments: [],
+    },
     panels: s.panels,
     modules: s.modules,
     roofAlign: (s as any).roofAlign ?? null,

@@ -1,11 +1,9 @@
 "use client";
 
 import React from "react";
+import type { ManualSnowProtectionSegment } from "@/lib/planning/snowProtectionSummary";
 
-export type SnowSegment = {
-  id: string;
-  lengthM: number;
-};
+export type SnowSegment = ManualSnowProtectionSegment;
 
 type Props = {
   open: boolean;

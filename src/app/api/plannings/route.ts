@@ -423,9 +423,11 @@ export async function GET(req: Request) {
           "data.snapshot.mppImage": 1,
           "data.snapshotMppImage": 1,
           "data.mppImage": 1,
+          "data.snowProtection": 1,
           "data.planner.snowGuards": 1,
           "data.planner.layers": 1,
           "data.planner.snapshot.mppImage": 1,
+          "data.planner.snowProtection": 1,
           "data.parts.formDocuments.vollmacht": 1,
         },
       })

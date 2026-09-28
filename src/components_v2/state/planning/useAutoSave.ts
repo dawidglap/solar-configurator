@@ -27,6 +27,7 @@ export function useAutoSave() {
         zones: payload.zones,
         panels: payload.panels,
         snowGuards: payload.snowGuards,
+        snowProtection: payload.snowProtection,
         modules: payload.modules,
         roofAlign: payload.roofAlign,
         step: payload.step,

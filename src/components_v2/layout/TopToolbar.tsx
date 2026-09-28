@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { history } from "../state/history";
@@ -45,6 +45,7 @@ import {
 import { resolveCompanyThermalFieldLimits } from "@/lib/planning/companyPlannerDefaults";
 import { withEffectiveAdvancedThermalLimits } from "../modules/advanced/advancedThermalDefaults";
 import { nanoid } from "nanoid";
+import { resolveSnowProtectionSummary } from "@/lib/planning/snowProtectionSummary";
 
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
@@ -151,6 +152,11 @@ export default function TopToolbar() {
   const setModules = usePlannerV2Store((s) => s.setModules);
   const commitRoofLayout = usePlannerV2Store((s) => s.commitRoofLayout);
   const snapshot = usePlannerV2Store((s) => s.snapshot);
+  const snowGuards = usePlannerV2Store((s) => s.snowGuards);
+  const snowProtection = usePlannerV2Store((s) => s.snowProtection);
+  const setManualSnowProtectionSegments = usePlannerV2Store(
+    (s) => s.setManualSnowProtectionSegments,
+  );
   const selSpec = usePlannerV2Store((s) => s.getSelectedPanel());
   const selectedPlanningDraft = usePlannerV2Store((s) =>
     s.selectedId ? s.roofPlanningDrafts[s.selectedId] : undefined,
@@ -281,23 +287,65 @@ export default function TopToolbar() {
     };
   }, []);
 
-  // ── Schneefang: Popup & Segmente (nur TopToolbar, lokal)
+  // ── Schneefang: persisted manual override + canonical project total
   const [isSnowDialogOpen, setIsSnowDialogOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [regenerationPending, setRegenerationPending] = useState(false);
-  const [snowSegments, setSnowSegments] = useState<SnowSegment[]>([
-    // di base un segmento da 10 m, giusto per non partire vuoto
-    { id: "sg_init", lengthM: 0 },
-  ]);
   const SNOW_PRICE_PER_M = 10; // 10 CHF pro Meter
 
-  const totalSnowM = useMemo(
-    () => snowSegments.reduce((sum, s) => sum + (s.lengthM || 0), 0),
-    [snowSegments],
+  const snowSegments = useMemo<SnowSegment[]>(
+    () => snowProtection.manualSegments.length > 0
+      ? snowProtection.manualSegments
+      : [{ id: "sg_init", roofId: selectedId, lengthM: 0 }],
+    [selectedId, snowProtection.manualSegments],
   );
+  const resolvedSnowProtection = useMemo(
+    () => resolveSnowProtectionSummary({
+      snowProtection,
+      snowGuards,
+      mppImage: snapshot.mppImage,
+      roofIds: layers.map((roof) => roof.id),
+    }),
+    [layers, snapshot.mppImage, snowGuards, snowProtection],
+  );
+  const totalSnowM = resolvedSnowProtection.totalLengthM;
   const totalSnowChf = useMemo(
     () => totalSnowM * SNOW_PRICE_PER_M,
     [totalSnowM],
+  );
+  const persistSnowSegments = useCallback(
+    (segments: SnowSegment[]) => {
+      const previousById = new Map(
+        snowProtection.manualSegments.map((segment) => [segment.id, segment]),
+      );
+      const existingRoofIds = [
+        ...new Set(
+          snowProtection.manualSegments
+            .map((segment) => segment.roofId)
+            .filter((roofId): roofId is string => Boolean(roofId)),
+        ),
+      ];
+      const fallbackRoofId =
+        selectedId ??
+        (existingRoofIds.length === 1 ? existingRoofIds[0] : undefined) ??
+        (layers.length === 1 ? layers[0]?.id : undefined);
+      const next = segments.map((segment) => ({
+        id: segment.id,
+        roofId:
+          segment.roofId ??
+          previousById.get(segment.id)?.roofId ??
+          fallbackRoofId,
+        lengthM: segment.lengthM,
+      }));
+
+      if (next.some((segment) => !segment.roofId)) {
+        toast.error("Bitte zuerst eine Dachfläche auswählen.");
+        return;
+      }
+
+      setManualSnowProtectionSegments(next);
+    },
+    [layers, selectedId, setManualSnowProtectionSegments, snowProtection.manualSegments],
   );
 
   /* ───────────────── Bottoni icona+tooltip (portal) ───────────────── */
@@ -876,7 +924,7 @@ export default function TopToolbar() {
         open={isSnowDialogOpen}
         onClose={() => setIsSnowDialogOpen(false)}
         segments={snowSegments}
-        setSegments={setSnowSegments}
+        setSegments={persistSnowSegments}
         pricePerM={SNOW_PRICE_PER_M}
       />
 

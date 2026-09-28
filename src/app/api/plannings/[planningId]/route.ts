@@ -33,6 +33,7 @@ import {
 } from "@/lib/geoAdmin";
 import {
   deriveSnowProtectionSummaryFromPlanning,
+  normalizeSnowProtectionConfiguration,
   withSnowProtectionSummary,
 } from "@/lib/planning/snowProtectionSummary";
 
@@ -850,6 +851,12 @@ if (ist && typeof ist === "object") {
           ...(planner?.snapshot ?? {}),
         },
       };
+      mergedPlanner.snowProtection = normalizeSnowProtectionConfiguration(
+        mergedPlanner.snowProtection ??
+          (Array.isArray(mergedPlanner.snowSegments)
+            ? { manualSegments: mergedPlanner.snowSegments }
+            : undefined),
+      );
 
       if (!mergedPlanner.snapshot?.url && existingPlannerState?.snapshot) {
         mergedPlanner.snapshot = {

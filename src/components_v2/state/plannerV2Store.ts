@@ -29,6 +29,11 @@ import {
   type CompanyPlannerDefaultsV1,
 } from '@/lib/planning/companyPlannerDefaults';
 import { DEFAULT_ROOF_EDGE_MARGIN_M } from '@/lib/planning/roofProperties';
+import {
+  normalizeSnowProtectionConfiguration,
+  type ManualSnowProtectionSegment,
+  type SnowProtectionConfiguration,
+} from '@/lib/planning/snowProtectionSummary';
 
 import type {
   PlannerStep,
@@ -155,6 +160,13 @@ function createDefaultAddress(): PlannerAddress {
   };
 }
 
+function createDefaultSnowProtection(): SnowProtectionConfiguration {
+  return {
+    quantityMode: 'geometry',
+    manualSegments: [],
+  };
+}
+
 function createInitialPlannerState() {
   const companyPlannerDefaults = resolveCompanyPlannerDefaults(
     BUILT_IN_COMPANY_PLANNER_DEFAULTS,
@@ -178,6 +190,7 @@ function createInitialPlannerState() {
     roofAlign: { rotDeg: 0, pivotPx: undefined } as RoofAlign,
 
     snowGuards: [] as SnowGuard[],
+    snowProtection: createDefaultSnowProtection(),
     selectedSnowGuardId: undefined as string | undefined,
 
     ui: { ...DEFAULT_UI },
@@ -295,6 +308,10 @@ type PlannerV2State = {
   duplicateRoof: (id: string) => string | undefined;
 
   snowGuards: SnowGuard[];
+  snowProtection: SnowProtectionConfiguration;
+  setManualSnowProtectionSegments: (
+    segments: ManualSnowProtectionSegment[],
+  ) => void;
   addSnowGuard: (sg: SnowGuard) => void;
   updateSnowGuard: (id: string, patch: Partial<SnowGuard>) => void;
   deleteSnowGuard: (id: string) => void;
@@ -383,6 +400,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           detectedRoofs: [],
 
           snowGuards: [],
+          snowProtection: createDefaultSnowProtection(),
           selectedSnowGuardId: undefined,
 
           modules: {
@@ -437,6 +455,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
           roofAlign: s.roofAlign,
 
           snowGuards: s.snowGuards,
+          snowProtection: s.snowProtection,
 
           selectedPanelId: s.selectedPanelId,
           catalogPanels: s.catalogPanels,
@@ -521,6 +540,12 @@ export const usePlannerV2Store = create<PlannerV2State>()(
             roofAlign: saved.roofAlign ?? defaults.roofAlign,
 
             snowGuards: Array.isArray(saved.snowGuards) ? saved.snowGuards : [],
+            snowProtection: normalizeSnowProtectionConfiguration(
+              saved.snowProtection ??
+                (Array.isArray(saved.snowSegments)
+                  ? { manualSegments: saved.snowSegments }
+                  : undefined),
+            ),
             selectedSnowGuardId: undefined,
 
             selectedPanelId: nextSelectedPanelId,
@@ -814,6 +839,18 @@ export const usePlannerV2Store = create<PlannerV2State>()(
 
       snowGuards: [],
 
+      snowProtection: createDefaultSnowProtection(),
+      setManualSnowProtectionSegments: (segments) =>
+        set({
+          snowProtection: {
+            quantityMode: 'manual',
+            manualSegments: normalizeSnowProtectionConfiguration({
+              quantityMode: 'manual',
+              manualSegments: segments,
+            }).manualSegments,
+          },
+        }),
+
       addSnowGuard: (sg: SnowGuard) =>
         set((state) => {
           const next = {
@@ -898,7 +935,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
     }),
     {
       name: 'planner-v2',
-      version: 14,
+      version: 15,
 
       storage: createJSONStorage(() => localStorage),
 
@@ -917,6 +954,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         selectedZoneId: s.selectedZoneId,
         roofAlign: s.roofAlign,
         snowGuards: s.snowGuards,
+        snowProtection: s.snowProtection,
         selectedSnowGuardId: s.selectedSnowGuardId,
         profile: s.profile,
         ist: s.ist,
@@ -974,6 +1012,12 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         if (!Array.isArray(persisted.snowGuards)) {
           persisted.snowGuards = [];
         }
+        persisted.snowProtection = normalizeSnowProtectionConfiguration(
+          persisted.snowProtection ??
+            (Array.isArray(persisted.snowSegments)
+              ? { manualSegments: persisted.snowSegments }
+              : undefined),
+        );
 
         delete persisted?.snapshot;
 

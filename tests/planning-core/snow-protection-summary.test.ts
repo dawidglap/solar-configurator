@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   deriveSnowProtectionSummaryFromPlanning,
+  resolveSnowProtectionSummary,
   snowProtectionSegmentLengthM,
   summarizeSnowProtection,
   withSnowProtectionSummary,
@@ -203,4 +204,145 @@ test("guards whose roof no longer exists do not contribute to the planning summa
     totalLengthM: 5,
     byRoof: [{ roofId: "roof-1", lengthM: 5 }],
   });
+});
+
+test("manual Kalkulation is an explicit override and is never added to geometry", () => {
+  const summary = resolveSnowProtectionSummary({
+    snowProtection: {
+      quantityMode: "manual",
+      manualSegments: [
+        { id: "manual-1", roofId: "roof-d1", lengthM: 110 },
+        { id: "manual-2", roofId: "roof-d1", lengthM: 10 },
+      ],
+    },
+    snowGuards: [
+      guard("geometric", "roof-d1", { x: 0, y: 0 }, { x: 50, y: 0 }),
+    ],
+    mppImage: 0.1,
+    roofIds: ["roof-d1"],
+  });
+
+  assert.deepEqual(summary, {
+    totalLengthM: 120,
+    byRoof: [{ roofId: "roof-d1", lengthM: 120 }],
+  });
+});
+
+test("manual quantity updates and deletion recompute the canonical summary", () => {
+  const base = {
+    quantityMode: "manual" as const,
+    manualSegments: [
+      { id: "one", roofId: "roof-d1", lengthM: 110 },
+      { id: "two", roofId: "roof-d1", lengthM: 10 },
+    ],
+  };
+  const summarize = (snowProtection: typeof base) =>
+    resolveSnowProtectionSummary({
+      snowProtection,
+      snowGuards: [],
+      mppImage: 0.1,
+      roofIds: ["roof-d1"],
+    });
+
+  assert.equal(summarize(base).totalLengthM, 120);
+  assert.equal(summarize({
+    ...base,
+    manualSegments: base.manualSegments.map((segment) =>
+      segment.id === "one" ? { ...segment, lengthM: 90 } : segment,
+    ),
+  }).totalLengthM, 100);
+  assert.equal(summarize({
+    ...base,
+    manualSegments: base.manualSegments.filter((segment) => segment.id !== "two"),
+  }).totalLengthM, 110);
+});
+
+test("legacy persisted manual segments infer manual mode", () => {
+  const legacy = {
+    data: {
+      layers: [{ id: "roof-d1" }],
+      snowSegments: [
+        { id: "legacy-1", lengthM: 110 },
+        { id: "legacy-2", lengthM: 10 },
+      ],
+    },
+  };
+  assert.deepEqual(deriveSnowProtectionSummaryFromPlanning(legacy), {
+    totalLengthM: 120,
+    byRoof: [{ roofId: "roof-d1", lengthM: 120 }],
+  });
+});
+
+test("planner payload and frontend hydration preserve manual Kalkulation without roof selection", async () => {
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const values = new Map<string, string>();
+  const storage: Storage = {
+    get length() { return values.size; },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    removeItem: (key) => { values.delete(key); },
+    setItem: (key, value) => { values.set(key, value); },
+  };
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: storage,
+  });
+
+  try {
+    const { usePlannerV2Store } = await import(
+      "../../src/components_v2/state/plannerV2Store"
+    );
+    const { buildPlannerPayloadFromStore } = await import(
+      "../../src/components_v2/state/planning/savePlanning"
+    );
+    usePlannerV2Store.getState().resetPlanner();
+    usePlannerV2Store.setState({
+      layers: [{ id: "roof-d1", name: "D1", points: [] }],
+      selectedId: "roof-d1",
+      snapshot: { mppImage: 0.1 },
+    });
+    usePlannerV2Store.getState().setManualSnowProtectionSegments([
+      { id: "manual-1", roofId: "roof-d1", lengthM: 110 },
+      { id: "manual-2", roofId: "roof-d1", lengthM: 10 },
+    ]);
+
+    const patchPayload = JSON.parse(JSON.stringify(buildPlannerPayloadFromStore()));
+    assert.deepEqual(patchPayload.snowProtection, {
+      quantityMode: "manual",
+      manualSegments: [
+        { id: "manual-1", roofId: "roof-d1", lengthM: 110 },
+        { id: "manual-2", roofId: "roof-d1", lengthM: 10 },
+      ],
+    });
+    assert.equal("pricePerM" in patchPayload.snowProtection, false);
+
+    const getPlanning = withSnowProtectionSummary({
+      data: { planner: patchPayload },
+      summary: {},
+    });
+    assert.equal(getPlanning.summary.snowProtection.totalLengthM, 120);
+
+    usePlannerV2Store.getState().resetPlanner();
+    usePlannerV2Store.getState().importState(getPlanning.data.planner);
+    usePlannerV2Store.setState({
+      selectedId: undefined,
+      snapshot: getPlanning.data.planner.snapshot,
+    });
+    const reloaded = usePlannerV2Store.getState();
+    const visibleSummary = resolveSnowProtectionSummary({
+      snowProtection: reloaded.snowProtection,
+      snowGuards: reloaded.snowGuards,
+      mppImage: reloaded.snapshot.mppImage,
+      roofIds: reloaded.layers.map((roof) => roof.id),
+    });
+    assert.equal(reloaded.selectedId, undefined);
+    assert.equal(visibleSummary.totalLengthM, 120);
+  } finally {
+    if (previousStorage) {
+      Object.defineProperty(globalThis, "localStorage", previousStorage);
+    } else {
+      Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  }
 });
