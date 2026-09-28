@@ -7,8 +7,6 @@ import {
   inferPlanningFileCloudinaryDeliveryType,
   getPlanningFileDbAndSession,
   getPlanningFilesCollection,
-  getOriginalFileExtension,
-  splitPlanningFilePublicIdAndFormat,
 } from "@/lib/planningFiles";
 import { safeString } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
@@ -39,14 +37,6 @@ function bytesToHexPrefix(buffer: Uint8Array, count = 8) {
   return Array.from(buffer.slice(0, count))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join(" ");
-}
-
-function bytesToTextSnippet(buffer: Uint8Array, count = 200) {
-  try {
-    return new TextDecoder("utf-8", { fatal: false }).decode(buffer.slice(0, count));
-  } catch {
-    return "";
-  }
 }
 
 export async function OPTIONS(req: Request) {
@@ -97,7 +87,6 @@ export async function GET(req: Request, { params }: Params) {
       (safeString(fileDoc?.cloudinaryResourceType) || "raw") as "image" | "raw" | "video";
     const deliveryType = inferPlanningFileCloudinaryDeliveryType(fileDoc);
     const originalFileName = safeString(fileDoc?.originalFileName) || "download";
-    const { publicId, format, publicIdWithExtension } = splitPlanningFilePublicIdAndFormat(fileDoc);
     const mimeType = safeString(fileDoc?.mimeType) || "application/octet-stream";
 
     const upstream = await fetch(downloadUrl, {
@@ -113,29 +102,16 @@ export async function GET(req: Request, { params }: Params) {
       pdfSignature.length === 5 &&
       String.fromCharCode(...pdfSignature) === "%PDF-";
     const shouldValidatePdf = mimeType === "application/pdf";
-    const nonPdfSnippet = !isPdfPayload ? bytesToTextSnippet(bodyBuffer) : "";
 
-    console.info("PLANNING FILE DOWNLOAD URL", {
-      planningId,
-      fileId,
-      cloudinaryPublicId: safeString(fileDoc?.cloudinaryPublicId),
-      normalizedPublicId: publicId,
-      publicIdWithExtension,
-      format,
+    console.info("PLANNING FILE DOWNLOAD", {
       resourceType,
       deliveryType,
-      originalFileName,
       mimeType,
-      generatedUrl: downloadUrl,
       disposition,
-      inferredExtension: getOriginalFileExtension(originalFileName, mimeType),
       upstreamStatus: upstream.status,
       upstreamContentType,
       upstreamContentLength,
       pdfSignatureHex: bytesToHexPrefix(bodyBuffer),
-      ...(shouldValidatePdf && !isPdfPayload
-        ? { upstreamSnippet: nonPdfSnippet }
-        : {}),
     });
 
     if (!upstream.ok) {

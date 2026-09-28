@@ -274,7 +274,18 @@ export function getPlanningFilePermissions(session: SessionPayload | null | unde
   };
 }
 
+export function buildAuthenticatedPlanningFileUrl(
+  doc: any,
+  disposition: "inline" | "attachment" = "inline",
+) {
+  const planningId = safeString(doc?.planningId);
+  const fileId = mongoIdToString(doc?._id);
+  if (!planningId || !fileId) return "";
+  return `/api/plannings/${encodeURIComponent(planningId)}/files/${encodeURIComponent(fileId)}/download?disposition=${disposition}`;
+}
+
 export function normalizePlanningFile(doc: any) {
+  const downloadUrl = buildAuthenticatedPlanningFileUrl(doc, "inline");
   return {
     id: mongoIdToString(doc?._id),
     companyId: safeString(doc?.companyId),
@@ -294,8 +305,11 @@ export function normalizePlanningFile(doc: any) {
     cloudinaryPublicId: safeString(doc?.cloudinaryPublicId),
     cloudinaryResourceType:
       (safeString(doc?.cloudinaryResourceType) || "raw") as "image" | "raw" | "video",
-    cloudinaryUrl: safeString(doc?.cloudinaryUrl),
-    cloudinarySecureUrl: safeString(doc?.cloudinarySecureUrl),
+    // Compatibility fields intentionally point to the company-scoped proxy.
+    // Direct raw/upload PDF delivery may be disabled by the Cloudinary account.
+    cloudinaryUrl: downloadUrl,
+    cloudinarySecureUrl: downloadUrl,
+    downloadUrl,
     ...(safeString(doc?.thumbnailUrl) ? { thumbnailUrl: safeString(doc?.thumbnailUrl) } : {}),
     uploadedByUserId: safeString(doc?.uploadedByUserId),
     uploadedByName: safeString(doc?.uploadedByName),
