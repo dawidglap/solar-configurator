@@ -1170,7 +1170,7 @@ export default function ModulesPanel() {
             </fieldset>
           </section>
 
-          <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
             Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.
           </p>
         </div>
@@ -1429,7 +1429,7 @@ export default function ModulesPanel() {
             <DirectLayoutControl roofId={selectedRoof.id} />
           </section>
 
-          <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
             Vorplanung: Statik, Wind- und Schneelasten, Ballastierung und Befestigung wurden nicht geprüft.
           </p>
 

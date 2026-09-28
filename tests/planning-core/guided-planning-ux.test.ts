@@ -136,6 +136,13 @@ test("Feinjustierung is the final interactive sidebar section before the disclai
   assert.ok(advancedPanel.indexOf("Abstände") < advancedPanel.indexOf("Feinjustierung"));
   assert.ok(advancedPanel.indexOf("Feinjustierung") < advancedPanel.indexOf(disclaimer));
   assert.equal(advancedPanel.match(/Feinjustierung/g)?.length, 1);
+  const plainDisclaimer = /<p className="text-\[10px\] leading-relaxed text-muted-foreground">\s*Vorplanung: Statik/;
+  assert.equal(modulesPanel.match(new RegExp(plainDisclaimer.source, "g"))?.length, 2);
+  assert.match(advancedPanel, plainDisclaimer);
+  for (const source of [neutralShell, standardSidebar, advancedPanel]) {
+    const disclaimerTag = source.slice(source.lastIndexOf("<p", source.indexOf(disclaimer)), source.indexOf(disclaimer));
+    assert.doesNotMatch(disclaimerTag, /border|rounded|bg-muted|\bp-/);
+  }
 
   assert.match(neutralShell, /<h3 className=\{labelSm\}>Feinjustierung<\/h3>\s*<fieldset disabled className="space-y-2 rounded-xl border/);
   assert.match(standardSidebar, /<h3 className=\{labelSm\}>Feinjustierung<\/h3>\s*<DirectLayoutControl roofId=\{selectedRoof\.id\} \/>/);
