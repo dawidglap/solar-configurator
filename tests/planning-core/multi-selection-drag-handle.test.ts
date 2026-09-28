@@ -12,6 +12,10 @@ const handleSource = readFileSync(
   new URL('../../src/components_v2/modules/panels/MultiSelectionDragHandle.tsx', import.meta.url),
   'utf8',
 );
+const canvasSource = readFileSync(
+  new URL('../../src/components_v2/canvas/CanvasStage.tsx', import.meta.url),
+  'utf8',
+);
 
 test('multi-selection renders a hand handle instead of the former plus affordance', () => {
   assert.match(panelsSource, /selectedPanels\.length < 2/);
@@ -67,4 +71,12 @@ test('handle drag owns pointer cancellation and preserves screen-space presentat
   assert.match(panelsSource, /pointercancel/);
   assert.match(panelsSource, /cancelGroupDrag\(\)/);
   assert.match(panelsSource, /window\.addEventListener\('blur'/);
+});
+
+test('selection drag control is promoted above the Konva Randabstand and module overlays', () => {
+  assert.ok(canvasSource.indexOf('<PanelsLayer') < canvasSource.indexOf('<RoofAnnotationsLayer'));
+  assert.match(handleSource, /node\.moveToTop\(\)/);
+  assert.match(handleSource, /node\.getLayer\(\)\?\.batchDraw\(\)/);
+  assert.match(handleSource, /listening/);
+  assert.doesNotMatch(handleSource, /zIndex|z-index/);
 });

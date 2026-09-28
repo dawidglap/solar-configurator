@@ -62,8 +62,13 @@ const MultiSelectionDragHandle = React.memo(function MultiSelectionDragHandle({
     };
     const localPoint = parentTransform.invert().point(safePoint);
     node.position(localPoint);
+    // RoofAnnotationsLayer (including the Randabstand hatch) is rendered
+    // after PanelsLayer in the same Konva parent. Promote only this interactive
+    // control so its complete icon, label and hit area stay above every
+    // non-interactive roof/module overlay without reordering those overlays.
+    node.moveToTop();
     node.getLayer()?.batchDraw();
-  }, [canvasRotationDeg, inverseScale, x, y]);
+  }, [active, canvasRotationDeg, hovered, inverseScale, x, y]);
 
   return (
     <Group
