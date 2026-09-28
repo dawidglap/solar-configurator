@@ -60,8 +60,6 @@ export type SnowGuard = {
   roofId: string;
   p1: { x: number; y: number };
   p2: { x: number; y: number };
-  lengthM?: number;
-  pricePerM?: number;
 };
 
 import type { UISlice } from './slices/uiSlice';

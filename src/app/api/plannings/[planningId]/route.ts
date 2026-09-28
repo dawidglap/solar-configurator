@@ -31,6 +31,10 @@ import {
   objectAddressChanged,
   resolveGeoAdminProperty,
 } from "@/lib/geoAdmin";
+import {
+  deriveSnowProtectionSummaryFromPlanning,
+  withSnowProtectionSummary,
+} from "@/lib/planning/snowProtectionSummary";
 
 export const runtime = "nodejs";
 
@@ -401,6 +405,8 @@ function deriveSummaryFromPlanner(docLike: any) {
         : typeof existingSummary.hasSnapshot === "boolean"
           ? existingSummary.hasSnapshot
           : false,
+
+    snowProtection: deriveSnowProtectionSummaryFromPlanning(docLike),
 
     lastCalculatedAt: new Date().toISOString(),
   };
@@ -868,6 +874,7 @@ if (ist && typeof ist === "object") {
       setObj["summary.dcPowerKw"] = computedSummary.dcPowerKw;
       setObj["summary.roofCount"] = computedSummary.roofCount;
       setObj["summary.hasSnapshot"] = computedSummary.hasSnapshot;
+      setObj["summary.snowProtection"] = computedSummary.snowProtection;
       setObj["summary.lastCalculatedAt"] = computedSummary.lastCalculatedAt;
 
       const plannerStep = safeString(planner?.step || mergedPlanner?.step);
@@ -1067,7 +1074,7 @@ if (ist && typeof ist === "object") {
       offerSignedPdfSha256: _offerSignedPdfSha256,
       ...updatedWithoutComments
     } = updated as any;
-    const normalized = {
+    const normalized = withSnowProtectionSummary({
       ...updatedWithoutComments,
       _id: String((updated as any)._id),
       summary: deriveSummaryFromPlanner(updated),
@@ -1087,7 +1094,7 @@ if (ist && typeof ist === "object") {
       customerId: (updated as any)?.customerId ?? null,
       ...normalizeOrderFields(updated),
       invoices: normalizedInvoices,
-    };
+    }, updated);
 
     return jsonResponse(origin, { ok: true, planning: normalized, invoices: normalizedInvoices }, 200);
   } catch (e: any) {
@@ -1187,7 +1194,7 @@ export async function GET(
       offerSignedPdfSha256: _offerSignedPdfSha256,
       ...docWithoutComments
     } = doc as any;
-    const normalized = {
+    const normalized = withSnowProtectionSummary({
       ...docWithoutComments,
       _id: String((doc as any)._id),
       summary: deriveSummaryFromPlanner(doc),
@@ -1207,7 +1214,7 @@ export async function GET(
       customerId: (doc as any)?.customerId ?? null,
       ...normalizeOrderFields(doc),
       invoices: normalizedInvoices,
-    };
+    }, doc);
 
     return jsonResponse(origin, { ok: true, planning: normalized, invoices: normalizedInvoices }, 200);
   } catch (e: any) {

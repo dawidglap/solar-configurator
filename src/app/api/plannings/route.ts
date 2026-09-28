@@ -18,6 +18,7 @@ import { normalizeOrderFields } from "@/lib/orders";
 import { buildDefaultOrderSignatureFields } from "@/lib/orderSignatures";
 import { buildDefaultOfferSignatureFields } from "@/lib/offerSignatures";
 import { getCompanyDocumentsMap } from "@/lib/companyDocuments";
+import { deriveSnowProtectionSummaryFromPlanning } from "@/lib/planning/snowProtectionSummary";
 
 export const runtime = "nodejs";
 
@@ -115,6 +116,7 @@ function extractSummaryFromPlanning(doc: any) {
     dcPowerKw,
     roofCount,
     hasSnapshot,
+    snowProtection: deriveSnowProtectionSummaryFromPlanning(doc),
     lastCalculatedAt: existing.lastCalculatedAt ?? null,
   };
 }
@@ -264,6 +266,10 @@ export async function POST(req: Request) {
         dcPowerKw: 0,
         roofCount: 0,
         hasSnapshot: false,
+        snowProtection: {
+          totalLengthM: 0,
+          byRoof: [],
+        },
         lastCalculatedAt: null,
       },
 
@@ -413,6 +419,13 @@ export async function GET(req: Request) {
           "data.panels": 1,
           "data.layers": 1,
           "data.snapshotScale": 1,
+          "data.snowGuards": 1,
+          "data.snapshot.mppImage": 1,
+          "data.snapshotMppImage": 1,
+          "data.mppImage": 1,
+          "data.planner.snowGuards": 1,
+          "data.planner.layers": 1,
+          "data.planner.snapshot.mppImage": 1,
           "data.parts.formDocuments.vollmacht": 1,
         },
       })

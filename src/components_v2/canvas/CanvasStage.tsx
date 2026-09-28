@@ -37,6 +37,7 @@ import {
 } from "../modules/thermalFields/thermalFieldDisplay";
 import RoofAnnotationsLayer from "./RoofAnnotationsLayer";
 import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
+import { snowProtectionSegmentLengthM } from "@/lib/planning/snowProtectionSummary";
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardAutoLayoutSpacingAxes,
@@ -1071,21 +1072,13 @@ export default function CanvasStage() {
       if (metadata?.shapeKind !== "rectangle") selectZone(undefined);
     },
     onSnowGuardCommit: (p1: Pt, p2: Pt, targetRoofId: string) => {
-      const mpp = snap.mppImage;
-      if (!mpp) return;
-
-      const dx = p2.x - p1.x;
-      const dy = p2.y - p1.y;
-      const lenPx = Math.hypot(dx, dy);
-      const lenM = lenPx * mpp;
+      if (!(snap.mppImage && snap.mppImage > 0)) return;
 
       addSnowGuard({
         id: nanoid(),
         roofId: targetRoofId,
         p1,
         p2,
-        lengthM: Number(lenM.toFixed(2)),
-        pricePerM: 10,
       });
     },
     snap:
@@ -1591,7 +1584,10 @@ export default function CanvasStage() {
                         key={`${sg.id}-label`}
                         x={midX}
                         y={midY}
-                        text={`${sg.lengthM?.toFixed(1)} m`}
+                        text={`${snowProtectionSegmentLengthM(
+                          sg,
+                          snap.mppImage ?? 0,
+                        ).toFixed(1)} m`}
                         fontSize={2}
                         fill={plannerTheme.textLight}
                         offsetX={6}
