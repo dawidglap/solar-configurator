@@ -21,6 +21,7 @@ import {
   publishTransientRoofAnnotationPoints,
 } from "./performance/transientRoofAnnotations";
 import { createLatestFrameScheduler } from "./performance/latestFrameScheduler";
+import { buildRightAngleSymbolGeometry } from "./roofRightAngleSymbol";
 
 type Pt = { x: number; y: number };
 type LayerRoof = {
@@ -169,7 +170,6 @@ function stagePxToImgPx(
 
 const DEG_REFS = [30, 45, 60, 90] as const;
 const TOL_HINT = 1.5; // ±1.5° → mostra badge blu
-const TOL_OK = 0.25; // ±0.25° → badge verde
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
@@ -213,6 +213,8 @@ function vertexAngles(pts: Pt[]) {
     ref: number;
     diff: number;
     bis: Pt;
+    firstSideUnit: Pt;
+    secondSideUnit: Pt;
   }> = [];
   const n = pts.length;
   if (n < 3) return out;
@@ -236,7 +238,16 @@ function vertexAngles(pts: Pt[]) {
     else bis = { x: bis.x / L, y: bis.y / L };
 
     const { ref, diff } = nearestRef(deg);
-    out.push({ x: curr.x, y: curr.y, deg, ref, diff, bis });
+    out.push({
+      x: curr.x,
+      y: curr.y,
+      deg,
+      ref,
+      diff,
+      bis,
+      firstSideUnit: u1,
+      secondSideUnit: u2,
+    });
   }
   return out;
 }
@@ -921,12 +932,75 @@ export default function RoofShapesLayer({
                       const near = k.diff <= TOL_HINT;
                       if (!near) return null;
 
-                      const perfect = k.diff <= TOL_OK;
+                      if (k.ref === 90) {
+                        const symbol = buildRightAngleSymbolGeometry({
+                          firstSideUnit: k.firstSideUnit,
+                          secondSideUnit: k.secondSideUnit,
+                          bisectorUnit: k.bis,
+                          imagePxPerScreenPx: toImgPx(1),
+                        });
+                        return (
+                          <KonvaGroup
+                            key={`corner-${idx}`}
+                            x={k.x}
+                            y={k.y}
+                            listening={false}
+                            opacity={0.9}
+                          >
+                            <KonvaLine
+                              points={[
+                                symbol.firstSide.start.x,
+                                symbol.firstSide.start.y,
+                                symbol.firstSide.end.x,
+                                symbol.firstSide.end.y,
+                              ]}
+                              stroke={plannerTheme.textLight}
+                              strokeWidth={symbol.strokeWidth}
+                              lineCap="round"
+                              listening={false}
+                              shadowColor="rgba(0,0,0,0.45)"
+                              shadowBlur={toImgPx(1.5)}
+                            />
+                            <KonvaLine
+                              points={[
+                                symbol.secondSide.start.x,
+                                symbol.secondSide.start.y,
+                                symbol.secondSide.end.x,
+                                symbol.secondSide.end.y,
+                              ]}
+                              stroke={plannerTheme.textLight}
+                              strokeWidth={symbol.strokeWidth}
+                              lineCap="round"
+                              listening={false}
+                              shadowColor="rgba(0,0,0,0.45)"
+                              shadowBlur={toImgPx(1.5)}
+                            />
+                            <KonvaPath
+                              data={symbol.arcPath}
+                              stroke={plannerTheme.textLight}
+                              strokeWidth={symbol.strokeWidth}
+                              lineCap="round"
+                              listening={false}
+                              shadowColor="rgba(0,0,0,0.45)"
+                              shadowBlur={toImgPx(1.5)}
+                            />
+                            <KonvaCircle
+                              x={symbol.dot.x}
+                              y={symbol.dot.y}
+                              radius={symbol.dot.radius}
+                              fill={plannerTheme.textLight}
+                              listening={false}
+                              shadowColor="rgba(0,0,0,0.45)"
+                              shadowBlur={toImgPx(1)}
+                            />
+                          </KonvaGroup>
+                        );
+                      }
+
                       const pos = {
                         x: k.x + k.bis.x * ANGLE_LABEL_OFFSET,
                         y: k.y + k.bis.y * ANGLE_LABEL_OFFSET,
                       };
-                      const txt = `${k.ref}°`;
 
                       return (
                         <KonvaGroup
@@ -942,11 +1016,7 @@ export default function RoofShapesLayer({
                             width={BADGE_W}
                             height={BADGE_H}
                             cornerRadius={BADGE_RX}
-                            fill={
-                              perfect
-                                ? `rgba(0,0,0,${FILL_ALPHA})`
-                                : `rgba(0,0,0,${FILL_ALPHA})`
-                            }
+                            fill={`rgba(0,0,0,${FILL_ALPHA})`}
                             shadowColor="rgba(0,0,0,0.25)"
                             shadowBlur={SHADOW_BLUR}
                             shadowOpacity={0.6}
