@@ -43,8 +43,11 @@ type GestureAction =
   | { kind: "move"; direction: DirectLayoutDirection; fast: boolean }
   | { kind: "rotate"; deltaSign: -1 | 1; degrees: 1 | 90 };
 
+type GestureSource = "controller-keyboard" | "global-keyboard" | "pointer";
+
 type Gesture = {
   action: GestureAction;
+  source: GestureSource;
   initial: PanelInstance[];
   current: PanelInstance[];
   pivot?: { x: number; y: number };
@@ -59,6 +62,43 @@ type Gesture = {
 function isInteractiveFormTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   return Boolean(element?.closest("input, textarea, select, [contenteditable='true'], [role='slider']"));
+}
+
+function isGlobalHotkeyBlockedTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  return Boolean(element?.closest([
+    "input",
+    "textarea",
+    "select",
+    "button",
+    "a[href]",
+    "[contenteditable='true']",
+    "[role='slider']",
+    "[role='combobox']",
+    "[role='listbox']",
+    "[role='option']",
+    "[role='menu']",
+    "[role='menuitem']",
+    "[role='dialog']",
+    "[data-stop-hotkeys='true']",
+  ].join(", ")));
+}
+
+function hasOpenKeyboardBlockingOverlay(): boolean {
+  return Boolean(document.querySelector([
+    "[role='dialog']",
+    "[role='listbox']",
+    "[role='menu']",
+    "[data-sola-select-menu]",
+  ].join(", ")));
+}
+
+function resolveArrowDirection(key: string): DirectLayoutDirection | undefined {
+  return key === "ArrowUp" ? "up"
+    : key === "ArrowDown" ? "down"
+      : key === "ArrowLeft" ? "left"
+        : key === "ArrowRight" ? "right"
+          : undefined;
 }
 
 function transientMap(panels: readonly PanelInstance[]) {
@@ -237,7 +277,7 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
     setVisualAngle(next[0]?.angleDeg);
   }, [candidatesAreValid]);
 
-  const beginGesture = React.useCallback((action: GestureAction) => {
+  const beginGesture = React.useCallback((action: GestureAction, source: GestureSource = "controller-keyboard") => {
     finishGesture(false);
     const state = usePlannerV2Store.getState();
     const initial = resolveDirectLayoutTargets({
@@ -258,6 +298,7 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
       : initial[0]?.angleDeg;
     const gesture: Gesture = {
       action,
+      source,
       initial,
       current: initial,
       pivot: action.kind === "rotate" ? resolveDirectLayoutPivot(initial) : undefined,
@@ -299,13 +340,54 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
     };
   }, [finishGesture]);
 
+  React.useEffect(() => {
+    const onGlobalKeyDown = (event: KeyboardEvent) => {
+      const direction = resolveArrowDirection(event.key);
+      if (!direction || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isGlobalHotkeyBlockedTarget(event.target) || hasOpenKeyboardBlockingOverlay()) return;
+
+      const state = usePlannerV2Store.getState();
+      if (state.step !== "modules" || state.tool !== "select" || state.selectedId !== roofId) return;
+      if (state.selectedPanelIds.length === 0 || state.roofPlanningDrafts[roofId]) return;
+      const selectedTargets = resolveDirectLayoutTargets({
+        panels: state.panels,
+        selectedPanelIds: state.selectedPanelIds,
+        roofId,
+      });
+      if (selectedTargets.length === 0) return;
+
+      // Native repeat is consumed only for the gesture started here. The
+      // established timer remains the single source of held-key movement.
+      if (event.repeat) {
+        if (gestureRef.current?.source !== "global-keyboard") return;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      beginGesture({ kind: "move", direction, fast: event.shiftKey }, "global-keyboard");
+    };
+
+    const onGlobalKeyUp = (event: KeyboardEvent) => {
+      if (!resolveArrowDirection(event.key) || gestureRef.current?.source !== "global-keyboard") return;
+      event.preventDefault();
+      event.stopPropagation();
+      finishGesture(true);
+    };
+
+    window.addEventListener("keydown", onGlobalKeyDown);
+    window.addEventListener("keyup", onGlobalKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onGlobalKeyDown);
+      window.removeEventListener("keyup", onGlobalKeyUp);
+    };
+  }, [beginGesture, finishGesture, roofId]);
+
   const onControllerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (isInteractiveFormTarget(event.target)) return;
-    const direction = event.key === "ArrowUp" ? "up"
-      : event.key === "ArrowDown" ? "down"
-        : event.key === "ArrowLeft" ? "left"
-          : event.key === "ArrowRight" ? "right"
-            : undefined;
+    const direction = resolveArrowDirection(event.key);
     if (!direction) return;
     event.preventDefault();
     event.stopPropagation();
@@ -313,7 +395,7 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
     // owned by the gesture timer, so every consumed Arrow event must still have
     // its native default prevented without starting a second gesture.
     if (event.repeat) return;
-    beginGesture({ kind: "move", direction, fast: event.shiftKey });
+    beginGesture({ kind: "move", direction, fast: event.shiftKey }, "controller-keyboard");
   };
 
   const onControllerKeyUp = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -328,7 +410,7 @@ export default function DirectLayoutControl({ roofId }: { roofId: string }) {
     event.preventDefault();
     event.stopPropagation();
     controllerRef.current?.focus({ preventScroll: true });
-    beginGesture(action);
+    beginGesture(action, "pointer");
   };
 
   const activateFromKeyboardClick = (event: React.MouseEvent, action: GestureAction) => {

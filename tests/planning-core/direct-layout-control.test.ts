@@ -188,7 +188,7 @@ test("D-Dome rigid rotation preserves pair distance, identity and opposite faces
   assert.equal(resolvePanelLocalArrowAzimuth(rotated[1].angleDeg), 185);
 });
 
-test("canonical validation blocks roof edge, Randabstand, obstacle and static-panel collisions", () => {
+test("canonical validation blocks roof edge, Randabstand, obstacle, snow guard and static-panel collisions", () => {
   const moving = panel("moving", "roof-a", 30, 30);
   const common = {
     panel: moving,
@@ -209,6 +209,12 @@ test("canonical validation blocks roof edge, Randabstand, obstacle and static-pa
     zones: [{ roofId: "roof-a", type: "riservata", points: [
       { x: 40, y: 40 }, { x: 60, y: 40 }, { x: 60, y: 60 }, { x: 40, y: 60 },
     ] }],
+  }).valid, false);
+  assert.equal(validateExistingPanelPlacement({
+    ...common,
+    centerPx: { x: 50, y: 50 },
+    zones: [],
+    snowGuards: [{ roofId: "roof-a", p1: { x: 40, y: 50 }, p2: { x: 60, y: 50 } }],
   }).valid, false);
   assert.equal(validateExistingPanelPlacement({
     ...common,
@@ -264,6 +270,32 @@ test("consumed native Arrow repeats are prevented before the internal repeat gua
   assert.ok(handler.includes("if (isInteractiveFormTarget(event.target)) return"));
   assert.ok(handler.indexOf("event.preventDefault()") < handler.indexOf("if (event.repeat) return"));
   assert.ok(handler.indexOf("if (!direction) return") < handler.indexOf("event.preventDefault()"));
+});
+
+test("selected-module Arrow movement is globally available without stealing form or overlay keys", () => {
+  const source = readFileSync("src/components_v2/modules/panels/DirectLayoutControl.tsx", "utf8");
+  const globalEffectStart = source.indexOf("const onGlobalKeyDown");
+  const controllerStart = source.indexOf("const onControllerKeyDown", globalEffectStart);
+  const globalHandlers = source.slice(globalEffectStart, controllerStart);
+
+  assert.ok(globalEffectStart > 0);
+  assert.match(globalHandlers, /window\.addEventListener\("keydown", onGlobalKeyDown\)/);
+  assert.match(globalHandlers, /window\.addEventListener\("keyup", onGlobalKeyUp\)/);
+  assert.match(globalHandlers, /state\.step !== "modules" \|\| state\.tool !== "select"/);
+  assert.match(globalHandlers, /state\.selectedId !== roofId/);
+  assert.match(globalHandlers, /state\.selectedPanelIds\.length === 0/);
+  assert.match(globalHandlers, /state\.roofPlanningDrafts\[roofId\]/);
+  assert.match(globalHandlers, /resolveDirectLayoutTargets/);
+  assert.match(globalHandlers, /beginGesture\(\{ kind: "move", direction, fast: event\.shiftKey \}, "global-keyboard"\)/);
+  assert.match(globalHandlers, /gestureRef\.current\?\.source !== "global-keyboard"/);
+  assert.match(source, /"\[data-stop-hotkeys='true'\]"/);
+  assert.match(source, /"\[role='combobox'\]"/);
+  assert.match(source, /"\[role='dialog'\]"/);
+  assert.match(source, /"\[data-sola-select-menu\]"/);
+
+  const guardIndex = globalHandlers.indexOf("state.selectedPanelIds.length === 0");
+  const preventIndex = globalHandlers.indexOf("event.preventDefault()", guardIndex);
+  assert.ok(guardIndex >= 0 && preventIndex > guardIndex);
 });
 
 test("whole-layout hold accumulates angle in applyStep and invokes the full solver only from finish", () => {
