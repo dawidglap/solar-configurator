@@ -1119,29 +1119,25 @@ export default function ModulesPanel() {
                 </div>
               </>
             )}
-            <div className="rounded-xl border border-border/60 text-[10px]">
-              <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">
-                Feinjustierung
+            <h3 className={labelSm}>Feinjustierung</h3>
+            <fieldset disabled className="space-y-2 rounded-xl border border-border/60 p-3 text-[10px]">
+              <div className="flex items-center justify-between gap-2 text-muted-foreground">
+                <span>Verschieben</span>
+                <div className="flex gap-1">
+                  {(["←", "↑", "↓", "→"] as const).map((direction) => (
+                    <button key={direction} type="button" className="h-7 w-7 rounded-md border border-border/70 bg-muted/15 disabled:cursor-not-allowed disabled:opacity-60">
+                      {direction}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <fieldset disabled className="space-y-2 border-t border-border/60 p-3">
-                <div className="flex items-center justify-between gap-2 text-muted-foreground">
-                  <span>Verschieben</span>
-                  <div className="flex gap-1">
-                    {(["←", "↑", "↓", "→"] as const).map((direction) => (
-                      <button key={direction} type="button" className="h-7 w-7 rounded-md border border-border/70 bg-muted/15 disabled:cursor-not-allowed disabled:opacity-60">
-                        {direction}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between gap-2 text-muted-foreground">
-                  <span>Drehung</span>
-                  <button type="button" className="h-7 rounded-md border border-border/70 bg-muted/15 px-3 disabled:cursor-not-allowed disabled:opacity-60">
-                    —
-                  </button>
-                </div>
-              </fieldset>
-            </div>
+              <div className="flex items-center justify-between gap-2 text-muted-foreground">
+                <span>Drehung</span>
+                <button type="button" className="h-7 rounded-md border border-border/70 bg-muted/15 px-3 disabled:cursor-not-allowed disabled:opacity-60">
+                  —
+                </button>
+              </div>
+            </fieldset>
           </section>
 
           <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">
@@ -1399,14 +1395,8 @@ export default function ModulesPanel() {
             {SHOW_MODULE_ORIENTATION_READOUT && (
               <h3 className={labelSm}>Ausrichtung</h3>
             )}
-            <div className="rounded-xl border border-border/60 text-[10px]">
-              <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">
-                Feinjustierung
-              </div>
-              <div className="space-y-3 border-t border-border/60 p-3">
-                <DirectLayoutControl roofId={selectedRoof.id} />
-              </div>
-            </div>
+            <h3 className={labelSm}>Feinjustierung</h3>
+            <DirectLayoutControl roofId={selectedRoof.id} />
           </section>
 
           <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">

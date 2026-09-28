@@ -136,6 +136,12 @@ test("Feinjustierung is the final interactive sidebar section before the disclai
   assert.ok(advancedPanel.indexOf("Abstände") < advancedPanel.indexOf("Feinjustierung"));
   assert.ok(advancedPanel.indexOf("Feinjustierung") < advancedPanel.indexOf(disclaimer));
   assert.equal(advancedPanel.match(/Feinjustierung/g)?.length, 1);
+
+  assert.match(neutralShell, /<h3 className=\{labelSm\}>Feinjustierung<\/h3>\s*<fieldset disabled className="space-y-2 rounded-xl border/);
+  assert.match(standardSidebar, /<h3 className=\{labelSm\}>Feinjustierung<\/h3>\s*<DirectLayoutControl roofId=\{selectedRoof\.id\} \/>/);
+  assert.doesNotMatch(standardSidebar, /Feinjustierung<\/div>\s*<div className="space-y-3 border-t/);
+  assert.match(advancedPanel, /<h3 className=\{labelClass\}>Feinjustierung<\/h3>\s*<DirectLayoutControl roofId=\{roof\.id\} \/>\s*<p className="text-\[10px\] text-muted-foreground">System: Standardsystem<\/p>/);
+  assert.doesNotMatch(advancedPanel, /border-t border-border\/60 pt-2 text-muted-foreground/);
 });
 
 test("customizable default-system controls remain contextual to the flat-roof panel", () => {

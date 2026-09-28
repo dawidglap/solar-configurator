@@ -522,16 +522,12 @@ export default function AdvancedModulesPanel({
             </div>
           </>
         )}
-        <div className="rounded-xl border border-border/60 text-[10px]">
-          <div className="px-3 py-2.5 font-medium uppercase tracking-wide text-muted-foreground">Feinjustierung</div>
-          <div className="space-y-3 border-t border-border/60 p-3">
-            <DirectLayoutControl roofId={roof.id} />
-            <div className="border-t border-border/60 pt-2 text-muted-foreground"><p>System: Standardsystem</p></div>
-            {preview.warnings.some((warning) => warning.code.includes("block-size")) && (
-              <p className="text-amber-700 dark:text-amber-300">Die K2 Blockgrösse überschreitet die dokumentierte Systemgrenze.</p>
-            )}
-          </div>
-        </div>
+        <h3 className={labelClass}>Feinjustierung</h3>
+        <DirectLayoutControl roofId={roof.id} />
+        <p className="text-[10px] text-muted-foreground">System: Standardsystem</p>
+        {preview.warnings.some((warning) => warning.code.includes("block-size")) && (
+          <p className="text-[10px] text-amber-700 dark:text-amber-300">Die K2 Blockgrösse überschreitet die dokumentierte Systemgrenze.</p>
+        )}
       </section>
 
       <p className="rounded-lg border border-border/70 bg-muted/20 p-2 text-[10px] leading-relaxed text-muted-foreground">
