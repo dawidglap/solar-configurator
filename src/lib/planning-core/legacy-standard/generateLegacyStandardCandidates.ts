@@ -149,6 +149,140 @@ function exactUsableRoof(input: LegacyStandardGenerationInput): UsableRoofGeomet
   });
 }
 
+function resolveGridTheta(input: LegacyStandardGenerationInput): number {
+  if (typeof input.canvasAngleDeg === "number") return deg2rad(input.canvasAngleDeg);
+
+  type EdgeInfo = { length: number; angle: number };
+  const edges: EdgeInfo[] = [];
+  for (let index = 0; index < input.roofPolygon.length; index += 1) {
+    const a = input.roofPolygon[index];
+    const b = input.roofPolygon[(index + 1) % input.roofPolygon.length];
+    const vx = b.x - a.x;
+    const vy = b.y - a.y;
+    const length = Math.hypot(vx, vy);
+    if (length >= 2) edges.push({ length, angle: Math.atan2(vy, vx) });
+  }
+  if (!edges.length) return 0;
+
+  const longest = edges.reduce(
+    (current, edge) => (edge.length > current.length ? edge : current),
+    edges[0],
+  );
+  const axisTolerance = (10 * Math.PI) / 180;
+  const axisCandidates = edges.filter((edge) => {
+    const absoluteAngle = Math.abs(edge.angle);
+    return absoluteAngle < axisTolerance ||
+      Math.abs(Math.PI - absoluteAngle) < axisTolerance ||
+      Math.abs(Math.PI / 2 - absoluteAngle) < axisTolerance;
+  });
+  const bestAxis = axisCandidates.length
+    ? axisCandidates.reduce(
+        (current, edge) => (edge.length > current.length ? edge : current),
+        axisCandidates[0],
+      )
+    : null;
+  let theta = bestAxis && bestAxis.length >= longest.length * 0.75
+    ? bestAxis.angle
+    : longest.angle;
+  if (theta < 0) theta += Math.PI;
+  return theta;
+}
+
+function boundsOfPolygons(polygons: LegacyPoint[][]) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const polygon of polygons) {
+    for (const point of polygon) {
+      minX = Math.min(minX, point.x);
+      maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y);
+      maxY = Math.max(maxY, point.y);
+    }
+  }
+  return { minX, maxX, minY, maxY };
+}
+
+function axisContactPhase(input: {
+  point: number;
+  footprintEdges: readonly number[];
+  min: number;
+  max: number;
+  pitch: number;
+  anchor: "start" | "center" | "end";
+}): number[] {
+  if (!(input.pitch > 0)) return [];
+  const base = input.anchor === "start"
+    ? input.min
+    : input.anchor === "end"
+      ? input.max
+      : (input.min + input.max) / 2;
+  return input.footprintEdges.flatMap((edge) => {
+    const phase = input.anchor === "end"
+      ? (base + edge - input.point) / input.pitch
+      : (input.point - edge - base) / input.pitch;
+    // Exact contact is valid at the usable-roof boundary. The tiny neighbours
+    // also cover the two sides of obstacle/snow-guard contact events.
+    return [phase, phase - 1e-7, phase + 1e-7];
+  });
+}
+
+/** Critical finite phase events for explicit Standard Vollbelegung. */
+export function computeLegacyStandardContactPhases(input: {
+  generation: LegacyStandardGenerationInput;
+  reservedZones?: LegacyPoint[][];
+  snowGuards?: Array<{ p1: LegacyPoint; p2: LegacyPoint }>;
+}): { x: number[]; y: number[] } {
+  const generation = input.generation;
+  if (!generation.roofPolygon.length || !(generation.mppImage > 0)) return { x: [], y: [] };
+  const usableRoof = exactUsableRoof(generation);
+  if (usableRoof.status !== "valid" || !usableRoof.components.length) return { x: [], y: [] };
+
+  const theta = resolveGridTheta(generation);
+  const origin = centroid(generation.roofPolygon);
+  const toLocal = (point: LegacyPoint) => worldToLocal(point, origin, theta);
+  const usableLocal = usableRoof.components.map((component) => component.map((point) =>
+    toLocal({ x: point.x / generation.mppImage, y: point.y / generation.mppImage }),
+  ));
+  const bounds = boundsOfPolygons(usableLocal);
+  const panelWidth = (generation.orientation === "portrait"
+    ? generation.panelSizeM.widthM
+    : generation.panelSizeM.heightM) / generation.mppImage;
+  const panelHeight = (generation.orientation === "portrait"
+    ? generation.panelSizeM.heightM
+    : generation.panelSizeM.widthM) / generation.mppImage;
+  const gapX = (generation.spacingXM ?? generation.spacingM) / generation.mppImage;
+  const gapY = (generation.spacingYM ?? generation.spacingM) / generation.mppImage;
+  const minX = bounds.minX;
+  const maxX = bounds.maxX - panelWidth;
+  const minY = bounds.minY;
+  const maxY = bounds.maxY - panelHeight;
+  const eventPoints = [
+    ...usableLocal.flat(),
+    ...(input.reservedZones ?? []).flatMap((polygon) => polygon.map(toLocal)),
+    ...(input.snowGuards ?? []).flatMap((guard) => [toLocal(guard.p1), toLocal(guard.p2)]),
+  ];
+  return {
+    x: eventPoints.flatMap((point) => axisContactPhase({
+      point: point.x,
+      footprintEdges: [0, panelWidth],
+      min: minX,
+      max: maxX,
+      pitch: panelWidth + gapX,
+      anchor: generation.anchorX ?? "start",
+    })),
+    y: eventPoints.flatMap((point) => axisContactPhase({
+      point: point.y,
+      footprintEdges: [0, panelHeight],
+      min: minY,
+      max: maxY,
+      pitch: panelHeight + gapY,
+      anchor: generation.anchorY ?? "start",
+    })),
+  };
+}
+
 /**
  * Legacy-v1 still owns grid generation, ordering and phase semantics. The
  * final acceptance rule is nevertheless the same exact polygon rule used by
@@ -188,7 +322,6 @@ function generateLegacyStandardCandidates(
   const {
     roofPolygon,
     mppImage,
-    canvasAngleDeg,
     orientation,
     panelSizeM,
     spacingM,
@@ -224,53 +357,7 @@ function generateLegacyStandardCandidates(
   );
   const marginPx = Math.max(0, pixels(marginM));
 
-  let theta: number;
-  if (typeof canvasAngleDeg === "number") {
-    theta = deg2rad(canvasAngleDeg);
-  } else {
-    type EdgeInfo = { length: number; angle: number };
-    const edges: EdgeInfo[] = [];
-    for (let index = 0; index < roofPolygon.length; index += 1) {
-      const a = roofPolygon[index];
-      const b = roofPolygon[(index + 1) % roofPolygon.length];
-      const vx = b.x - a.x;
-      const vy = b.y - a.y;
-      const length = Math.hypot(vx, vy);
-      if (length < 2) continue;
-      edges.push({ length, angle: Math.atan2(vy, vx) });
-    }
-
-    if (!edges.length) {
-      theta = 0;
-    } else {
-      const longest = edges.reduce(
-        (current, edge) => (edge.length > current.length ? edge : current),
-        edges[0],
-      );
-      const axisTolerance = (10 * Math.PI) / 180;
-      const axisCandidates = edges.filter((edge) => {
-        const absoluteAngle = Math.abs(edge.angle);
-        const angleFromVertical = Math.abs(Math.PI / 2 - absoluteAngle);
-        const horizontal =
-          absoluteAngle < axisTolerance ||
-          Math.abs(Math.PI - absoluteAngle) < axisTolerance;
-        const vertical = angleFromVertical < axisTolerance;
-        return horizontal || vertical;
-      });
-
-      let chosen: EdgeInfo | null = null;
-      if (axisCandidates.length) {
-        const bestAxis = axisCandidates.reduce(
-          (current, edge) => (edge.length > current.length ? edge : current),
-          axisCandidates[0],
-        );
-        if (bestAxis.length >= longest.length * 0.75) chosen = bestAxis;
-      }
-
-      theta = (chosen ?? longest).angle;
-      if (theta < 0) theta += Math.PI;
-    }
-  }
+  const theta = resolveGridTheta(input);
 
   const angleDeg = (theta * 180) / Math.PI;
   const origin = centroid(roofPolygon);
@@ -291,10 +378,23 @@ function generateLegacyStandardCandidates(
   const cellWidth = panelWidth + gapX;
   const cellHeight = panelHeight + gapY;
   if (maximizeCoverage) {
+    // Vollbelegung uses the actual inset polygon as its coordinate boundary.
+    // Do not offset the original roof bounds by marginPx: on sloped/concave
+    // edges that is not the same geometry and can shift the whole lattice by
+    // a visible residual gap (and occasionally cost a row or column).
+    const usableRoof = exactUsableRoof(input);
+    if (usableRoof.status !== "valid" || !usableRoof.components.length) return [];
+    const localUsableComponents = usableRoof.components.map((component) =>
+      component.map((point) => worldToLocal({
+        x: point.x / mppImage,
+        y: point.y / mppImage,
+      }, origin, theta)),
+    );
+    const usableBounds = boundsOfPolygons(localUsableComponents);
     const columnStarts = thermalBreaks?.x
       ? generateThermalAxisPositions({
-          min: minX + marginPx,
-          max: maxX - marginPx - panelWidth,
+          min: usableBounds.minX,
+          max: usableBounds.maxX - panelWidth,
           pitch: cellWidth,
           phase: normalizePhase(phaseX),
           anchor: anchorX,
@@ -305,16 +405,16 @@ function generateLegacyStandardCandidates(
           },
         })
       : generateAnchoredAxisPositions({
-          min: minX + marginPx,
-          max: maxX - marginPx - panelWidth,
+          min: usableBounds.minX,
+          max: usableBounds.maxX - panelWidth,
           pitch: cellWidth,
           phase: normalizePhase(phaseX),
           anchor: anchorX,
         });
     const rowStarts = thermalBreaks?.y
       ? generateThermalAxisPositions({
-          min: minY + marginPx,
-          max: maxY - marginPx - panelHeight,
+          min: usableBounds.minY,
+          max: usableBounds.maxY - panelHeight,
           pitch: cellHeight,
           phase: normalizePhase(input.phaseY ?? 0),
           anchor: input.anchorY ?? "start",
@@ -325,8 +425,8 @@ function generateLegacyStandardCandidates(
           },
         })
       : generateAnchoredAxisPositions({
-          min: minY + marginPx,
-          max: maxY - marginPx - panelHeight,
+          min: usableBounds.minY,
+          max: usableBounds.maxY - panelHeight,
           pitch: cellHeight,
           phase: normalizePhase(input.phaseY ?? 0),
           anchor: input.anchorY ?? "start",
@@ -341,13 +441,6 @@ function generateLegacyStandardCandidates(
       const y = rowStarts[rowIndex];
       for (let columnIndex = 0; columnIndex < columnStarts.length; columnIndex += 1) {
         const x = columnStarts[columnIndex];
-        const corners: LegacyPoint[] = [
-          { x, y },
-          { x: x + panelWidth, y },
-          { x: x + panelWidth, y: y + panelHeight },
-          { x, y: y + panelHeight },
-        ];
-        if (!corners.every((corner) => pointInPolygonInclusive(corner, localPolygon))) continue;
         const center = localToWorld(
           { x: x + panelWidth / 2, y: y + panelHeight / 2 },
           origin,
@@ -364,7 +457,13 @@ function generateLegacyStandardCandidates(
         });
       }
     }
-    return keepExactPolygonSafeCandidates(candidates, input);
+    return candidates.filter((candidate) =>
+      isLegacyStandardCandidateInsideUsableRoof({
+        candidate,
+        mppImage,
+        usableRoof,
+      }),
+    );
   }
   const rowStarts: number[] = thermalBreaks?.y
     ? generateThermalAxisPositions({
