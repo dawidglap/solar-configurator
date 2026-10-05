@@ -1,5 +1,7 @@
 import "dotenv/config";
 
+import crypto from "node:crypto";
+import { ObjectId } from "mongodb";
 import { POST as login } from "@/app/api/auth/login/route";
 import { GET as getCatalogItem } from "@/app/api/catalog-items/[itemId]/route";
 import { GET as getCatalogItems } from "@/app/api/catalog-items/route";
@@ -13,7 +15,7 @@ import { GET as getMe } from "@/app/api/me/route";
 import { GET as getOrder } from "@/app/api/orders/[orderId]/route";
 import { GET as getOrders } from "@/app/api/orders/route";
 import { GET as getPlanning } from "@/app/api/plannings/[planningId]/route";
-import { GET as getPlannings } from "@/app/api/plannings/route";
+import { GET as getPlannings, POST as createPlanning } from "@/app/api/plannings/route";
 import { GET as getTasks } from "@/app/api/tasks/route";
 import { GET as getTeams } from "@/app/api/teams/route";
 import { GET as getTrash } from "@/app/api/trash/route";
@@ -32,6 +34,15 @@ type Handler = (request: Request) => Promise<Response>;
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+function sign(payload: string, secret: string) {
+  return crypto.createHmac("sha256", secret).update(payload).digest("hex");
+}
+
+function buildSessionCookie(session: Record<string, unknown>, secret: string) {
+  const payload = Buffer.from(JSON.stringify(session)).toString("base64url");
+  return `session=${payload}.${sign(payload, secret)}`;
 }
 
 async function json(response: Response) {
@@ -74,6 +85,8 @@ async function expectHidden(label: string, response: Response) {
 async function main() {
   const db = await getDb();
   assert(db.databaseName === EXPECTED_DATABASE, `Database inatteso: ${db.databaseName}`);
+  const secret = process.env.SESSION_SECRET;
+  assert(secret, "SESSION_SECRET assente");
 
   const demoCompany = await db.collection("companies").findOne({ name: "Demo Company" });
   assert(demoCompany, "Demo Company assente");
@@ -88,10 +101,12 @@ async function main() {
   assert(demoPlanning && demoCustomer && demoCatalogItem, "Dati Demo minimi assenti");
 
   const reports = [];
-  const ownObjects: Array<{ companyId: string; planningId: string; customerId: string; catalogItemId: string }> = [];
+  const cookies: string[] = [];
+  const ownObjects: Array<{ companyId: string; customerId: string; catalogItemId: string }> = [];
 
   for (const account of ACCOUNTS) {
     const cookie = await authenticate(account.email);
+    cookies.push(cookie);
     const me = await callList(cookie, "/api/me", getMe);
     assert(me?.activeCompany?.name === account.company, `Company attiva errata per ${account.email}`);
     assert(me?.session?.activeRole === "owner", `Ruolo attivo errato per ${account.email}`);
@@ -134,12 +149,12 @@ async function main() {
     const planningItems = plannings.items ?? [];
     const customerItems = customers.items ?? [];
     const catalogItems = catalog.items ?? [];
-    assert(planningItems.length === 3, `Numero progetti inatteso per ${account.company}`);
+    assert(planningItems.length === 0, `Numero progetti inatteso per ${account.company}`);
     assert(customerItems.length === 5, `Numero clienti inatteso per ${account.company}`);
     assert((users.items ?? []).length === 7, `Numero utenti inatteso per ${account.company}`);
     assert((teams.items ?? []).length === 2, `Numero team inatteso per ${account.company}`);
     assert((orders.items ?? []).length === 0 && (invoices.items ?? []).length === 0, `Documenti commerciali inattesi per ${account.company}`);
-    assert((tasks.items ?? []).length === 2 && (execution.items ?? []).length === 2, `Dati operativi inattesi per ${account.company}`);
+    assert((tasks.items ?? []).length === 0 && (execution.items ?? []).length === 0, `Dati operativi inattesi per ${account.company}`);
     assert(catalogItems.length === 25, `Catalogo inatteso per ${account.company}`);
 
     await expectHidden(
@@ -179,7 +194,6 @@ async function main() {
 
     ownObjects.push({
       companyId,
-      planningId: String(planningItems[0]?.id),
       customerId: String(customerItems[0]?.id),
       catalogItemId: String(catalogItems[0]?.id),
     });
@@ -207,10 +221,6 @@ async function main() {
       if (viewerIndex === ownerIndex) continue;
       const foreign = ownObjects[ownerIndex];
       await expectHidden(
-        `${ACCOUNTS[viewerIndex].company} -> ${ACCOUNTS[ownerIndex].company} planning`,
-        await getPlanning(request(cookie, `/api/plannings/${foreign.planningId}`), { params: Promise.resolve({ planningId: foreign.planningId }) }),
-      );
-      await expectHidden(
         `${ACCOUNTS[viewerIndex].company} -> ${ACCOUNTS[ownerIndex].company} customer`,
         await getCustomer(request(cookie, `/api/customers/${foreign.customerId}`), { params: Promise.resolve({ customerId: foreign.customerId }) }),
       );
@@ -221,7 +231,86 @@ async function main() {
     }
   }
 
-  console.log(JSON.stringify({ ok: true, database: db.databaseName, reports, crossTenantDirectAccess: "blocked" }, null, 2));
+  const probeResponse = await createPlanning(new Request("http://localhost/api/plannings", {
+    method: "POST",
+    headers: { cookie: cookies[0], "content-type": "application/json" },
+    body: JSON.stringify({
+      title: "Tenant isolation security probe",
+      planningNumber: `SEC-ISOLATION-${Date.now()}`,
+      commercial: { stage: "lead" },
+    }),
+  }));
+  const probeBody = await json(probeResponse);
+  assert(probeResponse.status === 200 && probeBody?.planningId, `Creazione progetto Ivan fallita: ${probeResponse.status}`);
+  const probePlanningId = String(probeBody.planningId);
+
+  try {
+    const probeDocument = await db.collection("plannings").findOne({ _id: new ObjectId(probePlanningId) });
+    assert(probeDocument?.companyId === ownObjects[0].companyId, "Il progetto probe non appartiene a Test Ivan");
+
+    const ivanPlannings = await callList(cookies[0], "/api/plannings?limit=300", getPlannings);
+    assert(itemIds(ivanPlannings).has(probePlanningId), "Ivan non vede il proprio progetto probe");
+
+    for (const viewerIndex of [1, 2]) {
+      const foreignList = await callList(cookies[viewerIndex], "/api/plannings?limit=300", getPlannings);
+      assert(!itemIds(foreignList).has(probePlanningId), `${ACCOUNTS[viewerIndex].company} vede il progetto Ivan nella lista`);
+      await expectHidden(
+        `${ACCOUNTS[viewerIndex].company} -> progetto Ivan`,
+        await getPlanning(request(cookies[viewerIndex], `/api/plannings/${probePlanningId}`), { params: Promise.resolve({ planningId: probePlanningId }) }),
+      );
+    }
+
+    const demoCompanyVariants = [demoCompanyId, demoCompany._id];
+    const demoUser = await db.collection("users").findOne({
+      memberships: { $elemMatch: { companyId: { $in: demoCompanyVariants }, status: "active" } },
+    });
+    assert(demoUser, "Utente attivo Demo Company assente");
+    const demoMembership = (demoUser.memberships ?? []).find((membership: any) =>
+      String(membership?.companyId) === demoCompanyId && membership?.status === "active",
+    );
+    assert(demoMembership, "Membership Demo Company attiva assente");
+    const demoCookie = buildSessionCookie({
+      userId: demoUser._id.toString(),
+      isPlatformSuperAdmin: Boolean(demoUser.isPlatformSuperAdmin),
+      activeCompanyId: demoCompanyId,
+      activeRole: demoMembership.role,
+      firstName: demoUser.firstName ?? null,
+      lastName: demoUser.lastName ?? null,
+      name: demoUser.name ?? null,
+      email: demoUser.email ?? null,
+      sessionVersion: Number.isInteger(demoUser.sessionVersion) ? demoUser.sessionVersion : 0,
+      iat: Date.now(),
+    }, secret);
+    const demoPlannings = await callList(demoCookie, "/api/plannings?limit=300", getPlannings);
+    assert(!itemIds(demoPlannings).has(probePlanningId), "Demo Company vede il progetto Ivan nella lista");
+    await expectHidden(
+      "Demo Company -> progetto Ivan",
+      await getPlanning(request(demoCookie, `/api/plannings/${probePlanningId}`), { params: Promise.resolve({ planningId: probePlanningId }) }),
+    );
+  } finally {
+    const cleanup = await db.collection("plannings").deleteOne({
+      _id: new ObjectId(probePlanningId),
+      companyId: ownObjects[0].companyId,
+    });
+    assert(cleanup.deletedCount === 1, "Cleanup del progetto probe non riuscito");
+  }
+
+  const finalIvanPlannings = await callList(cookies[0], "/api/plannings?limit=300", getPlannings);
+  assert((finalIvanPlannings.items ?? []).length === 0, "Ivan non è tornato a 0 progetti dopo il test");
+
+  console.log(JSON.stringify({
+    ok: true,
+    database: db.databaseName,
+    reports,
+    projectProbe: {
+      owner: "Test Ivan",
+      visibleToOwner: true,
+      hiddenFrom: ["Test Roberto", "Test Marco", "Demo Company"],
+      directAccess: "blocked",
+      cleanedUp: true,
+    },
+    crossTenantDirectAccess: "blocked",
+  }, null, 2));
 }
 
 main()

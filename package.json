@@ -59,6 +59,7 @@
     "migrate:offer-signatures": "tsx scripts/migrate-offer-signatures.ts",
     "seed:demo-company-teams": "tsx scripts/cleanup-seed-demo-company-teams.ts",
     "seed:isolated-test-companies": "tsx scripts/seed-isolated-test-companies.ts",
+    "cleanup:isolated-test-projects": "tsx scripts/cleanup-isolated-test-projects.ts",
     "audit:customer-duplicates": "node scripts/audit-customer-duplicates.js",
     "audit:customer-duplicates:mark": "node scripts/audit-customer-duplicates.js --mark",
     "ensure:customer-indexes": "node scripts/ensure-customer-indexes.js",

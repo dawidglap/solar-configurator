@@ -13,10 +13,8 @@ import { GET as getPlannings } from "@/app/api/plannings/route";
 import { GET as getTasks } from "@/app/api/tasks/route";
 import { GET as getTeams } from "@/app/api/teams/route";
 import { GET as getUsers } from "@/app/api/users/route";
-import { defaultStoreData } from "@/components_v2/state/defaultStoreData";
 import { ensureCompanyAuftragPipelineTemplate } from "@/lib/auftragPipeline";
 import { getDb, getMongoClient } from "@/lib/db";
-import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
 import {
   ensureCompanySnowProtectionCatalogItem,
   ensureSnowProtectionUniqueIndex,
@@ -27,7 +25,6 @@ import {
   buildNewCompanySubscriptionDefaults,
   buildUniqueCompanySlug,
 } from "@/lib/subscription";
-import { ensureTaskIndexes } from "@/lib/tasks";
 import { ensureTeamIndexes } from "@/lib/teams";
 
 const EXPECTED_DATABASE = "sola";
@@ -171,9 +168,9 @@ function plannedCounts(existing: Counts, catalogTemplateCount: number): Counts {
     customers: CUSTOMER_SEEDS.length,
     catalogItems: catalogTemplateCount + 1,
     pipelineTemplates: 1,
-    plannings: 3,
-    executionTasks: 2,
-    tasks: 2,
+    plannings: 0,
+    executionTasks: 0,
+    tasks: 0,
   };
   return Object.fromEntries(
     Object.entries(desired).map(([key, value]) => [key, Math.max(0, value - existing[key as keyof Counts])]),
@@ -444,121 +441,6 @@ async function seedCatalog(db: Db, context: SeedContext, templates: Document[]) 
   await ensureCompanySnowProtectionCatalogItem(db, context.companyId);
 }
 
-async function seedPlanningsAndTasks(db: Db, context: SeedContext) {
-  const customers = await db
-    .collection("customers")
-    .find({ companyId: context.companyId.toHexString(), testSeedKey: { $regex: `^${context.seedKey}:customer:` } })
-    .sort({ testSeedKey: 1 })
-    .toArray();
-  assert(customers.length === CUSTOMER_SEEDS.length, `Clienti seed incompleti per ${context.target.companyName}`);
-
-  const stages = ["lead", "offer", "gewonnen"] as const;
-  const now = new Date();
-  const plannings: Document[] = [];
-  for (let index = 0; index < stages.length; index += 1) {
-    const stage = stages[index];
-    const customer = customers[index];
-    const key = `${context.seedKey}:planning:${index + 1}`;
-    const data = defaultStoreData();
-    data.profile = {
-      ...data.profile,
-      contactFirstName: customer.firstName,
-      contactLastName: customer.lastName,
-      contactEmail: customer.email,
-      buildingStreet: customer.buildingStreet,
-      buildingStreetNo: customer.buildingStreetNo,
-      buildingZip: customer.buildingZip,
-      buildingCity: customer.buildingCity,
-    };
-    await db.collection("plannings").updateOne(
-      { companyId: context.companyId.toHexString(), testSeedKey: key },
-      {
-        $setOnInsert: {
-          companyId: context.companyId.toHexString(),
-          customerId: customer._id.toString(),
-          createdByUserId: context.ownerId.toHexString(),
-          createdByName: `${context.target.firstName} Test`,
-          status: "draft",
-          currentStep: "profile",
-          title: `Demo Projekt ${index + 1}`,
-          planningNumber: `ANG-TEST-${context.target.key.toUpperCase()}-${String(index + 1).padStart(3, "0")}`,
-          commercial: {
-            stage,
-            valueChf: 25000 + index * 5000,
-            assignedToUserId: context.ownerId.toHexString(),
-            source: "Test Seed",
-            label: "",
-            stageHistory: [],
-          },
-          summary: {
-            customerName: `${customer.firstName} ${customer.lastName}`,
-            moduleCount: 0,
-            selectedPanelId: "",
-            dcPowerKw: 0,
-            roofCount: 0,
-            hasSnapshot: false,
-            snowProtection: { totalLengthM: 0, byRoof: [] },
-            lastCalculatedAt: null,
-          },
-          data,
-          orderStatus: "none",
-          orderId: null,
-          testSeedKey: key,
-          createdAt: now,
-          updatedAt: now,
-        },
-      },
-      { upsert: true },
-    );
-    plannings.push((await db.collection("plannings").findOne({ companyId: context.companyId.toHexString(), testSeedKey: key }))!);
-  }
-
-  const wonPlanning = plannings[2];
-  await ensureExecutionTasksForWonPlanning(db, wonPlanning, {
-    userId: context.ownerId.toHexString(),
-    activeCompanyId: context.companyId.toHexString(),
-    activeRole: "owner",
-    firstName: context.target.firstName,
-    lastName: "Test",
-    email: context.target.ownerEmail,
-  } as any);
-
-  await ensureTaskIndexes(db);
-  for (let index = 0; index < 2; index += 1) {
-    const planning = plannings[index];
-    const customer = customers[index];
-    const key = `${context.seedKey}:task:${index + 1}`;
-    await db.collection("tasks").updateOne(
-      { companyId: context.companyId.toHexString(), testSeedKey: key },
-      {
-        $setOnInsert: {
-          companyId: context.companyId.toHexString(),
-          planningId: planning._id.toString(),
-          planningTitle: planning.title,
-          customerId: customer._id.toString(),
-          title: index === 0 ? "Kundendaten prüfen" : "Planung vorbereiten",
-          description: "Demo-Aufgabe für den isolierten Testmandanten.",
-          status: "open",
-          priority: index === 0 ? "high" : "medium",
-          assignedToUserId: context.ownerId.toHexString(),
-          assignedToUserIds: [context.ownerId.toHexString()],
-          assignedToName: `${context.target.firstName} Test`,
-          assignedToNames: [`${context.target.firstName} Test`],
-          assignedToEmail: context.target.ownerEmail,
-          createdByUserId: context.ownerId.toHexString(),
-          createdByName: `${context.target.firstName} Test`,
-          createdByEmail: context.target.ownerEmail,
-          completedAt: null,
-          testSeedKey: key,
-          createdAt: now,
-          updatedAt: now,
-        },
-      },
-      { upsert: true },
-    );
-  }
-}
-
 async function parseJson(response: Response) {
   const value = await response.json().catch(() => null);
   return value as any;
@@ -612,8 +494,8 @@ async function verifyLoginAndApis(db: Db, context: SeedContext) {
   assert(apiCatalog.length === (await db.collection("catalogItems").countDocuments({ companyId: context.companyId.toHexString() })), "Catalogo API incompleto");
   assert((payloads.users?.items ?? []).length === EMPLOYEES.length + 1, "Employees API incompleta");
   assert((payloads.teams?.items ?? []).length === 2, "Teams API incompleta");
-  assert((payloads.plannings?.items ?? []).length === 3, "Projekte API incompleta");
-  assert((payloads.tasks?.items ?? []).length === 2, "Aufgaben API incompleta");
+  assert((payloads.plannings?.items ?? []).length === 0, "Projekte API deve essere vuota");
+  assert((payloads.tasks?.items ?? []).length === 0, "Aufgaben API deve essere vuota");
 
   return {
     login: true,
@@ -641,7 +523,7 @@ async function verifyDatabaseState(db: Db, contexts: SeedContext[], catalogTempl
     assert(counts.customers === CUSTOMER_SEEDS.length, `Customers incompleti per ${context.target.companyName}`);
     assert(counts.catalogItems === catalogTemplateCount + 1, `Catalogo incompleto per ${context.target.companyName}`);
     assert(counts.pipelineTemplates === 1, `Pipeline incompleta per ${context.target.companyName}`);
-    assert(counts.plannings === 3 && counts.executionTasks === 2 && counts.tasks === 2, `Dati operativi incompleti per ${context.target.companyName}`);
+    assert(counts.plannings === 0 && counts.executionTasks === 0 && counts.tasks === 0, `Dati operativi inattesi per ${context.target.companyName}`);
 
     const companyId = context.companyId.toHexString();
     const snowItems = await db.collection("catalogItems").find({ companyId, "metadata.plannerRole": SNOW_PROTECTION_PLANNER_ROLE }).toArray();
@@ -717,7 +599,6 @@ async function main() {
       id: context.ownerId.toHexString(),
       fullName: `${context.target.firstName} Test`,
     });
-    await seedPlanningsAndTasks(db, context);
   }
 
   const databaseVerification = await verifyDatabaseState(db, contexts, catalogTemplates.length);
