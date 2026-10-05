@@ -101,11 +101,11 @@ test("contextual help and compact roof-list property controls remain visible in 
   assert.ok(dimensions.includes("NumericFieldWithSuffix"));
   assert.ok(dimensions.includes(">Kanten</p>"));
   assert.ok(dimensions.includes("RoofEdgeField"));
-  assert.ok(dimensions.includes("hiding roof-edge orientation readout from sidebar"));
+  assert.equal(dimensions.includes("Ausrichtung"), false);
   assert.equal(compass.includes("+ rotateDeg"), false);
 });
 
-test("pitched and flat roof edge fields share canonical labels and one visual component", () => {
+test("pitched and flat roof edge fields share canonical labels and remain editable", () => {
   const dimensions = readFileSync(
     new URL("../../src/components_v2/panels/RoofDimensionsControl.tsx", import.meta.url),
     "utf8",
@@ -116,8 +116,12 @@ test("pitched and flat roof edge fields share canonical labels and one visual co
   assert.equal(dimensions.includes("Ortgang rechts"), false);
   assert.equal(dimensions.includes('eaves: "Traufe"'), false);
   assert.match(dimensions, /const label = `Kante \$\{segment\.segmentIndex \+ 1\}`/);
-  assert.match(dimensions, /value=\{dimensionFormatter\.format\(segment\.lengthM\)\}\s+readOnly/);
-  assert.equal((dimensions.match(/<RoofEdgeField/g) ?? []).length, 2);
+  assert.match(dimensions, /onBlur=\{\(\) => commitSegment\(segment\.segmentIndex\)\}/);
+  assert.equal(dimensions.includes("readOnly"), true, "only the reusable empty/read-only capability remains");
+  assert.equal((dimensions.match(/<RoofEdgeField/g) ?? []).length, 1);
+  assert.equal(dimensions.includes('aria-label="Dachlänge (m)"'), false);
+  assert.equal(dimensions.includes('aria-label="Dachbreite (m)"'), false);
+  assert.equal(dimensions.includes(">Ausrichtung<"), false);
   assert.match(dimensions, /roofKind === "pitched" \? "First" : "Referenzkante"/);
   assert.match(dimensions, /label: `Kante \$\{segment\.segmentIndex \+ 1\} · \$\{formatDimensionM\(segment\.lengthM\)\}`/);
 });

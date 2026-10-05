@@ -7,11 +7,8 @@ import toast from "react-hot-toast";
 import {
   MAX_EDITABLE_ROOF_DIMENSION_M,
   MIN_EDITABLE_ROOF_DIMENSION_M,
-  analyzeRectangularRoof,
   analyzeRoofSegments,
-  resolveRoofGeometricOrientationDeg,
   resolveRoofReferenceEdgeIndex,
-  resizeRectangularRoof,
   resizeRoofSegment,
   type RoofSegmentDimension,
 } from "@/lib/planning-core/geometry-v2";
@@ -21,7 +18,6 @@ import { resolveRoofSlopeForKind } from "@/lib/planning/roofProperties";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 import NumericFieldWithSuffix from "../ui/NumericFieldWithSuffix";
-import { formatDisplayAngleDeg } from "../roof/angleDisplay";
 import {
   resolveStandardAutoLayoutCanvasAngle,
   resolveStandardFirstFrameCanvasAngle,
@@ -160,14 +156,6 @@ function PopulatedRoofDimensionsControl({
   const fallAzimuthDeg = planningMatchesRoofKind
     ? planning.config.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(roof)
     : resolveRoofFallAzimuth(roof);
-  const analysis = React.useMemo(
-    () => analyzeRectangularRoof(roof.points, mppImage ?? 0),
-    [mppImage, roof.points],
-  );
-  const geometricOrientationDeg = React.useMemo(
-    () => resolveRoofGeometricOrientationDeg(roof.points, mppImage ?? 0),
-    [mppImage, roof.points],
-  );
   const segments = React.useMemo(
     () =>
       analyzeRoofSegments(roof.points, mppImage ?? 0, {
@@ -176,16 +164,11 @@ function PopulatedRoofDimensionsControl({
       }),
     [fallAzimuthDeg, measurementTiltDeg, mppImage, roof.points],
   );
-  const lengthValue = analysis.supported ? analysis.dimensions.lengthM.toFixed(2) : "";
-  const widthValue = analysis.supported ? analysis.dimensions.widthM.toFixed(2) : "";
-  const [lengthInput, setLengthInput] = React.useState(lengthValue);
-  const [widthInput, setWidthInput] = React.useState(widthValue);
   const [error, setError] = React.useState<string>();
   const [geometryChanged, setGeometryChanged] = React.useState(false);
   const [segmentInputs, setSegmentInputs] = React.useState<string[]>(
     segments.map((segment) => segment.lengthM.toFixed(2)),
   );
-  const cancelBlur = React.useRef<"length" | "width" | undefined>(undefined);
   const cancelSegmentBlur = React.useRef<number | undefined>(undefined);
   const referenceEdgeIndex = resolveRoofReferenceEdgeIndex({
     points: roof.points,
@@ -269,12 +252,6 @@ function PopulatedRoofDimensionsControl({
   };
 
   React.useEffect(() => {
-    setLengthInput(lengthValue);
-    setWidthInput(widthValue);
-    setError(undefined);
-  }, [lengthValue, roof.id, widthValue]);
-
-  React.useEffect(() => {
     setSegmentInputs(segments.map((segment) => segment.lengthM.toFixed(2)));
     setError(undefined);
   }, [roof.id, segments]);
@@ -329,163 +306,11 @@ function PopulatedRoofDimensionsControl({
           label: `Kante ${segment.segmentIndex + 1} · ${formatDimensionM(segment.lengthM)}`,
         }))}
       />
-      {/* TODO: Customer requested hiding roof-edge orientation readout from sidebar; keep underlying value for possible re-enable. */}
     </div>
   ) : null;
 
-  if (!analysis.supported) {
-    return (
-      <section className="space-y-6">
-        <div className="space-y-3">
-          <label className={labelClass}>Dachfläche</label>
-          <p className="text-[10px] leading-relaxed text-muted-foreground">
-            Jede Kante wird in Metern aus der aktuellen Dachgeometrie berechnet.
-          </p>
-        </div>
-        {referenceSelector}
-        <div className="space-y-3">
-          <p className={labelClass}>Kanten</p>
-          <div className="grid grid-cols-2 gap-2.5">
-            {segments.map((segment) => {
-              const isFirst =
-                roofKind === "pitched" &&
-                segment.segmentIndex === referenceEdgeIndex;
-              return (
-                <RoofEdgeField
-                  key={segment.segmentIndex}
-                  roofId={roof.id}
-                  segment={segment}
-                  value={segmentInputs[segment.segmentIndex] ?? ""}
-                  highlighted={isFirst}
-                  onChange={(event) =>
-                    setSegmentInputs((current) => {
-                      const next = [...current];
-                      next[segment.segmentIndex] = event.target.value;
-                      return next;
-                    })
-                  }
-                  onBlur={() => commitSegment(segment.segmentIndex)}
-                  onKeyDown={(event) => {
-                    event.stopPropagation();
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      event.currentTarget.blur();
-                    } else if (event.key === "Escape") {
-                      event.preventDefault();
-                      cancelSegmentBlur.current = segment.segmentIndex;
-                      setSegmentInputs(
-                        segments.map((item) => item.lengthM.toFixed(2)),
-                      );
-                      setError(undefined);
-                      event.currentTarget.blur();
-                    }
-                  }}
-                />
-              );
-            })}
-          </div>
-        </div>
-        {error && <p className="text-[10px] text-destructive">{error}</p>}
-        {geometryChanged && panels.some((panel) => panel.roofId === roof.id) && (
-          <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-[10px] text-amber-700 dark:text-amber-300">
-            Das bestehende Modullayout bleibt erhalten. Für die neue Dachgeometrie Layout erneut anwenden.
-          </p>
-        )}
-      </section>
-    );
-  }
-
-  const commit = (field: "length" | "width") => {
-    if (cancelBlur.current === field) {
-      cancelBlur.current = undefined;
-      return;
-    }
-    const lengthM = Number(lengthInput.replace(",", "."));
-    const widthM = Number(widthInput.replace(",", "."));
-    const resized = resizeRectangularRoof({
-      pointsPx: roof.points,
-      mppImage: mppImage ?? 0,
-      lengthM,
-      widthM,
-    });
-    if (!resized.valid) {
-      setError(
-        `Bitte Werte zwischen ${MIN_EDITABLE_ROOF_DIMENSION_M.toFixed(2)} m und ${MAX_EDITABLE_ROOF_DIMENSION_M.toFixed(0)} m eingeben.`,
-      );
-      setLengthInput(analysis.dimensions.lengthM.toFixed(2));
-      setWidthInput(analysis.dimensions.widthM.toFixed(2));
-      return;
-    }
-    updateRoof(roof.id, { points: resized.points });
-    setLengthInput(resized.dimensions.lengthM.toFixed(2));
-    setWidthInput(resized.dimensions.widthM.toFixed(2));
-    setError(undefined);
-    setGeometryChanged(true);
-  };
-
-  const handleKeyDown = (
-    event: React.KeyboardEvent<HTMLInputElement>,
-    field: "length" | "width",
-  ) => {
-    event.stopPropagation();
-    if (event.key === "Enter") {
-      event.preventDefault();
-      event.currentTarget.blur();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      cancelBlur.current = field;
-      setLengthInput(analysis.dimensions.lengthM.toFixed(2));
-      setWidthInput(analysis.dimensions.widthM.toFixed(2));
-      setError(undefined);
-      event.currentTarget.blur();
-    }
-  };
-
   return (
     <section className="space-y-6">
-      <div className="space-y-3">
-        <label className={labelClass}>Dachfläche</label>
-        <div className="grid grid-cols-2 gap-2.5">
-          <div className="min-w-0 space-y-2">
-            <label htmlFor={`roof-length-${roof.id}`} className={fieldLabelClass}>
-              Länge
-            </label>
-            <NumericFieldWithSuffix
-              id={`roof-length-${roof.id}`}
-              aria-label="Dachlänge (m)"
-              data-stop-hotkeys="true"
-              inputMode="decimal"
-              suffix="m"
-              value={lengthInput}
-              onChange={(event) => setLengthInput(event.target.value)}
-              onBlur={() => commit("length")}
-              onKeyDown={(event) => handleKeyDown(event, "length")}
-            />
-          </div>
-          <div className="min-w-0 space-y-2">
-            <label htmlFor={`roof-width-${roof.id}`} className={fieldLabelClass}>
-              Breite
-            </label>
-            <NumericFieldWithSuffix
-              id={`roof-width-${roof.id}`}
-              aria-label="Dachbreite (m)"
-              data-stop-hotkeys="true"
-              inputMode="decimal"
-              suffix="m"
-              value={widthInput}
-              onChange={(event) => setWidthInput(event.target.value)}
-              onBlur={() => commit("width")}
-              onKeyDown={(event) => handleKeyDown(event, "width")}
-            />
-          </div>
-        </div>
-        <div className="flex items-center justify-between gap-3 text-[10px]">
-          <span className="text-muted-foreground">Ausrichtung</span>
-          <strong className="font-semibold tabular-nums text-foreground">
-            {formatDisplayAngleDeg(geometricOrientationDeg ?? 0)}
-          </strong>
-        </div>
-      </div>
       {referenceSelector}
       <div className="space-y-3">
         <p className={labelClass}>Kanten</p>
@@ -499,9 +324,31 @@ function PopulatedRoofDimensionsControl({
                 key={segment.segmentIndex}
                 roofId={roof.id}
                 segment={segment}
-                value={dimensionFormatter.format(segment.lengthM)}
-                readOnly
+                value={segmentInputs[segment.segmentIndex] ?? ""}
                 highlighted={isFirst}
+                onChange={(event) =>
+                  setSegmentInputs((current) => {
+                    const next = [...current];
+                    next[segment.segmentIndex] = event.target.value;
+                    return next;
+                  })
+                }
+                onBlur={() => commitSegment(segment.segmentIndex)}
+                onKeyDown={(event) => {
+                  event.stopPropagation();
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    cancelSegmentBlur.current = segment.segmentIndex;
+                    setSegmentInputs(
+                      segments.map((item) => item.lengthM.toFixed(2)),
+                    );
+                    setError(undefined);
+                    event.currentTarget.blur();
+                  }
+                }}
               />
             );
           })}

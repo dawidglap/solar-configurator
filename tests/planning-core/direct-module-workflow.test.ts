@@ -457,13 +457,13 @@ test("customer UI is mode-explicit, direct and free of obsolete full-layout cont
   assert.ok(toolbar.includes("Zuerst Süd oder Ost-West wählen"));
 });
 
-test("flat roof list and dimensions reuse the canonical geometric-orientation resolver", () => {
+test("flat roof list keeps geometric orientation while building dimensions omit the duplicate", () => {
   const modulesPanel = readFileSync(new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url), "utf8");
   const dimensions = readFileSync(new URL("../../src/components_v2/panels/RoofDimensionsControl.tsx", import.meta.url), "utf8");
   const compass = readFileSync(new URL("../../src/components_v2/compassHUD.tsx", import.meta.url), "utf8");
   const moduleOrientation = readFileSync(new URL("../../src/components_v2/modules/moduleOrientation.ts", import.meta.url), "utf8");
   assert.ok(modulesPanel.includes("resolveRoofGeometricOrientationDeg(l.points"));
-  assert.ok(dimensions.includes("resolveRoofGeometricOrientationDeg(roof.points"));
+  assert.equal(dimensions.includes("resolveRoofGeometricOrientationDeg(roof.points"), false);
   assert.ok(modulesPanel.includes('rowKind === "flat"'));
   assert.ok(modulesPanel.includes('title="Geometrische Dachausrichtung"'));
   assert.ok(compass.includes("resolveModuleOrientationDirections"));
