@@ -1,7 +1,6 @@
 import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import {
-  mongoIdToString,
   readSession,
   safeString,
   toObjectIdOrNull,
@@ -82,15 +81,13 @@ export async function POST(req: Request, { params }: Params) {
     if (subscriptionError) return subscriptionError;
     await ensureOfferSignatureIndexes(db);
 
-    const planning = await db.collection("plannings").findOne({ _id: planningObjectId });
+    const activeCompanyId = safeString(session.activeCompanyId);
+    const planning = await db.collection("plannings").findOne({
+      _id: planningObjectId,
+      companyId: activeCompanyId,
+    });
     if (!planning) {
       return response(origin, { ok: false, message: "Planung nicht gefunden." }, 404);
-    }
-
-    const activeCompanyId = safeString(session.activeCompanyId);
-    const planningCompanyId = mongoIdToString(planning.companyId) || safeString(planning.companyId);
-    if (!planningCompanyId || planningCompanyId !== activeCompanyId) {
-      return response(origin, { ok: false, message: "Kein Zugriff auf diesen Mandanten." }, 403);
     }
 
     const companyObjectId = toObjectIdOrNull(activeCompanyId);

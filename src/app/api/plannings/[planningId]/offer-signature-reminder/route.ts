@@ -26,8 +26,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ plannin
     if (!planning) return response(origin, { ok: false, message: "Planung nicht gefunden." }, 404);
     if (!["sent", "viewed"].includes(safeString(planning?.offerSignatureStatus))) return response(origin, { ok: false, message: "Keine aktive Offerten-Signaturanfrage vorhanden." }, 409);
     const { token, hash } = newOfferSignatureToken(); const now = new Date(); const expiresAt = new Date(now.getTime() + days * 86_400_000);
-    await db.collection<any>("plannings").updateOne({ _id: id, offerSignatureStatus: { $in: ["sent", "viewed"] } }, { $set: { offerSignatureStatus: "sent", offerSignatureTokenHash: hash, offerSignatureTokenExpiresAt: expiresAt, offerSignatureViewedAt: null, updatedAt: now }, $push: { offerSignatureAudit: buildOfferAuditEntry({ event: "reminded", req, tokenHash: hash, at: now }) as never } });
+    await db.collection<any>("plannings").updateOne({ _id: id, companyId: String(session.activeCompanyId), offerSignatureStatus: { $in: ["sent", "viewed"] } }, { $set: { offerSignatureStatus: "sent", offerSignatureTokenHash: hash, offerSignatureTokenExpiresAt: expiresAt, offerSignatureViewedAt: null, updatedAt: now }, $push: { offerSignatureAudit: buildOfferAuditEntry({ event: "reminded", req, tokenHash: hash, at: now }) as never } });
     return response(origin, { ok: true, token, link: buildOfferSignatureLink(token), expiresAt: expiresAt.toISOString() });
   } catch (error) { console.error("OFFER SIGNATURE REMINDER ERROR:", error); return response(origin, { ok: false, message: "Erinnerung konnte nicht erstellt werden." }, 500); }
 }
-

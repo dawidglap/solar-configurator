@@ -20,8 +20,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ plannin
     if (!planning) return response(origin, { ok: false, message: "Planung nicht gefunden." }, 404);
     if (safeString(planning?.offerSignatureStatus) === "signed") return response(origin, { ok: false, message: "Eine unterschriebene Offerte kann nicht widerrufen werden." }, 409);
     const now = new Date();
-    await db.collection<any>("plannings").updateOne({ _id: id }, { $set: { offerSignatureStatus: "none", offerSignatureTokenHash: null, offerSignatureProcessingId: null, offerSignatureProcessingAt: null, updatedAt: now }, $push: { offerSignatureAudit: buildOfferAuditEntry({ event: "revoked", req, at: now }) as never } });
-    const updated = await db.collection("plannings").findOne({ _id: id });
+    await db.collection<any>("plannings").updateOne({ _id: id, companyId: String(session.activeCompanyId) }, { $set: { offerSignatureStatus: "none", offerSignatureTokenHash: null, offerSignatureProcessingId: null, offerSignatureProcessingAt: null, updatedAt: now }, $push: { offerSignatureAudit: buildOfferAuditEntry({ event: "revoked", req, at: now }) as never } });
+    const updated = await db.collection("plannings").findOne({ _id: id, companyId: String(session.activeCompanyId) });
     return response(origin, { ok: true, signature: buildOfferSignatureResponse(updated) });
   } catch (error) { console.error("OFFER SIGNATURE CANCEL ERROR:", error); return response(origin, { ok: false, message: "Signaturanfrage konnte nicht widerrufen werden." }, 500); }
 }

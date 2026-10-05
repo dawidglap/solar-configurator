@@ -38,7 +38,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ orderId
     }
     const now = new Date();
     await db.collection<any>("plannings").updateOne(
-      { _id: planning._id },
+      { _id: planning._id, companyId: String(session.activeCompanyId) },
       {
         $set: { signatureToken: null, signatureTokenHash: null, signatureStatus: "none", updatedAt: now },
         $push: {
@@ -46,7 +46,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ orderId
         },
       },
     );
-    const updated = await db.collection<any>("plannings").findOne({ _id: planning._id });
+    const updated = await db.collection<any>("plannings").findOne({ _id: planning._id, companyId: String(session.activeCompanyId) });
     return response(origin, { ok: true, signature: normalizeSignatureFields(updated) }, 200);
   } catch (error) {
     console.error("SIGNATURE CANCEL ERROR:", error);

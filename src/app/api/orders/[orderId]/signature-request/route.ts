@@ -122,7 +122,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ orderId
         $push: { signatureAudit: audit as never },
       },
     );
-    const updated = await db.collection<any>("plannings").findOne({ _id: planning._id });
+    const updated = await db.collection<any>("plannings").findOne({ _id: planning._id, companyId: String(session.activeCompanyId) });
     return response(
       origin,
       {
