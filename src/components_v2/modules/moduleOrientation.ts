@@ -51,5 +51,9 @@ export function resolveModuleOrientationDirections(input: {
 
 export function formatModuleOrientationDirection(directionDeg: number): string {
   const normalized = normalize360(directionDeg);
-  return `${Math.round(normalized)}° ${roofAzimuthCardinal(normalized)}`;
+  return `${roofAzimuthCardinal(normalized)} · ${Math.round(normalized)}°`;
+}
+
+export function formatModuleOrientationDirections(directionDegs: readonly number[]): string {
+  return directionDegs.map(formatModuleOrientationDirection).join(" / ");
 }

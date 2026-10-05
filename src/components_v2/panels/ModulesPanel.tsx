@@ -62,6 +62,7 @@ import { buildCommittedRoofStatsByRoof } from "@/lib/planning-core/overview";
 import SolaSelect from "../ui/SolaSelect";
 import {
   formatModuleOrientationDirection,
+  formatModuleOrientationDirections,
   resolveModuleOrientationDirections,
 } from "../modules/moduleOrientation";
 
@@ -73,11 +74,6 @@ const inputBase =
 
 const labelSm =
   "block text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
-
-// Customer requested hiding the module-orientation readout from Modulplanung.
-// Keep the dormant presentation path easy to restore; orientation state and
-// all layout calculations remain active in the planner domain/application code.
-const SHOW_MODULE_ORIENTATION_READOUT = false;
 
 // TODO: Customer requested hiding Schrägdach module-tilt/inherit-roof
 // controls from Modulplanung. Keep the render path and domain logic for a
@@ -227,6 +223,15 @@ export default function ModulesPanel() {
     selectedRoof,
   ]);
   const advancedConfig = selectedAdvancedConfig ?? implicitFlatConfig;
+  const selectedCommittedModuleCount = selectedRoof
+    ? committedRoofStats.get(selectedRoof.id)?.moduleCount ?? 0
+    : 0;
+  const selectedModuleDirectionDegs = selectedRoof && selectedCommittedModuleCount > 0
+    ? resolveModuleOrientationDirections({ roof: selectedRoof, advancedConfig }).directionDegs
+    : [];
+  const selectedModuleDirectionLabel = selectedModuleDirectionDegs.length
+    ? formatModuleOrientationDirections(selectedModuleDirectionDegs)
+    : "—";
   const standardDraft =
     selectedDraft?.targetMode === "standard" ? selectedDraft : undefined;
   const committedRoofModules = React.useMemo(() => {
@@ -793,7 +798,7 @@ export default function ModulesPanel() {
                     }).directionDegs
                   : [];
                 const moduleDirectionTitle = moduleDirectionDegs.length
-                  ? moduleDirectionDegs.map(formatModuleOrientationDirection).join(" / ")
+                  ? formatModuleOrientationDirections(moduleDirectionDegs)
                   : "Keine Module auf dieser Dachfläche";
                 const kwpLabel =
                   moduleCount === 0
@@ -1140,15 +1145,11 @@ export default function ModulesPanel() {
           </section>
 
           <section className="space-y-3 border-b border-border/60 pb-4">
-            {SHOW_MODULE_ORIENTATION_READOUT && (
-              <>
-                <h3 className={labelSm}>Ausrichtung</h3>
-                <div className="flex items-center justify-between rounded-lg bg-muted/15 px-3 py-2 text-[10px]">
-                  <span className="text-muted-foreground">Modulausrichtung</span>
-                  <strong aria-label="Keine Dachfläche ausgewählt">—</strong>
-                </div>
-              </>
-            )}
+            <h3 className={labelSm}>Ausrichtung der Module</h3>
+            <div className="flex items-center justify-between rounded-lg bg-muted/15 px-3 py-2 text-[10px]">
+              <span className="text-muted-foreground">Modulausrichtung</span>
+              <strong aria-label="Keine Dachfläche ausgewählt">—</strong>
+            </div>
             <h3 className={labelSm}>Feinjustierung</h3>
             <fieldset disabled className="space-y-2 rounded-xl border border-border/60 p-3 text-[10px]">
               <div className="flex items-center justify-between gap-2 text-muted-foreground">
@@ -1422,9 +1423,14 @@ export default function ModulesPanel() {
           </section>
 
           <section className="space-y-3 border-b border-border/60 pb-4">
-            {SHOW_MODULE_ORIENTATION_READOUT && (
-              <h3 className={labelSm}>Ausrichtung</h3>
-            )}
+            <h3 className={labelSm}>Ausrichtung der Module</h3>
+            <div
+              data-selected-module-orientation
+              className="flex items-center justify-between gap-3 rounded-lg bg-muted/15 px-3 py-2 text-[10px]"
+            >
+              <span className="text-muted-foreground">Modulausrichtung</span>
+              <strong className="text-right tabular-nums">{selectedModuleDirectionLabel}</strong>
+            </div>
             <h3 className={labelSm}>Feinjustierung</h3>
             <DirectLayoutControl roofId={selectedRoof.id} />
           </section>

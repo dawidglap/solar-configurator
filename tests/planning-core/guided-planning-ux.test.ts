@@ -17,14 +17,12 @@ test("guided sidebar exposes primary choices without a dynamic bottom status are
   assert.equal(modulesPanel.includes("Klicke auf eine Dachfläche, um Module zu planen."), false);
   assert.match(modulesPanel, /step === "modules" && !selectedRoof/);
   assert.ok(modulesPanel.includes('data-testid="module-planning-neutral-shell"'));
-  assert.match(modulesPanel, /const SHOW_MODULE_ORIENTATION_READOUT = false/);
-  assert.match(advancedPanel, /const SHOW_MODULE_ORIENTATION_READOUT = false/);
+  assert.equal(modulesPanel.includes("SHOW_MODULE_ORIENTATION_READOUT"), false);
+  assert.equal(advancedPanel.includes("SHOW_MODULE_ORIENTATION_READOUT"), false);
   assert.match(modulesPanel, /const SHOW_PITCHED_MODULE_TILT_CONTROLS = false/);
   assert.match(modulesPanel, /SHOW_PITCHED_MODULE_TILT_CONTROLS && \(/);
-  assert.match(modulesPanel, /SHOW_MODULE_ORIENTATION_READOUT && \(/);
-  assert.match(advancedPanel, /SHOW_MODULE_ORIENTATION_READOUT && \(/);
-  assert.ok(modulesPanel.includes("Modulausrichtung"), "dormant readout remains restorable");
-  assert.ok(advancedPanel.includes("Modulausrichtung"), "dormant paired-angle readout remains restorable");
+  assert.ok(modulesPanel.includes("Ausrichtung der Module"));
+  assert.ok(advancedPanel.includes("Ausrichtung der Module"));
   assert.ok(modulesPanel.includes("Firmenstandard"));
   assert.ok(modulesPanel.includes('step === "modules" && selectedRoof && displayMode === "standard"'));
   assert.ok(modulesPanel.includes("Schrägdach"));

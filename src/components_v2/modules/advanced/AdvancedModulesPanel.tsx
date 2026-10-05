@@ -35,24 +35,21 @@ import { history as plannerHistory } from "../../state/history";
 import { buildAdvancedExistingLayoutReflow } from "../panels/existingLayoutReflow";
 import CompanySpacingDefaultsDialog from "./CompanySpacingDefaultsDialog";
 import SolaSelect from "../../ui/SolaSelect";
+import {
+  formatModuleOrientationDirections,
+  resolveModuleOrientationDirections,
+} from "../moduleOrientation";
 
 const inputClass =
   "glass-input h-8 w-full rounded-lg px-2 text-[11px] focus:ring-1 focus:ring-primary/40";
 const labelClass =
   "block text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
 
-// Customer requested hiding the module-orientation readout from Modulplanung.
-// Keep this render path dormant for a possible re-enable without touching the
-// canonical azimuth state used by placement, snapping and layout rotation.
-const SHOW_MODULE_ORIENTATION_READOUT = false;
-
 const fmt = (value: number, digits = 2) =>
   new Intl.NumberFormat("de-CH", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(value);
-
-const normalizeAzimuth = (value: number) => ((value % 360) + 360) % 360;
 
 function resolveSupportedMountingOrientation(config: AdvancedSurfacePlanningV1) {
   const systemId = config.advanced.system.systemId;
@@ -218,13 +215,14 @@ export default function AdvancedModulesPanel({
   const isK2System = isSDome || isDDome;
   const isSupportedSystem = isK2System || isGenericSouth || isGenericEastWest;
   const isSouthSystem = isSDome || isGenericSouth;
-  const isOpposingSystem = isDDome || isGenericEastWest;
   const orientation = isSouthSystem ? "south" : "east-west";
-  const azimuth = isSouthSystem
-    ? system.faceAzimuthDeg
-    : isOpposingSystem
-      ? system.primaryFaceAzimuthDeg
-      : 90;
+  const committedModuleCount = panels.filter((panel) => panel.roofId === roof.id).length;
+  const moduleDirectionDegs = committedModuleCount > 0
+    ? resolveModuleOrientationDirections({ roof, advancedConfig: config }).directionDegs
+    : [];
+  const moduleDirectionLabel = moduleDirectionDegs.length
+    ? formatModuleOrientationDirections(moduleDirectionDegs)
+    : "—";
   const rowSpaceM = getAdvancedRowSpaceM(config);
   const companySpacingDefaults = React.useMemo(
     () => resolveCompanyFlatRoofSpacingDefaults({
@@ -513,15 +511,14 @@ export default function AdvancedModulesPanel({
       />
 
       <section className="space-y-3 border-b border-border/60 pb-4">
-        {SHOW_MODULE_ORIENTATION_READOUT && (
-          <>
-            <h3 className={labelClass}>Ausrichtung</h3>
-            <div className="flex items-center justify-between rounded-lg bg-muted/15 px-3 py-2 text-[10px]">
-              <span className="text-muted-foreground">Modulausrichtung</span>
-              <strong>{isOpposingSystem ? `${fmt(azimuth, 0)}° / ${fmt(normalizeAzimuth(azimuth + 180), 0)}°` : `${fmt(azimuth, 0)}°`}</strong>
-            </div>
-          </>
-        )}
+        <h3 className={labelClass}>Ausrichtung der Module</h3>
+        <div
+          data-selected-module-orientation
+          className="flex items-center justify-between gap-3 rounded-lg bg-muted/15 px-3 py-2 text-[10px]"
+        >
+          <span className="text-muted-foreground">Modulausrichtung</span>
+          <strong className="text-right tabular-nums">{moduleDirectionLabel}</strong>
+        </div>
         <h3 className={labelClass}>Feinjustierung</h3>
         <DirectLayoutControl roofId={roof.id} />
         <p className="text-[10px] text-muted-foreground">System: Standardsystem</p>

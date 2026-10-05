@@ -7,7 +7,7 @@ import {
   type AdvancedSurfacePlanningV1,
 } from "@/lib/planning-core/advanced";
 import {
-  formatModuleOrientationDirection,
+  formatModuleOrientationDirections,
   resolveModuleOrientationDirections,
 } from "./modules/moduleOrientation";
 
@@ -52,9 +52,9 @@ export default function CompassHUD({
     advancedConfig,
   });
   const northOnScreenDeg = normalize360(canvasRotationDeg);
-  const numericLabel = directionDegs.length ? directionDegs
-    .map(formatModuleOrientationDirection)
-    .join(" / ") : null;
+  const numericLabel = directionDegs.length
+    ? formatModuleOrientationDirections(directionDegs)
+    : null;
 
   return (
     <div
