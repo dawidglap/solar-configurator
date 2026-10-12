@@ -46,6 +46,24 @@ function unique(values: number[]): number[] {
   return [...new Set(values)].sort((first, second) => first - second);
 }
 
+function assertFacesPointAwayFromBlockCenter(
+  modules: ReturnType<typeof expandBlockToModules>,
+  center: { x: number; y: number },
+): void {
+  for (const module of modules) {
+    const radians = (module.faceAzimuthDeg * Math.PI) / 180;
+    const faceVector = { x: Math.sin(radians), y: Math.cos(radians) };
+    const outwardVector = {
+      x: module.centerM.x - center.x,
+      y: module.centerM.y - center.y,
+    };
+    assert.ok(
+      outwardVector.x * faceVector.x + outwardVector.y * faceVector.y > 0,
+      `slot ${module.slotIndex} face must point away from the shared ridge`,
+    );
+  }
+}
+
 test("Generic South derives a one-module 1 x 2 m portrait block at 10 degrees", () => {
   const definition = createGenericSouthBlock({
     module: PORTRAIT_MODULE,
@@ -121,7 +139,7 @@ test("Generic East-West has exactly two opposing module slots", () => {
   assert.equal(definition.moduleSlots.length, 2);
   assert.deepEqual(
     definition.moduleSlots.map((slot) => slot.faceAzimuthOffsetDeg),
-    [0, 180],
+    [180, 0],
   );
   close(
     definition.derivedDimensionsM.projectedDepthM,
@@ -148,8 +166,9 @@ test("Generic East-West has exactly two opposing module slots", () => {
   const modules = expandBlockToModules(placed);
   assert.deepEqual(
     modules.map((module) => module.faceAzimuthDeg),
-    [90, 270],
+    [270, 90],
   );
+  assertFacesPointAwayFromBlockCenter(modules, placed.centerM);
   assert.deepEqual(
     modules.map((module) => module.nominalTiltDeg),
     [10, 10],
@@ -189,8 +208,9 @@ test("rotating East-West to 100 degrees rotates transforms and preserves tilt", 
 
   assert.deepEqual(
     rotatedModules.map((module) => module.faceAzimuthDeg),
-    [100, 280],
+    [280, 100],
   );
+  assertFacesPointAwayFromBlockCenter(rotatedModules, rotatedPlaced.centerM);
   assert.equal(
     normalizeGeographicAzimuth(
       rotatedModules[1].faceAzimuthDeg - rotatedModules[0].faceAzimuthDeg,

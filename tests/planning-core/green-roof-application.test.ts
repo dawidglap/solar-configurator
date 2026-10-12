@@ -92,6 +92,43 @@ function preview(
   });
 }
 
+function assertEveryPreviewPairPointsOutward(
+  modules: Array<{
+    blockKey: string;
+    slotIndex: number;
+    cx: number;
+    cy: number;
+    faceAzimuthDeg: number;
+  }>,
+): void {
+  const blocks = new Map<string, typeof modules>();
+  for (const module of modules) {
+    const pair = blocks.get(module.blockKey);
+    if (pair) pair.push(module);
+    else blocks.set(module.blockKey, [module]);
+  }
+  assert.ok(blocks.size > 1, "fixture must exercise multiple real blocks");
+  for (const pair of blocks.values()) {
+    assert.equal(pair.length, 2);
+    const ridge = {
+      x: (pair[0].cx + pair[1].cx) / 2,
+      y: (pair[0].cy + pair[1].cy) / 2,
+    };
+    for (const module of pair) {
+      const radians = (module.faceAzimuthDeg * Math.PI) / 180;
+      const renderedArrow = {
+        x: Math.sin(radians),
+        y: -Math.cos(radians),
+      };
+      const outward = { x: module.cx - ridge.x, y: module.cy - ridge.y };
+      assert.ok(
+        outward.x * renderedArrow.x + outward.y * renderedArrow.y > 0,
+        `${module.blockKey} slot ${module.slotIndex} must point away from its ridge`,
+      );
+    }
+  }
+}
+
 function oldPanel(): PanelInstance {
   return {
     id: "old-panel",
@@ -143,8 +180,9 @@ test("C/D: Green South uses one generic module per block and East-West uses two"
     assert.equal(eastWestPreview.moduleCount, eastWestPreview.blockCount * 2);
     assert.deepEqual(
       [...new Set(eastWestPreview.modules.map((module) => module.faceAzimuthDeg))],
-      [90, 270],
+      [270, 90],
     );
+    assertEveryPreviewPairPointsOutward(eastWestPreview.modules);
   }
 });
 

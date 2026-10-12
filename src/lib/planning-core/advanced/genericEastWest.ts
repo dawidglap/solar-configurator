@@ -1,6 +1,7 @@
 import {
   createCenteredRectangleFootprint,
   deriveTiltedModuleGeometry,
+  metricVectorToGeographicAzimuthDeg,
   normalizeGeographicAzimuth,
   placeLocalFootprint,
 } from "./moduleGeometry";
@@ -54,6 +55,8 @@ export function createGenericEastWestBlock(input: {
     depthM: Math.max(projectedDepthM, MIN_COLLISION_DEPTH_M),
   });
   const moduleCenterOffsetM = interModuleGapM / 2 + projectedDepthM / 2;
+  const primaryCenterM = { x: 0, y: -moduleCenterOffsetM };
+  const oppositeCenterM = { x: 0, y: moduleCenterOffsetM };
 
   return {
     mountingSystemId: GENERIC_EAST_WEST_SYSTEM_ID,
@@ -69,26 +72,28 @@ export function createGenericEastWestBlock(input: {
     moduleSlots: [
       {
         slotIndex: 0,
-        localCenterM: { x: 0, y: -moduleCenterOffsetM },
+        localCenterM: primaryCenterM,
         localRotationCartesianDeg: 0,
         projectedFootprint: placeLocalFootprint({
           centeredFootprint: moduleFootprint,
-          localCenterM: { x: 0, y: -moduleCenterOffsetM },
+          localCenterM: primaryCenterM,
         }),
-        faceAzimuthOffsetDeg: 0,
+        faceAzimuthOffsetDeg:
+          metricVectorToGeographicAzimuthDeg(primaryCenterM),
         module: { ...input.module },
         geometry: { ...geometry },
       },
       {
         slotIndex: 1,
-        localCenterM: { x: 0, y: moduleCenterOffsetM },
+        localCenterM: oppositeCenterM,
         localRotationCartesianDeg: 180,
         projectedFootprint: placeLocalFootprint({
           centeredFootprint: moduleFootprint,
-          localCenterM: { x: 0, y: moduleCenterOffsetM },
+          localCenterM: oppositeCenterM,
           localRotationCartesianDeg: 180,
         }),
-        faceAzimuthOffsetDeg: 180,
+        faceAzimuthOffsetDeg:
+          metricVectorToGeographicAzimuthDeg(oppositeCenterM),
         module: { ...input.module },
         geometry: { ...geometry },
       },

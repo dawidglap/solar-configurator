@@ -279,6 +279,15 @@ test("D-Dome adapter creates one block with deterministic primary/opposite slots
   const modules = expandBlockToModules(placed);
   assert.equal(modules.length, 2);
   assert.deepEqual(modules.map((module) => module.faceAzimuthDeg), [90, 270]);
+  for (const module of modules) {
+    const radians = (module.faceAzimuthDeg * Math.PI) / 180;
+    const face = { x: Math.sin(radians), y: Math.cos(radians) };
+    const outward = {
+      x: module.centerM.x - placed.centerM.x,
+      y: module.centerM.y - placed.centerM.y,
+    };
+    assert.ok(outward.x * face.x + outward.y * face.y > 0);
+  }
   assert.deepEqual(modules.map((module) => module.slotIndex), [0, 1]);
   assert.ok(modules.every((module) => module.blockKey === placed.blockKey));
   assert.ok(modules.every((module) => module.nominalTiltDeg === 10));
@@ -320,6 +329,15 @@ test("rotated D-Dome keeps faces opposite and tilt unchanged", () => {
     rotatedModules.map((module) => module.faceAzimuthDeg),
     [100, 280],
   );
+  for (const module of rotatedModules) {
+    const radians = (module.faceAzimuthDeg * Math.PI) / 180;
+    const face = { x: Math.sin(radians), y: Math.cos(radians) };
+    const outward = {
+      x: module.centerM.x - rotatedPlaced.centerM.x,
+      y: module.centerM.y - rotatedPlaced.centerM.y,
+    };
+    assert.ok(outward.x * face.x + outward.y * face.y > 0);
+  }
   assert.equal(rotatedPlaced.rotationCartesianDeg, 260);
   assert.notDeepEqual(rotatedPlaced.footprint, defaultPlaced.footprint);
   assert.ok(rotatedModules.every((module) => module.nominalTiltDeg === 10));

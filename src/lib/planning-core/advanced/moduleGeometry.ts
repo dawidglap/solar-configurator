@@ -22,6 +22,21 @@ export function normalizeGeographicAzimuth(azimuthDeg: number): number {
   return normalizeDegrees(azimuthDeg);
 }
 
+/** Geographic azimuth of a non-zero metric vector (0=N/+Y, 90=E/+X). */
+export function metricVectorToGeographicAzimuthDeg(
+  vector: MetricPoint,
+): number {
+  if (!Number.isFinite(vector.x) || !Number.isFinite(vector.y)) {
+    throw new RangeError("Metric direction vector must be finite.");
+  }
+  if (Math.hypot(vector.x, vector.y) <= 1e-12) {
+    throw new RangeError("Metric direction vector must be non-zero.");
+  }
+  return normalizeGeographicAzimuth(
+    (Math.atan2(vector.x, vector.y) * 180) / Math.PI,
+  );
+}
+
 export function geographicPlanarOrientationToCartesianRotationDeg(
   planarOrientationDeg: number,
 ): number {

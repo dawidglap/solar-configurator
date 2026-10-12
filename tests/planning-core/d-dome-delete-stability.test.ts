@@ -22,6 +22,7 @@ import {
 } from "../../src/lib/planning-core/geometry-v2";
 import { stabilizeOpposingPanelFaceIdentities } from "../../src/lib/planning/opposingPanelFaceIdentity";
 import {
+  alignAdvancedLayoutParallelToRoofEdge,
   buildDirectAdvancedRoofLayout,
   createInitialAdvancedPlanning,
   setAdvancedMountingOrientation,
@@ -62,6 +63,41 @@ function arrows(panels: readonly PanelInstance[]) {
     cx: panel.cx,
     cy: panel.cy,
   })));
+}
+
+function assertEveryCompletePairPointsOutward(
+  panels: readonly PanelInstance[],
+): void {
+  const blocks = new Map<string, PanelInstance[]>();
+  for (const panel of panels) {
+    const key = panel.advanced?.blockKey;
+    if (!key) continue;
+    const pair = blocks.get(key);
+    if (pair) pair.push(panel);
+    else blocks.set(key, [panel]);
+  }
+  assert.ok(blocks.size > 1, "fixture must contain multiple generated pairs");
+  for (const pair of blocks.values()) {
+    assert.equal(pair.length, 2);
+    const ridge = {
+      x: (pair[0].cx + pair[1].cx) / 2,
+      y: (pair[0].cy + pair[1].cy) / 2,
+    };
+    for (const panel of pair) {
+      const azimuth = panel.advanced?.moduleFaceAzimuthDeg;
+      assert.equal(typeof azimuth, "number");
+      const radians = (azimuth! * Math.PI) / 180;
+      const renderedArrow = {
+        x: Math.sin(radians),
+        y: -Math.cos(radians),
+      };
+      const outward = { x: panel.cx - ridge.x, y: panel.cy - ridge.y };
+      assert.ok(
+        outward.x * renderedArrow.x + outward.y * renderedArrow.y > 0,
+        `${panel.advanced?.blockKey} slot ${panel.advanced?.slotIndex} must point away from its ridge`,
+      );
+    }
+  }
 }
 
 function roofWithDDomeConfig(): RoofArea {
@@ -193,7 +229,7 @@ test("real generated store flow keeps every survivor metadata and rendered arrow
     id: "roof-real-ui",
     name: "D1",
     roofKind: "flat",
-    referenceEdgeIndex: 0,
+    referenceEdgeIndex: 1,
     tiltDeg: 0,
     points: [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 180 }, { x: 0, y: 180 }],
   };
@@ -214,9 +250,14 @@ test("real generated store flow keeps every survivor metadata and rendered arrow
     showGrid: false,
     placingSingle: false,
   };
-  const config = setAdvancedMountingOrientation({
+  const baseConfig = setAdvancedMountingOrientation({
     config: createInitialAdvancedPlanning({ panel: panelSpec, standardModules: modules }),
     orientation: "east-west",
+  });
+  const config = alignAdvancedLayoutParallelToRoofEdge({
+    config: baseConfig,
+    roof,
+    mppImage: 0.1,
   });
   const generated = buildDirectAdvancedRoofLayout({
     roof,
@@ -229,6 +270,7 @@ test("real generated store flow keeps every survivor metadata and rendered arrow
   });
   assert.ok(generated);
   assert.ok(generated.panels.length >= 10);
+  assertEveryCompletePairPointsOutward(generated.panels);
 
   const renderedArrows = (panels: readonly PanelInstance[]) =>
     resolveOutwardBlockArrowAzimuths(panels.map((panel) => ({

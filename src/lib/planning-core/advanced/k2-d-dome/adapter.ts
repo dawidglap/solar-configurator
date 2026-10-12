@@ -1,6 +1,7 @@
 import {
   createCenteredRectangleFootprint,
   deriveTiltedModuleGeometry,
+  metricVectorToGeographicAzimuthDeg,
   normalizeGeographicAzimuth,
   placeLocalFootprint,
 } from "../moduleGeometry";
@@ -265,6 +266,8 @@ export function createK2DDomeBlock(
   const moduleCenterOffsetM = k2DDomeMillimetresToMetres(
     constants.centralSystemDimension / 2 + projectedModuleDepthMm / 2,
   );
+  const primaryCenterM = { x: 0, y: moduleCenterOffsetM };
+  const oppositeCenterM = { x: 0, y: -moduleCenterOffsetM };
   const warnings = standardWarnings(effectiveTiltDeg);
   const pitchXM = k2DDomeMillimetresToMetres(
     moduleLengthMm + constants.moduleLongSideSpacing,
@@ -312,26 +315,28 @@ export function createK2DDomeBlock(
       moduleSlots: [
         {
           slotIndex: 0,
-          localCenterM: { x: 0, y: moduleCenterOffsetM },
+          localCenterM: primaryCenterM,
           localRotationCartesianDeg: 0,
           projectedFootprint: placeLocalFootprint({
             centeredFootprint: centeredModuleFootprint,
-            localCenterM: { x: 0, y: moduleCenterOffsetM },
+            localCenterM: primaryCenterM,
           }),
-          faceAzimuthOffsetDeg: 0,
+          faceAzimuthOffsetDeg:
+            metricVectorToGeographicAzimuthDeg(primaryCenterM),
           module: { ...input.module },
           geometry: { ...moduleGeometry },
         },
         {
           slotIndex: 1,
-          localCenterM: { x: 0, y: -moduleCenterOffsetM },
+          localCenterM: oppositeCenterM,
           localRotationCartesianDeg: 180,
           projectedFootprint: placeLocalFootprint({
             centeredFootprint: centeredModuleFootprint,
-            localCenterM: { x: 0, y: -moduleCenterOffsetM },
+            localCenterM: oppositeCenterM,
             localRotationCartesianDeg: 180,
           }),
-          faceAzimuthOffsetDeg: 180,
+          faceAzimuthOffsetDeg:
+            metricVectorToGeographicAzimuthDeg(oppositeCenterM),
           module: { ...input.module },
           geometry: { ...moduleGeometry },
         },
