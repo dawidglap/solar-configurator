@@ -9,7 +9,10 @@ import {
   metricPolygonToImage,
 } from "@/lib/planning-core/geometry-v2";
 import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
-import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
+import {
+  resolveRoofEdgeMarginM,
+  resolveRoofEdgeMarginsM,
+} from "@/lib/planning/roofProperties";
 import type { Pt } from "@/types/planner";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 import { plannerTheme } from "../theme/plannerTheme";
@@ -89,6 +92,8 @@ export default function RoofAnnotationsLayer({
   const marginM = advancedConfig?.advanced.layout.marginM
     ?? (draft?.targetMode === "standard" ? draft.modules.marginM : undefined)
     ?? resolveRoofEdgeMarginM(roof, globalMarginM);
+  const edgeMarginsM = resolveRoofEdgeMarginsM({ ...roof, points: [...points] }, marginM);
+  const visibleMarginM = edgeMarginsM?.length ? Math.max(...edgeMarginsM) : marginM;
   const requestedReference = selectedZone?.edgeReference?.edgeIndex ?? roof.referenceEdgeIndex;
   const model = buildRoofAnnotationModel({
     points,
@@ -103,10 +108,11 @@ export default function RoofAnnotationsLayer({
   const useModuleEdgePills = step === "modules" && !selectedZone;
   const offset = (useModuleEdgePills ? 24 : 18) * inverseScale;
   const adapter = { mppImage, metricOriginPx: { x: 0, y: 0 } };
-  const usableRoof = marginM > 0
+  const usableRoof = visibleMarginM > 0
     ? computeUsableRoof({
         roofPolygonM: imagePolygonToMetric([...points], adapter),
         marginM,
+        edgeMarginsM,
       })
     : null;
   const usableComponentsPx = usableRoof?.status === "valid"
@@ -114,11 +120,11 @@ export default function RoofAnnotationsLayer({
     : [];
   return (
     <Group id={`roof-annotation-transform-${roof.id}`} listening={false}>
-      {marginM > 0 && (
+      {visibleMarginM > 0 && (
         <Group listening={false}>
           <RoofMarginBand
             polygon={[...points]}
-            marginPx={marginM / mppImage}
+            marginPx={visibleMarginM / mppImage}
             innerPolygons={usableComponentsPx}
             scale={scale}
           />

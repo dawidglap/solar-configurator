@@ -56,7 +56,10 @@ import type {
   Pt,
   RoofArea,
 } from "@/types/planner";
-import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
+import {
+  resolveRoofEdgeMarginM,
+  resolveRoofEdgeMarginsM,
+} from "@/lib/planning/roofProperties";
 import {
   computeLegacyStandardLayout,
   computeMaximumLegacyStandardLayout,
@@ -978,6 +981,9 @@ export function applyConfirmedRoofKindChange<
       delete resetRoof.surfacePlanning;
       delete resetRoof.referenceEdgeIndex;
       delete resetRoof.edgeMarginM;
+      delete resetRoof.edgeMarginMode;
+      delete resetRoof.edgeStableIds;
+      delete resetRoof.edgeMarginsM;
       delete resetRoof.exclusions;
       return {
         ...resetRoof,
@@ -1373,6 +1379,10 @@ export function computeAdvancedPlanningPreview(input: {
   const commonLayoutInput = {
     roofPolygonM: imagePolygonToMetric(input.roof.points, imageAdapter),
     marginM: config.advanced.layout.marginM,
+    edgeMarginsM: resolveRoofEdgeMarginsM(
+      input.roof,
+      resolveRoofEdgeMarginM(input.roof, config.advanced.layout.marginM),
+    ),
     blockDefinition,
     ...(effectiveThermalLimits
       ? { thermalBreaks: createThermalGridBreaks({
@@ -1871,6 +1881,10 @@ function computeStandardDraftPanelResult(
       spacingXM: spacing.x,
       spacingYM: spacing.y,
       marginM: resolveRoofEdgeMarginM(input.roof, input.modules.marginM),
+      edgeMarginsM: resolveRoofEdgeMarginsM(
+        input.roof,
+        resolveRoofEdgeMarginM(input.roof, input.modules.marginM),
+      ),
       phaseX: input.modules.gridPhaseX ?? 0,
       phaseY: input.modules.gridPhaseY ?? 0,
       anchorX: input.modules.gridAnchorX ?? "start",

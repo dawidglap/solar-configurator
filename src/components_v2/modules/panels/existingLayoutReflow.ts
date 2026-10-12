@@ -30,7 +30,10 @@ import {
   type SegmentObstacle,
   type UsableRoofGeometry,
 } from "@/lib/planning-core/geometry-v2";
-import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
+import {
+  resolveRoofEdgeMarginM,
+  resolveRoofEdgeMarginsM,
+} from "@/lib/planning/roofProperties";
 import type { ModulesConfig, PanelInstance, Pt, RoofArea } from "@/types/planner";
 import {
   buildStandardSurfacePlanning,
@@ -113,6 +116,7 @@ function buildCandidateValidationContext(input: {
   const usableRoof = computeUsableRoof({
     roofPolygonM: imagePolygonToMetric(input.roof.points, adapter),
     marginM: input.marginM,
+    edgeMarginsM: resolveRoofEdgeMarginsM(input.roof, input.marginM),
   });
   const reservedZones = input.zones
     .filter((zone) => zone.roofId === input.roof.id && zone.type !== "walkway")

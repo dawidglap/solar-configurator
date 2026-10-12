@@ -107,6 +107,8 @@ export type ExpandedAdvancedModule = {
 export type ComputeAdvancedBlockLayoutInput = {
   roofPolygonM: MetricPolygon;
   marginM: number;
+  /** Canonical roof-edge margins; when present they replace marginM. */
+  edgeMarginsM?: number[];
   blockDefinition: AdvancedBlockDefinition;
   gridOriginM?: MetricPoint;
   phaseX?: number;

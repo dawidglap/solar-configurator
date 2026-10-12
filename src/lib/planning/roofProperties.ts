@@ -39,6 +39,91 @@ export function resolveRoofEdgeMarginM(
   return Math.max(0, standardMarginM);
 }
 
+export function resolveRoofEdgeMarginsM(
+  roof: Pick<RoofArea, "points" | "edgeMarginMode" | "edgeStableIds" | "edgeMarginsM">,
+  globalMarginM: number,
+): number[] | undefined {
+  if (roof.edgeMarginMode !== "perEdge") return undefined;
+  const edges = getCanonicalRoofEdges(roof.points);
+  if (roof.edgeStableIds?.length !== edges.length) {
+    return edges.map(() => Math.max(0, globalMarginM));
+  }
+  return roof.edgeStableIds.map((edgeId) => {
+    const value = roof.edgeMarginsM?.[edgeId];
+    return typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? value
+      : Math.max(0, globalMarginM);
+  });
+}
+
+export function initializePerEdgeMargins(input: {
+  roof: RoofArea;
+  globalMarginM: number;
+  createId: () => string;
+}): Pick<RoofArea, "edgeMarginMode" | "edgeStableIds" | "edgeMarginsM"> {
+  const edgeCount = getCanonicalRoofEdges(input.roof.points).length;
+  const existingIds = input.roof.edgeStableIds?.length === edgeCount
+    ? input.roof.edgeStableIds
+    : undefined;
+  const edgeStableIds = existingIds ?? Array.from({ length: edgeCount }, input.createId);
+  const edgeMarginsM = { ...(input.roof.edgeMarginsM ?? {}) };
+  edgeStableIds.forEach((edgeId) => {
+    const existing = edgeMarginsM[edgeId];
+    if (!(typeof existing === "number" && Number.isFinite(existing) && existing >= 0)) {
+      edgeMarginsM[edgeId] = Math.max(0, input.globalMarginM);
+    }
+  });
+  return { edgeMarginMode: "perEdge", edgeStableIds, edgeMarginsM };
+}
+
+function pointsMatch(
+  first: { x: number; y: number },
+  second: { x: number; y: number },
+  epsilon = 0.5,
+): boolean {
+  return Math.hypot(first.x - second.x, first.y - second.y) <= epsilon;
+}
+
+/** Keeps edge overrides attached to physical edges across topology edits. */
+export function reconcileRoofEdgeMarginState(input: {
+  roof: RoofArea;
+  nextPoints: RoofArea["points"];
+  createId: () => string;
+}): Pick<RoofArea, "edgeStableIds" | "edgeMarginsM"> | undefined {
+  const oldEdges = getCanonicalRoofEdges(input.roof.points);
+  const newEdges = getCanonicalRoofEdges(input.nextPoints);
+  const oldIds = input.roof.edgeStableIds;
+  if (!oldIds || oldIds.length !== oldEdges.length) return undefined;
+
+  const usedIds = new Set<string>();
+  const nextIds = newEdges.map((edge, edgeIndex) => {
+    const exactIndex = oldEdges.findIndex((oldEdge, oldIndex) => {
+      const oldId = oldIds[oldIndex];
+      if (usedIds.has(oldId)) return false;
+      return (
+        pointsMatch(oldEdge.start, edge.start) && pointsMatch(oldEdge.end, edge.end)
+      ) || (
+        pointsMatch(oldEdge.start, edge.end) && pointsMatch(oldEdge.end, edge.start)
+      );
+    });
+    const fallbackId = oldEdges.length === newEdges.length ? oldIds[edgeIndex] : undefined;
+    const edgeId = exactIndex >= 0 ? oldIds[exactIndex] : (
+      fallbackId && !usedIds.has(fallbackId) ? fallbackId : input.createId()
+    );
+    usedIds.add(edgeId);
+    return edgeId;
+  });
+  const nextMargins = Object.fromEntries(
+    nextIds.flatMap((edgeId) => {
+      const marginM = input.roof.edgeMarginsM?.[edgeId];
+      return typeof marginM === "number" && Number.isFinite(marginM) && marginM >= 0
+        ? [[edgeId, marginM] as const]
+        : [];
+    }),
+  );
+  return { edgeStableIds: nextIds, edgeMarginsM: nextMargins };
+}
+
 export function modulesWithRoofEdgeMargin(
   roof: Pick<RoofArea, "edgeMarginM" | "surfacePlanning">,
   modules: ModulesConfig,

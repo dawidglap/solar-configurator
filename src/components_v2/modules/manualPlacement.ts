@@ -36,6 +36,7 @@ import {
   type MetricPolygon,
 } from "@/lib/planning-core/geometry-v2";
 import type { ModulesConfig, PanelInstance, PanelSpec, Pt, RoofArea } from "@/types/planner";
+import { resolveRoofEdgeMarginsM } from "@/lib/planning/roofProperties";
 
 export type ManualPlacementReason =
   | "outside-usable-roof"
@@ -178,6 +179,7 @@ export function createPanelPlacementValidator(input: {
   const usableRoof = computeUsableRoof({
     roofPolygonM: imagePolygonToMetric(input.roof.points, adapter),
     marginM: input.marginM,
+    edgeMarginsM: resolveRoofEdgeMarginsM(input.roof, input.marginM),
   });
   const reservedZones = input.zones
     .filter((zone) => zone.roofId === input.roof.id && zone.type !== "walkway")
@@ -291,6 +293,7 @@ function validate(input: {
   const usableRoof = computeUsableRoof({
     roofPolygonM: imagePolygonToMetric(input.roof.points, input.adapter),
     marginM: input.marginM,
+    edgeMarginsM: resolveRoofEdgeMarginsM(input.roof, input.marginM),
   });
   const geometric = validatePlacementFootprint({
     footprint: input.footprintM,

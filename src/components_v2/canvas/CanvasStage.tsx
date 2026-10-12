@@ -36,7 +36,10 @@ import {
   type ThermalFieldDisplayInput,
 } from "../modules/thermalFields/thermalFieldDisplay";
 import RoofAnnotationsLayer from "./RoofAnnotationsLayer";
-import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
+import {
+  resolveRoofEdgeMarginM,
+  resolveRoofEdgeMarginsM,
+} from "@/lib/planning/roofProperties";
 import { snowProtectionSegmentLengthM } from "@/lib/planning/snowProtectionSummary";
 import {
   resolveStandardAutoLayoutCanvasAngle,
@@ -424,6 +427,15 @@ export default function CanvasStage() {
   const standardPreviewPanel = selectedPlanningDraft?.targetMode === "standard"
     ? catalogPanels.find((panel) => panel.id === selectedPlanningDraft.panelSpecId)
     : selPanel;
+  const standardPreviewMarginM = selectedRoof
+    ? resolveRoofEdgeMarginM(selectedRoof, standardPreviewModules.marginM)
+    : standardPreviewModules.marginM;
+  const standardPreviewEdgeMarginsM = useMemo(
+    () => selectedRoof
+      ? resolveRoofEdgeMarginsM(selectedRoof, standardPreviewMarginM)
+      : undefined,
+    [selectedRoof, standardPreviewMarginM],
+  );
   const companyPlannerDefaults = usePlannerV2Store((state) => state.companyPlannerDefaults);
   const standardThermalCompanyLimits = resolveCompanyThermalFieldLimits({
     company: companyPlannerDefaults,
@@ -1443,7 +1455,8 @@ export default function CanvasStage() {
                       spacingM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).x}
                       spacingXM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).x}
                       spacingYM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).y}
-                      marginM={resolveRoofEdgeMarginM(selectedRoof, standardPreviewModules.marginM)}
+                      marginM={standardPreviewMarginM}
+                      edgeMarginsM={standardPreviewEdgeMarginsM}
                       textureUrl="/images/panel.webp"
                       phaseX={standardPreviewModules.gridPhaseX || 0}
                       phaseY={standardPreviewModules.gridPhaseY || 0}

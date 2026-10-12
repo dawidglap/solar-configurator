@@ -150,7 +150,8 @@ test("the Randabstand band is rendered in both building and module planning", ()
   );
 
   assert.ok(annotations.includes('(step !== "building" && step !== "modules")'));
-  assert.ok(annotations.includes("{marginM > 0 && ("));
+  assert.ok(annotations.includes("{visibleMarginM > 0 && ("));
+  assert.ok(annotations.includes("edgeMarginsM,"));
   assert.equal(annotations.includes('{step === "modules" && marginM > 0'), false);
   assert.ok(marginBand.includes('fill="rgba(239, 68, 68, 0.16)"'));
   assert.ok(marginBand.includes("listening={false}"));

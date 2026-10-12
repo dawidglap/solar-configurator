@@ -32,6 +32,8 @@ export type UsableRoofGeometry = {
   status: "valid" | "empty" | "invalid";
   components: MetricPolygon[];
   marginM: number;
+  /** Canonical polygon-edge margins. Present only for per-edge mode. */
+  edgeMarginsM?: number[];
   diagnostics: GeometryDiagnostic[];
 };
 

@@ -114,6 +114,7 @@ export function computeAdvancedBlockLayout(
   const usableRoof = computeUsableRoof({
     roofPolygonM: input.roofPolygonM,
     marginM: input.marginM,
+    edgeMarginsM: input.edgeMarginsM,
   });
   const rotationCartesianDeg =
     geographicPlanarOrientationToCartesianRotationDeg(
@@ -187,6 +188,7 @@ function contactPhaseCandidates(input: ComputeAdvancedBlockLayoutInput): {
   const usableRoof = computeUsableRoof({
     roofPolygonM: input.roofPolygonM,
     marginM: input.marginM,
+    edgeMarginsM: input.edgeMarginsM,
   });
   if (usableRoof.status !== "valid" || !usableRoof.components.length) return { x: [], y: [] };
   const rotation = geographicPlanarOrientationToCartesianRotationDeg(
@@ -370,6 +372,7 @@ export function computeFixedAdvancedBlockLayout(
   const usableRoof = computeUsableRoof({
     roofPolygonM: input.roofPolygonM,
     marginM: input.marginM,
+    edgeMarginsM: input.edgeMarginsM,
   });
   const rejected = {
     "outside-usable-roof": 0,

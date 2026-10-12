@@ -72,6 +72,12 @@ export type RoofArea = {
     referenceEdgeIndex?: number;
     /** Explicit per-roof module clearance from the roof edge, in metres. */
     edgeMarginM?: number;
+    /** Optional advanced presentation/geometry mode; absent legacy data means global. */
+    edgeMarginMode?: 'global' | 'perEdge';
+    /** Stable IDs aligned with the canonical Kante 1..N sequence. */
+    edgeStableIds?: string[];
+    /** Persisted per-edge clearances keyed by stable edge ID. */
+    edgeMarginsM?: Record<string, number>;
 
     // pronto per “zone vietate” (buchi) — opzionale
     exclusions?: Pt[][];

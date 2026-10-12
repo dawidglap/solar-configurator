@@ -41,6 +41,8 @@ export type LegacyStandardGenerationInput = {
   spacingXM?: number;
   spacingYM?: number;
   marginM: number;
+  /** Canonical roof-edge margins; when present they replace marginM. */
+  edgeMarginsM?: number[];
   phaseX?: number;
   phaseY?: number;
   anchorX?: LegacyGridAnchor;

@@ -13,6 +13,11 @@ import {
   type ThermalFieldLimits,
 } from '@/lib/planning-core/advanced';
 import type { ThermalFieldDisplayInput } from './thermalFields/thermalFieldDisplay';
+import {
+  computeUsableRoof,
+  imagePolygonToMetric,
+  metricPolygonToImage,
+} from '@/lib/planning-core/geometry-v2';
 
 type Pt = { x: number; y: number };
 type Anchor = 'start' | 'center' | 'end';
@@ -29,6 +34,7 @@ type Props = {
   spacingXM?: number;
   spacingYM?: number;
   marginM: number;                         // metri bordo falda
+  edgeMarginsM?: number[];                 // canonical Kante 1..N overrides
   showGrid?: boolean;
   textureUrl?: string;
 
@@ -122,6 +128,7 @@ export default function ModulesPreview({
   spacingXM,
   spacingYM,
   marginM,
+  edgeMarginsM,
   showGrid = true,
   textureUrl = '/images/panel.webp',
   phaseX = 0,
@@ -160,6 +167,7 @@ export default function ModulesPreview({
       spacingXM,
       spacingYM,
       marginM,
+      edgeMarginsM,
       phaseX,
       phaseY,
       anchorX,
@@ -169,7 +177,7 @@ export default function ModulesPreview({
     });
   }, [
     polygon, mppImage, azimuthDeg, orientation, panelSizeM,
-    spacingM, spacingXM, spacingYM, marginM, phaseX, phaseY, anchorX, anchorY, coverageRatio, thermalBreaks,
+    spacingM, spacingXM, spacingYM, marginM, edgeMarginsM, phaseX, phaseY, anchorX, anchorY, coverageRatio, thermalBreaks,
   ]);
 
   // 2) Filtro zone riservate + schneefang (coerente con FillAreaController + U)
@@ -273,7 +281,23 @@ export default function ModulesPreview({
 
     // poligono locale + margine
     const polyLocal = polygon.map(p => worldToLocal(p, O, theta));
-    const clipLocal = insetConvexPolygon(polyLocal, marginPx) ?? polyLocal;
+    const perEdgeUsable = edgeMarginsM
+      ? computeUsableRoof({
+          roofPolygonM: imagePolygonToMetric(polygon, {
+            mppImage,
+            metricOriginPx: { x: 0, y: 0 },
+          }),
+          marginM,
+          edgeMarginsM,
+        })
+      : null;
+    const clipLocal = perEdgeUsable?.status === 'valid'
+      ? perEdgeUsable.components.flatMap((component) =>
+          metricPolygonToImage(component, {
+            mppImage,
+            metricOriginPx: { x: 0, y: 0 },
+          }).map((point) => worldToLocal(point, O, theta)))
+      : insetConvexPolygon(polyLocal, marginPx) ?? polyLocal;
 
     // bbox locale
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -338,7 +362,7 @@ export default function ModulesPreview({
     return lines;
   }, [
     showGrid, polygon, mppImage, azimuthDeg, orientation,
-    panelSizeM, spacingM, spacingXM, spacingYM, marginM, phaseX, phaseY, anchorX, anchorY,
+    panelSizeM, spacingM, spacingXM, spacingYM, marginM, edgeMarginsM, phaseX, phaseY, anchorX, anchorY,
   ]);
 
   // 4) texture opzionale

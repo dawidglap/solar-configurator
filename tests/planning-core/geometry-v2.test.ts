@@ -106,6 +106,61 @@ test("A. convex rectangle receives a true 0.5 m inset", () => {
   close(polygonArea(usable.components[0]), 15, "inset rectangle area");
 });
 
+test("per-edge rectangle inset applies each canonical edge exactly once", () => {
+  const usable = computeUsableRoof({
+    roofPolygonM: [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 6 },
+      { x: 0, y: 6 },
+    ],
+    marginM: 0.2,
+    edgeMarginsM: [0.5, 0.2, 0.1, 0.3],
+  });
+  assert.equal(usable.status, "valid");
+  assert.equal(usable.components.length, 1);
+  assert.deepEqual(polygonBounds(usable.components[0]), {
+    minX: 0.3,
+    minY: 0.5,
+    maxX: 9.8,
+    maxY: 5.9,
+  });
+
+  const valid = validatePlacementFootprint({
+    footprint: squareFootprint({ x: 0.8, y: 1 }, 1),
+    usableRoof: usable,
+  });
+  const violatesKante1 = validatePlacementFootprint({
+    footprint: squareFootprint({ x: 0.8, y: 0.9 }, 1, 17),
+    usableRoof: usable,
+  });
+  assert.equal(valid.valid, true);
+  assert.equal(violatesKante1.valid, false);
+  assert.ok(violatesKante1.reasons.includes("outside-usable-roof"));
+});
+
+test("activating equal per-edge margins is geometrically identical to global mode", () => {
+  const global = computeUsableRoof({ roofPolygonM: RECTANGLE, marginM: 0.2 });
+  const perEdge = computeUsableRoof({
+    roofPolygonM: RECTANGLE,
+    marginM: 0.2,
+    edgeMarginsM: [0.2, 0.2, 0.2, 0.2],
+  });
+  assert.deepEqual(perEdge.components, global.components);
+});
+
+test("per-edge inset remains valid for a rotated irregular concave roof", () => {
+  const rotated = L_SHAPE.map((point) => rotateMetricPoint(point, 23));
+  const usable = computeUsableRoof({
+    roofPolygonM: rotated,
+    marginM: 0.2,
+    edgeMarginsM: [0.5, 0.1, 0.3, 0.2, 0.4, 0.15],
+  });
+  assert.equal(usable.status, "valid");
+  assert.ok(usable.components.length >= 1);
+  assert.ok(usable.components.every((component) => polygonArea(component) > 0));
+});
+
 test("B. rotated rectangle inset is rotation-independent in metric space", () => {
   const center = { x: 3, y: 2 };
   const rotated = RECTANGLE.map((point) => {

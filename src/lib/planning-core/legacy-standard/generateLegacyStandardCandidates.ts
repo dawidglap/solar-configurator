@@ -146,6 +146,7 @@ function exactUsableRoof(input: LegacyStandardGenerationInput): UsableRoofGeomet
       y: point.y * input.mppImage,
     })),
     marginM: Math.max(0, input.marginM),
+    edgeMarginsM: input.edgeMarginsM,
   });
 }
 
@@ -377,7 +378,7 @@ function generateLegacyStandardCandidates(
 
   const cellWidth = panelWidth + gapX;
   const cellHeight = panelHeight + gapY;
-  if (maximizeCoverage) {
+  if (maximizeCoverage || input.edgeMarginsM) {
     // Vollbelegung uses the actual inset polygon as its coordinate boundary.
     // Do not offset the original roof bounds by marginPx: on sloped/concave
     // edges that is not the same geometry and can shift the whole lattice by

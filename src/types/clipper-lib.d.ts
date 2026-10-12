@@ -8,8 +8,19 @@ declare module "clipper-lib" {
     Execute(solution: ClipperPaths, delta: number): void;
   };
 
+  export type ClipperInstance = {
+    AddPath(path: ClipperPath, polyType: number, closed: boolean): boolean;
+    AddPaths(paths: ClipperPaths, polyType: number, closed: boolean): boolean;
+    Execute(
+      clipType: number,
+      solution: ClipperPaths,
+      subjectFillType?: number,
+      clipFillType?: number,
+    ): boolean;
+  };
+
   const ClipperLib: {
-    Clipper: {
+    Clipper: (new () => ClipperInstance) & {
       Orientation(path: ClipperPath): boolean;
     };
     ClipperOffset: new (
@@ -21,6 +32,17 @@ declare module "clipper-lib" {
     };
     EndType: {
       etClosedPolygon: number;
+      etOpenSquare: number;
+    };
+    PolyType: {
+      ptSubject: number;
+      ptClip: number;
+    };
+    ClipType: {
+      ctDifference: number;
+    };
+    PolyFillType: {
+      pftNonZero: number;
     };
   };
 

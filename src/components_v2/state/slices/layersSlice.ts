@@ -9,6 +9,8 @@ import {
     type SurfacePlanningV1,
 } from '@/lib/planning-core/advanced/surfacePlanning';
 import { resolveRoofReferenceEdgeIndex } from '@/lib/planning-core/geometry-v2';
+import { reconcileRoofEdgeMarginState } from '@/lib/planning/roofProperties';
+import { nanoid } from 'nanoid';
 
 export type LayersSlice = {
     layers: RoofArea[];
@@ -115,8 +117,14 @@ function removeRoofFromState(state: LayersSlice, id: string): Partial<LayersSlic
 
 function normalizeRoofPatch(roof: RoofArea, patch: Partial<RoofArea> | undefined): RoofArea {
     if (!patch) return roof;
-    const next = { ...roof, ...patch };
+    let next = { ...roof, ...patch };
     if (!patch.points) return next;
+    const reconciledMargins = reconcileRoofEdgeMarginState({
+        roof,
+        nextPoints: patch.points,
+        createId: () => `edge_${nanoid(10)}`,
+    });
+    if (reconciledMargins) next = { ...next, ...reconciledMargins };
     // Absence means automatic reference-edge resolution. Keep it absent so
     // geometry edits do not silently turn the fallback into persisted input.
     if (next.referenceEdgeIndex == null) return next;

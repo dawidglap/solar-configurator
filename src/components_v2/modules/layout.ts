@@ -22,6 +22,7 @@ export function computeAutoLayoutRects(args: {
   spacingXM?: number;
   spacingYM?: number;
   marginM: number;
+  edgeMarginsM?: number[];
   phaseX?: number;
   phaseY?: number;
   anchorX?: LegacyGridAnchor;
@@ -42,6 +43,7 @@ export function computeAutoLayoutRects(args: {
     spacingXM: args.spacingXM,
     spacingYM: args.spacingYM,
     marginM: args.marginM,
+    edgeMarginsM: args.edgeMarginsM,
     phaseX: args.phaseX,
     phaseY: args.phaseY,
     anchorX: args.anchorX,
