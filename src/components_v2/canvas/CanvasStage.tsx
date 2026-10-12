@@ -1539,6 +1539,8 @@ export default function CanvasStage() {
                     strokeWidthSelected={strokeWidthSelected}
                     shapeMode={shapeMode}
                     toImg={toImgCoords}
+                    viewScale={layerScale}
+                    fitScale={view.fitScale || layerScale}
                     imgW={snap.width ?? img?.naturalWidth ?? 0}
                     imgH={snap.height ?? img?.naturalHeight ?? 0}
                     onHandlesDragStart={() => setDraggingVertex(true)}

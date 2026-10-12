@@ -13,9 +13,33 @@ function scalePoint(point: SymbolPoint, scale: number): SymbolPoint {
   return { x: point.x * scale, y: point.y * scale };
 }
 
-// Visual-only multiplier. Keep detection, vertex anchoring, orientation, and
-// screen/world scaling unchanged while making the approved marker readable.
-const RIGHT_ANGLE_MARKER_VISUAL_SCALE = 10;
+// Visual-only sizing. Detection, vertex anchoring, and orientation stay in the
+// roof renderer; this marker follows world zoom up to a capped close-up size.
+const RIGHT_ANGLE_MARKER_VISUAL_SCALE = 7.5;
+export const RIGHT_ANGLE_MARKER_HIDE_ZOOM_RATIO = 1.15;
+const RIGHT_ANGLE_MARKER_FULL_SIZE_ZOOM_RATIO = 4;
+
+export function resolveRightAngleMarkerWorldScale(input: {
+  currentScale: number;
+  fitScale: number;
+}): number | null {
+  if (
+    !Number.isFinite(input.currentScale) ||
+    !Number.isFinite(input.fitScale) ||
+    input.currentScale <= 0 ||
+    input.fitScale <= 0
+  ) {
+    return null;
+  }
+
+  const zoomRatio = input.currentScale / input.fitScale;
+  if (zoomRatio <= RIGHT_ANGLE_MARKER_HIDE_ZOOM_RATIO) return null;
+
+  const proportionalWorldScale =
+    1 / (input.fitScale * RIGHT_ANGLE_MARKER_FULL_SIZE_ZOOM_RATIO);
+  const maxScreenSizeWorldScale = 1 / input.currentScale;
+  return Math.min(proportionalWorldScale, maxScreenSizeWorldScale);
+}
 
 /**
  * Builds a screen-sized right-angle mark in the local coordinate
@@ -25,9 +49,9 @@ export function buildRightAngleSymbolGeometry(input: {
   firstSideUnit: SymbolPoint;
   secondSideUnit: SymbolPoint;
   bisectorUnit: SymbolPoint;
-  imagePxPerScreenPx: number;
+  worldUnitsPerMarkerPx: number;
 }): RightAngleSymbolGeometry {
-  const scale = input.imagePxPerScreenPx * RIGHT_ANGLE_MARKER_VISUAL_SCALE;
+  const scale = input.worldUnitsPerMarkerPx * RIGHT_ANGLE_MARKER_VISUAL_SCALE;
   const sideInnerGap = 1.25 * scale;
   const sideOuterRadius = 8 * scale;
   const arcRadius = 5.5 * scale;

@@ -21,7 +21,10 @@ import {
   publishTransientRoofAnnotationPoints,
 } from "./performance/transientRoofAnnotations";
 import { createLatestFrameScheduler } from "./performance/latestFrameScheduler";
-import { buildRightAngleSymbolGeometry } from "./roofRightAngleSymbol";
+import {
+  buildRightAngleSymbolGeometry,
+  resolveRightAngleMarkerWorldScale,
+} from "./roofRightAngleSymbol";
 
 type Pt = { x: number; y: number };
 type LayerRoof = {
@@ -264,6 +267,8 @@ export default function RoofShapesLayer({
   strokeWidthSelected,
   shapeMode,
   toImg, // (stageX, stageY) -> px immagine
+  viewScale,
+  fitScale,
   imgW,
   imgH,
   onHandlesDragStart,
@@ -281,6 +286,8 @@ export default function RoofShapesLayer({
   strokeWidthSelected: number;
   shapeMode: "normal" | "trapezio";
   toImg: (x: number, y: number) => Pt;
+  viewScale: number;
+  fitScale: number;
   imgW: number;
   imgH: number;
   onHandlesDragStart: () => void;
@@ -439,6 +446,10 @@ export default function RoofShapesLayer({
     () => (pxScreen: number) => stagePxToImgPx(toImg, pxScreen),
     [toImg],
   );
+  const rightAngleMarkerWorldScale = resolveRightAngleMarkerWorldScale({
+    currentScale: viewScale,
+    fitScale,
+  });
 
   // valori in PX SCHERMO
   const KNOB_OFFSET_S = 8; // distanza dal bordo
@@ -933,11 +944,12 @@ export default function RoofShapesLayer({
                       if (!near) return null;
 
                       if (k.ref === 90) {
+                        if (rightAngleMarkerWorldScale == null) return null;
                         const symbol = buildRightAngleSymbolGeometry({
                           firstSideUnit: k.firstSideUnit,
                           secondSideUnit: k.secondSideUnit,
                           bisectorUnit: k.bis,
-                          imagePxPerScreenPx: toImgPx(1),
+                          worldUnitsPerMarkerPx: rightAngleMarkerWorldScale,
                         });
                         return (
                           <KonvaGroup
