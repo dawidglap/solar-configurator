@@ -206,6 +206,13 @@ test("canonical validation blocks roof edge, Randabstand, obstacle, snow guard a
   assert.equal(validateExistingPanelPlacement({
     ...common,
     centerPx: { x: 50, y: 50 },
+    zones: [],
+    // Centreline is just outside; its 3 px (= 0.30 m) strip still overlaps.
+    snowGuards: [{ roofId: "roof-a", p1: { x: 40, y: 39.6 }, p2: { x: 60, y: 39.6 } }],
+  }).valid, false);
+  assert.equal(validateExistingPanelPlacement({
+    ...common,
+    centerPx: { x: 50, y: 50 },
     zones: [{ roofId: "roof-a", type: "riservata", points: [
       { x: 40, y: 40 }, { x: 60, y: 40 }, { x: 60, y: 60 }, { x: 40, y: 60 },
     ] }],

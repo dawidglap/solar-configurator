@@ -8,6 +8,7 @@ import { resolveLegacyStandardCanvasAngle } from "@/lib/planning-core/legacy-sta
 import {
   getCanonicalLeftEndOfEdge,
   resolveCanonicalRoofReferenceEdge,
+  SNOW_GUARD_WIDTH_M,
 } from "@/lib/planning-core/geometry-v2";
 
 export const STANDARD_AUTO_LAYOUT_SPACING_M = 0.02;
@@ -239,6 +240,7 @@ export function selectLegacyStandardObstacles(
   zones: readonly ZoneLike[] | null | undefined,
   snowGuards: readonly SnowGuardLike[] | null | undefined,
   roofId: string,
+  mppImage?: number,
 ): { reservedZones: LegacyReservedZone[]; snowGuards: LegacySnowGuard[] } {
   const safeZones = Array.isArray(zones) ? zones : [];
   const safeSnowGuards = Array.isArray(snowGuards) ? snowGuards : [];
@@ -254,6 +256,12 @@ export function selectLegacyStandardObstacles(
     reservedZones,
     snowGuards: safeSnowGuards
       .filter((guard) => guard.roofId === roofId)
-      .map((guard) => ({ p1: guard.p1, p2: guard.p2 })),
+      .map((guard) => ({
+        p1: guard.p1,
+        p2: guard.p2,
+        ...(mppImage && mppImage > 0
+          ? { widthPx: SNOW_GUARD_WIDTH_M / mppImage }
+          : {}),
+      })),
   };
 }

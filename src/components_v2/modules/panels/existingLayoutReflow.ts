@@ -18,6 +18,7 @@ import {
 import {
   computeUsableRoof,
   GEOMETRY_V2_ENGINE_VERSION,
+  SNOW_GUARD_WIDTH_M,
   imagePointToMetric,
   imagePolygonToMetric,
   metricPointToImage,
@@ -128,6 +129,7 @@ function buildCandidateValidationContext(input: {
       start: imagePointToMetric(guard.p1, adapter),
       end: imagePointToMetric(guard.p2, adapter),
       clearanceM: 0,
+      widthM: SNOW_GUARD_WIDTH_M,
     }));
   return { usableRoof, reservedZones, snowGuards };
 }

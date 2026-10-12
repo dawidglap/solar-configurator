@@ -20,6 +20,8 @@ export type LegacyReservedZone = {
 export type LegacySnowGuard = {
   p1: LegacyPoint;
   p2: LegacyPoint;
+  /** Physical strip width represented in image pixels. */
+  widthPx?: number;
 };
 
 export type LegacyStandardFilterPolicy = {

@@ -8,3 +8,4 @@ export * from "./thermalAxis";
 export * from "./roofDimensions";
 export * from "./roofEdges";
 export * from "./roofRelativeObstacle";
+export * from "./strip";

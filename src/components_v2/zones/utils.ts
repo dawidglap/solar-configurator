@@ -5,8 +5,11 @@ import { usePlannerV2Store } from '../state/plannerV2Store';
 import {
     legacyPointInPolygon,
     legacyRectIntersectsPolygon,
-    legacyRectIntersectsSegment,
 } from '@/lib/planning-core/legacy-standard/collision';
+import {
+    createButtEndedStripPolygon,
+    SNOW_GUARD_WIDTH_M,
+} from '@/lib/planning-core/geometry-v2';
 import type { LegacyPoint as Pt } from '@/lib/planning-core/legacy-standard/types';
 
 type RectForReserved = {
@@ -78,13 +81,13 @@ export function overlapsReservedRect(
 // ---------- SCHNEEFANG / SNOW GUARD ----------
 
 /**
- * Controlla se il rettangolo modulo interseca una qualsiasi linea neve
+ * Controlla se il rettangolo modulo interseca una fascia Schneefang da 30 cm
  * (snow guard) sulla falda `roofId`.
  */
 export function overlapsSnowGuard(
     rect: RectForSnow,
     roofId: string,
-    _thicknessPx = 1
+    mppImage: number,
 ): boolean {
     const st: any = usePlannerV2Store.getState();
     const guards: any[] = Array.isArray(st.snowGuards) ? st.snowGuards : [];
@@ -92,7 +95,14 @@ export function overlapsSnowGuard(
     const relevant = guards.filter((g) => g.roofId === roofId);
     if (!relevant.length) return false;
 
-    return relevant.some((guard) =>
-        legacyRectIntersectsSegment(rect, guard.p1, guard.p2)
-    );
+    if (!(mppImage > 0)) return false;
+    const widthPx = SNOW_GUARD_WIDTH_M / mppImage;
+    return relevant.some((guard) => {
+        const strip = createButtEndedStripPolygon({
+            start: guard.p1,
+            end: guard.p2,
+            width: widthPx,
+        });
+        return strip.length === 4 && legacyRectIntersectsPolygon(rect, strip);
+    });
 }

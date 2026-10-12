@@ -204,11 +204,11 @@ export default function ModulesPreview({
         if (overlapsReservedRect(rectForReserved, roofId, 1)) return false;
 
         // se interseca una linea neve → scarta
-        if (overlapsSnowGuard(rectForSnow, roofId, 1)) return false;
+        if (overlapsSnowGuard(rectForSnow, roofId, mppImage)) return false;
 
         return true;
       }),
-    [rectsAll, roofId]
+    [mppImage, rectsAll, roofId]
   );
 
   const thermalFields = useMemo(() => {

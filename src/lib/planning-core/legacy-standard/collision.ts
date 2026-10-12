@@ -1,4 +1,6 @@
 import type { LegacyPoint, LegacyStandardCandidate } from "./types";
+import type { LegacySnowGuard } from "./types";
+import { createButtEndedStripPolygon } from "../geometry-v2";
 
 function deg2rad(degrees: number) {
   return (degrees * Math.PI) / 180;
@@ -119,4 +121,19 @@ export function legacyRectIntersectsSegment(
   }
 
   return false;
+}
+
+export function legacyRectIntersectsSnowGuard(
+  rect: LegacyStandardCandidate,
+  guard: LegacySnowGuard,
+): boolean {
+  if (Number.isFinite(guard.widthPx) && (guard.widthPx ?? 0) > 0) {
+    const strip = createButtEndedStripPolygon({
+      start: guard.p1,
+      end: guard.p2,
+      width: guard.widthPx!,
+    });
+    return strip.length === 4 && legacyRectIntersectsPolygon(rect, strip);
+  }
+  return legacyRectIntersectsSegment(rect, guard.p1, guard.p2);
 }

@@ -23,6 +23,7 @@ import {
 } from "@/lib/planning-core/advanced";
 import {
   GEOMETRY_V2_ENGINE_VERSION,
+  SNOW_GUARD_WIDTH_M,
   computeUsableRoof,
   imagePointToMetric,
   imagePolygonToMetric,
@@ -194,6 +195,7 @@ export function createPanelPlacementValidator(input: {
       start: imagePointToMetric(guard.p1, adapter),
       end: imagePointToMetric(guard.p2, adapter),
       clearanceM: 0,
+      widthM: SNOW_GUARD_WIDTH_M,
     }));
   const occupied = input.panels
     .filter((panel) => panel.roofId === input.roof.id && !input.excludePanelIds?.has(panel.id))
@@ -311,6 +313,7 @@ function validate(input: {
         start: imagePointToMetric(guard.p1, input.adapter),
         end: imagePointToMetric(guard.p2, input.adapter),
         clearanceM: 0,
+        widthM: SNOW_GUARD_WIDTH_M,
       })),
   });
   const reasons: ManualPlacementReason[] = [...geometric.reasons];

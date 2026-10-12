@@ -1,4 +1,4 @@
-import { legacyRectIntersectsPolygon, legacyRectIntersectsSegment } from "./collision";
+import { legacyRectIntersectsPolygon, legacyRectIntersectsSnowGuard } from "./collision";
 import {
   computeLegacyStandardCandidates,
   computeLegacyStandardContactPhases,
@@ -34,7 +34,7 @@ export function computeLegacyStandardLayout(
     if (
       input.filterPolicy.snowGuards &&
       input.snowGuards.some((guard) =>
-        legacyRectIntersectsSegment(candidate, guard.p1, guard.p2),
+        legacyRectIntersectsSnowGuard(candidate, guard),
       )
     ) {
       snowGuardRejections += 1;
@@ -111,7 +111,7 @@ export function computeMaximumLegacyStandardLayout(
           return false;
         }
         if (input.filterPolicy.snowGuards && input.snowGuards.some((guard) =>
-          legacyRectIntersectsSegment(candidate, guard.p1, guard.p2))) {
+          legacyRectIntersectsSnowGuard(candidate, guard))) {
           snowGuard += 1;
           return false;
         }

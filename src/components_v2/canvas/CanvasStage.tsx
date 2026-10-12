@@ -104,6 +104,10 @@ import {
   resolveRoofLocalPointerAction,
 } from "./interactionPolicy";
 import {
+  createButtEndedStripPolygon,
+  SNOW_GUARD_WIDTH_M,
+} from "@/lib/planning-core/geometry-v2";
+import {
   computeBuildingRevealTarget,
   interpolateBuildingRevealCamera,
   type BuildingRevealCamera,
@@ -1374,6 +1378,9 @@ export default function CanvasStage() {
             onTouchEnd={(evt: Konva.KonvaEventObject<TouchEvent>) => {
               if (drawingEnabled) onStagePointerUp?.(evt);
             }}
+            onTouchMove={(evt: any) => {
+              if (drawingEnabled) onStageMouseMove?.(evt);
+            }}
             // handler di disegno SOLO in building
             onMouseMove={(evt: any) => {
               if (tool === "fill-area") {
@@ -1562,15 +1569,23 @@ export default function CanvasStage() {
                   const midX = (sg.p1.x + sg.p2.x) / 2;
                   const midY = (sg.p1.y + sg.p2.y) / 2;
                   const isSel = sg.id === selectedSnowGuardId;
+                  const strip = snap.mppImage && snap.mppImage > 0
+                    ? createButtEndedStripPolygon({
+                        start: sg.p1,
+                        end: sg.p2,
+                        width: SNOW_GUARD_WIDTH_M / snap.mppImage,
+                      })
+                    : [];
+                  if (strip.length !== 4) return null;
                   return (
-                    <>
+                    <Group key={sg.id}>
                       <Line
-                        key={sg.id}
-                        points={[sg.p1.x, sg.p1.y, sg.p2.x, sg.p2.y]}
+                        points={strip.flatMap((point) => [point.x, point.y])}
+                        closed
+                        fill={isSel ? "rgba(64, 217, 200, 0.28)" : plannerTheme.primarySoft}
                         stroke={isSel ? plannerTheme.panelSelected : plannerTheme.primary}
-                        strokeWidth={isSel ? 2 : 1}
-                        lineCap="round"
-                        lineJoin="round"
+                        strokeWidth={isSel ? 1.8 : 1}
+                        lineJoin="miter"
                         listening={!drawingCapturesPointer && !exclusiveTrapez}
                         onMouseDown={(event) => {
                           const state = usePlannerV2Store.getState();
@@ -1600,7 +1615,6 @@ export default function CanvasStage() {
                         }}
                       />
                       <Text
-                        key={`${sg.id}-label`}
                         x={midX}
                         y={midY}
                         text={`${snowProtectionSegmentLengthM(
@@ -1613,7 +1627,7 @@ export default function CanvasStage() {
                         offsetY={-2}
                         listening={false}
                       />
-                    </>
+                    </Group>
                   );
                 })}
 

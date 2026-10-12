@@ -42,6 +42,7 @@ import {
 } from "@/lib/planning-core/advanced";
 import {
   GEOMETRY_V2_ENGINE_VERSION,
+  SNOW_GUARD_WIDTH_M,
   cartesianAngleToCanvasDeg,
   imagePointToMetric,
   imagePolygonToMetric,
@@ -1415,6 +1416,7 @@ export function computeAdvancedPlanningPreview(input: {
         start: imagePointToMetric(guard.p1, imageAdapter),
         end: imagePointToMetric(guard.p2, imageAdapter),
         clearanceM: 0,
+        widthM: SNOW_GUARD_WIDTH_M,
       })),
   };
   const fixedLayout = config.advanced.layout.quantityMode === "fixed"
@@ -1853,6 +1855,7 @@ function computeStandardDraftPanelResult(
     input.zones,
     input.snowGuards,
     input.roof.id,
+    input.mppImage,
   );
   const spacing = resolveStandardAutoLayoutSpacingAxes(input.modules);
   const panelWidthM = input.modules.orientation === "portrait"

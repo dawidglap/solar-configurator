@@ -55,6 +55,8 @@ export type SegmentObstacle = {
   end: MetricPoint;
   /** Explicit clearance around the segment; zero preserves line-contact semantics. */
   clearanceM: number;
+  /** Optional physical butt-ended strip width centred on the segment. */
+  widthM?: number;
 };
 
 export type PlacementInvalidReason =

@@ -89,6 +89,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     const reservedTargetRoofIdRef = React.useRef<string | undefined>(undefined);
     const reservedRectDraftRef = React.useRef<ReservedRectangleDraft | null>(null);
     const snowTargetRoofIdRef = React.useRef<string | undefined>(undefined);
+    const snowDraftRef = React.useRef<Pt[] | null>(null);
 
     // ——— stack redo locali (solo durante il disegno) ———
     const polyRedoRef = React.useRef<Pt[]>([]);
@@ -113,6 +114,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         reservedTargetRoofIdRef.current = undefined;
         reservedRectDraftRef.current = null;
         snowTargetRoofIdRef.current = undefined;
+        snowDraftRef.current = null;
     }, [pointerChannel]);
 
     const previousToolRef = React.useRef(tool);
@@ -275,11 +277,22 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
 
     const onStagePointerDown = React.useCallback((e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
         const button = 'button' in e.evt ? e.evt.button : undefined;
-        if (tool !== 'draw-reserved-rect' || !isPrimaryPointerButton(button)) return;
+        if (!isPrimaryPointerButton(button)) return;
         const stage = e.target.getStage();
         const pos = stage?.getPointerPosition();
         if (!pos) return;
         const start = toImgCoords(pos.x, pos.y);
+        if (tool === 'draw-snow-guard') {
+            const target = resolveDraftRoofTarget({ point: start, roofs: layers });
+            if (!target.accepted || !target.targetRoofId) return;
+            snowTargetRoofIdRef.current = target.targetRoofId;
+            snowDraftRef.current = [start];
+            setSnowDraft([start]);
+            pointerChannel.publish(start);
+            e.cancelBubble = true;
+            return;
+        }
+        if (tool !== 'draw-reserved-rect') return;
         const target = resolveDraftRoofTarget({ point: start, roofs: layers });
         if (!target.accepted || !target.targetRoofId) return;
         const roof = layers.find((candidate) => candidate.id === target.targetRoofId) as T | undefined;
@@ -310,14 +323,34 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
     }, [layers, pointerChannel, toImgCoords, tool]);
 
     const onStagePointerUp = React.useCallback((e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-        const draft = reservedRectDraftRef.current;
         const button = 'button' in e.evt ? e.evt.button : undefined;
-        if (tool !== 'draw-reserved-rect' || !draft || !isPrimaryPointerButton(button)) return;
+        if (!isPrimaryPointerButton(button)) return;
         const stage = e?.target?.getStage?.();
         const pos = stage?.getPointerPosition();
         const rawEnd = pos
             ? toImgCoords(pos.x, pos.y)
             : pointerChannel.getSnapshot();
+        if (tool === 'draw-snow-guard') {
+            const start = snowDraftRef.current?.[0];
+            const targetRoofId = snowTargetRoofIdRef.current;
+            snowDraftRef.current = null;
+            setSnowDraft(null);
+            snowTargetRoofIdRef.current = undefined;
+            pointerChannel.clear();
+            if (!start || !rawEnd || !targetRoofId) return;
+            const target = resolveDraftRoofTarget({
+                point: rawEnd,
+                roofs: layers,
+                targetRoofId,
+            });
+            if (!target.accepted || Math.hypot(rawEnd.x - start.x, rawEnd.y - start.y) <= 1e-6) return;
+            onSnowGuardCommit?.(start, rawEnd, targetRoofId);
+            setTool('select');
+            e.cancelBubble = true;
+            return;
+        }
+        const draft = reservedRectDraftRef.current;
+        if (tool !== 'draw-reserved-rect' || !draft) return;
         if (!rawEnd) {
             reservedRectDraftRef.current = null;
             setReservedRectDraft(null);
@@ -346,7 +379,7 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         });
         setTool('select');
         e.cancelBubble = true;
-    }, [onZoneCommit, pointerChannel, setTool, toImgCoords, tool]);
+    }, [layers, onSnowGuardCommit, onZoneCommit, pointerChannel, setTool, toImgCoords, tool]);
 
     // —— CLICK handler unico
     const onStageClick = React.useCallback((e: any) => {
@@ -357,39 +390,14 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         if (tool === 'draw-reserved-rect') return;
 
         // Il primo punto fissa la falda owner; i successivi non possono cambiarla.
-        if (tool === 'draw-reserved' || tool === 'draw-snow-guard') {
-            const targetRef = tool === 'draw-reserved'
-                ? reservedTargetRoofIdRef
-                : snowTargetRoofIdRef;
+        if (tool === 'draw-reserved') {
             const target = resolveDraftRoofTarget({
                 point: p,
                 roofs: layers,
-                targetRoofId: targetRef.current,
+                targetRoofId: reservedTargetRoofIdRef.current,
             });
             if (!target.accepted || !target.targetRoofId) return;
-            targetRef.current = target.targetRoofId;
-        }
-
-        // ── Protezione neve: 2 click → linea
-        if (tool === 'draw-snow-guard') {
-            // primo click
-            if (!snowDraft || snowDraft.length === 0) {
-                setSnowDraft([p]);
-                return;
-            }
-
-            // secondo click → commit
-            if (snowDraft.length === 1) {
-                const p1 = snowDraft[0];
-                const p2 = p;
-                const targetRoofId = snowTargetRoofIdRef.current;
-                if (!targetRoofId) return;
-                onSnowGuardCommit?.(p1, p2, targetRoofId);
-                setSnowDraft(null);
-                snowTargetRoofIdRef.current = undefined;
-                setTool('select'); // come gli altri tool di disegno
-                return;
-            }
+            reservedTargetRoofIdRef.current = target.targetRoofId;
         }
 
         // ── Poligono tetto libero (con SNAP al click)
@@ -475,7 +483,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         toImgCoords,
         drawingPoly,
         rectDraft,
-        snowDraft,
         layers,
         addRoof,
         select,
@@ -485,7 +492,6 @@ export function useDrawingTools<T extends RoofAreaLike>(args: {
         SNAP_TOL_DEG,
         addDraftPoint,
         setTool,
-        onSnowGuardCommit,
     ]);
 
     // —— DOPPIO click → chiusura poligono

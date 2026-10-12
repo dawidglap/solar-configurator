@@ -6,7 +6,11 @@ import { Group, Line, Text } from "react-konva";
 import type { Pt, Tool } from "@/types/planner";
 import { plannerTheme } from "../theme/plannerTheme";
 import type { RafPointChannel } from "./performance/rafPointChannel";
-import { createRoofRelativeRectangle } from "@/lib/planning-core/geometry-v2";
+import {
+  createButtEndedStripPolygon,
+  createRoofRelativeRectangle,
+  SNOW_GUARD_WIDTH_M,
+} from "@/lib/planning-core/geometry-v2";
 import type { ReservedRectangleDraft } from "./hooks/useDrawingTools";
 
 export default function TransientDrawingPreviews({
@@ -76,16 +80,45 @@ export default function TransientDrawingPreviews({
     );
   }
   if (tool === "draw-snow-guard" && snowDraft?.length === 1) {
+    if (!(mppImage && mppImage > 0)) return null;
+    const strip = createButtEndedStripPolygon({
+      start: snowDraft[0],
+      end: mouseImg,
+      width: SNOW_GUARD_WIDTH_M / mppImage,
+    });
+    if (strip.length !== 4) return null;
+    const lengthM = Math.hypot(
+      mouseImg.x - snowDraft[0].x,
+      mouseImg.y - snowDraft[0].y,
+    ) * mppImage;
+    const center = {
+      x: (snowDraft[0].x + mouseImg.x) / 2,
+      y: (snowDraft[0].y + mouseImg.y) / 2,
+    };
     return (
-      <Line
-        points={[snowDraft[0].x, snowDraft[0].y, mouseImg.x, mouseImg.y]}
-        stroke={plannerTheme.primary}
-        strokeWidth={1}
-        lineCap="round"
-        dash={[4, 4]}
-        listening={false}
-        perfectDrawEnabled={false}
-      />
+      <Group listening={false}>
+        <Line
+          points={strip.flatMap((point) => [point.x, point.y])}
+          closed
+          fill={plannerTheme.primarySoft}
+          stroke={plannerTheme.primary}
+          strokeWidth={1}
+          lineJoin="miter"
+          dash={[4, 3]}
+          listening={false}
+          perfectDrawEnabled={false}
+        />
+        <Text
+          x={center.x}
+          y={center.y}
+          text={`${lengthM.toFixed(2)} m`}
+          fontSize={8}
+          fill={plannerTheme.textLight}
+          offsetX={14}
+          offsetY={-5}
+          listening={false}
+        />
+      </Group>
     );
   }
   if (tool === "draw-rect" && rectDraft?.length === 1) {

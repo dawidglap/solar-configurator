@@ -185,6 +185,14 @@ test("manual candidate rejects a reserved zone and snow guard using its footprin
   });
   assert.equal(guarded.valid, false);
   assert.ok(guarded.reasons.includes("snow-guard"));
+
+  // The centreline stays outside the panel; only the physical 0.30 m strip overlaps.
+  const guardedByWidth = buildStandardManualCandidate({
+    ...common,
+    snowGuards: [{ roofId: ROOF.id, p1: { x: 70, y: 50.5 }, p2: { x: 90, y: 50.5 } }],
+  });
+  assert.equal(guardedByWidth.valid, false);
+  assert.ok(guardedByWidth.reasons.includes("snow-guard"));
 });
 
 test("D-Dome manual add is one physical block with exactly two opposed modules", () => {

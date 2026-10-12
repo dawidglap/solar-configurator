@@ -11,6 +11,7 @@ import {
   polygonsIntersectOrTouch,
   segmentToPolygonDistance,
 } from "./polygon";
+import { createButtEndedStripPolygon } from "./strip";
 
 export function footprintCollidesWithReservedZones(
   footprint: MetricPolygon,
@@ -26,6 +27,14 @@ export function footprintCollidesWithSegmentObstacles(
   obstacles: SegmentObstacle[],
 ): boolean {
   return obstacles.some((obstacle) => {
+    if (Number.isFinite(obstacle.widthM) && (obstacle.widthM ?? 0) > 0) {
+      const strip = createButtEndedStripPolygon({
+        start: obstacle.start,
+        end: obstacle.end,
+        width: obstacle.widthM!,
+      });
+      return strip.length === 4 && polygonsIntersectOrTouch(footprint, strip);
+    }
     const clearance = Number.isFinite(obstacle.clearanceM)
       ? Math.max(0, obstacle.clearanceM)
       : 0;
