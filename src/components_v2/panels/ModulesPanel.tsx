@@ -22,14 +22,15 @@ import RoofDimensionsControl from "./RoofDimensionsControl";
 import RoofTypeChangeDialog from "./RoofTypeChangeDialog";
 import LayoutModeChangeDialog from "./LayoutModeChangeDialog";
 import RoofMarginControl from "./RoofMarginControl";
-import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
+import {
+  formatRoofRowOrientation,
+  resolveRoofFallAzimuth,
+} from "../roof/roofOrientation";
 import {
   normalizeRoofAzimuthDeg,
   ROOF_DIRECTION_CHOICES,
-  roofAzimuthCardinal,
 } from "../roof/roofOrientation";
 import { modulesWithRoofEdgeMargin } from "@/lib/planning/roofProperties";
-import { resolveRoofGeometricOrientationDeg } from "@/lib/planning-core/geometry-v2";
 import {
   isValidModuleSpacingMm,
   resolveCompanyFlatRoofSpacingDefaults,
@@ -55,7 +56,6 @@ import DirectLayoutControl from "../modules/panels/DirectLayoutControl";
 import { endManualPlacement } from "../modules/manualPlacementSession";
 import { history as plannerHistory } from "../state/history";
 import { buildStandardExistingLayoutReflow } from "../modules/panels/existingLayoutReflow";
-import { formatDisplayAngleDeg } from "../roof/angleDisplay";
 import CompanySpacingDefaultsDialog from "../modules/advanced/CompanySpacingDefaultsDialog";
 import { withEffectiveAdvancedThermalLimits } from "../modules/advanced/advancedThermalDefaults";
 import { buildCommittedRoofStatsByRoof } from "@/lib/planning-core/overview";
@@ -780,9 +780,7 @@ export default function ModulesPanel() {
 
                 const azView = az;
                 const azShort = azView != null ? Math.round(azView * 100) / 100 : undefined;
-                const geometricOrientation = rowKind === "flat"
-                  ? resolveRoofGeometricOrientationDeg(l.points, mpp ?? 0)
-                  : undefined;
+                const orientationLabel = formatRoofRowOrientation(rowKind, azShort);
 
                 const src = l.source;
                 const srcBadge =
@@ -924,12 +922,10 @@ export default function ModulesPanel() {
                           </div>
                         ) : rowKind === "flat" ? (
                           <div
-                            title="Geometrische Dachausrichtung"
+                            title="Flachdach-Ausrichtung: 0°"
                             className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums"
                           >
-                            {geometricOrientation == null
-                              ? "—"
-                              : formatDisplayAngleDeg(geometricOrientation)}
+                            {orientationLabel}
                           </div>
                         ) : step === "building" ? (
                           <button
@@ -939,15 +935,11 @@ export default function ModulesPanel() {
                             aria-label={`Ausrichtung für D${i + 1} bearbeiten`}
                             className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums transition hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                           >
-                            {azShort != null
-                              ? `${roofAzimuthCardinal(azShort)} · ${azShort}°`
-                              : "Festlegen"}
+                            {orientationLabel}
                           </button>
                         ) : (
                           <div className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums">
-                            {azShort != null
-                              ? `${roofAzimuthCardinal(azShort)} · ${azShort}°`
-                              : "Festlegen"}
+                            {orientationLabel}
                           </div>
                         )}
                       </div>

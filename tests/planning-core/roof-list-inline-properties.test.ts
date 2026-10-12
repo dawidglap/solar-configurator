@@ -44,6 +44,8 @@ test("flat roofs lock slope while direction keeps presets and custom mode", () =
   assert.ok(source.includes("ROOF_DIRECTION_CHOICES.map"));
   assert.ok(source.includes('<option value="custom">Benutzerdefiniert…</option>'));
   assert.ok(source.includes("normalizeRoofAzimuthDeg(raw)"));
+  assert.ok(roofListSource.includes("formatRoofRowOrientation(rowKind, azShort)"));
+  assert.ok(roofListSource.includes('title="Flachdach-Ausrichtung: 0°"'));
 });
 
 test("large duplicate slope and direction control is not rendered", () => {
@@ -76,9 +78,9 @@ test("flat, pitched and multiple roofs use the same canonical row values in both
   assert.equal(roofListSource.match(/<RoofAreaInfo/g)?.length, 1);
   assert.ok(roofListSource.includes('const tilt = rowKind === "flat"'));
   assert.ok(roofListSource.includes("resolveRoofFallAzimuth(l)"));
-  assert.ok(roofListSource.includes("resolveRoofGeometricOrientationDeg(l.points"));
+  assert.equal(roofListSource.includes("resolveRoofGeometricOrientationDeg(l.points"), false);
   assert.ok(roofListSource.includes("{tiltShort != null ? `${tiltShort}°` : \"—\"}"));
-  assert.ok(roofListSource.includes("`${roofAzimuthCardinal(azShort)} · ${azShort}°`"));
+  assert.ok(roofListSource.includes("{orientationLabel}"));
 });
 
 test("module planning keeps roof selection but not building-only destructive actions", () => {

@@ -21,6 +21,17 @@ export function formatRoofAzimuth(value: number): string {
   return `${Math.round(normalized)}° ${roofAzimuthCardinal(normalized)}`;
 }
 
+/** Presentation-only value for the compact Dachflächen row. */
+export function formatRoofRowOrientation(
+  roofKind: "pitched" | "flat" | "green",
+  value: number | undefined,
+): string {
+  if (roofKind === "flat") return "0°";
+  return value == null
+    ? "Festlegen"
+    : `${roofAzimuthCardinal(value)} · ${value}°`;
+}
+
 /** Converts the imported Sonnendach direction to the roof's downhill direction. */
 export function sonnendachAzimuthToRoofFallDirection(value: number): number {
   return normalizeRoofAzimuthDeg(value + 180);

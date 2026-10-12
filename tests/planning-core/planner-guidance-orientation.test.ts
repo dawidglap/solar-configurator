@@ -8,6 +8,7 @@ import {
 } from "../../src/components_v2/layout/toolHotkeyPolicy";
 import {
   formatRoofAzimuth,
+  formatRoofRowOrientation,
   normalizeRoofAzimuthDeg,
   resolveRoofFallAzimuth,
   roofAzimuthCardinal,
@@ -40,6 +41,18 @@ test("Sonnendach normal is converted once to the geographic roof fall direction"
   assert.equal(sonnendachAzimuthToRoofFallDirection(256), 76);
   assert.equal(resolveRoofFallAzimuth({ azimuthDeg: 256, source: "sonnendach" }), 76);
   assert.equal(resolveRoofFallAzimuth({ azimuthDeg: 76, source: "manual" }), 76);
+});
+
+test("flat-roof row orientation is presentation-only 0° while pitched output is unchanged", () => {
+  assert.equal(formatRoofRowOrientation("flat", 2), "0°");
+  assert.equal(formatRoofRowOrientation("flat", 17), "0°");
+  assert.equal(formatRoofRowOrientation("pitched", 256), "W · 256°");
+  assert.equal(formatRoofRowOrientation("pitched", 76), "E · 76°");
+
+  const storedOrientation = 17;
+  assert.equal(formatRoofRowOrientation("flat", storedOrientation), "0°");
+  assert.equal(formatRoofRowOrientation("pitched", storedOrientation), "N · 17°");
+  assert.equal(storedOrientation, 17);
 });
 
 test("contextual help and compact roof-list property controls remain visible in source", () => {

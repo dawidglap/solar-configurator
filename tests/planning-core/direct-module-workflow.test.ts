@@ -457,15 +457,16 @@ test("customer UI is mode-explicit, direct and free of obsolete full-layout cont
   assert.ok(toolbar.includes("Zuerst Süd oder Ost-West wählen"));
 });
 
-test("flat roof list keeps geometric orientation while building dimensions omit the duplicate", () => {
+test("flat roof list shows presentation-only 0° while geometry and module direction remain independent", () => {
   const modulesPanel = readFileSync(new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url), "utf8");
   const dimensions = readFileSync(new URL("../../src/components_v2/panels/RoofDimensionsControl.tsx", import.meta.url), "utf8");
   const compass = readFileSync(new URL("../../src/components_v2/compassHUD.tsx", import.meta.url), "utf8");
   const moduleOrientation = readFileSync(new URL("../../src/components_v2/modules/moduleOrientation.ts", import.meta.url), "utf8");
-  assert.ok(modulesPanel.includes("resolveRoofGeometricOrientationDeg(l.points"));
+  assert.equal(modulesPanel.includes("resolveRoofGeometricOrientationDeg(l.points"), false);
   assert.equal(dimensions.includes("resolveRoofGeometricOrientationDeg(roof.points"), false);
   assert.ok(modulesPanel.includes('rowKind === "flat"'));
-  assert.ok(modulesPanel.includes('title="Geometrische Dachausrichtung"'));
+  assert.ok(modulesPanel.includes("formatRoofRowOrientation(rowKind, azShort)"));
+  assert.ok(modulesPanel.includes('title="Flachdach-Ausrichtung: 0°"'));
   assert.ok(compass.includes("resolveModuleOrientationDirections"));
   assert.ok(moduleOrientation.includes('resolveInitialSonnendachRoofType(roof) === "flat"'));
   assert.ok(moduleOrientation.includes("isFlat\n    ? primaryModuleAzimuthDeg"));
