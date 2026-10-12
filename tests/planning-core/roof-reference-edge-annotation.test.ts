@@ -57,7 +57,7 @@ test("Dachtyp changes only the semantic terminology without duplicate labels", (
   assert.equal(flat.includes("FIRST"), false);
 });
 
-test("semantic copy uses one high-contrast module annotation while only its edge gets the accent", () => {
+test("semantic copy uses the same high-contrast edge pills in building and module planning", () => {
   const annotations = readFileSync(
     new URL("../../src/components_v2/canvas/RoofAnnotationsLayer.tsx", import.meta.url),
     "utf8",
@@ -68,16 +68,16 @@ test("semantic copy uses one high-contrast module annotation while only its edge
   );
 
   assert.match(annotations, /const displayLabel = edge\.label/);
-  assert.match(annotations, /useModuleEdgePills = step === "modules" && !selectedZone/);
+  assert.match(annotations, /useSharedEdgePills = !selectedZone/);
   assert.match(annotations, /fill="#FFFFFF"/);
   assert.match(annotations, /fill="#000000"/);
-  assert.match(annotations, /MODULE_EDGE_PILL_SCALE = 1\.25/);
-  assert.match(annotations, /MODULE_EDGE_PILL_FONT_SIZE = 10\.5 \* MODULE_EDGE_PILL_SCALE/);
-  assert.match(annotations, /MODULE_EDGE_PILL_MIN_WIDTH = 84 \* MODULE_EDGE_PILL_SCALE/);
-  assert.match(annotations, /MODULE_EDGE_PILL_HEIGHT = 24 \* MODULE_EDGE_PILL_SCALE/);
-  assert.match(annotations, /fontSize = \(useModuleEdgePills \? MODULE_EDGE_PILL_FONT_SIZE : 8\.5\)/);
+  assert.match(annotations, /EDGE_PILL_SCALE = 1\.25/);
+  assert.match(annotations, /EDGE_PILL_FONT_SIZE = 10\.5 \* EDGE_PILL_SCALE/);
+  assert.match(annotations, /EDGE_PILL_MIN_WIDTH = 84 \* EDGE_PILL_SCALE/);
+  assert.match(annotations, /EDGE_PILL_HEIGHT = 24 \* EDGE_PILL_SCALE/);
+  assert.match(annotations, /fontSize = \(useSharedEdgePills \? EDGE_PILL_FONT_SIZE : 8\.5\)/);
   assert.match(annotations, /fontStyle="600"/);
-  assert.match(annotations, /cornerRadius=\{MODULE_EDGE_PILL_RADIUS \* inverseScale\}/);
+  assert.match(annotations, /cornerRadius=\{EDGE_PILL_RADIUS \* inverseScale\}/);
   assert.doesNotMatch(annotations, /text="GEFÄLLE"/);
   assert.match(annotations, /showRoofFallArrow =\s*step === "building" &&\s*roofKind === "pitched"/);
   assert.match(annotations, /showRoofFallArrow && \(\s*<RoofAzimuthArrows/);
@@ -89,7 +89,7 @@ test("semantic copy uses one high-contrast module annotation while only its edge
   assert.doesNotMatch(annotations, /edge\.lengthM\.toFixed\(2\)\} m`/);
 });
 
-test("module edge pills remain upright after arbitrary viewport rotations", () => {
+test("shared edge pills remain upright after arbitrary viewport rotations", () => {
   for (const canvasRotationDeg of [24, 73, 166, 250]) {
     for (const edgeAngleDeg of [0, 37, 90, 143, 270]) {
       const localRotation = resolveScreenReadableAnnotationRotation(

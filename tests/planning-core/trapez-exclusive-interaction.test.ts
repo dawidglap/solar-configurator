@@ -103,7 +103,11 @@ test('the whole pill consumes pointerdown and click before toggling mode', async
   let toggles = 0;
   const tree = RoofHudOverlay({
     selectedRoof: roof('d1'),
+    roofKind: 'pitched',
     view: { scale: 1, offsetX: 0, offsetY: 0 },
+    canvasRotationDeg: 0,
+    imageSize: { width: 100, height: 100 },
+    viewportSize: { width: 500, height: 500 },
     shapeMode: 'normal',
     onToggleShape: () => { toggles += 1; },
   }) as unknown as {

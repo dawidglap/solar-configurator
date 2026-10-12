@@ -1961,7 +1961,18 @@ export default function CanvasStage() {
 
       <RoofHudOverlay
         selectedRoof={selectedRoof}
+        roofKind={selectedRoof?.roofKind ?? (
+          selectedRoofPlanning?.status === "supported-advanced"
+            ? selectedRoofPlanning.config.surface.kind
+            : "pitched"
+        )}
         view={view}
+        canvasRotationDeg={rotateDeg}
+        imageSize={{
+          width: img?.naturalWidth ?? snap.width ?? 0,
+          height: img?.naturalHeight ?? snap.height ?? 0,
+        }}
+        viewportSize={{ width: size.w, height: size.h }}
         shapeMode={shapeMode}
         onToggleShape={() => {
           const nextShapeMode = shapeMode === "normal" ? "trapezio" : "normal";

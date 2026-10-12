@@ -2,31 +2,31 @@
 "use client";
 
 import React from "react";
-
-type Pt = { x: number; y: number };
-type Roof = {
-  id: string;
-  points: Pt[];
-  azimuthDeg?: number;
-  fallAzimuthDeg?: number;
-  tiltDeg?: number;
-  source?: "manual" | "sonnendach";
-} | null;
+import type { RoofArea } from "@/types/planner";
+import { resolveRoofHudPosition } from "./roofHudPosition";
 
 export default function RoofHudOverlay({
   selectedRoof,
+  roofKind,
   view,
+  canvasRotationDeg,
+  imageSize,
+  viewportSize,
   shapeMode,
   onToggleShape,
   canToggleShape = true,
 }: {
-  selectedRoof: Roof;
+  selectedRoof: RoofArea | null;
+  roofKind: "pitched" | "flat" | "green";
   view: {
     scale?: number;
     fitScale?: number;
     offsetX?: number;
     offsetY?: number;
   };
+  canvasRotationDeg: number;
+  imageSize: { width: number; height: number };
+  viewportSize: { width: number; height: number };
   shapeMode: "normal" | "trapezio";
   onToggleShape: () => void;
   canToggleShape?: boolean;
@@ -34,23 +34,19 @@ export default function RoofHudOverlay({
   if (!selectedRoof) return null;
 
   const s = view.scale || view.fitScale || 1;
-  const ox = view.offsetX || 0;
-  const oy = view.offsetY || 0;
+  const position = resolveRoofHudPosition({
+    points: selectedRoof.points,
+    roofKind,
+    referenceEdgeIndex: selectedRoof.referenceEdgeIndex,
+    scale: s,
+    offsetX: view.offsetX || 0,
+    offsetY: view.offsetY || 0,
+    canvasRotationDeg,
+    imageSize,
+    viewportSize,
+  });
+  if (!position) return null;
 
-  // bbox in coordinate immagine (per posizionare il toggle)
-  let minX = Infinity,
-    maxX = -Infinity,
-    minY = Infinity;
-  for (const p of selectedRoof.points) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-  }
-  const midXImg = (minX + maxX) / 2;
-
-  // posizione sullo Stage (HUD fisso in screen-space)
-  const left = ox + midXImg * s;
-  const top = Math.max(8, oy + minY * s - 36);
   return (
     <>
       {/* Toggle modalità forma */}
@@ -60,6 +56,7 @@ export default function RoofHudOverlay({
           aria-label="Formmodus umschalten"
           aria-pressed={shapeMode === "trapezio"}
           data-planner-interactive-control="roof-shape-mode"
+          data-placement={position.placement}
           onPointerDown={(event) => {
             event.stopPropagation();
           }}
@@ -69,7 +66,7 @@ export default function RoofHudOverlay({
             onToggleShape();
           }}
           className="pointer-events-auto absolute z-[600] -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-200 bg-white/90 px-2 py-0.5 text-[11px] text-black shadow hover:bg-white"
-          style={{ left, top, touchAction: "manipulation" }}
+          style={{ left: position.left, top: position.top, touchAction: "manipulation" }}
           title="Formmodus umschalten"
         >
           {shapeMode === "normal" ? "Normal" : "Trapez"}
