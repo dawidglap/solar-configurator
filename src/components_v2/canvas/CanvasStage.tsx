@@ -114,6 +114,11 @@ import {
 } from "./buildingRevealEvent";
 import LocationMarkerKonva from "./LocationMarkerKonva";
 import { shouldShowLocationMarker } from "./locationMarkerModel";
+import ReferenceEdgeReminderToast from "./ReferenceEdgeReminderToast";
+import {
+  isPlannerMapReady,
+  REFERENCE_EDGE_REMINDER_DURATION_MS,
+} from "./referenceEdgeReminder";
 
 const BUILDING_REVEAL_DURATION_MS = 1100;
 
@@ -249,6 +254,7 @@ export default function CanvasStage() {
 
   const snap = usePlannerV2Store((s) => s.snapshot);
   const view = usePlannerV2Store((s) => s.view);
+  const hydrationReady = usePlannerV2Store((s) => s.hydrationReady);
   const setView = usePlannerV2Store((s) => s.setView);
   const tool = usePlannerV2Store((s) => s.tool);
   const layers = usePlannerV2Store((s) => s.layers);
@@ -305,6 +311,33 @@ export default function CanvasStage() {
     size,
     onCoverComputed: handleCoverComputed,
   });
+  const referenceEdgeReminderShownRef = useRef(false);
+  const [referenceEdgeReminderVisible, setReferenceEdgeReminderVisible] = useState(false);
+  const plannerMapReady = isPlannerMapReady({
+    hydrationReady,
+    step,
+    imageWidth: img?.naturalWidth ?? 0,
+    imageHeight: img?.naturalHeight ?? 0,
+    viewportWidth: size.w,
+    viewportHeight: size.h,
+    fitScale: view.fitScale,
+    scale: view.scale,
+    offsetX: view.offsetX,
+    offsetY: view.offsetY,
+  });
+  useEffect(() => {
+    if (!plannerMapReady || referenceEdgeReminderShownRef.current) return;
+    referenceEdgeReminderShownRef.current = true;
+    setReferenceEdgeReminderVisible(true);
+  }, [plannerMapReady]);
+  useEffect(() => {
+    if (!referenceEdgeReminderVisible) return;
+    const timer = window.setTimeout(
+      () => setReferenceEdgeReminderVisible(false),
+      REFERENCE_EDGE_REMINDER_DURATION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [referenceEdgeReminderVisible]);
 
   // UI states
   const [draggingVertex, setDraggingVertex] = useState(false);
@@ -1280,6 +1313,7 @@ export default function CanvasStage() {
 
       <OverlayProgressStepper />
       <OverlayTopToolbar />
+      <ReferenceEdgeReminderToast visible={referenceEdgeReminderVisible} />
 
       <ScaleIndicator />
 
