@@ -146,6 +146,15 @@ export function shouldIgnorePlannerHotkeyTarget(
   );
 }
 
+/** Open overlays own Escape and other keyboard interaction before the canvas. */
+export function hasOpenPlannerKeyboardOverlay(root: ParentNode): boolean {
+  return Boolean(
+    root.querySelector(
+      '[role="dialog"],dialog[open],[aria-modal="true"],[aria-expanded="true"],[role="listbox"],[role="menu"]',
+    ),
+  );
+}
+
 export function resolveEscapeAction(input: {
   ignoredTarget?: boolean;
   hasDraft: boolean;

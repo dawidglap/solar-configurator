@@ -38,11 +38,10 @@ type Props = {
   stageRef: React.RefObject<Konva.Stage | null>;
   toImgCoords: (x: number, y: number) => Pt;
   draftChannel: TransientFillDraftChannel;
-  cancelVersion?: number;
 };
 
 /* -------------------------------- component -------------------------------- */
-export default function FillAreaController({ stageRef, toImgCoords, draftChannel, cancelVersion = 0 }: Props) {
+export default function FillAreaController({ stageRef, toImgCoords, draftChannel }: Props) {
   const step = usePlannerV2Store((s) => s.step);
   const tool = usePlannerV2Store((s) => s.tool);
   const layers = usePlannerV2Store((s) => s.layers);
@@ -302,8 +301,6 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
         !cancelGesture()
       ) return;
       event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
     };
 
     container.addEventListener('pointerdown', onPointerDown, { capture: true });
@@ -326,7 +323,7 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
       window.removeEventListener('blur', cancelGesture);
       cancelGesture();
     };
-  }, [stageRef, step, tool, layers, selectedId, toImgCoords, draftChannel, cancelVersion]);
+  }, [stageRef, step, tool, layers, selectedId, toImgCoords, draftChannel]);
 
   return null;
 }

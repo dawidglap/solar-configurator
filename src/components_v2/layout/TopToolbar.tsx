@@ -32,6 +32,7 @@ import {
 import {
   beginManualPlacement,
   endManualPlacement,
+  exitManualPlacementToSelect,
   useManualPlacementSession,
 } from "../modules/manualPlacementSession";
 import {
@@ -503,6 +504,10 @@ export default function TopToolbar() {
 
   /* ── Nessun auto-switch: il tool cambia solo se lo step corrente lo consente ── */
   function go(t: any) {
+    if (t === "select") {
+      exitManualPlacementToSelect(setTool);
+      return;
+    }
     if (manualPlacementSession) endManualPlacement();
     setTool(t);
   }

@@ -42,10 +42,7 @@ import {
   buildStandardSurfacePlanning,
   resolveStandardTiltInput,
 } from "./advanced/advancedPlanningApplication";
-import {
-  exitManualPlacementToSelect,
-  useManualPlacementSession,
-} from "./manualPlacementSession";
+import { useManualPlacementSession } from "./manualPlacementSession";
 
 type Props = {
   imageWidth: number;
@@ -81,7 +78,6 @@ export default function ManualPlacementLayer({
   const setSelectedPanels = usePlannerV2Store((state) => state.setSelectedPanels);
   const setSelectedPanel = usePlannerV2Store((state) => state.setSelectedPanel);
   const setModules = usePlannerV2Store((state) => state.setModules);
-  const setTool = usePlannerV2Store((state) => state.setTool);
   const stageScale = usePlannerV2Store((state) => state.view.scale || state.view.fitScale || 1);
   const [candidate, setCandidate] = React.useState<ManualPlacementCandidate | null>(null);
   const latestPointer = React.useRef<{ x: number; y: number; disableSnap: boolean } | null>(null);
@@ -184,6 +180,10 @@ export default function ManualPlacementLayer({
   }, [computeAt]);
 
   React.useEffect(() => {
+    if (frameRef.current != null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
     setCandidate(null);
     latestPointer.current = null;
   }, [session?.roofId, session?.kind]);
@@ -191,25 +191,6 @@ export default function ManualPlacementLayer({
   React.useEffect(() => () => {
     if (frameRef.current != null) cancelAnimationFrame(frameRef.current);
   }, []);
-
-  React.useEffect(() => {
-    if (!session) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (frameRef.current != null) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
-      latestPointer.current = null;
-      setCandidate(null);
-      exitManualPlacementToSelect(setTool);
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-    };
-    window.addEventListener("keydown", onKey, { capture: true });
-    return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [session, setTool]);
 
   if (!session || !roof) return null;
 

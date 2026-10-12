@@ -96,11 +96,9 @@ import {
   findRoofAtPoint,
   isDrawingInteractionTool,
   isPrimaryPointerButton,
-  resolveEscapeAction,
   resolveInteractionCursor,
   resolvePlannerInteractionMode,
   resolveRoofLocalPointerAction,
-  shouldIgnorePlannerHotkeyTarget,
 } from "./interactionPolicy";
 import {
   computeBuildingRevealTarget,
@@ -405,7 +403,6 @@ export default function CanvasStage() {
   // Il draft visuale non appartiene al planner store né allo state di CanvasStage.
   const fillDraftChannel = useMemo(() => createTransientFillDraftChannel(), []);
   useEffect(() => () => fillDraftChannel.destroy(), [fillDraftChannel]);
-  const [fillCancelVersion, setFillCancelVersion] = useState(0);
 
   const selectedRoof = useMemo(
     () => layers.find((l) => l.id === selectedId) ?? null,
@@ -1075,8 +1072,6 @@ export default function CanvasStage() {
     reservedRectDraft,
     onStagePointerDown,
     onStagePointerUp,
-    hasDraft: hasDrawingDraft,
-    cancelDraft: cancelDrawingDraft,
   } = useDrawingTools({
     tool: drawingEnabled ? tool : "select",
     layers,
@@ -1157,61 +1152,6 @@ export default function CanvasStage() {
       endRightPan();
     };
   }, [img, size.w, size.h, beginRightPan, moveRightPan, endRightPan, cancelBuildingReveal]);
-
-  // Un solo owner per ESC: draft, pannelli, zona, Schneefang, falda.
-  useEffect(() => {
-    type EscapeKeyboardEvent = KeyboardEvent & {
-      stopImmediatePropagation?: () => void;
-    };
-
-    const onEscape = (event: EscapeKeyboardEvent) => {
-      if (event.key !== "Escape") return;
-
-      const store = usePlannerV2Store.getState();
-      const action = resolveEscapeAction({
-        ignoredTarget:
-          shouldIgnorePlannerHotkeyTarget(event.target) ||
-          shouldIgnorePlannerHotkeyTarget(document.activeElement),
-        hasDraft: hasDrawingDraft || Boolean(fillDraftChannel.getSnapshot()),
-        selectedPanelCount: store.selectedPanelIds?.length ?? 0,
-        hasSelectedZone: Boolean(store.selectedZoneId),
-        hasSelectedSnowGuard: Boolean(store.selectedSnowGuardId),
-        hasSelectedRoof: Boolean(store.selectedId),
-      });
-
-      switch (action) {
-        case "cancel-draft":
-          cancelDrawingDraft();
-          if (fillDraftChannel.getSnapshot()) {
-            setFillCancelVersion((version) => version + 1);
-            fillDraftChannel.clear();
-          }
-          break;
-        case "clear-panels":
-          store.clearPanelSelection?.();
-          break;
-        case "clear-zone":
-          store.setSelectedZone?.(undefined);
-          break;
-        case "clear-snow-guard":
-          store.setSelectedSnowGuard?.(undefined);
-          break;
-        case "clear-roof":
-          store.select?.(undefined);
-          break;
-        case "none":
-          return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-    };
-
-    window.addEventListener("keydown", onEscape, { capture: true });
-    return () =>
-      window.removeEventListener("keydown", onEscape, { capture: true });
-  }, [hasDrawingDraft, cancelDrawingDraft, fillDraftChannel]);
 
   // stile tetti
   const stroke = plannerTheme.roofStroke;
@@ -1794,7 +1734,6 @@ export default function CanvasStage() {
           stageRef={stageRef}
           toImgCoords={toImgCoords}
           draftChannel={fillDraftChannel}
-          cancelVersion={fillCancelVersion}
         />
       )}
       <ToolHotkeys />

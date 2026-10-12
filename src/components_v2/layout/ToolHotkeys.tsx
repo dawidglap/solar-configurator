@@ -4,7 +4,10 @@
 import { useCallback, useEffect } from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import { history } from '../state/history';
-import { shouldIgnorePlannerHotkeyTarget } from '../canvas/interactionPolicy';
+import {
+  hasOpenPlannerKeyboardOverlay,
+  shouldIgnorePlannerHotkeyTarget,
+} from '../canvas/interactionPolicy';
 import { resolvePlannerStepForTool, resolvePlannerToolHotkey } from './toolHotkeyPolicy';
 import type { Tool } from '@/types/planner';
 import { exitManualPlacementToSelect } from '../modules/manualPlacementSession';
@@ -39,6 +42,7 @@ export default function ToolHotkeys() {
         shouldIgnorePlannerHotkeyTarget(document.activeElement)
       ) return;
       const k = e.key?.toLowerCase();
+      if ((k === 'escape' || k === 'a') && hasOpenPlannerKeyboardOverlay(document)) return;
       const meta = e.metaKey;
       const ctrl = e.ctrlKey;
       const shift = e.shiftKey;
@@ -54,8 +58,11 @@ export default function ToolHotkeys() {
 
       if (meta || ctrl || e.altKey) return;
 
+      // Escape and A share the canonical Auswählen action. A tool change also
+      // drops transient drawing/fill state without committing it.
+      if (k === 'escape') { applyTool('select', e); return; }
+
       // TOOLS — sempre disponibili
-      if (k === 'escape') return; // CanvasStage gestisce ESC con una sola priorità.
       if (k === 'f') {
         e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
         document.getElementById('planner-fill-layout')?.click();
@@ -72,8 +79,9 @@ export default function ToolHotkeys() {
       }
     };
 
-    window.addEventListener('keydown', onKey, { capture: true });
-    return () => window.removeEventListener('keydown', onKey, true);
+    // Focused controls and overlays get the first chance to consume Escape.
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [applyTool, convertSelectedRoofToModules]);
 
   return null;

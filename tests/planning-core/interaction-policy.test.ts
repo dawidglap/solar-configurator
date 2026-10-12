@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { Tool } from "../../src/types/planner";
 import {
+  hasOpenPlannerKeyboardOverlay,
   createRoofSwitchGestureLatch,
   findRoofAtPoint,
   isDrawingInteractionTool,
@@ -314,6 +315,18 @@ test("ESC is ignored for form controls and editable content", () => {
     }),
     "none",
   );
+});
+
+test("open dialogs, menus, and comboboxes retain keyboard ownership", () => {
+  const openOverlayRoot = {
+    querySelector: () => ({ role: "dialog" }),
+  } as unknown as ParentNode;
+  const emptyRoot = {
+    querySelector: () => null,
+  } as unknown as ParentNode;
+
+  assert.equal(hasOpenPlannerKeyboardOverlay(openOverlayRoot), true);
+  assert.equal(hasOpenPlannerKeyboardOverlay(emptyRoot), false);
 });
 
 test("changing away from a drawing tool cancels its old draft", () => {

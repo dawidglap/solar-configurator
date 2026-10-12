@@ -87,12 +87,12 @@ test("single-placement Escape owns cleanup without committing or clearing select
     "utf8",
   );
 
-  assert.match(layer, /exitManualPlacementToSelect\(setTool\)/);
   assert.match(layer, /setCandidate\(null\)/);
-  assert.match(layer, /stopImmediatePropagation\(\)/);
   assert.match(layer, /Esc → Auswählen/);
   assert.doesNotMatch(layer, /Esc zum Beenden/);
+  assert.doesNotMatch(layer, /addEventListener\("keydown"/);
   assert.match(hotkeys, /t === 'select'\) exitManualPlacementToSelect\(setTool\)/);
+  assert.match(hotkeys, /k === 'escape'\) \{ applyTool\('select', e\)/);
 });
 
 test("Standard manual add creates one correctly oriented candidate and rejects margin/overlap", () => {
