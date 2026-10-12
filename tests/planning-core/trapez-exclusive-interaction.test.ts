@@ -82,6 +82,64 @@ test('Trapez uses one final geometry layer and keeps owner-roof obstacles select
   assert.match(sidebar, /inert=\{rowLocked \? true : undefined\}/);
 });
 
+test('the DOM Normal/Trapez pill stays above Konva and consumes the complete gesture', () => {
+  const canvas = readFileSync('src/components_v2/canvas/CanvasStage.tsx', 'utf8');
+  const hud = readFileSync('src/components_v2/canvas/RoofHudOverlay.tsx', 'utf8');
+
+  assert.match(canvas, /SELECTION_UI_CANVAS_Z_INDEX = 190/);
+  assert.match(canvas, /if \(target === st \|\| targetName === "bg-catcher"\) \{\s*store\.select\?\.\(undefined\)/);
+  assert.match(hud, /type="button"/);
+  assert.match(hud, /data-planner-interactive-control="roof-shape-mode"/);
+  assert.match(hud, /onPointerDown=\{\(event\) => \{\s*event\.stopPropagation\(\)/);
+  assert.match(hud, /event\.preventDefault\(\);\s*event\.stopPropagation\(\);\s*onToggleShape\(\)/);
+  assert.match(hud, /pointer-events-auto absolute z-\[600\]/);
+  assert.match(hud, /aria-pressed=\{shapeMode === "trapezio"\}/);
+});
+
+test('the whole pill consumes pointerdown and click before toggling mode', async () => {
+  const { default: RoofHudOverlay } = await import(
+    '../../src/components_v2/canvas/RoofHudOverlay'
+  );
+  let toggles = 0;
+  const tree = RoofHudOverlay({
+    selectedRoof: roof('d1'),
+    view: { scale: 1, offsetX: 0, offsetY: 0 },
+    shapeMode: 'normal',
+    onToggleShape: () => { toggles += 1; },
+  }) as unknown as {
+    props: {
+      children: {
+        props: {
+          children: string;
+          'aria-pressed': boolean;
+          onPointerDown: (event: { stopPropagation: () => void }) => void;
+          onClick: (event: {
+            preventDefault: () => void;
+            stopPropagation: () => void;
+          }) => void;
+        };
+      };
+    };
+  };
+  const button = tree.props.children;
+  let pointerStops = 0;
+  let clickStops = 0;
+  let prevents = 0;
+
+  button.props.onPointerDown({ stopPropagation: () => { pointerStops += 1; } });
+  button.props.onClick({
+    preventDefault: () => { prevents += 1; },
+    stopPropagation: () => { clickStops += 1; },
+  });
+
+  assert.equal(pointerStops, 1);
+  assert.equal(clickStops, 1);
+  assert.equal(prevents, 1);
+  assert.equal(toggles, 1);
+  assert.equal(button.props.children, 'Normal');
+  assert.equal(button.props['aria-pressed'], false);
+});
+
 test('roof and obstacle vertex commits are undoable without resetting Trapez geometry', async () => {
   const { usePlannerV2Store } = await import(
     '../../src/components_v2/state/plannerV2Store'

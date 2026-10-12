@@ -56,9 +56,20 @@ export default function RoofHudOverlay({
       {/* Toggle modalità forma */}
       {canToggleShape && (
         <button
-          onClick={onToggleShape}
-          className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 text-black rounded-full border border-neutral-200 bg-white/90 px-2 py-0.5 text-[11px] shadow hover:bg-white"
-          style={{ left, top }}
+          type="button"
+          aria-label="Formmodus umschalten"
+          aria-pressed={shapeMode === "trapezio"}
+          data-planner-interactive-control="roof-shape-mode"
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onToggleShape();
+          }}
+          className="pointer-events-auto absolute z-[600] -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-200 bg-white/90 px-2 py-0.5 text-[11px] text-black shadow hover:bg-white"
+          style={{ left, top, touchAction: "manipulation" }}
           title="Formmodus umschalten"
         >
           {shapeMode === "normal" ? "Normal" : "Trapez"}
