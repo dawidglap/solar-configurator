@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
+import { mergeCanonicalSnowProtectionCommercialItem } from "@/lib/planning/snowProtectionCommercial";
 
 export const runtime = "nodejs";
 
@@ -706,6 +707,8 @@ function buildDefaultPartsItems(doc: any, catalogItemsRaw: any[]) {
       })
     );
   }
+
+  defaults.push(...mergeCanonicalSnowProtectionCommercialItem([], items, doc));
 
   /* ---------------------------- DC electrical ----------------------------- */
   const dcElectrical = findFirstMatchingItem(items, [

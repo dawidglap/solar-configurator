@@ -1577,14 +1577,28 @@ export default function CanvasStage() {
                       })
                     : [];
                   if (strip.length !== 4) return null;
+                  const rail = (offset: number) => [
+                    strip[0].x + (strip[3].x - strip[0].x) * offset,
+                    strip[0].y + (strip[3].y - strip[0].y) * offset,
+                    strip[1].x + (strip[2].x - strip[1].x) * offset,
+                    strip[1].y + (strip[2].y - strip[1].y) * offset,
+                  ];
                   return (
                     <Group key={sg.id}>
                       <Line
                         points={strip.flatMap((point) => [point.x, point.y])}
                         closed
-                        fill={isSel ? "rgba(64, 217, 200, 0.28)" : plannerTheme.primarySoft}
-                        stroke={isSel ? plannerTheme.panelSelected : plannerTheme.primary}
-                        strokeWidth={isSel ? 1.8 : 1}
+                        fillLinearGradientStartPoint={strip[0]}
+                        fillLinearGradientEndPoint={strip[3]}
+                        fillLinearGradientColorStops={[
+                          0, "rgba(71, 85, 105, 0.96)",
+                          0.18, "rgba(203, 213, 225, 0.98)",
+                          0.48, "rgba(248, 250, 252, 0.98)",
+                          0.72, "rgba(148, 163, 184, 0.98)",
+                          1, "rgba(51, 65, 85, 0.96)",
+                        ]}
+                        stroke={isSel ? plannerTheme.panelSelected : "#475569"}
+                        strokeWidth={isSel ? 1.8 : 0.8}
                         lineJoin="miter"
                         listening={!drawingCapturesPointer && !exclusiveTrapez}
                         onMouseDown={(event) => {
@@ -1613,6 +1627,20 @@ export default function CanvasStage() {
                           if (!isPrimaryPointerButton(e?.evt?.button)) return;
                           setSelectedSnowGuard(sg.id);
                         }}
+                      />
+                      <Line
+                        points={rail(0.28)}
+                        stroke="rgba(248, 250, 252, 0.95)"
+                        strokeWidth={0.55}
+                        listening={false}
+                        perfectDrawEnabled={false}
+                      />
+                      <Line
+                        points={rail(0.72)}
+                        stroke="rgba(51, 65, 85, 0.9)"
+                        strokeWidth={0.55}
+                        listening={false}
+                        perfectDrawEnabled={false}
                       />
                       <Text
                         x={midX}

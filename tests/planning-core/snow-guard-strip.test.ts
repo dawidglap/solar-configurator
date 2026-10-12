@@ -136,6 +136,9 @@ test("planner Schneefang interaction is drag-to-commit and both preview and canv
   assert.doesNotMatch(drawingHook, /2 click/);
   assert.match(preview, /createButtEndedStripPolygon/);
   assert.match(canvas, /width: SNOW_GUARD_WIDTH_M \/ snap\.mppImage/);
+  assert.match(canvas, /fillLinearGradientColorStops/);
+  assert.match(canvas, /rgba\(203, 213, 225/);
+  assert.match(preview, /fillLinearGradientColorStops/);
 });
 
 test("top toolbar exposes the canonical Schneefang drawing tool beside the live summary", () => {
@@ -156,4 +159,17 @@ test("top toolbar exposes the canonical Schneefang drawing tool beside the live 
     toolbar,
     /totalSnowM\.toFixed\(1\)[\s\S]*totalSnowChf\.toFixed\(2\)/,
   );
+  assert.match(toolbar, /drawnSegments=\{drawnSnowSegments\}/);
+});
+
+test("Schneefang modal shows drawn segments read-only and adds them to its total", () => {
+  const dialog = readFileSync(
+    new URL("../../src/components_v2/SnowGuardCostDialog.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(dialog, /Gezeichnete Segmente/);
+  assert.match(dialog, /const totalM = manualTotalM \+ drawnTotalM/);
+  assert.match(dialog, /drawnSegments\.map/);
+  assert.doesNotMatch(dialog, /handleRemoveSegment\(segment\.id\)/);
 });

@@ -15,6 +15,7 @@ type Props = {
   onClose: () => void;
   onCommit: (segments: SnowSegment[]) => Promise<void>;
   segments: SnowSegment[];
+  drawnSegments?: readonly SnowSegment[];
   pricePerM: number;
 };
 
@@ -40,6 +41,7 @@ export function SnowGuardCostDialog({
   onClose,
   onCommit,
   segments,
+  drawnSegments = [],
   pricePerM,
 }: Props) {
   const [drafts, setDrafts] = useState<SegmentDraft[]>(() => createDrafts(segments));
@@ -194,7 +196,12 @@ export function SnowGuardCostDialog({
     setSubmitError("");
   };
 
-  const totalM = drafts.reduce((sum, draft) => sum + draft.lengthM, 0);
+  const manualTotalM = drafts.reduce((sum, draft) => sum + draft.lengthM, 0);
+  const drawnTotalM = drawnSegments.reduce(
+    (sum, segment) => sum + segment.lengthM,
+    0,
+  );
+  const totalM = manualTotalM + drawnTotalM;
   const totalChf = totalM * pricePerM;
 
   return createPortal(
@@ -211,7 +218,7 @@ export function SnowGuardCostDialog({
               Schneefang – Kalkulation
             </h2>
             <p className="mt-0.5 text-[11px] text-neutral-300">
-              Trage hier die laufenden Meter der Schneefang-Elemente ein.
+              Manuelle und gezeichnete Segmente werden gemeinsam berechnet.
             </p>
           </div>
           <button
@@ -232,6 +239,9 @@ export function SnowGuardCostDialog({
           </div>
 
           <div className="space-y-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+              Manuelle Segmente
+            </div>
             {drafts.length === 0 ? (
               <div className="rounded-md border border-dashed border-neutral-700/80 bg-neutral-900/60 px-3 py-2 text-[11px] text-neutral-300">
                 Noch keine Elemente hinzugefügt. Klicke auf{" "}
@@ -308,6 +318,44 @@ export function SnowGuardCostDialog({
           >
             + Segment hinzufügen
           </button>
+
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+              <span>Gezeichnete Segmente</span>
+              <span>{drawnTotalM.toFixed(1)} m</span>
+            </div>
+            {drawnSegments.length === 0 ? (
+              <div className="rounded-md border border-dashed border-neutral-700/80 px-3 py-2 text-[11px] text-neutral-400">
+                Noch keine Segmente auf der Dachfläche gezeichnet.
+              </div>
+            ) : (
+              drawnSegments.map((segment, index) => (
+                <div
+                  key={segment.id}
+                  className="flex items-center justify-between rounded-md border border-slate-600/70 bg-slate-800/70 px-3 py-2 text-[11px]"
+                >
+                  <div>
+                    <div className="font-medium text-slate-100">
+                      Gezeichnetes Segment {index + 1}
+                    </div>
+                    {segment.roofId ? (
+                      <div className="text-[10px] text-slate-400">
+                        Dachfläche {segment.roofId}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold text-slate-100">
+                      {segment.lengthM.toFixed(1)} m
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      {(segment.lengthM * pricePerM).toFixed(2)} CHF
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
         <div className="flex shrink-0 flex-col gap-3 border-t border-neutral-700/60 bg-neutral-900 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">

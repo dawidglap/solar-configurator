@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 import {
   deriveSnowProtectionSummaryFromPlanning,
@@ -8,6 +9,7 @@ import {
   summarizeSnowProtection,
   withSnowProtectionSummary,
 } from "../../src/lib/planning/snowProtectionSummary";
+import { mergeCanonicalSnowProtectionCommercialItem } from "../../src/lib/planning/snowProtectionCommercial";
 
 type Guard = {
   id: string;
@@ -33,6 +35,7 @@ function planningDocument(input: {
   mppImage?: number;
   view?: Record<string, number>;
   persistedSummary?: unknown;
+  snowProtection?: unknown;
 }) {
   return {
     summary: input.persistedSummary,
@@ -40,6 +43,7 @@ function planningDocument(input: {
       planner: {
         layers: (input.roofIds ?? []).map((id) => ({ id })),
         snowGuards: input.guards ?? [],
+        snowProtection: input.snowProtection,
         snapshot: { mppImage: input.mppImage },
         view: input.view,
       },
@@ -191,6 +195,90 @@ test("API planning resource exposes the CRM contract and replaces stale totals",
   });
 });
 
+test("API/Angebot summary exposes manual and drawn segments as one quantity", () => {
+  const stored = planningDocument({
+    guards: [
+      guard("drawn-22", "roof-a", { x: 0, y: 0 }, { x: 222, y: 0 }),
+      guard("drawn-6", "roof-a", { x: 0, y: 0 }, { x: 61, y: 0 }),
+    ],
+    roofIds: ["roof-a"],
+    mppImage: 0.1,
+    snowProtection: {
+      quantityMode: "manual",
+      manualSegments: [{ id: "manual-20", roofId: "roof-a", lengthM: 20 }],
+    },
+  });
+
+  assert.deepEqual(withSnowProtectionSummary(stored).summary.snowProtection, {
+    totalLengthM: 48.3,
+    byRoof: [{ roofId: "roof-a", lengthM: 48.3 }],
+  });
+});
+
+test("Angebot parts mapping uses the canonical Schneefang total and catalog product", () => {
+  const partsRoute = readFileSync(
+    new URL(
+      "../../src/app/api/plannings/[planningId]/parts-defaults/route.ts",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(partsRoute, /mergeCanonicalSnowProtectionCommercialItem\(\[\], items, doc\)/);
+});
+
+test("Angebot line is refreshed from 20 manual plus drawn geometry without duplicates", () => {
+  const planning = planningDocument({
+    guards: [
+      guard("drawn-22", "roof-a", { x: 0, y: 0 }, { x: 222, y: 0 }),
+      guard("drawn-6", "roof-a", { x: 0, y: 0 }, { x: 61, y: 0 }),
+    ],
+    roofIds: ["roof-a"],
+    mppImage: 0.1,
+    snowProtection: {
+      quantityMode: "manual",
+      manualSegments: [{ id: "manual-20", roofId: "roof-a", lengthM: 20 }],
+    },
+  });
+  const catalog = [{
+    _id: "snow-product",
+    category: "mounting",
+    name: "Schneefang",
+    unitLabel: "m",
+    priceNet: 10,
+    metadata: { plannerRole: "snow_protection" },
+  }];
+  const items = mergeCanonicalSnowProtectionCommercialItem(
+    [
+      { id: "other", beschreibung: "Other" },
+      {
+        id: "auto-snow-protection",
+        sourceCatalogItemId: "snow-product",
+        stk: 20,
+      },
+    ],
+    catalog,
+    planning,
+  );
+
+  assert.equal(items.filter((item) => item.id === "auto-snow-protection").length, 1);
+  assert.deepEqual(
+    items.find((item) => item.id === "auto-snow-protection"),
+    {
+      id: "auto-snow-protection",
+      kategorie: "Montage",
+      marke: "",
+      beschreibung: "Schneefang",
+      einzelpreis: 10,
+      stk: 48.3,
+      einheit: "m",
+      optional: false,
+      sourceCatalogItemId: "snow-product",
+      sourceCategory: "mounting",
+    },
+  );
+});
+
 test("guards whose roof no longer exists do not contribute to the planning summary", () => {
   const summary = summarizeSnowProtection({
     snowGuards: [
@@ -206,7 +294,7 @@ test("guards whose roof no longer exists do not contribute to the planning summa
   });
 });
 
-test("manual Kalkulation is an explicit override and is never added to geometry", () => {
+test("manual Kalkulation and map-drawn geometry are one additive commercial total", () => {
   const summary = resolveSnowProtectionSummary({
     snowProtection: {
       quantityMode: "manual",
@@ -223,8 +311,34 @@ test("manual Kalkulation is an explicit override and is never added to geometry"
   });
 
   assert.deepEqual(summary, {
-    totalLengthM: 120,
-    byRoof: [{ roofId: "roof-d1", lengthM: 120 }],
+    totalLengthM: 125,
+    byRoof: [{ roofId: "roof-d1", lengthM: 125 }],
+  });
+});
+
+test("20 m manual plus 22.2 m and 6.1 m drawn stays additive through delete", () => {
+  const manual = {
+    quantityMode: "manual" as const,
+    manualSegments: [{ id: "manual-20", roofId: "roof-d1", lengthM: 20 }],
+  };
+  const drawn = [
+    guard("drawn-22", "roof-d1", { x: 0, y: 0 }, { x: 222, y: 0 }),
+    guard("drawn-6", "roof-d1", { x: 0, y: 0 }, { x: 61, y: 0 }),
+  ];
+  const summarize = (snowGuards: Guard[]) => resolveSnowProtectionSummary({
+    snowProtection: manual,
+    snowGuards,
+    mppImage: 0.1,
+    roofIds: ["roof-d1"],
+  });
+
+  assert.deepEqual(summarize(drawn), {
+    totalLengthM: 48.3,
+    byRoof: [{ roofId: "roof-d1", lengthM: 48.3 }],
+  });
+  assert.deepEqual(summarize(drawn.slice(0, 1)), {
+    totalLengthM: 42.2,
+    byRoof: [{ roofId: "roof-d1", lengthM: 42.2 }],
   });
 });
 

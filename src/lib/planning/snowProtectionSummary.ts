@@ -227,8 +227,10 @@ export function summarizeManualSnowProtection(
 }
 
 /**
- * Explicit precedence contract: a persisted manual mode is an override of
- * geometric quantity. Geometry and manual quantities are never added.
+ * Canonical commercial contract: persisted manual rows and map-drawn
+ * geometry are independent Schneefang segments and therefore additive.
+ * `quantityMode` is retained for persisted backwards compatibility, but it
+ * no longer suppresses either source.
  */
 export function resolveSnowProtectionSummary({
   snowProtection,
@@ -237,10 +239,33 @@ export function resolveSnowProtectionSummary({
   roofIds,
 }: ResolvedSnowProtectionSummaryInput): SnowProtectionSummary {
   const configuration = normalizeSnowProtectionConfiguration(snowProtection);
-  if (configuration.quantityMode === "manual") {
-    return summarizeManualSnowProtection(configuration.manualSegments, roofIds);
+  const geometry = summarizeSnowProtection({ snowGuards, mppImage, roofIds });
+  const manual = summarizeManualSnowProtection(
+    configuration.manualSegments,
+    roofIds,
+  );
+  const lengthByRoof = new Map<string, number>();
+
+  for (const source of [geometry.byRoof, manual.byRoof]) {
+    for (const roof of source) {
+      lengthByRoof.set(
+        roof.roofId,
+        (lengthByRoof.get(roof.roofId) ?? 0) + roof.lengthM,
+      );
+    }
   }
-  return summarizeSnowProtection({ snowGuards, mppImage, roofIds });
+
+  const byRoof = [...lengthByRoof].map(([roofId, lengthM]) => ({
+    roofId,
+    lengthM: normalizeSummaryMetres(lengthM),
+  }));
+
+  return {
+    totalLengthM: normalizeSummaryMetres(
+      byRoof.reduce((total, roof) => total + roof.lengthM, 0),
+    ),
+    byRoof,
+  };
 }
 
 /**

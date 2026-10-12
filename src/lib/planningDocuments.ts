@@ -14,6 +14,7 @@ import { renderTechnischeEckdaten } from "@/lib/pdf/sections/technischeEckdaten"
 import { htmlToPlainText } from "@/lib/htmlToPlainText";
 import { allocateChf05, roundChf05, sumChf05 } from "@/lib/chf";
 import { addCompanyVollmachtPage } from "@/lib/vollmachtPdf";
+import { mergeCanonicalSnowProtectionCommercialItem } from "@/lib/planning/snowProtectionCommercial";
 
 export type PlanningDocumentType = "angebot" | "auftrag";
 export type PlanningReportSections = {
@@ -461,7 +462,18 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
   const parts = data?.parts ?? {};
   const reportOptions = data?.reportOptions ?? {};
   const summary = planning?.summary ?? {};
-  const items = Array.isArray(parts?.items) ? parts.items : [];
+  const catalogDocs = await db
+    .collection("catalogItems")
+    .find({
+      companyId: planning?.companyId,
+      isActive: true,
+    })
+    .toArray();
+  const items = mergeCanonicalSnowProtectionCommercialItem(
+    Array.isArray(parts?.items) ? parts.items : [],
+    catalogDocs,
+    planning,
+  );
   const includedItems = items.filter((item: any) => !isOptionalItem(item));
   const optionalSourceItems = items.filter(isOptionalItem);
   const optionalItems: OptionalCommercialItem[] = optionalSourceItems.map(
@@ -470,14 +482,6 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
   const optionalTotalChf = sumChf05(
     optionalSourceItems.map((item: any) => getItemLineTotal(item)),
   );
-
-  const catalogDocs = await db
-    .collection("catalogItems")
-    .find({
-      companyId: planning?.companyId,
-      isActive: true,
-    })
-    .toArray();
 
   const reportSummary = buildReportSummary(planning, catalogDocs);
   const mwstIncluded =
@@ -538,6 +542,7 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
   );
 
   return {
+    items,
     catalogDocs,
     reportSummary,
     partsTotalNet,
@@ -586,9 +591,9 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   const parts = data?.parts ?? {};
   const reportOptions = data?.reportOptions ?? {};
   const summary = planning?.summary ?? {};
-  const items = Array.isArray(parts?.items) ? parts.items : [];
 
   const {
+    items,
     catalogDocs,
     reportSummary,
     partsTotalNet,

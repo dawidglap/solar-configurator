@@ -91,19 +91,32 @@ async function main() {
     });
     assert.equal(
       patched.planning.summary.snowProtection.totalLengthM,
-      120,
-      "PATCH response must expose the persisted manual quantity",
+      125,
+      "PATCH response must expose manual plus map-drawn quantity",
     );
 
     // A completely new HTTP request is the persistence boundary under test.
     const loaded = await request(`/api/plannings/${planningId}`);
     const persisted = loaded.planning.data.planner.snowProtection;
     assert.deepEqual(persisted, planner.snowProtection);
-    assert.equal(loaded.planning.summary.snowProtection.totalLengthM, 120);
+    assert.equal(loaded.planning.summary.snowProtection.totalLengthM, 125);
     assert.deepEqual(loaded.planning.summary.snowProtection.byRoof, [
-      { roofId: "roof-d1", lengthM: 120 },
+      { roofId: "roof-d1", lengthM: 125 },
     ]);
     assert.equal(JSON.stringify(persisted).includes("pricePerM"), false);
+
+    const partsDefaults = await request(
+      `/api/plannings/${planningId}/parts-defaults`,
+    );
+    const snowProtectionPart = partsDefaults.items.find(
+      (item: any) => item.id === "auto-snow-protection",
+    );
+    assert.equal(
+      snowProtectionPart?.stk,
+      125,
+      "Angebot parts must use the same manual plus drawn quantity",
+    );
+    assert.equal(snowProtectionPart?.einheit, "m");
 
     // Recreate the frontend-derived display state from the GET payload with no
     // selected roof. Selection is intentionally not an input to the resolver.
@@ -114,12 +127,13 @@ async function main() {
       mppImage: loaded.planning.data.planner.snapshot.mppImage,
       roofIds: loaded.planning.data.planner.layers.map((roof: any) => roof.id),
     });
-    assert.equal(hydratedSummary.totalLengthM, 120);
+    assert.equal(hydratedSummary.totalLengthM, 125);
 
     console.log(JSON.stringify({
       ok: true,
       persistedPayload: persisted,
       getSummary: loaded.planning.summary.snowProtection,
+      angebotSnowProtectionPart: snowProtectionPart,
       hydratedWithoutSelectedRoof: hydratedSummary.totalLengthM,
     }, null, 2));
   } finally {

@@ -46,7 +46,10 @@ import {
 import { resolveCompanyThermalFieldLimits } from "@/lib/planning/companyPlannerDefaults";
 import { withEffectiveAdvancedThermalLimits } from "../modules/advanced/advancedThermalDefaults";
 import { nanoid } from "nanoid";
-import { resolveSnowProtectionSummary } from "@/lib/planning/snowProtectionSummary";
+import {
+  resolveSnowProtectionSummary,
+  snowProtectionSegmentLengthM,
+} from "@/lib/planning/snowProtectionSummary";
 
 /* ───────────────────── Keycaps ───────────────────── */
 function Keycap({ children }: { children: React.ReactNode }) {
@@ -288,17 +291,31 @@ export default function TopToolbar() {
     };
   }, []);
 
-  // ── Schneefang: persisted manual override + canonical project total
+  // ── Schneefang: additive manual + map-drawn canonical project total
   const [isSnowDialogOpen, setIsSnowDialogOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [regenerationPending, setRegenerationPending] = useState(false);
   const SNOW_PRICE_PER_M = 10; // 10 CHF pro Meter
 
   const snowSegments = useMemo<SnowSegment[]>(
-    () => snowProtection.manualSegments.length > 0
-      ? snowProtection.manualSegments
-      : [{ id: "sg_init", roofId: selectedId, lengthM: 0 }],
-    [selectedId, snowProtection.manualSegments],
+    () => snowProtection.manualSegments,
+    [snowProtection.manualSegments],
+  );
+  const drawnSnowSegments = useMemo<SnowSegment[]>(
+    () => {
+      const roofIds = new Set(layers.map((roof) => roof.id));
+      return snowGuards
+        .filter((guard) => roofIds.has(guard.roofId))
+        .map((guard) => ({
+          id: guard.id,
+          roofId: guard.roofId,
+          lengthM: snowProtectionSegmentLengthM(
+            guard,
+            snapshot.mppImage ?? 0,
+          ),
+        }));
+    },
+    [layers, snapshot.mppImage, snowGuards],
   );
   const resolvedSnowProtection = useMemo(
     () => resolveSnowProtectionSummary({
@@ -947,6 +964,7 @@ export default function TopToolbar() {
         onClose={() => setIsSnowDialogOpen(false)}
         onCommit={commitSnowSegments}
         segments={snowSegments}
+        drawnSegments={drawnSnowSegments}
         pricePerM={SNOW_PRICE_PER_M}
       />
 
