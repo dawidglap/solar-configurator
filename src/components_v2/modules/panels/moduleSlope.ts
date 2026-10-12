@@ -84,25 +84,25 @@ export function resolveOutwardBlockArrowAzimuths(
 
   const result = new Map<string, number>();
   for (const group of byBlock.values()) {
-    // An East-West/D-Dome block has exactly two faces sharing one ridge.
-    // Keep the established centre-to-module geometry for complete pairs so
-    // their initial rendering is unchanged. A user may deliberately delete
-    // either physical module, however; in that partial state the survivor's
-    // persisted face azimuth is authoritative and must not be re-inferred or
-    // renumbered from the remaining array membership.
-    if (group.length !== 2) {
-      for (const member of group) {
-        if (Number.isFinite(member.moduleFaceAzimuthDeg)) {
-          result.set(member.id, normalizeAzimuth(member.moduleFaceAzimuthDeg!));
-        }
+    // Persisted physical face identity is authoritative in every block state.
+    // Switching between geometry for a complete pair and metadata for an
+    // orphan made an unchanged survivor appear to flip after deletion.
+    for (const member of group) {
+      if (Number.isFinite(member.moduleFaceAzimuthDeg)) {
+        result.set(member.id, normalizeAzimuth(member.moduleFaceAzimuthDeg!));
       }
-      continue;
     }
+
+    // An East-West/D-Dome block has exactly two faces sharing one ridge.
+    // Geometry remains only as a compatibility derivation for legacy members
+    // that do not yet carry moduleFaceAzimuthDeg.
+    if (group.length !== 2) continue;
     const center = {
       x: (group[0].cx + group[1].cx) / 2,
       y: (group[0].cy + group[1].cy) / 2,
     };
     for (const member of group) {
+      if (result.has(member.id)) continue;
       const dx = member.cx - center.x;
       const dy = member.cy - center.y;
       if (Math.hypot(dx, dy) <= 1e-9) continue;

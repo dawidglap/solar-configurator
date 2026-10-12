@@ -21,6 +21,11 @@ import {
   GEOMETRY_V2_ENGINE_VERSION,
 } from "../../src/lib/planning-core/geometry-v2";
 import { stabilizeOpposingPanelFaceIdentities } from "../../src/lib/planning/opposingPanelFaceIdentity";
+import {
+  buildDirectAdvancedRoofLayout,
+  createInitialAdvancedPlanning,
+  setAdvancedMountingOrientation,
+} from "../../src/components_v2/modules/advanced/advancedPlanningApplication";
 import type { PanelInstance, RoofArea } from "../../src/types/planner";
 
 function legacyDDomePanel(block: number, slotIndex: 0 | 1): PanelInstance {
@@ -180,4 +185,102 @@ test("S-Dome metadata is outside the opposing-face normalization", () => {
   } as AdvancedPanelMetadata;
   const [unchanged] = stabilizeOpposingPanelFaceIdentities([panel], [roofWithDDomeConfig()]);
   assert.equal(unchanged, panel);
+});
+
+test("real generated store flow keeps every survivor metadata and rendered arrow after two deletes", () => {
+  const previous = usePlannerV2Store.getState();
+  const roof: RoofArea = {
+    id: "roof-real-ui",
+    name: "D1",
+    roofKind: "flat",
+    referenceEdgeIndex: 0,
+    tiltDeg: 0,
+    points: [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 180 }, { x: 0, y: 180 }],
+  };
+  const panelSpec = {
+    id: "panel-real-ui",
+    brand: "Fixture",
+    model: "M440",
+    wp: 440,
+    widthM: 1.134,
+    heightM: 1.722,
+    priceChf: 0,
+  };
+  const modules = {
+    gridAngleDeg: 0,
+    orientation: "landscape" as const,
+    spacingM: 0.019,
+    marginM: 0.2,
+    showGrid: false,
+    placingSingle: false,
+  };
+  const config = setAdvancedMountingOrientation({
+    config: createInitialAdvancedPlanning({ panel: panelSpec, standardModules: modules }),
+    orientation: "east-west",
+  });
+  const generated = buildDirectAdvancedRoofLayout({
+    roof,
+    config,
+    mppImage: 0.1,
+    zones: [],
+    snowGuards: [],
+    layoutRunId: "real-ui-delete",
+    createPanelId: (index) => `real-ui-panel-${index}`,
+  });
+  assert.ok(generated);
+  assert.ok(generated.panels.length >= 10);
+
+  const renderedArrows = (panels: readonly PanelInstance[]) =>
+    resolveOutwardBlockArrowAzimuths(panels.map((panel) => ({
+      id: panel.id,
+      blockKey: panel.advanced?.blockKey,
+      slotIndex: panel.advanced?.slotIndex,
+      moduleFaceAzimuthDeg: panel.advanced?.moduleFaceAzimuthDeg,
+      cx: panel.cx,
+      cy: panel.cy,
+    })));
+  const metadata = (panel: PanelInstance) => ({
+    id: panel.id,
+    blockKey: panel.advanced?.blockKey,
+    slotIndex: panel.advanced?.slotIndex,
+    moduleFaceAzimuthDeg: panel.advanced?.moduleFaceAzimuthDeg,
+    angleDeg: panel.angleDeg,
+  });
+
+  try {
+    const committedPanels = generated.panels;
+    const committedRoof = { ...roof, surfacePlanning: generated.config };
+    usePlannerV2Store.setState({
+      layers: [committedRoof],
+      panels: committedPanels,
+      selectedId: roof.id,
+      selectedPanelIds: [],
+    });
+    const beforeMetadata = new Map(committedPanels.map((panel) => [panel.id, metadata(panel)]));
+    const beforeArrows = renderedArrows(committedPanels);
+    const deletedIds = [committedPanels[1].id, committedPanels[8].id];
+
+    usePlannerV2Store.getState().deletePanelsBulk(deletedIds);
+    const survivors = usePlannerV2Store.getState().panels;
+    const afterArrows = renderedArrows(survivors);
+
+    assert.equal(survivors.length, committedPanels.length - 2);
+    for (const survivor of survivors) {
+      assert.deepEqual(metadata(survivor), beforeMetadata.get(survivor.id));
+      assert.equal(afterArrows.get(survivor.id), beforeArrows.get(survivor.id));
+    }
+
+    const refreshed = JSON.parse(JSON.stringify(survivors)) as PanelInstance[];
+    const refreshedArrows = renderedArrows(refreshed);
+    for (const survivor of refreshed) {
+      assert.equal(refreshedArrows.get(survivor.id), beforeArrows.get(survivor.id));
+    }
+  } finally {
+    usePlannerV2Store.setState({
+      layers: previous.layers,
+      panels: previous.panels,
+      selectedId: previous.selectedId,
+      selectedPanelIds: previous.selectedPanelIds,
+    });
+  }
 });

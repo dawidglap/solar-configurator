@@ -61,7 +61,6 @@ import { withEffectiveAdvancedThermalLimits } from "../modules/advanced/advanced
 import { buildCommittedRoofStatsByRoof } from "@/lib/planning-core/overview";
 import SolaSelect from "../ui/SolaSelect";
 import {
-  formatModuleOrientationDirection,
   formatModuleOrientationDirections,
   resolveModuleOrientationDirections,
 } from "../modules/moduleOrientation";
@@ -787,17 +786,6 @@ export default function ModulesPanel() {
                   src === "sonnendach" ? "S" : src === "manual" ? "M" : "";
                 const roofStats = committedRoofStats.get(roofId);
                 const moduleCount = roofStats?.moduleCount ?? 0;
-                const moduleDirectionDegs = moduleCount > 0
-                  ? resolveModuleOrientationDirections({
-                      roof: l,
-                      advancedConfig: rowPlanning.status === "supported-advanced"
-                        ? rowPlanning.config
-                        : undefined,
-                    }).directionDegs
-                  : [];
-                const moduleDirectionTitle = moduleDirectionDegs.length
-                  ? formatModuleOrientationDirections(moduleDirectionDegs)
-                  : "Keine Module auf dieser Dachfläche";
                 const kwpLabel =
                   moduleCount === 0
                     ? roofPowerFormatter.format(0)
@@ -905,22 +893,7 @@ export default function ModulesPanel() {
                       </div>
 
                       <div className="px-0.5">
-                        {step === "modules" ? (
-                          <div
-                            data-module-orientation
-                            title={`Modulausrichtung: ${moduleDirectionTitle}`}
-                            aria-label={`Modulausrichtung D${i + 1}: ${moduleDirectionTitle}`}
-                            className="flex min-h-7 w-full min-w-0 flex-col items-center justify-center overflow-hidden rounded-md border border-border/70 bg-muted/20 px-0.5 py-0.5 text-[8px] leading-[10px] tabular-nums"
-                          >
-                            {moduleDirectionDegs.length > 0
-                              ? moduleDirectionDegs.map((directionDeg) => (
-                                  <span key={directionDeg} className="block max-w-full truncate whitespace-nowrap">
-                                    {formatModuleOrientationDirection(directionDeg)}
-                                  </span>
-                                ))
-                              : <span>—</span>}
-                          </div>
-                        ) : rowKind === "flat" ? (
+                        {rowKind === "flat" ? (
                           <div
                             title="Flachdach-Ausrichtung: 0°"
                             className="flex h-7 w-full min-w-0 items-center justify-center truncate rounded-md border border-border/70 bg-muted/20 px-1 text-[9px] tabular-nums"

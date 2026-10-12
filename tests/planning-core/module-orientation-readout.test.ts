@@ -104,15 +104,16 @@ test("flat south exposes the mounting system face azimuth", () => {
   assert.equal(formatModuleOrientationDirections(result.directionDegs).includes("78°"), false);
 });
 
-test("module roof rows render the shared directions and an empty-roof placeholder", () => {
+test("roof rows stay roof-specific while the lower module section renders module directions", () => {
   const source = readFileSync(
     new URL("../../src/components_v2/panels/ModulesPanel.tsx", import.meta.url),
     "utf8",
   );
   assert.ok(source.includes("resolveModuleOrientationDirections"));
-  assert.ok(source.includes("data-module-orientation"));
-  assert.ok(source.includes('moduleCount > 0'));
-  assert.ok(source.includes('Keine Module auf dieser Dachfläche'));
+  assert.equal(source.includes("data-module-orientation"), false);
+  assert.equal(source.includes('Keine Module auf dieser Dachfläche'), false);
+  assert.ok(source.includes("formatRoofRowOrientation(rowKind, azShort)"));
+  assert.ok(source.includes('title="Flachdach-Ausrichtung: 0°"'));
   assert.ok(source.includes("formatModuleOrientationDirections"));
   assert.ok(source.includes("Ausrichtung der Module"));
   assert.ok(source.includes("selectedCommittedModuleCount > 0"));

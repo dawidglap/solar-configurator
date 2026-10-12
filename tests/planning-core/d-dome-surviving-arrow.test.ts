@@ -99,3 +99,16 @@ test("D-Dome orphan face identity survives save/reload and undo-style restoratio
     [...initialArrows],
   );
 });
+
+test("persisted face is authoritative even when complete-pair geometry disagrees", () => {
+  const complete = pair().map((member) => ({
+    ...member,
+    moduleFaceAzimuthDeg: member.moduleFaceAzimuthDeg === 90 ? 270 : 90,
+  }));
+  const before = resolveOutwardBlockArrowAzimuths(complete);
+  assert.equal(before.get(complete[0].id), 270);
+  assert.equal(before.get(complete[1].id), 90);
+
+  const survivor = complete[0];
+  assert.equal(arrowFor([survivor], survivor.id), before.get(survivor.id));
+});
