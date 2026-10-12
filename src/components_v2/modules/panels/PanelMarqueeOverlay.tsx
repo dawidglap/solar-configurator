@@ -15,7 +15,7 @@ const PanelMarqueeOverlay = React.forwardRef<PanelMarqueeOverlayHandle>(function
 
   return (
     <svg
-      className="pointer-events-none absolute inset-0 z-[205] h-full w-full"
+      className="pointer-events-none absolute inset-0 z-[180] h-full w-full"
       aria-hidden="true"
     >
       {visual.polygons.map((polygon, index) => (

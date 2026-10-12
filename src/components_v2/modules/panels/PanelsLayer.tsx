@@ -2,6 +2,7 @@
 'use client';
 
 import React from 'react';
+import type Konva from 'konva';
 import PanelsKonva from '../PanelsKonva';
 import { usePlannerV2Store } from '../../state/plannerV2Store';
 import { resolvePanelSelectionIds } from './panelSelection';
@@ -17,6 +18,7 @@ export default function PanelsLayer({
   canvasRotationDeg,
   onAnyDragStart,
   onAnyDragEnd,
+  selectionOverlayRef,
 }: {
   layers: LayerRoof[];
   textureUrl?: string;
@@ -26,6 +28,7 @@ export default function PanelsLayer({
   canvasRotationDeg: number;
   onAnyDragStart?: () => void;
   onAnyDragEnd?: () => void;
+  selectionOverlayRef?: React.RefObject<Konva.Group | null>;
 }) {
   const selectedIds = usePlannerV2Store((s) => s.selectedPanelIds);
   const setSelectedPanels = usePlannerV2Store((s) => s.setSelectedPanels);
@@ -75,6 +78,7 @@ const handleSelect = (id?: string, opts?: { additive?: boolean }) => {
           onDragEnd={onAnyDragEnd}
           stageToImg={stageToImg}
           canvasRotationDeg={canvasRotationDeg}
+          selectionOverlayRef={selectionOverlayRef}
         />
       ))}
     </>

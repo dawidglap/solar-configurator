@@ -22,6 +22,7 @@ type Props = {
   inverseScale: number;
   canvasRotationDeg: number;
   active: boolean;
+  selectionOverlayRef?: React.RefObject<Konva.Group | null>;
   onStart: (event: Konva.KonvaEventObject<PointerEvent>) => void;
 };
 
@@ -36,6 +37,7 @@ const MultiSelectionDragHandle = React.memo(function MultiSelectionDragHandle({
   inverseScale,
   canvasRotationDeg,
   active,
+  selectionOverlayRef,
   onStart,
 }: Props) {
   const handleRef = React.useRef<Konva.Group>(null);
@@ -46,6 +48,10 @@ const MultiSelectionDragHandle = React.memo(function MultiSelectionDragHandle({
 
   React.useLayoutEffect(() => {
     const node = handleRef.current;
+    const overlayParent = selectionOverlayRef?.current;
+    if (node && overlayParent && node.getParent() !== overlayParent) {
+      node.moveTo(overlayParent);
+    }
     const parent = node?.getParent();
     const stage = node?.getStage();
     if (!node || !parent || !stage) return;
@@ -62,13 +68,11 @@ const MultiSelectionDragHandle = React.memo(function MultiSelectionDragHandle({
     };
     const localPoint = parentTransform.invert().point(safePoint);
     node.position(localPoint);
-    // RoofAnnotationsLayer (including the Randabstand hatch) is rendered
-    // after PanelsLayer in the same Konva parent. Promote only this interactive
-    // control so its complete icon, label and hit area stay above every
-    // non-interactive roof/module overlay without reordering those overlays.
+    // The dedicated selection overlay is the last interactive Konva layer.
+    // Keep this complete control above every passive geometry/measurement node.
     node.moveToTop();
     node.getLayer()?.batchDraw();
-  }, [active, canvasRotationDeg, hovered, inverseScale, x, y]);
+  }, [active, canvasRotationDeg, hovered, inverseScale, selectionOverlayRef, x, y]);
 
   return (
     <Group

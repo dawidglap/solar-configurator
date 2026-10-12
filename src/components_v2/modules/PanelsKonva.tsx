@@ -2,6 +2,7 @@
 'use client';
 
 import React from 'react';
+import type Konva from 'konva';
 import { Group } from 'react-konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 
@@ -65,6 +66,7 @@ export default function PanelsKonva(props: {
   onDragEnd?: () => void;
   stageToImg?: (x: number, y: number) => Pt; // Stage → Img
   canvasRotationDeg: number;
+  selectionOverlayRef?: React.RefObject<Konva.Group | null>;
 }) {
   const {
     roofId,
@@ -76,6 +78,7 @@ export default function PanelsKonva(props: {
     onDragEnd,
     stageToImg,
     canvasRotationDeg,
+    selectionOverlayRef,
   } = props;
 
   // --- store
@@ -926,6 +929,7 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
         inverseScale={invScale}
         canvasRotationDeg={canvasRotationDeg}
         active={groupDragActive}
+        selectionOverlayRef={selectionOverlayRef}
         onStart={startMultiDrag}
       />
     )}

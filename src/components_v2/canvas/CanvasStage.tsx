@@ -121,6 +121,7 @@ import {
 } from "./referenceEdgeReminder";
 
 const BUILDING_REVEAL_DURATION_MS = 1100;
+const SELECTION_UI_CANVAS_Z_INDEX = 190;
 
 function readCssPixelVariable(name: string, fallback: number): number {
   if (typeof window === "undefined") return fallback;
@@ -168,6 +169,11 @@ declare global {
 export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
+  const selectionOverlayGroupRef = useRef<Konva.Group>(null);
+  const bindSelectionUiLayer = useCallback((layer: Konva.Layer | null) => {
+    const canvas = layer?.getCanvas()._canvas;
+    if (canvas) canvas.style.zIndex = String(SELECTION_UI_CANVAS_Z_INDEX);
+  }, []);
   const marqueeOverlayRef = useRef<PanelMarqueeOverlayHandle>(null);
   const marqueeControllerRef = useRef<ReturnType<typeof createPanelMarqueeController> | null>(null);
   const suppressMarqueeClickRef = useRef(false);
@@ -1633,6 +1639,7 @@ export default function CanvasStage() {
                       }}
                       stageToImg={toImgCoords}
                       canvasRotationDeg={rotateDeg}
+                      selectionOverlayRef={selectionOverlayGroupRef}
                     />
                   </Group>
                 )}
@@ -1760,6 +1767,26 @@ export default function CanvasStage() {
                 </Group>
               </Layer>
             )}
+            <Layer
+              ref={bindSelectionUiLayer}
+              scaleX={layerScale}
+              scaleY={layerScale}
+              listening={step === "modules" && !drawingCapturesPointer}
+              perfectDrawEnabled={false}
+              name="selection-ui-layer"
+            >
+              <Group
+                ref={selectionOverlayGroupRef}
+                name="selection-ui-overlay viewport-rotated-content"
+                x={img.naturalWidth / 2}
+                y={img.naturalHeight / 2}
+                offsetX={img.naturalWidth / 2}
+                offsetY={img.naturalHeight / 2}
+                rotation={rotateDeg}
+                opacity={step === "building" ? 0.72 : 1}
+                listening={step === "modules" && !drawingCapturesPointer}
+              />
+            </Layer>
           </Stage>
           <PanelMarqueeOverlay ref={marqueeOverlayRef} />
           <ScreenGrid
