@@ -80,6 +80,11 @@ export type GenerateGridPlacementsInput = {
   unit: PlacementUnitGeometry;
   rotationCartesianDeg?: number;
   gridOriginM?: MetricPoint;
+  /**
+   * Optional operator-drawn fill boundary. Its start point is an exact outer
+   * footprint corner of the lattice; end only selects the signed quadrant.
+   */
+  fillBoundaryM?: { start: MetricPoint; end: MetricPoint };
   phaseX?: number;
   phaseY?: number;
   anchorX?: GridAnchor;

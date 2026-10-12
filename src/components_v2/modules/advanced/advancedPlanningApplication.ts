@@ -1192,6 +1192,8 @@ export function computeAdvancedPlanningPreview(input: {
   mppImage: number;
   zones?: PreviewObstacleZone[];
   snowGuards?: PreviewSnowGuard[];
+  /** Exact operator drag used only to phase an additive fill lattice. */
+  fillBoundaryPx?: { start: Pt; end: Pt };
   /** Used only by the explicit Vollbelegung command, never by ordinary live preview. */
   maximizeAutoLayout?: boolean;
 }): AdvancedPlanningPreview {
@@ -1384,6 +1386,14 @@ export function computeAdvancedPlanningPreview(input: {
       resolveRoofEdgeMarginM(input.roof, config.advanced.layout.marginM),
     ),
     blockDefinition,
+    ...(input.fillBoundaryPx
+      ? {
+          fillBoundaryM: {
+            start: imagePointToMetric(input.fillBoundaryPx.start, imageAdapter),
+            end: imagePointToMetric(input.fillBoundaryPx.end, imageAdapter),
+          },
+        }
+      : {}),
     ...(effectiveThermalLimits
       ? { thermalBreaks: createThermalGridBreaks({
           footprint: blockDefinition.blockFootprint,
@@ -1832,6 +1842,7 @@ type StandardDraftPanelsInput = {
   createPanelId: (index: number) => string;
   panelMetadata?: StandardPanelMetadata;
   thermalFieldLimits?: Extract<ThermalFieldLimits, { kind: "pitched-grid" }>;
+  fillBoundaryPx?: { start: Pt; end: Pt };
 };
 
 function computeStandardDraftPanelResult(
@@ -1885,6 +1896,7 @@ function computeStandardDraftPanelResult(
         input.roof,
         resolveRoofEdgeMarginM(input.roof, input.modules.marginM),
       ),
+      fillBoundary: input.fillBoundaryPx,
       phaseX: input.modules.gridPhaseX ?? 0,
       phaseY: input.modules.gridPhaseY ?? 0,
       anchorX: input.modules.gridAnchorX ?? "start",
@@ -1976,6 +1988,8 @@ export function buildDirectStandardRoofLayout(input: {
   alignmentMode?: "canonical" | "current";
   /** Explicit Vollbelegung search. Other direct-layout callers keep their prior phase semantics. */
   maximizeCoverage?: boolean;
+  /** Pointer-down/up boundary for exact additive-fill grid phasing. */
+  fillBoundaryPx?: { start: Pt; end: Pt };
 }): { panels: PanelInstance[]; config: StandardSurfacePlanningV1; modules: ModulesConfig } | null {
   const requestedModules = {
       ...input.modules,
@@ -2004,6 +2018,7 @@ export function buildDirectStandardRoofLayout(input: {
       moduleTilt: input.moduleTilt,
     }),
     createPanelId: input.createPanelId,
+    fillBoundaryPx: input.fillBoundaryPx,
   }, input.maximizeCoverage === true);
   const panels = generated.panels;
   if (!panels.length) return null;
@@ -2057,6 +2072,8 @@ export function buildDirectAdvancedRoofLayout(input: {
   createPanelId: (index: number) => string;
   /** Explicit Vollbelegung search. Other direct-layout callers keep their prior phase semantics. */
   maximizeCoverage?: boolean;
+  /** Pointer-down/up boundary for exact additive-fill grid phasing. */
+  fillBoundaryPx?: { start: Pt; end: Pt };
 }): { panels: PanelInstance[]; config: AdvancedSurfacePlanningV1; preview: AdvancedPlanningPreview } | null {
   const preview = computeAdvancedPlanningPreview({
     roof: input.roof,
@@ -2064,6 +2081,7 @@ export function buildDirectAdvancedRoofLayout(input: {
     mppImage: input.mppImage,
     zones: input.zones,
     snowGuards: input.snowGuards,
+    fillBoundaryPx: input.fillBoundaryPx,
     maximizeAutoLayout:
       input.maximizeCoverage === true &&
       input.config.advanced.layout.quantityMode !== "fixed",

@@ -392,13 +392,31 @@ function generateLegacyStandardCandidates(
       }, origin, theta)),
     );
     const usableBounds = boundsOfPolygons(localUsableComponents);
+    const fillStart = input.fillBoundary
+      ? worldToLocal(input.fillBoundary.start, origin, theta)
+      : undefined;
+    const fillEnd = input.fillBoundary
+      ? worldToLocal(input.fillBoundary.end, origin, theta)
+      : undefined;
+    const fillPhaseX = fillStart && fillEnd
+      ? normalizePhase((
+          fillStart.x - (fillEnd.x >= fillStart.x ? 0 : panelWidth) - usableBounds.minX
+        ) / cellWidth)
+      : normalizePhase(phaseX);
+    const fillPhaseY = fillStart && fillEnd
+      ? normalizePhase((
+          fillStart.y - (fillEnd.y >= fillStart.y ? 0 : panelHeight) - usableBounds.minY
+        ) / cellHeight)
+      : normalizePhase(input.phaseY ?? 0);
+    const effectiveAnchorX = input.fillBoundary ? "start" : anchorX;
+    const effectiveAnchorY = input.fillBoundary ? "start" : input.anchorY ?? "start";
     const columnStarts = thermalBreaks?.x
       ? generateThermalAxisPositions({
           min: usableBounds.minX,
           max: usableBounds.maxX - panelWidth,
           pitch: cellWidth,
-          phase: normalizePhase(phaseX),
-          anchor: anchorX,
+          phase: fillPhaseX,
+          anchor: effectiveAnchorX,
           break: {
             unitExtentM: panelWidth,
             maxUnitsPerField: thermalBreaks.x.maxUnitsPerField,
@@ -409,16 +427,16 @@ function generateLegacyStandardCandidates(
           min: usableBounds.minX,
           max: usableBounds.maxX - panelWidth,
           pitch: cellWidth,
-          phase: normalizePhase(phaseX),
-          anchor: anchorX,
+          phase: fillPhaseX,
+          anchor: effectiveAnchorX,
         });
     const rowStarts = thermalBreaks?.y
       ? generateThermalAxisPositions({
           min: usableBounds.minY,
           max: usableBounds.maxY - panelHeight,
           pitch: cellHeight,
-          phase: normalizePhase(input.phaseY ?? 0),
-          anchor: input.anchorY ?? "start",
+          phase: fillPhaseY,
+          anchor: effectiveAnchorY,
           break: {
             unitExtentM: panelHeight,
             maxUnitsPerField: thermalBreaks.y.maxUnitsPerField,
@@ -429,8 +447,8 @@ function generateLegacyStandardCandidates(
           min: usableBounds.minY,
           max: usableBounds.maxY - panelHeight,
           pitch: cellHeight,
-          phase: normalizePhase(input.phaseY ?? 0),
-          anchor: input.anchorY ?? "start",
+          phase: fillPhaseY,
+          anchor: effectiveAnchorY,
         });
     const maximumRows = rowStarts.length;
     const rowsToUse = Math.max(1, Math.min(

@@ -43,6 +43,8 @@ export type LegacyStandardGenerationInput = {
   marginM: number;
   /** Canonical roof-edge margins; when present they replace marginM. */
   edgeMarginsM?: number[];
+  /** Exact pointer-down boundary used only by additive area fill. */
+  fillBoundary?: { start: LegacyPoint; end: LegacyPoint };
   phaseX?: number;
   phaseY?: number;
   anchorX?: LegacyGridAnchor;

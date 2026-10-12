@@ -20,6 +20,11 @@ function validPhase(phase: number): boolean {
   return Number.isFinite(phase) && phase >= 0 && phase < 1;
 }
 
+function normalizedPhase(value: number): number {
+  const phase = value % 1;
+  return phase < 0 ? phase + 1 : phase;
+}
+
 export function generateAnchoredAxisPositions(input: {
   min: number;
   max: number;
@@ -170,22 +175,45 @@ export function generateGridPlacements(
   const minOriginY = roofBounds.minY - footprintBounds.minY;
   const maxOriginY = roofBounds.maxY - footprintBounds.maxY;
 
+  const fillStart = input.fillBoundaryM
+    ? toGridLocal(input.fillBoundaryM.start, gridOrigin, rotation)
+    : undefined;
+  const fillEnd = input.fillBoundaryM
+    ? toGridLocal(input.fillBoundaryM.end, gridOrigin, rotation)
+    : undefined;
+  const fillPhaseX = fillStart && fillEnd
+    ? normalizedPhase((
+        fillStart.x -
+        (fillEnd.x >= fillStart.x ? footprintBounds.minX : footprintBounds.maxX) -
+        minOriginX
+      ) / input.unit.pitchM.x)
+    : phaseX;
+  const fillPhaseY = fillStart && fillEnd
+    ? normalizedPhase((
+        fillStart.y -
+        (fillEnd.y >= fillStart.y ? footprintBounds.minY : footprintBounds.maxY) -
+        minOriginY
+      ) / input.unit.pitchM.y)
+    : phaseY;
+  const effectiveAnchorX = input.fillBoundaryM ? "start" : anchorX;
+  const effectiveAnchorY = input.fillBoundaryM ? "start" : anchorY;
+
   const columns = input.thermalBreaks?.x ? generateThermalAxisPositions({
     min: minOriginX,
     max: maxOriginX,
     pitch: input.unit.pitchM.x,
-    phase: phaseX,
-    anchor: anchorX,
+    phase: fillPhaseX,
+    anchor: effectiveAnchorX,
     break: input.thermalBreaks.x,
-  }) : generateAnchoredAxisPositions({ min: minOriginX, max: maxOriginX, pitch: input.unit.pitchM.x, phase: phaseX, anchor: anchorX });
+  }) : generateAnchoredAxisPositions({ min: minOriginX, max: maxOriginX, pitch: input.unit.pitchM.x, phase: fillPhaseX, anchor: effectiveAnchorX });
   const rows = input.thermalBreaks?.y ? generateThermalAxisPositions({
     min: minOriginY,
     max: maxOriginY,
     pitch: input.unit.pitchM.y,
-    phase: phaseY,
-    anchor: anchorY,
+    phase: fillPhaseY,
+    anchor: effectiveAnchorY,
     break: input.thermalBreaks.y,
-  }) : generateAnchoredAxisPositions({ min: minOriginY, max: maxOriginY, pitch: input.unit.pitchM.y, phase: phaseY, anchor: anchorY });
+  }) : generateAnchoredAxisPositions({ min: minOriginY, max: maxOriginY, pitch: input.unit.pitchM.y, phase: fillPhaseY, anchor: effectiveAnchorY });
 
   const result: GenerateGridPlacementsResult = {
     engineVersion: GEOMETRY_V2_ENGINE_VERSION,

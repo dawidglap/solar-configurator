@@ -49,13 +49,15 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
   const draftRef = useRef<FillDraft | null>(null);
   const frameRef = useRef<FillAreaReferenceFrame | null>(null);
   const drawingRef = useRef(false);
-  const candidatesRef = useRef<PanelInstance[]>([]);
+  const candidatesRef = useRef(new Map<string, PanelInstance[]>());
 
   useEffect(() => {
     const st = stageRef.current?.getStage?.();
     if (!st || step !== 'modules' || tool !== 'fill-area') return;
 
-    const buildCandidates = (): { mode: ReturnType<typeof resolveRoofModuleMode>; panels: PanelInstance[] } => {
+    const buildCandidates = (
+      fillBoundaryPx: { start: Pt; end: Pt },
+    ): { mode: ReturnType<typeof resolveRoofModuleMode>; panels: PanelInstance[] } => {
       const state = usePlannerV2Store.getState();
       const roof = state.layers.find((candidate) => candidate.id === state.selectedId);
       const mppImage = state.snapshot.mppImage;
@@ -85,6 +87,7 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
             (resolved.status === 'supported-standard' ? resolved.config.thermalFieldLimits : undefined),
           createPanelId: (index) => `${roof.id}_${runId}_${index}`,
           alignmentMode: 'current',
+          fillBoundaryPx,
         });
         return { mode, panels: generated?.panels ?? [] };
       }
@@ -105,18 +108,19 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
         snowGuards: state.snowGuards,
         layoutRunId: runId,
         createPanelId: (index) => `${roof.id}_${runId}_${index}`,
+        fillBoundaryPx,
       });
       return { mode, panels: generated?.panels ?? [] };
     };
 
-    const additivePanelsFor = (poly: Pt[]) => {
+    const additivePanelsFor = (poly: Pt[], candidates: readonly PanelInstance[]) => {
       const state = usePlannerV2Store.getState();
       const roofId = state.selectedId;
       if (!roofId) return [] as PanelInstance[];
       return selectAdditiveFillPanels({
         roofId,
         areaPolygon: poly,
-        candidates: candidatesRef.current,
+        candidates,
         existingPanels: state.panels,
       });
     };
@@ -124,7 +128,16 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
       const frame = frameRef.current;
       if (!frame) return;
       const poly = buildOrientedFillAreaPolygon({ start: a, end: b, frame });
-      const panels = additivePanelsFor(poly);
+      const delta = { x: b.x - a.x, y: b.y - a.y };
+      const along = delta.x * frame.tangent.x + delta.y * frame.tangent.y;
+      const across = delta.x * frame.normal.x + delta.y * frame.normal.y;
+      const directionKey = `${along < 0 ? -1 : 1}:${across < 0 ? -1 : 1}`;
+      let candidates = candidatesRef.current.get(directionKey);
+      if (!candidates) {
+        candidates = buildCandidates({ start: a, end: b }).panels;
+        candidatesRef.current.set(directionKey, candidates);
+      }
+      const panels = additivePanelsFor(poly, candidates);
       draftRef.current = { a, b, poly, panels };
       return {
         poly,
@@ -214,7 +227,7 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
       activePointerId = null;
       drawingRef.current = false;
       dragActivated = false;
-      candidatesRef.current = [];
+      candidatesRef.current.clear();
       frameRef.current = null;
       const cancelled = gesture.cancel();
       releasePointerCapture(pointerId);
@@ -227,8 +240,13 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
       const state = usePlannerV2Store.getState();
       const roof = state.layers.find((candidate) => candidate.id === state.selectedId);
       if (!roof || findRoofAtPoint(startImage, [roof])?.id !== roof.id) return;
-      const candidates = buildCandidates();
-      if (!candidates.mode) return;
+      const mode = resolveRoofModuleMode({
+        roof,
+        roofId: roof.id,
+        panels: state.panels,
+        draft: state.roofPlanningDrafts[roof.id],
+      });
+      if (!mode) return;
       const resolved = resolveSurfacePlanning(roof.surfacePlanning);
       const activeDraft = state.roofPlanningDrafts[roof.id];
       const roofKind = roof.roofKind ?? (activeDraft?.targetMode === 'advanced'
@@ -236,7 +254,7 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
         : resolved.status === 'supported-advanced'
           ? resolved.config.surface.kind
           : resolveInitialSonnendachRoofType(roof) ??
-            (candidates.mode === 'portrait' || candidates.mode === 'landscape' ? 'pitched' : 'flat')
+            (mode === 'portrait' || mode === 'landscape' ? 'pitched' : 'flat')
       );
       const frame = resolveFillAreaReferenceFrame({
         roofPoints: roof.points,
@@ -245,7 +263,7 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
       });
       if (!frame) return;
 
-      candidatesRef.current = candidates.panels;
+      candidatesRef.current.clear();
       frameRef.current = frame;
       drawingRef.current = true;
       dragActivated = false;
@@ -272,7 +290,7 @@ export default function FillAreaController({ stageRef, toImgCoords, draftChannel
       activePointerId = null;
       gesture.end(screenPoint(event));
       drawingRef.current = false;
-      candidatesRef.current = [];
+      candidatesRef.current.clear();
       suppressNextClick = shouldSuppressClick || dragActivated;
       dragActivated = false;
       releasePointerCapture(pointerId);

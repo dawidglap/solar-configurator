@@ -128,6 +128,7 @@ export function computeAdvancedBlockLayout(
     },
     rotationCartesianDeg,
     gridOriginM: input.gridOriginM,
+    fillBoundaryM: input.fillBoundaryM,
     phaseX: input.phaseX,
     phaseY: input.phaseY,
     anchorX: input.anchorX,

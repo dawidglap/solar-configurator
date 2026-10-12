@@ -111,6 +111,7 @@ export type ComputeAdvancedBlockLayoutInput = {
   edgeMarginsM?: number[];
   blockDefinition: AdvancedBlockDefinition;
   gridOriginM?: MetricPoint;
+  fillBoundaryM?: { start: MetricPoint; end: MetricPoint };
   phaseX?: number;
   phaseY?: number;
   anchorX?: GridAnchor;
