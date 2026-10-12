@@ -399,3 +399,23 @@ test("rectangle owner, reference and shape metadata survive planner export/impor
   usePlannerV2Store.getState().importState(JSON.parse(JSON.stringify(exported)));
   assert.deepEqual(usePlannerV2Store.getState().zones, [zone]);
 });
+
+test("vertex-edited obstacle polygon survives planner export/import", () => {
+  const editedZone = {
+    id: "zone-edited-roundtrip",
+    roofId: "roof-roundtrip",
+    type: "riservata" as const,
+    points: [
+      { x: 2, y: 2 },
+      { x: 12, y: 2 },
+      { x: 9, y: 11 },
+      { x: 2, y: 8 },
+    ],
+    shapeKind: "polygon" as const,
+  };
+  usePlannerV2Store.setState({ zones: [editedZone], selectedZoneId: undefined });
+  const exported = usePlannerV2Store.getState().exportState();
+  usePlannerV2Store.setState({ zones: [] });
+  usePlannerV2Store.getState().importState(JSON.parse(JSON.stringify(exported)));
+  assert.deepEqual(usePlannerV2Store.getState().zones, [editedZone]);
+});

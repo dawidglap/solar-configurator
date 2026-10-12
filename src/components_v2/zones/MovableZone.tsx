@@ -14,7 +14,6 @@ import type { Zone } from "../state/slices/zonesSlice";
 import { history } from "../state/history";
 import { plannerTheme } from "../theme/plannerTheme";
 import { createLatestFrameScheduler, type FrameScheduler } from "../canvas/performance/latestFrameScheduler";
-import ZoneHandlesKonva from "./ZoneHandlesKonva";
 import {
   HINDERNIS_HATCH_OPACITY,
   HINDERNIS_HATCH_SPACING,
@@ -54,11 +53,8 @@ export default function MovableZone({
   selected,
   interactive,
   ownerRoofPoints,
-  imgW,
-  imgH,
   toImg,
   stageScale,
-  snapRadiusImg,
   onSelect,
   onRoutePointerDown,
   onChange,
@@ -67,11 +63,8 @@ export default function MovableZone({
   selected: boolean;
   interactive: boolean;
   ownerRoofPoints: Pt[];
-  imgW: number;
-  imgH: number;
   toImg: (sx: number, sy: number) => Pt;
   stageScale: number;
-  snapRadiusImg: number;
   onSelect: () => void;
   onRoutePointerDown?: (event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => "continue" | "consume" | "ignore";
   onChange: (patch: Partial<Zone>) => void;
@@ -241,17 +234,6 @@ export default function MovableZone({
             if (interactive) event.target.getStage()?.container()?.style.setProperty("cursor", "move");
           }}
           onMouseLeave={(event) => event.target.getStage()?.container()?.style.removeProperty("cursor")}
-        />
-      )}
-      {interactive && selected && zone.shapeKind !== "rectangle" && (
-        <ZoneHandlesKonva
-          points={zone.points}
-          ownerRoofPoints={ownerRoofPoints}
-          imgW={imgW}
-          imgH={imgH}
-          toImg={toImg}
-          snapRadiusImg={snapRadiusImg}
-          onChange={(points) => onChange({ points })}
         />
       )}
     </Group>

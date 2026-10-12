@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test, { afterEach, beforeEach } from "node:test";
 
 import { usePlannerV2Store } from "../../src/components_v2/state/plannerV2Store";
-import { overlapsReservedRect } from "../../src/components_v2/zones/utils";
+import { isInReservedZone, overlapsReservedRect } from "../../src/components_v2/zones/utils";
 
 const ROOF_ID = "roof-reserved-collision";
 
@@ -54,4 +54,21 @@ test("reserved collision legacy: a module fully inside the reserved zone collide
     overlapsReservedRect({ cx: 5, cy: 5, w: 4, h: 4, angleDeg: 0 }, ROOF_ID),
     true,
   );
+});
+
+test("an edited obstacle polygon becomes the collision source immediately", () => {
+  assert.equal(isInReservedZone({ x: 8, y: 8 }, ROOF_ID), true);
+
+  usePlannerV2Store.getState().updateZone("reserved-square", {
+    points: [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 4, y: 4 },
+      { x: 0, y: 10 },
+    ],
+    shapeKind: "polygon",
+  });
+
+  assert.equal(isInReservedZone({ x: 8, y: 8 }, ROOF_ID), false);
+  assert.equal(isInReservedZone({ x: 2, y: 2 }, ROOF_ID), true);
 });

@@ -1,6 +1,7 @@
 // src/components_v2/zones/ZonesLayer.tsx
 'use client';
 import React, { useMemo } from 'react';
+import type Konva from 'konva';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import type { Pt } from '@/types/planner';
 import MovableZone from './MovableZone';
@@ -10,15 +11,10 @@ export default function ZonesLayer({
   roofId,
   interactive = false,
   toImg,
-  imgW,
-  imgH,
 }: {
   roofId: string;
   interactive?: boolean;
-  shapeMode?: 'normal' | 'trapezio';
   toImg: (sx: number, sy: number) => Pt;
-  imgW: number;
-  imgH: number;
 }) {
   const zones = usePlannerV2Store((s) => s.zones);
   const selectedZoneId = usePlannerV2Store((s) => s.selectedZoneId);
@@ -29,12 +25,12 @@ export default function ZonesLayer({
   );
   const stageScale = usePlannerV2Store((s) => s.view.scale || s.view.fitScale || 1);
 
-  const routeOwnerRoof = React.useCallback((event: any) => {
+  const routeOwnerRoof = React.useCallback((event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     const state = usePlannerV2Store.getState();
     const action = resolveRoofLocalPointerAction({
       ownerRoofId: roofId,
       selectedRoofId: state.selectedId,
-      button: event?.evt?.button,
+      button: 'button' in event.evt ? event.evt.button : undefined,
       tool: state.tool,
     });
     if (action === 'ignore-non-primary') return 'ignore' as const;
@@ -63,11 +59,8 @@ export default function ZonesLayer({
             selected={z.id === selectedZoneId}
             interactive={interactive}
             ownerRoofPoints={ownerRoofPoints}
-            imgW={imgW}
-            imgH={imgH}
             toImg={toImg}
             stageScale={stageScale}
-            snapRadiusImg={10 / Math.max(stageScale, 0.01)}
             onSelect={() => setSelectedZone(z.id)}
             onRoutePointerDown={routeOwnerRoof}
             onChange={(patch) => updateZone(z.id, patch)}

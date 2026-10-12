@@ -64,6 +64,7 @@ import {
 } from "../modules/panels/panelMarqueeSelection";
 import RoofShapesLayer from "./RoofShapesLayer";
 import RoofTrapezInteractionOverlay from "./RoofTrapezInteractionOverlay";
+import ZoneTrapezInteractionOverlay from "./ZoneTrapezInteractionOverlay";
 import RoofHudOverlay from "./RoofHudOverlay";
 import { useContainerSize } from "../canvas/hooks/useContainerSize";
 import { useBaseImage } from "../canvas/hooks/useBaseImage";
@@ -285,6 +286,7 @@ export default function CanvasStage() {
   const duplicatePanel = usePlannerV2Store((s) => s.duplicatePanel);
   const addZone = usePlannerV2Store((s) => s.addZone);
   const zones = usePlannerV2Store((s) => s.zones);
+  const selectedZoneId = usePlannerV2Store((s) => s.selectedZoneId);
   const addSnowGuard = usePlannerV2Store((s) => s.addSnowGuard);
   const snowGuards = usePlannerV2Store((s) => s.snowGuards);
   const selectedSnowGuardId = usePlannerV2Store((s) => s.selectedSnowGuardId);
@@ -453,6 +455,12 @@ export default function CanvasStage() {
   const selectedRoof = useMemo(
     () => layers.find((l) => l.id === selectedId) ?? null,
     [layers, selectedId],
+  );
+  const selectedEditableZone = useMemo(
+    () => zones.find(
+      (zone) => zone.id === selectedZoneId && zone.roofId === selectedRoof?.id,
+    ) ?? null,
+    [selectedRoof?.id, selectedZoneId, zones],
   );
   const exclusiveTrapez = Boolean(
     step === "building" && shapeMode === "trapezio" && selectedRoof,
@@ -1549,16 +1557,13 @@ export default function CanvasStage() {
                   />
                 </Group>
 
-                <Group listening={!drawingCapturesPointer && !exclusiveTrapez}>
+                <Group listening={!drawingCapturesPointer}>
                   {layers.map((l) => (
                     <ZonesLayer
                       key={l.id}
                       roofId={l.id}
                       interactive={step === "building" && l.id === selectedId && !drawingCapturesPointer}
-                      shapeMode={shapeMode}
                       toImg={toImgCoords}
-                      imgW={snap.width ?? img?.naturalWidth ?? 0}
-                      imgH={snap.height ?? img?.naturalHeight ?? 0}
                     />
                   ))}
                 </Group>
@@ -1787,7 +1792,7 @@ export default function CanvasStage() {
                 scaleY={layerScale}
                 listening
                 perfectDrawEnabled={false}
-                name="roof-trapez-exclusive-layer"
+                name="geometry-edit-exclusive-layer"
               >
                 <Group
                   name="viewport-rotated-content"
@@ -1797,15 +1802,27 @@ export default function CanvasStage() {
                   offsetY={img.naturalHeight / 2}
                   rotation={rotateDeg}
                 >
-                  <RoofTrapezInteractionOverlay
-                    roof={selectedRoof}
-                    roofs={layers}
-                    imgW={snap.width ?? img.naturalWidth}
-                    imgH={snap.height ?? img.naturalHeight}
-                    toImg={toImgCoords}
-                    onDragStart={() => setDraggingVertex(true)}
-                    onDragEnd={() => setDraggingVertex(false)}
-                  />
+                  {selectedEditableZone ? (
+                    <ZoneTrapezInteractionOverlay
+                      zone={selectedEditableZone}
+                      ownerRoofPoints={selectedRoof.points}
+                      imgW={snap.width ?? img.naturalWidth}
+                      imgH={snap.height ?? img.naturalHeight}
+                      toImg={toImgCoords}
+                      onDragStart={() => setDraggingVertex(true)}
+                      onDragEnd={() => setDraggingVertex(false)}
+                    />
+                  ) : (
+                    <RoofTrapezInteractionOverlay
+                      roof={selectedRoof}
+                      roofs={layers}
+                      imgW={snap.width ?? img.naturalWidth}
+                      imgH={snap.height ?? img.naturalHeight}
+                      toImg={toImgCoords}
+                      onDragStart={() => setDraggingVertex(true)}
+                      onDragEnd={() => setDraggingVertex(false)}
+                    />
+                  )}
                 </Group>
               </Layer>
             )}
@@ -1946,11 +1963,14 @@ export default function CanvasStage() {
         selectedRoof={selectedRoof}
         view={view}
         shapeMode={shapeMode}
-        onToggleShape={() =>
-          setUI({
-            roofShapeMode: shapeMode === "normal" ? "trapezio" : "normal",
-          })
-        }
+        onToggleShape={() => {
+          const nextShapeMode = shapeMode === "normal" ? "trapezio" : "normal";
+          if (nextShapeMode === "trapezio") {
+            endManualPlacement();
+            setTool("select");
+          }
+          setUI({ roofShapeMode: nextShapeMode });
+        }}
         canToggleShape={step !== "modules"}
       />
       {/* ORIENTATION HUD */}
