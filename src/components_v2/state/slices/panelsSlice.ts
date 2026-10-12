@@ -1,6 +1,7 @@
 // src/components_v2/state/slices/panelsSlice.ts
 import type { StateCreator } from 'zustand';
-import type { PanelInstance } from '@/types/planner';
+import type { PanelInstance, RoofArea } from '@/types/planner';
+import { stabilizeOpposingPanelFaceIdentities } from '@/lib/planning/opposingPanelFaceIdentity';
 
 type PatchMap = Record<string, Partial<PanelInstance>>;
 type PatchFn = (p: PanelInstance) => Partial<PanelInstance> | undefined | void;
@@ -102,7 +103,9 @@ export const createPanelsSlice: StateCreator<PanelsSlice, [], [], PanelsSlice> =
     deletePanel: (id) => {
         const roofId = get().panels.find((panel) => panel.id === id)?.roofId;
         set((s) => {
-            const panels = s.panels.filter((p) => p.id !== id);
+            const roofs = (s as PanelsSlice & { layers?: RoofArea[] }).layers ?? [];
+            const panels = stabilizeOpposingPanelFaceIdentities(s.panels, roofs)
+                .filter((p) => p.id !== id);
             const selectedPanelIds = s.selectedPanelIds.filter((pid) => pid !== id);
             return { panels, selectedPanelIds };
         });
@@ -151,8 +154,10 @@ export const createPanelsSlice: StateCreator<PanelsSlice, [], [], PanelsSlice> =
         const idSet = new Set(ids);
         const roofIds = Array.from(new Set(get().panels.filter((panel) => idSet.has(panel.id)).map((panel) => panel.roofId)));
         set((s) => {
+            const roofs = (s as PanelsSlice & { layers?: RoofArea[] }).layers ?? [];
+            const stabilizedPanels = stabilizeOpposingPanelFaceIdentities(s.panels, roofs);
             return {
-                panels: s.panels.filter((p) => !idSet.has(p.id)),
+                panels: stabilizedPanels.filter((p) => !idSet.has(p.id)),
                 selectedPanelIds: s.selectedPanelIds.filter((id) => !idSet.has(id)),
             };
         });

@@ -29,6 +29,7 @@ import {
   type CompanyPlannerDefaultsV1,
 } from '@/lib/planning/companyPlannerDefaults';
 import { DEFAULT_ROOF_EDGE_MARGIN_M } from '@/lib/planning/roofProperties';
+import { stabilizeOpposingPanelFaceIdentities } from '@/lib/planning/opposingPanelFaceIdentity';
 import {
   normalizeSnowProtectionConfiguration,
   type ManualSnowProtectionSegment,
@@ -475,7 +476,11 @@ export const usePlannerV2Store = create<PlannerV2State>()(
         const defaults = createInitialPlannerState();
 
         set((s) => {
-          const persistedPanels = Array.isArray(saved.panels) ? saved.panels : [];
+          const persistedLayers = Array.isArray(saved.layers) ? saved.layers : [];
+          const persistedPanels = stabilizeOpposingPanelFaceIdentities(
+            Array.isArray(saved.panels) ? saved.panels : [],
+            persistedLayers,
+          );
           const nextSelectedPanelId = resolveSelectedPanelId({
             catalogPanels: s.catalogPanels,
             selectedPanelId: saved.selectedPanelId ?? defaults.selectedPanelId,
@@ -523,7 +528,7 @@ export const usePlannerV2Store = create<PlannerV2State>()(
                     }
                   : defaults.address,
 
-            layers: Array.isArray(saved.layers) ? saved.layers : [],
+            layers: persistedLayers,
             selectedId: undefined,
             explicitRoofSelectionVersion: 0,
 
