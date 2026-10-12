@@ -4,7 +4,9 @@ const TOOL_BY_KEY: Readonly<Record<string, Tool>> = {
   a: "select",
   d: "draw-roof",
   r: "draw-rect",
-  h: "draw-reserved",
+  // TEMPORARILY DISABLED: free-form obstacle drawing is too expensive on
+  // lower-end devices. Keep the tool implementation for future reactivation.
+  // h: "draw-reserved",
   f: "fill-area",
 };
 

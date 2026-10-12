@@ -3,7 +3,6 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import {
-  Ban,
   Grid2X2,
   MousePointer2,
   Move,
@@ -43,13 +42,19 @@ const BUILDING_ITEMS: HelpItem[] = [
     tool: "draw-rect",
     Icon: Square,
   },
-  {
-    title: "Hindernis zeichnen · Freie Form",
-    shortcut: "H",
-    description: "Innerhalb einer Dachfläche beginnen, Eckpunkte setzen und mit Enter oder Doppelklick schließen.",
-    tool: "draw-reserved",
-    Icon: Ban,
-  },
+  /*
+    TEMPORARILY DISABLED:
+    Free-form obstacle drawing has performance issues on lower-end devices.
+    Keep this entry and the underlying implementation for future optimization/reactivation.
+
+    {
+      title: "Hindernis zeichnen · Freie Form",
+      shortcut: "H",
+      description: "Innerhalb einer Dachfläche beginnen, Eckpunkte setzen und mit Enter oder Doppelklick schließen.",
+      tool: "draw-reserved",
+      Icon: Ban,
+    },
+  */
   {
     title: "Hindernis · Rechteck",
     description: "Auf der Dachfläche klicken, ziehen und loslassen. Das Rechteck richtet sich automatisch an First oder Referenzkante aus.",

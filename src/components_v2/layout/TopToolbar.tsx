@@ -14,7 +14,7 @@ import { CircleHelp, MousePointer, RotateCcw, RotateCw, Ruler, Square } from "lu
 
 // NUOVE icone topbar (1–10) da react-icons
 import { TbShape3, TbDropletHalf2Filled } from "react-icons/tb";
-import { MdAddBox, MdOutlineTexture, MdViewModule, MdBorderStyle } from "react-icons/md";
+import { MdAddBox, MdViewModule, MdBorderStyle } from "react-icons/md";
 import { AiOutlineBorderHorizontal } from "react-icons/ai";
 import { LuSnowflake, LuShapes } from "react-icons/lu";
 import { FaRegTrashAlt } from "react-icons/fa";
@@ -748,15 +748,21 @@ export default function TopToolbar() {
           tooltipKeys={["R"]}
         />
 
-        <ActionBtn
-          active={tool === "draw-reserved"}
-          onClick={() => go("draw-reserved" as any)}
-          Icon={MdOutlineTexture}
-          label=""
-          disabled={!canUseBuildingTools}
-          tooltipLabel="Hindernis · Freie Form"
-          tooltipKeys={["H"]}
-        />
+        {/*
+          TEMPORARILY DISABLED:
+          Free-form obstacle drawing has performance issues on lower-end devices.
+          Keep implementation for future optimization/reactivation.
+
+          <ActionBtn
+            active={tool === "draw-reserved"}
+            onClick={() => go("draw-reserved" as any)}
+            Icon={MdOutlineTexture}
+            label=""
+            disabled={!canUseBuildingTools}
+            tooltipLabel="Hindernis · Freie Form"
+            tooltipKeys={["H"]}
+          />
+        */}
 
         <ActionBtn
           active={tool === "draw-reserved-rect"}

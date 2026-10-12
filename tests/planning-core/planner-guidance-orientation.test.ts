@@ -14,11 +14,11 @@ import {
   sonnendachAzimuthToRoofFallDirection,
 } from "../../src/components_v2/roof/roofOrientation";
 
-test("A, D, R and H always resolve to the advertised planner tools", () => {
+test("advertised planner hotkeys resolve while free-form obstacle hotkey H stays disabled", () => {
   assert.equal(resolvePlannerToolHotkey("A"), "select");
   assert.equal(resolvePlannerToolHotkey("d"), "draw-roof");
   assert.equal(resolvePlannerToolHotkey("R"), "draw-rect");
-  assert.equal(resolvePlannerToolHotkey("h"), "draw-reserved");
+  assert.equal(resolvePlannerToolHotkey("h"), undefined);
   assert.equal(resolvePlannerToolHotkey("x"), undefined);
 });
 
