@@ -28,7 +28,7 @@ test("right-angle dot stays strictly inside the sides and arc", () => {
   assert.ok(dotCenterDistance + geometry.dot.radius < geometry.arcRadius);
 });
 
-test("right-angle mark rotates with its two roof edges without changing proportions", () => {
+test("right-angle mark is 10x larger and rotates with its roof edges without changing proportions", () => {
   const angle = 37 * Math.PI / 180;
   const firstSide = { x: Math.cos(angle), y: Math.sin(angle) };
   const secondSide = { x: -Math.sin(angle), y: Math.cos(angle) };
@@ -43,9 +43,11 @@ test("right-angle mark rotates with its two roof edges without changing proporti
     imagePxPerScreenPx: 2,
   });
 
-  assert.ok(Math.abs(Math.hypot(geometry.firstSide.end.x, geometry.firstSide.end.y) - 16) < 1e-12);
-  assert.ok(Math.abs(Math.hypot(geometry.secondSide.end.x, geometry.secondSide.end.y) - 16) < 1e-12);
-  assert.ok(Math.abs(geometry.dot.radius - 1.3) < 1e-12);
+  assert.ok(Math.abs(Math.hypot(geometry.firstSide.end.x, geometry.firstSide.end.y) - 160) < 1e-12);
+  assert.ok(Math.abs(Math.hypot(geometry.secondSide.end.x, geometry.secondSide.end.y) - 160) < 1e-12);
+  assert.ok(Math.abs(geometry.arcRadius - 110) < 1e-12);
+  assert.ok(Math.abs(geometry.dot.radius - 13) < 1e-12);
+  assert.ok(Math.abs(geometry.strokeWidth - 18) < 1e-12);
 });
 
 test("roof renderer replaces only classified 90 degree labels with a non-listening vector symbol", () => {

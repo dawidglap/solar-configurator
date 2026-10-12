@@ -13,8 +13,12 @@ function scalePoint(point: SymbolPoint, scale: number): SymbolPoint {
   return { x: point.x * scale, y: point.y * scale };
 }
 
+// Visual-only multiplier. Keep detection, vertex anchoring, orientation, and
+// screen/world scaling unchanged while making the approved marker readable.
+const RIGHT_ANGLE_MARKER_VISUAL_SCALE = 10;
+
 /**
- * Builds a compact screen-sized right-angle mark in the local coordinate
+ * Builds a screen-sized right-angle mark in the local coordinate
  * system of a roof vertex. Both side vectors and the bisector point inward.
  */
 export function buildRightAngleSymbolGeometry(input: {
@@ -23,7 +27,7 @@ export function buildRightAngleSymbolGeometry(input: {
   bisectorUnit: SymbolPoint;
   imagePxPerScreenPx: number;
 }): RightAngleSymbolGeometry {
-  const scale = input.imagePxPerScreenPx;
+  const scale = input.imagePxPerScreenPx * RIGHT_ANGLE_MARKER_VISUAL_SCALE;
   const sideInnerGap = 1.25 * scale;
   const sideOuterRadius = 8 * scale;
   const arcRadius = 5.5 * scale;
