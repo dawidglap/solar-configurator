@@ -415,6 +415,7 @@ export default function TopToolbar() {
           id={actionId}
           ref={ref}
           type="button"
+          aria-label={tooltipLabel}
           onMouseEnter={tooltipLabel ? show : undefined}
           onMouseLeave={tooltipLabel ? hide : undefined}
           onFocus={tooltipLabel ? show : undefined}
@@ -817,34 +818,31 @@ export default function TopToolbar() {
 
         <div className="mx-1 h-6 w-px bg-border" />
 
-        {/* 6) Schneefang (linea) — placeholder */}
-        {/* Schneefang / Protezione neve */}
-        {/* <ActionBtn
-          active={tool === "draw-snow-guard"}
-          onClick={() => {
-            if (canUseBuildingTools) {
-              setTool("draw-snow-guard" as any);
-            }
-          }}
-          Icon={LuSnowflake}
-          label=""
-          disabled={!canUseBuildingTools}
-          tooltipLabel="Schneefang / Protezione neve"
-          tooltipKeys={["S"]}
-        /> */}
-
-        {/* Schneefang – Kalkulation */}
+        {/* Schneefang zeichnen + live Kalkulation */}
         <div className="flex items-center gap-1">
           <ActionBtn
-            onClick={() => setIsSnowDialogOpen(true)}
+            actionId="planner-draw-snow-guard"
+            active={tool === "draw-snow-guard"}
+            onClick={() =>
+              go(
+                tool === "draw-snow-guard" ? "select" : "draw-snow-guard",
+              )
+            }
             Icon={LuSnowflake}
             label=""
-            tooltipLabel="Schneefang – Kalkulation"
-            tooltipKeys={["Preis"]}
+            disabled={!canUseBuildingTools}
+            tooltipLabel="Schneefang zeichnen"
+            tooltipKeys={["Klicken und ziehen"]}
           />
-          <span className="whitespace-nowrap text-[11px] text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setIsSnowDialogOpen(true)}
+            className="whitespace-nowrap rounded px-1 py-0.5 text-[11px] text-muted-foreground transition hover:bg-secondary/70 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+            aria-label="Schneefang – Kalkulation öffnen"
+            title="Schneefang – Kalkulation"
+          >
             {totalSnowM.toFixed(1)} m · {totalSnowChf.toFixed(2)} CHF
-          </span>
+          </button>
         </div>
 
         {/* Controls specifici moduli (sempre visibili; clic portarli in 'modules') */}

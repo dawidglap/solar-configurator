@@ -137,3 +137,23 @@ test("planner Schneefang interaction is drag-to-commit and both preview and canv
   assert.match(preview, /createButtEndedStripPolygon/);
   assert.match(canvas, /width: SNOW_GUARD_WIDTH_M \/ snap\.mppImage/);
 });
+
+test("top toolbar exposes the canonical Schneefang drawing tool beside the live summary", () => {
+  const toolbar = readFileSync(
+    new URL("../../src/components_v2/layout/TopToolbar.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(toolbar, /actionId="planner-draw-snow-guard"/);
+  assert.match(toolbar, /active=\{tool === "draw-snow-guard"\}/);
+  assert.match(
+    toolbar,
+    /tool === "draw-snow-guard" \? "select" : "draw-snow-guard"/,
+  );
+  assert.match(toolbar, /tooltipLabel="Schneefang zeichnen"/);
+  assert.match(toolbar, /tooltipKeys=\{\["Klicken und ziehen"\]\}/);
+  assert.match(
+    toolbar,
+    /totalSnowM\.toFixed\(1\)[\s\S]*totalSnowChf\.toFixed\(2\)/,
+  );
+});
