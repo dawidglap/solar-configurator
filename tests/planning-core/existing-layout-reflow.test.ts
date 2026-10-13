@@ -505,6 +505,7 @@ test("Schrägdach H/V spacing reflows the same committed panel instances", () =>
   const nextModules = { ...generated.modules, spacingXM: 0.01, spacingYM: 0.012 };
   const result = buildStandardExistingLayoutReflow({
     roof: { ...PITCHED_ROOF, surfacePlanning: generated.config },
+    panel: PANEL,
     currentPanels: generated.panels,
     previousModules: generated.modules,
     nextModules,
@@ -583,6 +584,7 @@ for (const orientation of ["portrait", "landscape"] as const) {
 
     const horizontal = buildStandardExistingLayoutReflow({
       roof: { ...PITCHED_ROOF, surfacePlanning: generatedConfig.config },
+      panel: PANEL,
       currentPanels: compact,
       previousModules: initialModules,
       nextModules: { ...initialModules, spacingM: 0.08, spacingXM: 0.08 },
@@ -598,6 +600,7 @@ for (const orientation of ["portrait", "landscape"] as const) {
 
     const vertical = buildStandardExistingLayoutReflow({
       roof: { ...PITCHED_ROOF, surfacePlanning: generatedConfig.config },
+      panel: PANEL,
       currentPanels: compact,
       previousModules: initialModules,
       nextModules: { ...initialModules, spacingYM: 0.1 },
@@ -643,6 +646,7 @@ for (const orientation of ["portrait", "landscape"] as const) {
 
     const result = buildStandardExistingLayoutReflow({
       roof: PITCHED_ROOF,
+      panel: PANEL,
       currentPanels,
       previousModules,
       nextModules: {

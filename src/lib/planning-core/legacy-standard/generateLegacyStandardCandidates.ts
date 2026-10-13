@@ -7,6 +7,7 @@ import { generateThermalAxisPositions } from "../geometry-v2/thermalAxis";
 import { generateAnchoredAxisPositions } from "../geometry-v2/grid";
 import {
   computeUsableRoof,
+  physicalLengthToProjectedPixels,
   validatePlacementFootprint,
   type MetricPolygon,
   type UsableRoofGeometry,
@@ -241,20 +242,41 @@ export function computeLegacyStandardContactPhases(input: {
   if (usableRoof.status !== "valid" || !usableRoof.components.length) return { x: [], y: [] };
 
   const theta = resolveGridTheta(generation);
+  const angleDeg = (theta * 180) / Math.PI;
   const origin = centroid(generation.roofPolygon);
   const toLocal = (point: LegacyPoint) => worldToLocal(point, origin, theta);
   const usableLocal = usableRoof.components.map((component) => component.map((point) =>
     toLocal({ x: point.x / generation.mppImage, y: point.y / generation.mppImage }),
   ));
   const bounds = boundsOfPolygons(usableLocal);
-  const panelWidth = (generation.orientation === "portrait"
-    ? generation.panelSizeM.widthM
-    : generation.panelSizeM.heightM) / generation.mppImage;
-  const panelHeight = (generation.orientation === "portrait"
-    ? generation.panelSizeM.heightM
-    : generation.panelSizeM.widthM) / generation.mppImage;
-  const gapX = (generation.spacingXM ?? generation.spacingM) / generation.mppImage;
-  const gapY = (generation.spacingYM ?? generation.spacingM) / generation.mppImage;
+  const panelWidth = physicalLengthToProjectedPixels(
+    generation.orientation === "portrait"
+      ? generation.panelSizeM.widthM
+      : generation.panelSizeM.heightM,
+    angleDeg,
+    generation.mppImage,
+    generation.surfaceProjection,
+  );
+  const panelHeight = physicalLengthToProjectedPixels(
+    generation.orientation === "portrait"
+      ? generation.panelSizeM.heightM
+      : generation.panelSizeM.widthM,
+    angleDeg + 90,
+    generation.mppImage,
+    generation.surfaceProjection,
+  );
+  const gapX = physicalLengthToProjectedPixels(
+    generation.spacingXM ?? generation.spacingM,
+    angleDeg,
+    generation.mppImage,
+    generation.surfaceProjection,
+  );
+  const gapY = physicalLengthToProjectedPixels(
+    generation.spacingYM ?? generation.spacingM,
+    angleDeg + 90,
+    generation.mppImage,
+    generation.surfaceProjection,
+  );
   const minX = bounds.minX;
   const maxX = bounds.maxX - panelWidth;
   const minY = bounds.minY;
@@ -339,28 +361,38 @@ function generateLegacyStandardCandidates(
 
   if (!roofPolygon.length || !mppImage) return [];
 
-  const pixels = (meters: number) => meters / mppImage;
-  const panelWidth = pixels(
+  const theta = resolveGridTheta(input);
+  const angleDeg = (theta * 180) / Math.PI;
+  const pixelsAlong = (meters: number, axisAngleDeg: number) =>
+    physicalLengthToProjectedPixels(
+      meters,
+      axisAngleDeg,
+      mppImage,
+      input.surfaceProjection,
+    );
+  const panelWidth = pixelsAlong(
     orientation === "portrait" ? panelSizeM.widthM : panelSizeM.heightM,
+    angleDeg,
   );
-  const panelHeight = pixels(
+  const panelHeight = pixelsAlong(
     orientation === "portrait" ? panelSizeM.heightM : panelSizeM.widthM,
+    angleDeg + 90,
   );
-  const gapX = pixels(
+  const gapX = pixelsAlong(
     typeof spacingXM === "number" && Number.isFinite(spacingXM)
       ? spacingXM
       : spacingM,
+    angleDeg,
   );
-  const gapY = pixels(
+  const gapY = pixelsAlong(
     typeof spacingYM === "number" && Number.isFinite(spacingYM)
       ? spacingYM
       : spacingM,
+    angleDeg + 90,
   );
-  const marginPx = Math.max(0, pixels(marginM));
-
-  const theta = resolveGridTheta(input);
-
-  const angleDeg = (theta * 180) / Math.PI;
+  // Randabstand remains the existing canonical top-down inset. It is not a
+  // layout-axis value and must not be projected a second time here.
+  const marginPx = Math.max(0, marginM / mppImage);
   const origin = centroid(roofPolygon);
   const localPolygon = roofPolygon.map((point) => worldToLocal(point, origin, theta));
 
@@ -420,7 +452,7 @@ function generateLegacyStandardCandidates(
           break: {
             unitExtentM: panelWidth,
             maxUnitsPerField: thermalBreaks.x.maxUnitsPerField,
-            separationGapM: pixels(thermalBreaks.x.separationGapM),
+            separationGapM: pixelsAlong(thermalBreaks.x.separationGapM, angleDeg),
           },
         })
       : generateAnchoredAxisPositions({
@@ -440,7 +472,7 @@ function generateLegacyStandardCandidates(
           break: {
             unitExtentM: panelHeight,
             maxUnitsPerField: thermalBreaks.y.maxUnitsPerField,
-            separationGapM: pixels(thermalBreaks.y.separationGapM),
+            separationGapM: pixelsAlong(thermalBreaks.y.separationGapM, angleDeg + 90),
           },
         })
       : generateAnchoredAxisPositions({
@@ -494,7 +526,7 @@ function generateLegacyStandardCandidates(
         break: {
           unitExtentM: panelHeight,
           maxUnitsPerField: thermalBreaks.y.maxUnitsPerField,
-          separationGapM: pixels(thermalBreaks.y.separationGapM),
+          separationGapM: pixelsAlong(thermalBreaks.y.separationGapM, angleDeg + 90),
         },
       })
     : (() => {
@@ -551,7 +583,7 @@ function generateLegacyStandardCandidates(
           break: {
             unitExtentM: panelWidth,
             maxUnitsPerField: thermalBreaks.x.maxUnitsPerField,
-            separationGapM: pixels(thermalBreaks.x.separationGapM),
+            separationGapM: pixelsAlong(thermalBreaks.x.separationGapM, angleDeg),
           },
         })
       : (() => {

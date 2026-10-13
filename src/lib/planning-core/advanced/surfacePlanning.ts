@@ -157,6 +157,8 @@ export type StandardPanelMetadata = {
   moduleTiltMode: StandardModuleTiltInput["mode"];
   /** Applied physical module inclination; it does not alter legacy-v1 plan geometry. */
   effectiveTiltDeg: number;
+  /** The stored 2D footprint is the top-down projection of fixed catalog dimensions. */
+  geometrySpace?: "roof-surface-v1";
   /** Thermal grouping identity; independent from any K2 Montagefeld. */
   thermalFieldKey?: string;
 };

@@ -100,6 +100,52 @@ test("39 degree roof reconstructs a 6.56 m surface edge from its top-down projec
   assert.ok(Math.abs(surfaceLength - trueLengthM) < 1e-10);
 });
 
+test("surface-aware 39 degree panels preserve catalog size, row pitch and top-down footprint", () => {
+  const pitch = 39;
+  const cosine = Math.cos(pitch * Math.PI / 180);
+  const mppImage = 0.01;
+  const widthM = 1.134;
+  const heightM = 1.762;
+  const gapM = 0.019;
+  const realCaseRoof: RoofArea = {
+    id: "roof-1",
+    name: "39 degree panel acceptance",
+    roofKind: "pitched",
+    tiltDeg: pitch,
+    fallAzimuthDeg: 180,
+    points: [{ x: 0, y: 0 }, { x: 1034, y: 0 }, { x: 1034, y: 510 }, { x: 0, y: 510 }],
+  };
+  const projectedWidthPx = widthM / mppImage;
+  const projectedHeightPx = heightM * cosine / mppImage;
+  const rowPitchPx = (heightM + gapM) * cosine / mppImage;
+  const standard = {
+    layoutMode: "standard" as const,
+    moduleTiltMode: "inherit-roof" as const,
+    effectiveTiltDeg: pitch,
+    geometrySpace: "roof-surface-v1" as const,
+  };
+  const panels = [
+    panel({ id: "row-1", cx: 100, cy: 100, wPx: projectedWidthPx, hPx: projectedHeightPx, standard }),
+    panel({ id: "row-2", cx: 100, cy: 100 + rowPitchPx, wPx: projectedWidthPx, hPx: projectedHeightPx, standard }),
+  ];
+  const scene = build({
+    mppImage,
+    roofs: [realCaseRoof],
+    panels,
+    panelSpecs: [{ id: "spec-1", brand: "AIKO", model: "A445-MAH54Tm", wp: 445, widthM, heightM, priceChf: 0 }],
+  });
+  const first = scene.panels[0].corners;
+  assert.ok(Math.abs(distance3D(first[0], first[1]) - widthM) < 1e-10);
+  assert.ok(Math.abs(distance3D(first[1], first[2]) - heightM) < 1e-10);
+  assert.ok(Math.abs(Math.abs(first[1].x - first[0].x) - projectedWidthPx * mppImage) < 1e-10);
+  assert.ok(Math.abs(Math.abs(first[2].z - first[1].z) - projectedHeightPx * mppImage) < 1e-10);
+  const center = (corners: readonly { x: number; y: number; z: number }[]) => corners.reduce(
+    (sum, point) => ({ x: sum.x + point.x / 4, y: sum.y + point.y / 4, z: sum.z + point.z / 4 }),
+    { x: 0, y: 0, z: 0 },
+  );
+  assert.ok(Math.abs(distance3D(center(scene.panels[0].corners), center(scene.panels[1].corners)) - (heightM + gapM)) < 1e-10);
+});
+
 test("surface distance matches SOLA measurements for flat, 15°, 39°, steep and arbitrary edges", () => {
   const vectors = [
     { x: 0, y: 120 },

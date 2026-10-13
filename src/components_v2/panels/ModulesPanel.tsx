@@ -312,7 +312,7 @@ export default function ModulesPanel() {
     nextModules?: typeof modules;
     moduleTilt?: StandardModuleTiltInput;
   }, options?: { showGeometryError?: boolean }) => {
-    if (!selectedRoof || !(snapshot.mppImage && snapshot.mppImage > 0)) return false;
+    if (!selectedRoof || !selSpec || !(snapshot.mppImage && snapshot.mppImage > 0)) return false;
     const nextModules = input.nextModules ?? displayedModules;
     const persisted = resolveSurfacePlanning(selectedRoof.surfacePlanning);
     const moduleTilt: StandardModuleTiltInput = input.moduleTilt ?? ((
@@ -322,6 +322,7 @@ export default function ModulesPanel() {
     ) ?? { mode: "inherit-roof" });
     const candidate = buildStandardExistingLayoutReflow({
       roof: selectedRoof,
+      panel: selSpec,
       currentPanels: panels,
       previousModules: displayedModules,
       nextModules,
@@ -345,7 +346,7 @@ export default function ModulesPanel() {
       modules: candidate.modules,
     });
     return true;
-  }, [commitRoofLayout, displayedModules, displayedThermalLimits, displayedTiltInput, panels, selectedRoof, snapshot.mppImage, snowGuards, zones]);
+  }, [commitRoofLayout, displayedModules, displayedThermalLimits, displayedTiltInput, panels, selSpec, selectedRoof, snapshot.mppImage, snowGuards, zones]);
 
   const commitStandardSpacing = React.useCallback((axis: "x" | "y") => {
     const text = axis === "x" ? spacingXText : spacingYText;

@@ -32,6 +32,11 @@ export type LegacyStandardFilterPolicy = {
 export type LegacyStandardGenerationInput = {
   roofPolygon: LegacyPoint[];
   mppImage: number;
+  /** Physical pitched-roof projection. Missing preserves legacy flat/image geometry. */
+  surfaceProjection?: {
+    tiltDeg: number;
+    fallAzimuthDeg: number;
+  };
   canvasAngleDeg?: number;
   orientation: LegacyPanelOrientation;
   panelSizeM: {

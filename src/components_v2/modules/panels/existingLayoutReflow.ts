@@ -22,6 +22,7 @@ import {
   imagePointToMetric,
   imagePolygonToMetric,
   metricPointToImage,
+  physicalLengthToProjectedPixels,
   rotateMetricPoint,
   validatePlacementFootprint,
   type ImageMetricAdapter,
@@ -35,7 +36,8 @@ import {
   resolveRoofEdgeMarginM,
   resolveRoofEdgeMarginsM,
 } from "@/lib/planning/roofProperties";
-import type { ModulesConfig, PanelInstance, Pt, RoofArea } from "@/types/planner";
+import type { ModulesConfig, PanelInstance, PanelSpec, Pt, RoofArea } from "@/types/planner";
+import { resolveRoofFallAzimuth } from "../../roof/roofOrientation";
 import {
   buildStandardSurfacePlanning,
 } from "../advanced/advancedPlanningApplication";
@@ -335,6 +337,7 @@ export function buildAdvancedExistingLayoutReflow(input: {
 
 export function buildStandardExistingLayoutReflow(input: {
   roof: RoofArea;
+  panel: PanelSpec;
   currentPanels: readonly PanelInstance[];
   previousModules: ModulesConfig;
   nextModules: ModulesConfig;
@@ -362,13 +365,58 @@ export function buildStandardExistingLayoutReflow(input: {
   if (roofPanels.some((panel) => Math.abs(panel.angleDeg - angle) > 1e-6)) return null;
   const adapter = imageAdapter(input.roof, input.mppImage);
   const rotation = -angle;
+  const tiltDeg = Math.min(80, Math.max(0, input.roof.tiltDeg ?? 0));
+  const fallAzimuthDeg = resolveRoofFallAzimuth(input.roof);
+  const surfaceProjection = tiltDeg > 0 && typeof fallAzimuthDeg === "number"
+    ? { tiltDeg, fallAzimuthDeg }
+    : undefined;
+  const physicalWidthM = input.nextModules.orientation === "portrait"
+    ? input.panel.widthM
+    : input.panel.heightM;
+  const physicalHeightM = input.nextModules.orientation === "portrait"
+    ? input.panel.heightM
+    : input.panel.widthM;
+  const projectedWidthPx = physicalLengthToProjectedPixels(
+    physicalWidthM, angle, input.mppImage, surfaceProjection,
+  );
+  const projectedHeightPx = physicalLengthToProjectedPixels(
+    physicalHeightM, angle + 90, input.mppImage, surfaceProjection,
+  );
+  const oldGapXPx = first.standard?.geometrySpace === "roof-surface-v1"
+    ? physicalLengthToProjectedPixels(
+        input.previousModules.spacingXM ?? input.previousModules.spacingM,
+        angle,
+        input.mppImage,
+        surfaceProjection,
+      )
+    : (input.previousModules.spacingXM ?? input.previousModules.spacingM) / input.mppImage;
+  const oldGapYPx = first.standard?.geometrySpace === "roof-surface-v1"
+    ? physicalLengthToProjectedPixels(
+        input.previousModules.spacingYM ?? input.previousModules.spacingM,
+        angle + 90,
+        input.mppImage,
+        surfaceProjection,
+      )
+    : (input.previousModules.spacingYM ?? input.previousModules.spacingM) / input.mppImage;
+  const nextGapXPx = physicalLengthToProjectedPixels(
+    input.nextModules.spacingXM ?? input.nextModules.spacingM,
+    angle,
+    input.mppImage,
+    surfaceProjection,
+  );
+  const nextGapYPx = physicalLengthToProjectedPixels(
+    input.nextModules.spacingYM ?? input.nextModules.spacingM,
+    angle + 90,
+    input.mppImage,
+    surfaceProjection,
+  );
   const oldPitch = {
-    x: first.wPx * input.mppImage + (input.previousModules.spacingXM ?? input.previousModules.spacingM),
-    y: first.hPx * input.mppImage + (input.previousModules.spacingYM ?? input.previousModules.spacingM),
+    x: (first.wPx + oldGapXPx) * input.mppImage,
+    y: (first.hPx + oldGapYPx) * input.mppImage,
   };
   const nextPitch = {
-    x: first.wPx * input.mppImage + (input.nextModules.spacingXM ?? input.nextModules.spacingM),
-    y: first.hPx * input.mppImage + (input.nextModules.spacingYM ?? input.nextModules.spacingM),
+    x: (projectedWidthPx + nextGapXPx) * input.mppImage,
+    y: (projectedHeightPx + nextGapYPx) * input.mppImage,
   };
   const local = roofPanels.map((panel) => ({
     panel,
@@ -382,24 +430,23 @@ export function buildStandardExistingLayoutReflow(input: {
   const panels = local.map(({ panel, local: center }) => {
     const columnIndex = Math.round((center.x - origin.x) / oldPitch.x);
     const rowIndex = Math.round((center.y - origin.y) / oldPitch.y);
-    const residual = {
-      x: center.x - origin.x - columnIndex * oldPitch.x,
-      y: center.y - origin.y - rowIndex * oldPitch.y,
-    };
     const nextCenter = metricPointToImage(rotateMetricPoint({
-      x: origin.x + columnIndex * nextPitch.x + residual.x,
-      y: origin.y + rowIndex * nextPitch.y + residual.y,
+      x: origin.x + columnIndex * nextPitch.x,
+      y: origin.y + rowIndex * nextPitch.y,
     }, rotation), adapter);
     return {
       ...panel,
       cx: nextCenter.x,
       cy: nextCenter.y,
+      wPx: projectedWidthPx,
+      hPx: projectedHeightPx,
       ...(tilt.effectiveTiltDeg !== undefined
         ? { standard: {
             ...panel.standard,
             layoutMode: "standard" as const,
             moduleTiltMode: tilt.mode,
             effectiveTiltDeg: tilt.effectiveTiltDeg,
+            geometrySpace: "roof-surface-v1" as const,
           } }
         : {}),
     };

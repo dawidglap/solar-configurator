@@ -14,7 +14,17 @@ import {
 } from "../../src/lib/planning-core/geometry-v2";
 import { createPanelPlacementValidator } from "../../src/components_v2/modules/manualPlacement";
 import { buildStandardExistingLayoutReflow } from "../../src/components_v2/modules/panels/existingLayoutReflow";
-import type { ModulesConfig, PanelInstance, RoofArea } from "../../src/types/planner";
+import type { ModulesConfig, PanelInstance, PanelSpec, RoofArea } from "../../src/types/planner";
+
+const PANEL: PanelSpec = {
+  id: "panel-445",
+  brand: "Fixture",
+  model: "P445",
+  wp: 445,
+  widthM: 1.134,
+  heightM: 1.722,
+  priceChf: 0,
+};
 
 function generation(
   roofPolygon: MetricPolygon,
@@ -212,6 +222,7 @@ test("irregular Schrägdach reflows 119 mm to 19 mm with zero invalid panels", (
   }));
   const result = buildStandardExistingLayoutReflow({
     roof,
+    panel: PANEL,
     currentPanels: panels,
     previousModules,
     nextModules: {

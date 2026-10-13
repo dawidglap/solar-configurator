@@ -6,6 +6,7 @@ export * from "./collision";
 export * from "./grid";
 export * from "./thermalAxis";
 export * from "./roofDimensions";
+export * from "./roofSurfaceCoordinates";
 export * from "./roofEdges";
 export * from "./roofRelativeObstacle";
 export * from "./strip";

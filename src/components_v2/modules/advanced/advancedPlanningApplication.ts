@@ -44,10 +44,13 @@ import {
   GEOMETRY_V2_ENGINE_VERSION,
   SNOW_GUARD_WIDTH_M,
   cartesianAngleToCanvasDeg,
+  imagePointToRoofLocalM,
   imagePointToMetric,
   imagePolygonToMetric,
   metricPointToImage,
   metricPolygonToImage,
+  projectedCanvasAngleToRoofLocalDeg,
+  type RoofSurfaceProjection,
   type ImageMetricAdapter,
 } from "@/lib/planning-core/geometry-v2";
 import type {
@@ -420,7 +423,16 @@ export function buildStandardPanelMetadata(input: {
         layoutMode: "standard",
         moduleTiltMode: resolved.mode,
         effectiveTiltDeg: resolved.effectiveTiltDeg,
+        geometrySpace: "roof-surface-v1",
       };
+}
+
+function standardRoofSurfaceProjection(roof: RoofArea): RoofSurfaceProjection | undefined {
+  const tiltDeg = Math.min(80, Math.max(0, roof.tiltDeg ?? 0));
+  const fallAzimuthDeg = resolveRoofFallAzimuth(roof);
+  return tiltDeg > 0 && typeof fallAzimuthDeg === "number"
+    ? { tiltDeg, fallAzimuthDeg }
+    : undefined;
 }
 
 export function alignStandardModulesParallelToFirst(input: {
@@ -1858,6 +1870,7 @@ function computeStandardDraftPanelResult(
     input.mppImage,
   );
   const spacing = resolveStandardAutoLayoutSpacingAxes(input.modules);
+  const surfaceProjection = standardRoofSurfaceProjection(input.roof);
   const panelWidthM = input.modules.orientation === "portrait"
     ? input.panel.widthM
     : input.panel.heightM;
@@ -1880,6 +1893,7 @@ function computeStandardDraftPanelResult(
     generation: {
       roofPolygon: input.roof.points,
       mppImage: input.mppImage,
+      surfaceProjection,
       canvasAngleDeg: resolveStandardAutoLayoutCanvasAngle({
         roofId: input.roof.id,
         roofPolygon: input.roof.points,
@@ -1927,13 +1941,23 @@ function computeStandardDraftPanelResult(
     ? groupRectangularThermalUnits({
         units: orderedPlacements.map((placement, index) => ({
           unitKey: `standard:${index}`,
-          centerM: {
-            x: placement.cx * input.mppImage,
-            y: -placement.cy * input.mppImage,
-          },
-          widthM: placement.wPx * input.mppImage,
-          heightM: placement.hPx * input.mppImage,
-          rotationCartesianDeg: -placement.angleDeg,
+          centerM: surfaceProjection
+            ? imagePointToRoofLocalM(
+                { x: placement.cx, y: placement.cy },
+                { x: 0, y: 0 },
+                input.mppImage,
+                surfaceProjection,
+              )
+            : { x: placement.cx * input.mppImage, y: -placement.cy * input.mppImage },
+          widthM: panelWidthM,
+          heightM: panelHeightM,
+          rotationCartesianDeg: surfaceProjection
+            ? projectedCanvasAngleToRoofLocalDeg(
+                placement.angleDeg,
+                input.mppImage,
+                surfaceProjection,
+              )
+            : -placement.angleDeg,
           columnIndex: placement.columnIndex,
           rowIndex: placement.rowIndex,
         })),

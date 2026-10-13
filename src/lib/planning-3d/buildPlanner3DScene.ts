@@ -250,7 +250,15 @@ export function buildPlanner3DScene(snapshot: Planner3DSourceSnapshot): Planner3
     const heightM = spec
       ? (panel.orientation === "portrait" ? spec.heightM : spec.widthM)
       : panel.hPx * snapshot.mppImage;
-    const corners = followsRoof
+    const corners = followsRoof && panel.standard?.geometrySpace === "roof-surface-v1"
+      ? planCorners.map((point) => pointOnRoof(
+          point,
+          origin,
+          snapshot.mppImage,
+          plane,
+          TECHNICAL_PANEL_CLEARANCE_M,
+        )) as [Vec3, Vec3, Vec3, Vec3]
+      : followsRoof
       ? physicalStandardPanelCorners({ panel, center, plane, widthM, heightM })
       : worldCorners.map((corner): Vec3 => ({
           ...corner,
