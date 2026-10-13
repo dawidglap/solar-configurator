@@ -65,7 +65,6 @@ import {
 import RoofShapesLayer from "./RoofShapesLayer";
 import RoofTrapezInteractionOverlay from "./RoofTrapezInteractionOverlay";
 import ZoneTrapezInteractionOverlay from "./ZoneTrapezInteractionOverlay";
-import RoofHudOverlay from "./RoofHudOverlay";
 import { useContainerSize } from "../canvas/hooks/useContainerSize";
 import { useBaseImage } from "../canvas/hooks/useBaseImage";
 import { useStagePanZoom } from "../canvas/hooks/useStagePanZoom";
@@ -1959,31 +1958,6 @@ export default function CanvasStage() {
         />
       )}
 
-      <RoofHudOverlay
-        selectedRoof={selectedRoof}
-        roofKind={selectedRoof?.roofKind ?? (
-          selectedRoofPlanning?.status === "supported-advanced"
-            ? selectedRoofPlanning.config.surface.kind
-            : "pitched"
-        )}
-        view={view}
-        canvasRotationDeg={rotateDeg}
-        imageSize={{
-          width: img?.naturalWidth ?? snap.width ?? 0,
-          height: img?.naturalHeight ?? snap.height ?? 0,
-        }}
-        viewportSize={{ width: size.w, height: size.h }}
-        shapeMode={shapeMode}
-        onToggleShape={() => {
-          const nextShapeMode = shapeMode === "normal" ? "trapezio" : "normal";
-          if (nextShapeMode === "trapezio") {
-            endManualPlacement();
-            setTool("select");
-          }
-          setUI({ roofShapeMode: nextShapeMode });
-        }}
-        canToggleShape={step !== "modules"}
-      />
       {/* ORIENTATION HUD */}
       <div
         className="planner-view-control fixed bottom-6 z-[600] pointer-events-none transition-[right] duration-150"

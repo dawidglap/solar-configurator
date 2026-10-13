@@ -8,7 +8,11 @@ import {
   hasOpenPlannerKeyboardOverlay,
   shouldIgnorePlannerHotkeyTarget,
 } from '../canvas/interactionPolicy';
-import { resolvePlannerStepForTool, resolvePlannerToolHotkey } from './toolHotkeyPolicy';
+import {
+  resolvePlannerStepForTool,
+  resolvePlannerToolHotkey,
+  resolveRoofShapeModeHotkey,
+} from './toolHotkeyPolicy';
 import type { Tool } from '@/types/planner';
 import { exitManualPlacementToSelect } from '../modules/manualPlacementSession';
 
@@ -57,6 +61,21 @@ export default function ToolHotkeys() {
       if (isRedo) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); history.redo(); return; }
 
       if (meta || ctrl || e.altKey) return;
+
+      const state = usePlannerV2Store.getState();
+      const roofShapeMode = resolveRoofShapeModeHotkey({
+        key: k,
+        step,
+        hasSelectedRoof: Boolean(state.selectedId),
+      });
+      if (roofShapeMode) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if (roofShapeMode === 'trapezio') exitManualPlacementToSelect(state.setTool);
+        state.setUI({ roofShapeMode });
+        return;
+      }
 
       // Escape and A share the canonical Auswählen action. A tool change also
       // drops transient drawing/fill state without committing it.

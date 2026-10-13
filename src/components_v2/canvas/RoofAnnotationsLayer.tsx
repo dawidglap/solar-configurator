@@ -28,6 +28,7 @@ import {
   getTransientRoofAnnotationPoints,
   subscribeTransientRoofAnnotationPoints,
 } from "./performance/transientRoofAnnotations";
+import { shouldShowRoofLabels } from "./roofLabelVisibility";
 
 const EDGE_PILL_SCALE = 1.25;
 const EDGE_PILL_FONT_SIZE = 10.5 * EDGE_PILL_SCALE;
@@ -63,6 +64,7 @@ export default function RoofAnnotationsLayer({
   const roof = usePlannerV2Store((state) => state.layers.find((item) => item.id === roofId));
   const step = usePlannerV2Store((state) => state.step);
   const scale = usePlannerV2Store((state) => state.view.scale || state.view.fitScale || 1);
+  const fitScale = usePlannerV2Store((state) => state.view.fitScale || 1);
   const view = usePlannerV2Store((state) => state.view);
   const mppImage = usePlannerV2Store((state) => state.snapshot.mppImage ?? 0);
   const globalMarginM = usePlannerV2Store((state) => state.modules.marginM);
@@ -105,6 +107,7 @@ export default function RoofAnnotationsLayer({
     ...(selectedZone ? { referenceLabel: "BEZUGSKANTE" as const } : {}),
   });
   const inverseScale = 1 / Math.max(scale, 0.01);
+  const showLabels = shouldShowRoofLabels(scale, fitScale);
   const useSharedEdgePills = !selectedZone;
   const offset = (useSharedEdgePills ? 24 : 18) * inverseScale;
   const adapter = { mppImage, metricOriginPx: { x: 0, y: 0 } };
@@ -145,7 +148,7 @@ export default function RoofAnnotationsLayer({
         />
       )}
 
-      {model.edges.map((edge) => {
+      {showLabels && model.edges.map((edge) => {
         const labelPoint = {
           x: edge.midpoint.x + edge.outward.x * offset,
           y: edge.midpoint.y + edge.outward.y * offset,

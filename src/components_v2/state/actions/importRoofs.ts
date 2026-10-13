@@ -1,5 +1,6 @@
 // src/components_v2/state/actions/importRoofs.ts
 import { usePlannerV2Store } from '@/components_v2/state/plannerV2Store';
+import { simplifySonnendachPolygon } from '@/lib/planning/sonnendachPolygon';
 
 type RoofPx = {
     id: string;
@@ -9,7 +10,7 @@ type RoofPx = {
 };
 
 export function commitSonnendachRoofs(roofs: RoofPx[]) {
-    const { addRoof } = usePlannerV2Store.getState();
+    const { addRoof, snapshot } = usePlannerV2Store.getState();
     // opzionale: una clear mirata se vuoi cancellare prima i "source: sonnendach"
     const { layers } = usePlannerV2Store.getState();
     const old = layers.filter(l => (l as any)?.source === 'sonnendach');
@@ -24,7 +25,9 @@ export function commitSonnendachRoofs(roofs: RoofPx[]) {
         addRoof({
             id: `sd_${p.id}_${idx}`,
             name: `Roof ${idx + 1}`,
-            points: p.pointsPx,
+            points: snapshot.mppImage
+                ? simplifySonnendachPolygon(p.pointsPx, snapshot.mppImage)
+                : p.pointsPx,
             azimuthDeg: p.azimuthDeg,
             tiltDeg: p.tiltDeg,
             source: 'sonnendach',   // campo libero, utile per reimport/clear

@@ -7,6 +7,7 @@ import {
   lonLatTo3857,
   type GeoSnapshot,
 } from '@/components_v2/utils/geo';
+import { simplifySonnendachPolygon } from '@/lib/planning/sonnendachPolygon';
 
 // ─────────────────────────────────────────────────────────────
 // TIPI
@@ -125,49 +126,6 @@ function compactness(pts: Pt[], mpp?: number) {
   const Pm = perimeterPx(pts) * (mpp ?? 0);
   if (!A || !Pm) return 0;
   return (4 * Math.PI * A) / (Pm * Pm);
-}
-
-function simplifyDP(pts: Pt[], epsPx: number): Pt[] {
-  if (pts.length < 3 || epsPx <= 0) return pts;
-
-  const keep = new Array(pts.length).fill(false);
-  keep[0] = keep[pts.length - 1] = true;
-
-  const stack: [number, number][] = [[0, pts.length - 1]];
-
-  const dist = (p: Pt, a: Pt, b: Pt) => {
-    const A = { x: p.x - a.x, y: p.y - a.y };
-    const B = { x: b.x - a.x, y: b.y - a.y };
-    const len2 = B.x * B.x + B.y * B.y || 1e-9;
-    const t = Math.max(0, Math.min(1, (A.x * B.x + A.y * B.y) / len2));
-    const proj = { x: a.x + t * B.x, y: a.y + t * B.y };
-    return Math.hypot(p.x - proj.x, p.y - proj.y);
-  };
-
-  while (stack.length) {
-    const [i, j] = stack.pop()!;
-    let idx = -1;
-    let maxd = 0;
-
-    for (let k = i + 1; k < j; k++) {
-      const d = dist(pts[k], pts[i], pts[j]);
-      if (d > maxd) {
-        maxd = d;
-        idx = k;
-      }
-    }
-
-    if (maxd > epsPx && idx !== -1) {
-      keep[idx] = true;
-      stack.push([i, idx], [idx, j]);
-    }
-  }
-
-  const out: Pt[] = [];
-  for (let i = 0; i < pts.length; i++) {
-    if (keep[i]) out.push(pts[i]);
-  }
-  return out;
 }
 
 function centroidPx(pts: Pt[]): Pt {
@@ -570,12 +528,14 @@ console.log('SONNENDACH ATTRIBUTES', attrs);
     }
   }
 
-  const epsPx = snap.mppImage ? F.SIMPLIFY_EPS_M / snap.mppImage : 0;
-
-  const simplified =
-    epsPx > 0
-      ? rawPolys.map((r) => ({ ...r, pointsPx: simplifyDP(r.pointsPx, epsPx) }))
-      : rawPolys;
+  const simplified = snap.mppImage
+    ? rawPolys.map((roof) => ({
+        ...roof,
+        pointsPx: simplifySonnendachPolygon(roof.pointsPx, snap.mppImage!, {
+          collinearDistanceM: F.SIMPLIFY_EPS_M,
+        }),
+      }))
+    : rawPolys;
 
   const afterArea = simplified.filter((r) => {
     const aM2 = typeof r.areaM2 === 'number' ? r.areaM2 : toM2(polygonAreaPx2(r.pointsPx), snap.mppImage);

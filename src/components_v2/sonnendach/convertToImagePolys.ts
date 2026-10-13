@@ -3,10 +3,11 @@ import { lonLatToImagePx } from "../utils/geo";
 import type { RoofArea, Pt } from "../state/plannerV2Store";
 import type { SonnendachPoly } from "./fetchRoofPolys";
 import { getCanonicalRoofVertices } from "@/lib/planning-core/geometry-v2";
+import { simplifySonnendachPolygon } from "@/lib/planning/sonnendachPolygon";
 
 export function polysToRoofAreas(
     polys: SonnendachPoly[],
-    snapshot: { bbox3857?: any; width?: number; height?: number }
+    snapshot: { bbox3857?: any; width?: number; height?: number; mppImage?: number }
 ): RoofArea[] {
     if (!snapshot.bbox3857 || !snapshot.width || !snapshot.height) return [];
 
@@ -14,7 +15,10 @@ export function polysToRoofAreas(
         const rawPoints: Pt[] = p.ring.map(([lat, lon]) =>
             lonLatToImagePx(snapshot as any, lon, lat)
         );
-        const points = getCanonicalRoofVertices(rawPoints).map(({ x, y }) => ({ x, y }));
+        const simplifiedPoints = snapshot.mppImage
+            ? simplifySonnendachPolygon(rawPoints, snapshot.mppImage)
+            : rawPoints;
+        const points = getCanonicalRoofVertices(simplifiedPoints).map(({ x, y }) => ({ x, y }));
         return {
             id: `roof_sd_${Date.now().toString(36)}_${idx}`,
             name: `Dach ${idx + 1}`,

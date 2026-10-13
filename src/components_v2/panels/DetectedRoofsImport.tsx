@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePlannerV2Store } from '../state/plannerV2Store';
 import { resolveInitialSonnendachRoofType } from '../modules/advanced/advancedPlanningApplication';
+import { simplifySonnendachPolygon } from '@/lib/planning/sonnendachPolygon';
 
 function areaM2(points: { x: number; y: number }[], mpp?: number) {
   if (!mpp || points.length < 3) return undefined;
@@ -67,7 +68,7 @@ export default function DetectedRoofsImport() {
       addRoof({
         id,
         name,
-        points: d.points,
+        points: mpp ? simplifySonnendachPolygon(d.points, mpp) : d.points,
         tiltDeg: d.tiltDeg,
         azimuthDeg: d.azimuthDeg,
         source: 'sonnendach',

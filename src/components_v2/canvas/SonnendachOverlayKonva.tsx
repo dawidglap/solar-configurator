@@ -33,7 +33,6 @@ export default function SonnendachOverlayKonva() {
             const cleanPoints = normalizeRoof(
               d.points,
               mpp,
-              { mergeTolM: 0.6, collinearEpsDeg: 5, minSpurM: 1.5, maxPasses: 5 } // strong
             );
 
             addRoof({

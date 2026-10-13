@@ -167,6 +167,7 @@ export default function TopToolbar() {
   );
   const manualPlacementSession = useManualPlacementSession();
   const showFieldDimensions = usePlannerV2Store((s) => s.ui.showFieldDimensions);
+  const roofShapeMode = usePlannerV2Store((s) => s.ui.roofShapeMode);
   const setUI = usePlannerV2Store((s) => s.setUI);
 
   const selectedRoof = useMemo(
@@ -735,6 +736,15 @@ export default function TopToolbar() {
     handleConvertToModules();
   }
 
+  function setRoofShapeMode(mode: "normal" | "trapezio") {
+    if (step !== "building" || !selectedRoof || roofShapeMode === mode) return;
+    if (mode === "trapezio") {
+      endManualPlacement();
+      setTool("select");
+    }
+    setUI({ roofShapeMode: mode });
+  }
+
   return (
     <div className="flex h-10 items-center justify-between gap-2 overflow-x-auto overscroll-x-contain bg-transparent px-2 text-foreground scrollbar-thin scrollbar-track-transparent scrollbar-thumb-transparent">
       {/* SX: sequenza unica — Auswählen + icone 1–6 + controlli moduli */}
@@ -796,6 +806,43 @@ export default function TopToolbar() {
           tooltipLabel="Hindernis · Rechteck"
           tooltipKeys={["Ziehen"]}
         />
+
+        {canUseBuildingTools && selectedRoof ? (
+          <div
+            className="ml-1 inline-flex h-8 items-center rounded-lg border border-border bg-secondary/35 p-0.5"
+            role="group"
+            aria-label="Dachform bearbeiten"
+          >
+            <button
+              type="button"
+              onClick={() => setRoofShapeMode("normal")}
+              aria-pressed={roofShapeMode === "normal"}
+              title="Normalmodus (N)"
+              className={[
+                "h-7 rounded-md px-2 text-[11px] font-medium transition focus:outline-none focus:ring-2 focus:ring-primary/25",
+                roofShapeMode === "normal"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+              ].join(" ")}
+            >
+              Normal <span className="ml-1 opacity-65">N</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRoofShapeMode("trapezio")}
+              aria-pressed={roofShapeMode === "trapezio"}
+              title="Trapezmodus (T)"
+              className={[
+                "h-7 rounded-md px-2 text-[11px] font-medium transition focus:outline-none focus:ring-2 focus:ring-primary/25",
+                roofShapeMode === "trapezio"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+              ].join(" ")}
+            >
+              Trapez <span className="ml-1 opacity-65">T</span>
+            </button>
+          </div>
+        ) : null}
 
         {/* Module-only */}
         <ActionBtn
