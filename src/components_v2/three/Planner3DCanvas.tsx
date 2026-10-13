@@ -210,8 +210,8 @@ export default function Planner3DCanvas({ scene, resetVersion }: { scene: Readon
       <ambientLight intensity={1.55} />
       <directionalLight position={[12, 18, 8]} intensity={2.2} castShadow shadow-mapSize={[1024, 1024]} />
       <TechnicalMeshes scene={scene} />
-      <gridHelper args={[groundSize, Math.max(10, Math.round(groundSize)), "#aeb8b5", "#cbd2d0"]} position={[0, -0.04, 0]} />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.055, 0]} receiveShadow>
+      <gridHelper args={[groundSize, Math.max(10, Math.round(groundSize)), "#aeb8b5", "#cbd2d0"]} position={[0, scene.groundY + 0.002, 0]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, scene.groundY, 0]} receiveShadow>
         <planeGeometry args={[groundSize, groundSize]} />
         <meshStandardMaterial color={COLORS.ground} roughness={1} />
       </mesh>

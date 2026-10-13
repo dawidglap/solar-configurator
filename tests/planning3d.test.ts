@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { buildPlanner3DScene } from "../src/lib/planning-3d/buildPlanner3DScene";
+import {
+  TECHNICAL_GROUND_CLEARANCE_M,
+  buildPlanner3DScene,
+} from "../src/lib/planning-3d/buildPlanner3DScene";
 import { distance3D } from "../src/lib/planning-3d/coordinates";
 import { triangulatePolygon } from "../src/lib/planning-3d/triangulate";
 import { computeUsableRoof, roofSegmentLengthM } from "../src/lib/planning-core/geometry-v2";
@@ -52,6 +55,109 @@ test("converts canonical image metres without depending on viewport state", () =
   assert.equal(Math.max(...xs) - Math.min(...xs), 10);
   assert.equal(Math.max(...zs) - Math.min(...zs), 8);
   assert.equal(scene.coordinateConvention, "image-x-to-world-x,image-y-to-world-z,vertical-to-world-y");
+  assert.equal(scene.referenceHeightStrategy, "connected-roof-assembly-neutral-height");
+});
+
+test("two connected pitched facets solve one identical 3D ridge without changing slopes", () => {
+  const first: RoofArea = {
+    id: "roof-a", name: "A", roofKind: "pitched", tiltDeg: 30, fallAzimuthDeg: 0,
+    points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 40 }, { x: 0, y: 40 }],
+  };
+  const second: RoofArea = {
+    id: "roof-b", name: "B", roofKind: "pitched", tiltDeg: 20, fallAzimuthDeg: 180,
+    points: [{ x: 0, y: 40 }, { x: 100, y: 40 }, { x: 100, y: 100 }, { x: 0, y: 100 }],
+  };
+  const scene = build({ roofs: [first, second], panels: [] });
+  assert.equal(scene.roofConnections.length, 1);
+  assert.ok(scene.roofConnections[0].errorBeforeM > 0.05);
+  assert.ok(scene.roofConnections[0].errorAfterM < 1e-10);
+  const roofA = scene.roofs.find((candidate) => candidate.id === first.id)!;
+  const roofB = scene.roofs.find((candidate) => candidate.id === second.id)!;
+  assert.equal(roofA.tiltDeg, 30);
+  assert.equal(roofA.fallAzimuthDeg, 0);
+  assert.equal(roofB.tiltDeg, 20);
+  assert.equal(roofB.fallAzimuthDeg, 180);
+  assert.ok(distance3D(roofA.vertices[2], roofB.vertices[1]) < 1e-10);
+  assert.ok(distance3D(roofA.vertices[3], roofB.vertices[0]) < 1e-10);
+});
+
+test("multi-facet assembly satisfies every shared edge without cumulative drift", () => {
+  const roofs: RoofArea[] = [
+    {
+      id: "roof-a", name: "A", roofKind: "pitched", tiltDeg: 30, fallAzimuthDeg: 0,
+      points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 30 }, { x: 0, y: 30 }],
+    },
+    {
+      id: "roof-b", name: "B", roofKind: "pitched", tiltDeg: 12, fallAzimuthDeg: 180,
+      points: [{ x: 0, y: 30 }, { x: 100, y: 30 }, { x: 100, y: 70 }, { x: 0, y: 70 }],
+    },
+    {
+      id: "roof-c", name: "C", roofKind: "pitched", tiltDeg: 25, fallAzimuthDeg: 180,
+      points: [{ x: 0, y: 70 }, { x: 100, y: 70 }, { x: 100, y: 120 }, { x: 0, y: 120 }],
+    },
+  ];
+  const scene = build({ roofs, panels: [] });
+  assert.equal(scene.roofConnections.length, 2);
+  assert.ok(scene.roofConnections.every((connection) => connection.errorAfterM < 1e-10));
+  const [a, b, c] = roofs.map((item) => scene.roofs.find((roofItem) => roofItem.id === item.id)!);
+  assert.ok(distance3D(a.vertices[2], b.vertices[1]) < 1e-10);
+  assert.ok(distance3D(a.vertices[3], b.vertices[0]) < 1e-10);
+  assert.ok(distance3D(b.vertices[2], c.vertices[1]) < 1e-10);
+  assert.ok(distance3D(b.vertices[3], c.vertices[0]) < 1e-10);
+});
+
+test("disconnected roofs remain separate neutral components", () => {
+  const first: RoofArea = {
+    id: "roof-a", name: "A", roofKind: "pitched", tiltDeg: 30, fallAzimuthDeg: 180,
+    points: [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 40 }],
+  };
+  const second: RoofArea = {
+    id: "roof-b", name: "B", roofKind: "pitched", tiltDeg: 20, fallAzimuthDeg: 0,
+    points: [{ x: 100, y: 100 }, { x: 140, y: 100 }, { x: 140, y: 140 }, { x: 100, y: 140 }],
+  };
+  const scene = build({ roofs: [first, second], panels: [] });
+  assert.equal(scene.roofConnections.length, 0);
+  assert.equal(scene.roofs[0].elevationOffsetM, 1);
+  assert.equal(scene.roofs[1].elevationOffsetM, 1);
+});
+
+test("roof children inherit the solved facet elevation and final ground stays below all geometry", () => {
+  const first: RoofArea = {
+    id: "roof-a", name: "A", roofKind: "pitched", tiltDeg: 30, fallAzimuthDeg: 0,
+    points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 40 }, { x: 0, y: 40 }],
+  };
+  const second: RoofArea = {
+    id: "roof-b", name: "B", roofKind: "pitched", tiltDeg: 20, fallAzimuthDeg: 180,
+    points: [{ x: 0, y: 40 }, { x: 100, y: 40 }, { x: 100, y: 100 }, { x: 0, y: 100 }],
+  };
+  const children = {
+    panels: [panel({ roofId: "roof-b", cx: 50, cy: 70 })],
+    obstacles: [{ id: "zone-b", roofId: "roof-b", points: [{ x: 20, y: 60 }, { x: 30, y: 60 }, { x: 30, y: 70 }, { x: 20, y: 70 }] }],
+    snowGuards: [{ id: "guard-b", roofId: "roof-b", p1: { x: 10, y: 80 }, p2: { x: 90, y: 80 } }],
+    standardMarginM: 0.2,
+  };
+  const isolated = build({ roofs: [second], ...children });
+  const connected = build({ roofs: [first, second], ...children });
+  const isolatedRoof = isolated.roofs.find((item) => item.id === "roof-b")!;
+  const connectedRoof = connected.roofs.find((item) => item.id === "roof-b")!;
+  const delta = connectedRoof.elevationOffsetM - isolatedRoof.elevationOffsetM;
+  const assertMovedByDelta = (before: readonly { y: number }[], after: readonly { y: number }[]) => {
+    assert.equal(before.length, after.length);
+    before.forEach((point, index) => assert.ok(Math.abs(after[index].y - point.y - delta) < 1e-10));
+  };
+  assertMovedByDelta(isolated.panels[0].corners, connected.panels[0].corners);
+  assertMovedByDelta(isolated.obstacles[0].base, connected.obstacles[0].base);
+  assertMovedByDelta(isolated.marginBands[0].outer, connected.marginBands.find((band) => band.roofId === "roof-b")!.outer);
+  assertMovedByDelta(
+    [isolated.snowGuards[0].start, isolated.snowGuards[0].end],
+    [connected.snowGuards[0].start, connected.snowGuards[0].end],
+  );
+  assert.ok(Math.abs(connected.groundY - (connected.bounds.min.y - TECHNICAL_GROUND_CLEARANCE_M)) < 1e-12);
+  assert.ok(connected.roofs.flatMap((item) => item.vertices).every((point) => point.y > connected.groundY));
+  assert.ok(connected.panels.flatMap((item) => item.corners).every((point) => point.y > connected.groundY));
+  assert.ok(connected.obstacles.flatMap((item) => [...item.base, ...item.top]).every((point) => point.y > connected.groundY));
+  assert.ok(connected.marginBands.flatMap((item) => [...item.outer, ...item.usableComponents.flat()]).every((point) => point.y > connected.groundY));
+  assert.ok(connected.snowGuards.flatMap((item) => [item.start, item.end]).every((point) => point.y > connected.groundY));
 });
 
 test("pitched roof falls in the canonical geographic direction at the configured angle", () => {

@@ -2,6 +2,7 @@ import { resolveRoofFallAzimuth } from "@/components_v2/roof/roofOrientation";
 import type { PanelInstance, Pt, RoofArea } from "@/types/planner";
 import { averagePoint, azimuthToWorldDirection, plannerPointToWorld } from "./coordinates";
 import { triangulatePolygon } from "./triangulate";
+import { assembleConnectedRoofFacets } from "./roofAssembly";
 import { resolveSurfacePlanning } from "@/lib/planning-core/advanced";
 import { computeUsableRoof, getCanonicalRoofVertices } from "@/lib/planning-core/geometry-v2";
 import {
@@ -12,6 +13,7 @@ import {
 import type {
   Planner3DBounds,
   Planner3DPanel,
+  Planner3DRoofConnection,
   Planner3DRoof,
   Planner3DSceneModel,
   Planner3DSourceSnapshot,
@@ -26,6 +28,7 @@ export const TECHNICAL_OBSTACLE_HEIGHT_M = 0.65;
 export const TECHNICAL_SNOW_GUARD_WIDTH_M = 0.3;
 export const TECHNICAL_SNOW_GUARD_RAIL_HEIGHT_M = 0.28;
 export const TECHNICAL_MARGIN_CLEARANCE_M = 0.012;
+export const TECHNICAL_GROUND_CLEARANCE_M = 0.4;
 
 type RoofPlane = Readonly<{
   centroid: Readonly<{ x: number; z: number }>;
@@ -154,31 +157,64 @@ export function buildPlanner3DScene(snapshot: Planner3DSourceSnapshot): Planner3
   const origin = averagePoint(allRoofPoints);
   const planes = new Map<string, RoofPlane>();
   const roofPoints = new Map<string, readonly Pt[]>();
-
-  const roofs: Planner3DRoof[] = snapshot.roofs.flatMap((roof) => {
+  const roofDrafts = snapshot.roofs.flatMap((roof) => {
     const canonicalPoints = getCanonicalRoofVertices(roof.points).map(({ x, y }) => ({ x, y }));
     if (canonicalPoints.length < 3) return [];
     const physical = roofPhysicalProperties(roof);
     const centroidWorld = plannerPointToWorld(averagePoint(canonicalPoints), origin, snapshot.mppImage);
     const plane: RoofPlane = {
       centroid: { x: centroidWorld.x, z: centroidWorld.z },
-      referenceHeight: TECHNICAL_ROOF_REFERENCE_HEIGHT_M,
+      referenceHeight: 0,
       tiltDeg: physical.tiltDeg,
       fallAzimuthDeg: physical.fallAzimuthDeg,
     };
-    planes.set(roof.id, plane);
     roofPoints.set(roof.id, canonicalPoints);
-    const vertices = canonicalPoints.map((point) => pointOnRoof(point, origin, snapshot.mppImage, plane));
-    return [{
-      id: roof.id,
-      kind: physical.kind,
+    return [{ roof, canonicalPoints, physical, plane }];
+  });
+  const assembly = assembleConnectedRoofFacets(
+    roofDrafts.map((draft) => ({
+      id: draft.roof.id,
+      planVertices: draft.canonicalPoints.map((point) => {
+        const world = plannerPointToWorld(point, origin, snapshot.mppImage);
+        return { x: world.x, z: world.z };
+      }),
+      heightAtNeutral: (point) => heightOnPlane(draft.plane, point.x, point.z),
+    })),
+    TECHNICAL_ROOF_REFERENCE_HEIGHT_M,
+  );
+  roofDrafts.forEach((draft) => {
+    planes.set(draft.roof.id, {
+      ...draft.plane,
+      referenceHeight: assembly.elevationOffsetsM.get(draft.roof.id) ?? TECHNICAL_ROOF_REFERENCE_HEIGHT_M,
+    });
+  });
+  const roofs: Planner3DRoof[] = roofDrafts.map((draft) => {
+    const plane = planes.get(draft.roof.id)!;
+    const vertices = draft.canonicalPoints.map((point) => pointOnRoof(point, origin, snapshot.mppImage, plane));
+    return {
+      id: draft.roof.id,
+      kind: draft.physical.kind,
       vertices,
       triangles: triangulatePolygon(vertices),
       thicknessM: TECHNICAL_ROOF_THICKNESS_M,
-      selected: roof.id === snapshot.selectedRoofId,
-      tiltDeg: physical.tiltDeg,
-      fallAzimuthDeg: physical.fallAzimuthDeg,
-    }];
+      selected: draft.roof.id === snapshot.selectedRoofId,
+      tiltDeg: draft.physical.tiltDeg,
+      fallAzimuthDeg: draft.physical.fallAzimuthDeg,
+      elevationOffsetM: plane.referenceHeight,
+    };
+  });
+  const roofConnections: Planner3DRoofConnection[] = assembly.connections.map((connection) => {
+    const firstPlane = planes.get(connection.roofAId)!;
+    const secondPlane = planes.get(connection.roofBId)!;
+    const endpoint = (point: { x: number; z: number }): Vec3 => ({
+      x: point.x,
+      z: point.z,
+      y: (
+        heightOnPlane(firstPlane, point.x, point.z) +
+        heightOnPlane(secondPlane, point.x, point.z)
+      ) / 2,
+    });
+    return { ...connection, start: endpoint(connection.start), end: endpoint(connection.end) };
   });
 
   const marginBands = snapshot.roofs.flatMap((roof) => {
@@ -296,20 +332,37 @@ export function buildPlanner3DScene(snapshot: Planner3DSourceSnapshot): Planner3
     return [{ id: guard.id, roofId: guard.roofId, start: convert(guard.p1), end: convert(guard.p2), widthM: TECHNICAL_SNOW_GUARD_WIDTH_M, railHeightM: TECHNICAL_SNOW_GUARD_RAIL_HEIGHT_M }];
   });
 
-  const points = [
-    ...roofs.flatMap((roof) => roof.vertices),
-    ...panels.flatMap((panel) => panel.corners),
-    ...obstacles.flatMap((obstacle) => obstacle.top),
-    ...snowGuards.flatMap((guard) => [guard.start, guard.end]),
+  const points: Vec3[] = [
+    ...roofs.flatMap((roof) => [
+      ...roof.vertices,
+      ...roof.vertices.map((vertex) => ({ ...vertex, y: vertex.y - roof.thicknessM })),
+    ]),
+    ...panels.flatMap((panel) => [
+      ...panel.corners,
+      ...panel.corners.map((corner) => ({ ...corner, y: corner.y - panel.thicknessM })),
+    ]),
+    ...marginBands.flatMap((band) => [...band.outer, ...band.usableComponents.flat()]),
+    ...obstacles.flatMap((obstacle) => [...obstacle.base, ...obstacle.top]),
+    ...snowGuards.flatMap((guard) => [
+      guard.start,
+      guard.end,
+      { ...guard.start, y: guard.start.y - guard.widthM / 2 },
+      { ...guard.end, y: guard.end.y - guard.widthM / 2 },
+      { ...guard.start, y: guard.start.y + guard.railHeightM },
+      { ...guard.end, y: guard.end.y + guard.railHeightM },
+    ]),
   ];
+  const bounds = calculateBounds(points);
   return freezeScene({
     coordinateConvention: "image-x-to-world-x,image-y-to-world-z,vertical-to-world-y",
-    referenceHeightStrategy: "per-roof-centroid-neutral-height",
+    referenceHeightStrategy: "connected-roof-assembly-neutral-height",
     roofs,
     panels,
     marginBands,
     obstacles,
     snowGuards,
-    bounds: calculateBounds(points),
+    roofConnections,
+    bounds,
+    groundY: bounds.min.y - TECHNICAL_GROUND_CLEARANCE_M,
   });
 }

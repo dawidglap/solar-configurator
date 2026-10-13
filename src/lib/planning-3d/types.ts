@@ -37,6 +37,17 @@ export type Planner3DRoof = Readonly<{
   selected: boolean;
   tiltDeg: number;
   fallAzimuthDeg?: number;
+  /** Derived render-only vertical datum; never persisted to planner state. */
+  elevationOffsetM: number;
+}>;
+
+export type Planner3DRoofConnection = Readonly<{
+  roofAId: string;
+  roofBId: string;
+  start: Vec3;
+  end: Vec3;
+  errorBeforeM: number;
+  errorAfterM: number;
 }>;
 
 export type Planner3DPanel = Readonly<{
@@ -84,11 +95,14 @@ export type Planner3DBounds = Readonly<{
 
 export type Planner3DSceneModel = Readonly<{
   coordinateConvention: "image-x-to-world-x,image-y-to-world-z,vertical-to-world-y";
-  referenceHeightStrategy: "per-roof-centroid-neutral-height";
+  referenceHeightStrategy: "connected-roof-assembly-neutral-height";
   roofs: readonly Planner3DRoof[];
   panels: readonly Planner3DPanel[];
   marginBands: readonly Planner3DMarginBand[];
   obstacles: readonly Planner3DObstacle[];
   snowGuards: readonly Planner3DSnowGuard[];
+  roofConnections: readonly Planner3DRoofConnection[];
   bounds: Planner3DBounds;
+  /** Visual-only grid/plane elevation derived after final technical bounds. */
+  groundY: number;
 }>;
