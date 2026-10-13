@@ -123,6 +123,8 @@ import {
   isPlannerMapReady,
   REFERENCE_EDGE_REMINDER_DURATION_MS,
 } from "./referenceEdgeReminder";
+import Planner3DView from "../three/Planner3DView";
+import { buildPlanner3DScene } from "@/lib/planning-3d/buildPlanner3DScene";
 
 const BUILDING_REVEAL_DURATION_MS = 1100;
 const SELECTION_UI_CANVAS_Z_INDEX = 190;
@@ -170,7 +172,13 @@ declare global {
   }
 }
 
-export default function CanvasStage() {
+export default function CanvasStage({
+  viewMode = "2d",
+  onViewModeChange,
+}: {
+  viewMode?: "2d" | "3d";
+  onViewModeChange?: (mode: "2d" | "3d") => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
   const selectionOverlayGroupRef = useRef<Konva.Group>(null);
@@ -280,6 +288,7 @@ export default function CanvasStage() {
   const setUI = usePlannerV2Store((s) => s.setUI);
   const modules = usePlannerV2Store((s) => s.modules);
   const allPanels = usePlannerV2Store((s) => s.panels);
+  const selectedPanelIds = usePlannerV2Store((s) => s.selectedPanelIds);
   const roofPlanningDrafts = usePlannerV2Store((s) => s.roofPlanningDrafts);
   const catalogPanels = usePlannerV2Store((s) => s.catalogPanels);
   const duplicatePanel = usePlannerV2Store((s) => s.duplicatePanel);
@@ -359,6 +368,19 @@ export default function CanvasStage() {
   const deletePanel = usePlannerV2Store((s) => s.deletePanel);
   const SHOW_AREA_LABELS = false;
 
+  const scene3D = useMemo(() => {
+    if (viewMode !== "3d" || !(snap.mppImage && snap.mppImage > 0)) return null;
+    return buildPlanner3DScene({
+      mppImage: snap.mppImage,
+      roofs: layers,
+      panels: allPanels,
+      obstacles: zones,
+      snowGuards,
+      selectedRoofId: selectedId,
+      selectedPanelIds,
+    });
+  }, [allPanels, layers, selectedId, selectedPanelIds, snap.mppImage, snowGuards, viewMode, zones]);
+
   const [showUiGrid, setShowUiGrid] = useState(true);
   const showFieldDimensions = usePlannerV2Store((state) => state.ui.showFieldDimensions);
   const [fieldDrawerOpen, setFieldDrawerOpen] = useState(false);
@@ -391,6 +413,7 @@ export default function CanvasStage() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (viewMode !== "2d") return;
       if (
         (e.key === "g" || e.key === "G") &&
         !(document.activeElement instanceof HTMLInputElement) &&
@@ -406,7 +429,7 @@ export default function CanvasStage() {
         onKey as any,
         { capture: true } as any,
       );
-  }, []);
+  }, [viewMode]);
 
   // --- ROTAZIONE MANUALE ---
   // const [rotateDeg, setRotateDeg] = useState(0);
@@ -415,6 +438,7 @@ export default function CanvasStage() {
   // Hotkeys: [ e ] per ±1°, Shift+[ / Shift+] per ±10°
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
+      if (viewMode !== "2d") return;
       // ignora se stai scrivendo
       const isTyping = (el: HTMLElement | null) => {
         if (!el) return false;
@@ -445,7 +469,7 @@ export default function CanvasStage() {
     window.addEventListener("keydown", onKey, { capture: true });
     return () =>
       window.removeEventListener("keydown", onKey, { capture: true } as any);
-  }, []);
+  }, [viewMode]);
 
   // Il draft visuale non appartiene al planner store né allo state di CanvasStage.
   const fillDraftChannel = useMemo(() => createTransientFillDraftChannel(), []);
@@ -511,6 +535,7 @@ export default function CanvasStage() {
   }, [manualPlacementSession, selectedId, step]);
 
   const marqueeEnabled = Boolean(
+    viewMode === "2d" &&
     step === "modules" &&
     tool === "select" &&
     selectedRoof &&
@@ -626,6 +651,7 @@ export default function CanvasStage() {
     type KbEvt = KeyboardEvent & { stopImmediatePropagation?: () => void };
 
     const onKey = (ev: KbEvt) => {
+      if (viewMode !== "2d") return;
       // ⛔️ NON reagire se il focus è su un campo di input / editor
       const isTyping = (el: HTMLElement | null) => {
         if (!el) return false;
@@ -741,10 +767,11 @@ export default function CanvasStage() {
     window.addEventListener("keydown", onKey, { capture: true });
     return () =>
       window.removeEventListener("keydown", onKey, { capture: true } as any);
-  }, []);
+  }, [viewMode]);
 
   // CanvasStage.tsx – subito dopo la definizione di stageRef
   useEffect(() => {
+    if (viewMode !== "2d") return;
     const stage = stageRef.current?.getStage?.();
     const container: HTMLDivElement | undefined = stage?.container?.();
     if (!container) return;
@@ -759,7 +786,7 @@ export default function CanvasStage() {
       container.removeEventListener("mousedown", focusOnPointer);
       container.removeEventListener("touchstart", focusOnPointer);
     };
-  }, []);
+  }, [viewMode]);
 
   // --- ROTAZIONE: utils + handlers ---
   const wrapDeg = (d: number) => {
@@ -991,6 +1018,7 @@ export default function CanvasStage() {
 
   // abilita i tool di disegno solo in building
   const drawingEnabled =
+    viewMode === "2d" &&
     step === "building" &&
     (tool === "draw-roof" ||
       tool === "draw-rect" ||
@@ -1120,7 +1148,7 @@ export default function CanvasStage() {
       controller.cancel();
       if (marqueeControllerRef.current === controller) marqueeControllerRef.current = null;
     };
-  }, [allPanels, marqueeEnabled, selectedId]);
+  }, [allPanels, marqueeEnabled, selectedId, viewMode]);
 
   // hook disegno tetto/zone (solo building)
   const {
@@ -1173,6 +1201,7 @@ export default function CanvasStage() {
   // intercettato da roof/panel/zone sottostanti. Il context menu è bloccato
   // soltanto dentro questo canvas.
   useEffect(() => {
+    if (viewMode !== "2d") return;
     const stage = stageRef.current?.getStage?.();
     const container = stage?.container?.() as HTMLDivElement | undefined;
     if (!container) return;
@@ -1213,7 +1242,7 @@ export default function CanvasStage() {
       window.removeEventListener("blur", endRightPan);
       endRightPan();
     };
-  }, [img, size.w, size.h, beginRightPan, moveRightPan, endRightPan, cancelBuildingReveal]);
+  }, [img, size.w, size.h, beginRightPan, moveRightPan, endRightPan, cancelBuildingReveal, viewMode]);
 
   // stile tetti
   const stroke = plannerTheme.roofStroke;
@@ -1255,7 +1284,7 @@ export default function CanvasStage() {
         className="relative h-full  w-full overflow-hidden "
       >
         <OverlayProgressStepper />
-        <OverlayTopToolbar />
+        <OverlayTopToolbar viewMode={viewMode} onViewModeChange={onViewModeChange} />
 
         <div
           className="absolute inset-0 flex items-start"
@@ -1278,7 +1307,7 @@ export default function CanvasStage() {
         className="relative h-full w-full overflow-hidden"
       >
         <OverlayProgressStepper />
-        <OverlayTopToolbar />
+        <OverlayTopToolbar viewMode={viewMode} onViewModeChange={onViewModeChange} />
 
         <StucklisteScreen />
       </div>
@@ -1292,7 +1321,7 @@ export default function CanvasStage() {
         className="relative h-full w-full overflow-hidden"
       >
         <OverlayProgressStepper />
-        <OverlayTopToolbar />
+        <OverlayTopToolbar viewMode={viewMode} onViewModeChange={onViewModeChange} />
         <div
           className="absolute inset-0"
           style={{ paddingTop: "calc(var(--tb, 0px) + 0px)" }}
@@ -1310,7 +1339,7 @@ export default function CanvasStage() {
         className="relative h-full w-full overflow-hidden"
       >
         <OverlayProgressStepper />
-        <OverlayTopToolbar />
+        <OverlayTopToolbar viewMode={viewMode} onViewModeChange={onViewModeChange} />
         <div
           className="absolute inset-0"
           style={{ paddingTop: "calc(var(--tb, 48px) + 0px)" }}
@@ -1326,19 +1355,19 @@ export default function CanvasStage() {
       ref={containerRef}
       className="relative h-full w-full overflow-hidden bg-background"
     >
-      {!img && <PlannerEmptyState />}
+      {viewMode === "2d" && !img && <PlannerEmptyState />}
 
       <OverlayProgressStepper />
-      <OverlayTopToolbar />
-      <ReferenceEdgeReminderToast visible={referenceEdgeReminderVisible} />
+      <OverlayTopToolbar viewMode={viewMode} onViewModeChange={onViewModeChange} />
+      {viewMode === "2d" && <ReferenceEdgeReminderToast visible={referenceEdgeReminderVisible} />}
 
-      <ScaleIndicator />
+      {viewMode === "2d" && <ScaleIndicator />}
 
       {/* {!snap.url && <CenterAddressSearchOverlay />} */}
 
       {/* <OverlayRightToggle /> */}
 
-      <div
+      {viewMode === "2d" && <div
         className="fixed z-[310] pointer-events-auto"
         style={{
           left: "calc(var(--sb, 0px) -2px)", // planner senza sidebar CRM
@@ -1348,10 +1377,25 @@ export default function CanvasStage() {
         }}
       >
         <RightPropertiesPanelOverlay />
-      </div>
+      </div>}
+
+      {viewMode === "3d" && (
+        <div className="absolute inset-0 z-[150]" style={{ paddingTop: "calc(var(--tb, 48px) + 40px)" }}>
+          {scene3D ? (
+            <Planner3DView scene={scene3D} onReturnTo2D={() => onViewModeChange?.("2d")} />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-3 bg-background text-sm text-muted-foreground">
+              <p>Für die 3D-Ansicht fehlt eine gültige Planskala.</p>
+              <button type="button" onClick={() => onViewModeChange?.("2d")} className="rounded-md border border-border bg-card px-3 py-2 text-foreground hover:bg-muted">
+                Zurück zu 2D
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {img && size.w > 0 && size.h > 0 && (
-        <div className="relative" style={{ width: size.w, height: size.h }}>
+        <div className={viewMode === "2d" ? "relative" : "pointer-events-none invisible relative"} style={{ width: size.w, height: size.h }} aria-hidden={viewMode === "3d"}>
           <Stage
             ref={stageRef}
             width={size.w}
@@ -1861,16 +1905,16 @@ export default function CanvasStage() {
       )}
 
       {/* Controller che emette il draft del rettangolo */}
-      {step === "modules" && tool === "fill-area" && (
+      {viewMode === "2d" && step === "modules" && tool === "fill-area" && (
         <FillAreaController
           stageRef={stageRef}
           toImgCoords={toImgCoords}
           draftChannel={fillDraftChannel}
         />
       )}
-      <ToolHotkeys />
+      {viewMode === "2d" && <ToolHotkeys />}
 
-      <PanelHotkeys
+      {viewMode === "2d" && <PanelHotkeys
         selectedPanelId={selectedPanelInstId}
         disabled={tool !== "select"}
         onDelete={(id) => {
@@ -1883,16 +1927,16 @@ export default function CanvasStage() {
           const nid = duplicatePanel(id);
           if (nid) setSelectedPanelInstId(nid);
         }}
-      />
+      />}
 
-      <RoofHotkeys />
+      {viewMode === "2d" && <RoofHotkeys />}
 
-      <CompassHUD
+      {viewMode === "2d" && <CompassHUD
         rightOffsetPx={showFieldDimensions && fieldDrawerOpen ? THERMAL_FIELD_DRAWER_WIDTH_PX + 12 : 0}
         canvasRotationDeg={rotateDeg}
-      />
+      />}
 
-      {img && (
+      {viewMode === "2d" && img && (
         <MapZoomControl
           ref={zoomControlRef}
           scale={view.scale || view.fitScale || 1}
@@ -1907,7 +1951,7 @@ export default function CanvasStage() {
         />
       )}
 
-      {step === "modules" && showFieldDimensions && (
+      {viewMode === "2d" && step === "modules" && showFieldDimensions && (
         <ThermalFieldOverviewDrawer
           open={fieldDrawerOpen}
           fields={activeThermalFields}

@@ -3,7 +3,13 @@
 import TopToolbar from "./TopToolbar";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 
-export default function OverlayTopToolbar() {
+export default function OverlayTopToolbar({
+  viewMode = "2d",
+  onViewModeChange,
+}: {
+  viewMode?: "2d" | "3d";
+  onViewModeChange?: (mode: "2d" | "3d") => void;
+}) {
   const step = usePlannerV2Store((s) => s.step);
   const show = step === "building" || step === "modules";
 
@@ -15,7 +21,7 @@ export default function OverlayTopToolbar() {
       style={{ top: "var(--tb, 48px)" }} // fallback 56px, così resta sotto la topbar
     >
       <div className="glass-topbar planner-surface-topbar pointer-events-auto relative mx-auto max-w-full border-l border-border/60">
-        <TopToolbar />
+        <TopToolbar viewMode={viewMode} onViewModeChange={onViewModeChange} />
       </div>
     </div>
   );

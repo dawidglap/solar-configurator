@@ -133,7 +133,13 @@ function useBottomTooltip<T extends HTMLElement>(triggerRef: AnyRef<T>) {
 }
 
 /* ───────────────────────── Toolbar ───────────────────────── */
-export default function TopToolbar() {
+export default function TopToolbar({
+  viewMode = "2d",
+  onViewModeChange,
+}: {
+  viewMode?: "2d" | "3d";
+  onViewModeChange?: (mode: "2d" | "3d") => void;
+}) {
   // Stato globale
   const step = usePlannerV2Store((s) => s.step); // 'building' | 'modules' | ...
   const setStep = usePlannerV2Store((s) => s.setStep);
@@ -745,6 +751,33 @@ export default function TopToolbar() {
     setUI({ roofShapeMode: mode });
   }
 
+  const viewSwitch = onViewModeChange ? (
+    <div className="inline-flex h-8 items-center rounded-lg border border-border bg-secondary/40 p-0.5" role="group" aria-label="Planungsansicht">
+      {(["2d", "3d"] as const).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          onClick={() => onViewModeChange(mode)}
+          aria-pressed={viewMode === mode}
+          className={[
+            "h-7 min-w-10 rounded-md px-2 text-[11px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-primary/25",
+            viewMode === mode ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+          ].join(" ")}
+        >
+          {mode.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  if (viewMode === "3d") {
+    return (
+      <div className="flex h-10 items-center justify-end bg-transparent px-2 text-foreground">
+        {viewSwitch}
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-10 items-center justify-between gap-2 overflow-x-auto overscroll-x-contain bg-transparent px-2 text-foreground scrollbar-thin scrollbar-track-transparent scrollbar-thumb-transparent">
       {/* SX: sequenza unica — Auswählen + icone 1–6 + controlli moduli */}
@@ -948,6 +981,8 @@ export default function TopToolbar() {
 
       {/* DESTRA: azioni, history e statistiche con separatori condivisi. */}
       <div className="ms-auto flex shrink-0 items-center">
+        {viewSwitch}
+        {viewSwitch ? <div aria-hidden="true" className="mx-2 h-4 w-px shrink-0 self-center bg-white/10" /> : null}
         <div className="flex items-center gap-1">
           {canUseModulesTools && (
             <button
