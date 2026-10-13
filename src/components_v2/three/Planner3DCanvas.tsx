@@ -7,6 +7,7 @@ import * as THREE from "three";
 import type {
   Planner3DObstacle,
   Planner3DPanel,
+  Planner3DMarginBand,
   Planner3DRoof,
   Planner3DSceneModel,
   Vec3,
@@ -20,6 +21,7 @@ const COLORS = {
   obstacle: "#7d8786",
   snowGuard: "#c8d0d1",
   ground: "#dce2e0",
+  margin: "#a94f55",
 } as const;
 
 type MutablePositions = number[];
@@ -81,6 +83,27 @@ function obstacleGeometry(obstacles: readonly Planner3DObstacle[]): THREE.Buffer
   return geometryFromPositions(positions);
 }
 
+function marginBandGeometry(bands: readonly Planner3DMarginBand[]): THREE.BufferGeometry {
+  const positions: MutablePositions = [];
+  bands.forEach((band) => {
+    const byPlanPoint = new Map<string, Vec3>();
+    const remember = (point: Vec3) => {
+      byPlanPoint.set(`${point.x.toFixed(9)}:${point.z.toFixed(9)}`, point);
+      return new THREE.Vector2(point.x, point.z);
+    };
+    const contour = band.outer.map(remember);
+    const holes = band.usableComponents.map((component) => component.map(remember));
+    const faces = THREE.ShapeUtils.triangulateShape(contour, holes);
+    const flattened = [...contour, ...holes.flat()];
+    const resolve = (index: number): Vec3 => {
+      const point = flattened[index];
+      return byPlanPoint.get(`${point.x.toFixed(9)}:${point.y.toFixed(9)}`) ?? { x: point.x, y: 0, z: point.y };
+    };
+    faces.forEach(([a, b, c]) => pushTriangle(positions, resolve(a), resolve(b), resolve(c)));
+  });
+  return geometryFromPositions(positions);
+}
+
 function TechnicalMeshes({ scene }: { scene: Readonly<Planner3DSceneModel> }) {
   const geometries = useMemo(() => ({
     roofs: roofGeometry(scene.roofs, false),
@@ -88,6 +111,7 @@ function TechnicalMeshes({ scene }: { scene: Readonly<Planner3DSceneModel> }) {
     panels: panelGeometry(scene.panels, false),
     selectedPanels: panelGeometry(scene.panels, true),
     obstacles: obstacleGeometry(scene.obstacles),
+    marginBands: marginBandGeometry(scene.marginBands),
   }), [scene]);
 
   useEffect(() => () => Object.values(geometries).forEach((geometry) => geometry.dispose()), [geometries]);
@@ -108,6 +132,17 @@ function TechnicalMeshes({ scene }: { scene: Readonly<Planner3DSceneModel> }) {
       </mesh>
       <mesh geometry={geometries.obstacles} castShadow receiveShadow>
         <meshStandardMaterial color={COLORS.obstacle} roughness={0.9} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh geometry={geometries.marginBands} renderOrder={2}>
+        <meshBasicMaterial
+          color={COLORS.margin}
+          transparent
+          opacity={0.38}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          polygonOffset
+          polygonOffsetFactor={-2}
+        />
       </mesh>
       {scene.snowGuards.map((guard) => (
         <SnowGuardMesh key={guard.id} start={guard.start} end={guard.end} width={guard.widthM} railHeight={guard.railHeightM} />

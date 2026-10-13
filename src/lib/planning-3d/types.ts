@@ -1,4 +1,4 @@
-import type { PanelInstance, Pt, RoofArea } from "@/types/planner";
+import type { PanelInstance, PanelSpec, Pt, RoofArea } from "@/types/planner";
 
 export type Planner3DZone = Readonly<{
   id: string;
@@ -17,6 +17,8 @@ export type Planner3DSourceSnapshot = Readonly<{
   mppImage: number;
   roofs: readonly RoofArea[];
   panels: readonly PanelInstance[];
+  panelSpecs: readonly PanelSpec[];
+  standardMarginM: number;
   obstacles: readonly Planner3DZone[];
   snowGuards: readonly Planner3DSnowGuardSource[];
   selectedRoofId?: string;
@@ -49,6 +51,14 @@ export type Planner3DPanel = Readonly<{
   slotIndex?: number;
 }>;
 
+export type Planner3DMarginBand = Readonly<{
+  roofId: string;
+  outer: readonly Vec3[];
+  usableComponents: readonly (readonly Vec3[])[];
+  marginM: number;
+  edgeMarginsM?: readonly number[];
+}>;
+
 export type Planner3DObstacle = Readonly<{
   id: string;
   roofId: string;
@@ -77,6 +87,7 @@ export type Planner3DSceneModel = Readonly<{
   referenceHeightStrategy: "per-roof-centroid-neutral-height";
   roofs: readonly Planner3DRoof[];
   panels: readonly Planner3DPanel[];
+  marginBands: readonly Planner3DMarginBand[];
   obstacles: readonly Planner3DObstacle[];
   snowGuards: readonly Planner3DSnowGuard[];
   bounds: Planner3DBounds;

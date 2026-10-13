@@ -374,12 +374,14 @@ export default function CanvasStage({
       mppImage: snap.mppImage,
       roofs: layers,
       panels: allPanels,
+      panelSpecs: catalogPanels,
+      standardMarginM: modules.marginM,
       obstacles: zones,
       snowGuards,
       selectedRoofId: selectedId,
       selectedPanelIds,
     });
-  }, [allPanels, layers, selectedId, selectedPanelIds, snap.mppImage, snowGuards, viewMode, zones]);
+  }, [allPanels, catalogPanels, layers, modules.marginM, selectedId, selectedPanelIds, snap.mppImage, snowGuards, viewMode, zones]);
 
   const [showUiGrid, setShowUiGrid] = useState(true);
   const showFieldDimensions = usePlannerV2Store((state) => state.ui.showFieldDimensions);

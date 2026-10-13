@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { buildPlanner3DScene } from "../src/lib/planning-3d/buildPlanner3DScene";
+import { distance3D } from "../src/lib/planning-3d/coordinates";
 import { triangulatePolygon } from "../src/lib/planning-3d/triangulate";
+import { computeUsableRoof, roofSegmentLengthM } from "../src/lib/planning-core/geometry-v2";
 import type { PanelInstance, RoofArea } from "../src/types/planner";
 
 const roof: RoofArea = {
@@ -35,6 +37,8 @@ function build(overrides: Partial<Parameters<typeof buildPlanner3DScene>[0]> = {
     mppImage: 0.1,
     roofs: [roof],
     panels: [panel()],
+    panelSpecs: [{ id: "spec-1", brand: "SOLA", model: "Physical", wp: 430, widthM: 1, heightM: 2, priceChf: 0 }],
+    standardMarginM: 0,
     obstacles: [],
     snowGuards: [],
     ...overrides,
@@ -68,6 +72,70 @@ test("standard module corners rest parallel above the pitched roof", () => {
   const roofDropPerZ = (roofVertices[3].y - roofVertices[0].y) / (roofVertices[3].z - roofVertices[0].z);
   const panelDropPerZ = (panelCorners[3].y - panelCorners[0].y) / (panelCorners[3].z - panelCorners[0].z);
   assert.ok(Math.abs(roofDropPerZ - panelDropPerZ) < 1e-10);
+  assert.ok(Math.abs(distance3D(panelCorners[0], panelCorners[1]) - 1) < 1e-10);
+  assert.ok(Math.abs(distance3D(panelCorners[1], panelCorners[2]) - 2) < 1e-10);
+});
+
+test("39 degree roof reconstructs a 6.56 m surface edge from its top-down projection", () => {
+  const pitch = 39;
+  const trueLengthM = 6.56;
+  const projectedLengthM = trueLengthM * Math.cos(pitch * Math.PI / 180);
+  const mppImage = 0.01;
+  const projectedPx = projectedLengthM / mppImage;
+  const realCaseRoof: RoofArea = {
+    id: "roof-1",
+    name: "39 degree acceptance",
+    roofKind: "pitched",
+    tiltDeg: pitch,
+    fallAzimuthDeg: 180,
+    points: [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: projectedPx }, { x: 0, y: projectedPx }],
+  };
+  const scene = build({ mppImage, roofs: [realCaseRoof], panels: [] });
+  const surfaceLength = distance3D(scene.roofs[0].vertices[0], scene.roofs[0].vertices[3]);
+  const projectedLength = Math.hypot(
+    scene.roofs[0].vertices[0].x - scene.roofs[0].vertices[3].x,
+    scene.roofs[0].vertices[0].z - scene.roofs[0].vertices[3].z,
+  );
+  assert.ok(Math.abs(projectedLength - projectedLengthM) < 1e-10);
+  assert.ok(Math.abs(surfaceLength - trueLengthM) < 1e-10);
+});
+
+test("surface distance matches SOLA measurements for flat, 15°, 39°, steep and arbitrary edges", () => {
+  const vectors = [
+    { x: 0, y: 120 },
+    { x: 120, y: 0 },
+    { x: 72, y: 96 },
+  ];
+  for (const pitch of [0, 15, 39, 85]) {
+    for (const vector of vectors) {
+      const testRoof: RoofArea = {
+        id: "roof-1",
+        name: "basis test",
+        roofKind: pitch === 0 ? "flat" : "pitched",
+        tiltDeg: pitch,
+        fallAzimuthDeg: 180,
+        points: [
+          { x: 0, y: 0 },
+          { x: vector.x, y: vector.y },
+          { x: vector.x + 30, y: vector.y - 20 },
+          { x: 30, y: -20 },
+        ],
+      };
+      const scene = build({ roofs: [testRoof], panels: [] });
+      const actual = distance3D(scene.roofs[0].vertices[0], scene.roofs[0].vertices[1]);
+      const expected = roofSegmentLengthM(vector, 0.1, {
+        tiltDeg: pitch === 0 ? 0 : pitch,
+        fallAzimuthDeg: 180,
+      });
+      assert.ok(Math.abs(actual - expected) < 1e-9, `${pitch}° ${JSON.stringify(vector)}`);
+      assert.ok(Math.abs(
+        Math.hypot(
+          scene.roofs[0].vertices[1].x - scene.roofs[0].vertices[0].x,
+          scene.roofs[0].vertices[1].z - scene.roofs[0].vertices[0].z,
+        ) - Math.hypot(vector.x, vector.y) * 0.1,
+      ) < 1e-9);
+    }
+  }
 });
 
 test("D-Dome faces use persisted identity and descend away from their shared ridge", () => {
@@ -122,11 +190,51 @@ test("ear clipping triangulates a concave roof without a bounding-box replacemen
   assert.equal(triangleArea, 12);
 });
 
+test("3D Randabstand reuses canonical uniform and per-edge usable-roof geometry", () => {
+  const flatRoof: RoofArea = {
+    id: "roof-1",
+    name: "Margin",
+    roofKind: "flat",
+    tiltDeg: 0,
+    points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }],
+  };
+  const uniform = build({ roofs: [{ ...flatRoof, edgeMarginM: 1 }], panels: [] });
+  assert.equal(uniform.marginBands.length, 1);
+  assert.equal(uniform.marginBands[0].marginM, 1);
+  assert.equal(uniform.marginBands[0].usableComponents.length, 1);
+  const uniformHole = uniform.marginBands[0].usableComponents[0];
+  assert.ok(Math.abs(Math.max(...uniformHole.map((point) => point.x)) - Math.min(...uniformHole.map((point) => point.x)) - 8) < 1e-9);
+  assert.ok(Math.abs(Math.max(...uniformHole.map((point) => point.z)) - Math.min(...uniformHole.map((point) => point.z)) - 8) < 1e-9);
+
+  const edgeMarginsM = [0.5, 1, 1.5, 2];
+  const perEdgeRoof: RoofArea = {
+    ...flatRoof,
+    edgeMarginMode: "perEdge",
+    edgeStableIds: ["e1", "e2", "e3", "e4"],
+    edgeMarginsM: { e1: 0.5, e2: 1, e3: 1.5, e4: 2 },
+  };
+  const perEdge = build({ roofs: [perEdgeRoof], panels: [], standardMarginM: 0.2 });
+  assert.deepEqual(perEdge.marginBands[0].edgeMarginsM, edgeMarginsM);
+  const canonical = computeUsableRoof({
+    roofPolygonM: flatRoof.points.map((point) => ({ x: point.x * 0.1, y: point.y * 0.1 })),
+    marginM: 0.2,
+    edgeMarginsM,
+  });
+  assert.equal(canonical.status, "valid");
+  const canonicalComponent = canonical.components[0];
+  const renderedComponent = perEdge.marginBands[0].usableComponents[0];
+  const span = (values: readonly number[]) => Math.max(...values) - Math.min(...values);
+  assert.ok(Math.abs(span(renderedComponent.map((point) => point.x)) - span(canonicalComponent.map((point) => point.x))) < 1e-9);
+  assert.ok(Math.abs(span(renderedComponent.map((point) => point.z)) - span(canonicalComponent.map((point) => point.y))) < 1e-9);
+});
+
 test("scene conversion is deeply read-only and leaves canonical planner JSON invariant", () => {
   const source = {
     mppImage: 0.1,
     roofs: [roof],
     panels: [panel()],
+    panelSpecs: [{ id: "spec-1", brand: "SOLA", model: "Physical", wp: 430, widthM: 1, heightM: 2, priceChf: 0 }],
+    standardMarginM: 0,
     obstacles: [],
     snowGuards: [],
     selectedRoofId: "roof-1",
