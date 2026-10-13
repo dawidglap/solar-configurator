@@ -104,13 +104,11 @@ test("draft and applied panel metadata distinguish inherit from custom", () => {
     layoutMode: "standard",
     moduleTiltMode: "custom",
     effectiveTiltDeg: 15,
-    geometrySpace: "roof-surface-v1",
   });
   assert.deepEqual(buildStandardPanelMetadata({ roofSlopeDeg: 25 }), {
     layoutMode: "standard",
     moduleTiltMode: "inherit-roof",
     effectiveTiltDeg: 25,
-    geometrySpace: "roof-surface-v1",
   });
 });
 

@@ -9,6 +9,7 @@ import {
   K2_S_DOME_SYSTEM_ID,
   expandBlockToModules,
   instantiateAdvancedBlock,
+  resolveSurfacePlanning,
   resolveStandardModuleTilt,
   type AdvancedSurfacePlanningV1,
   type StandardModuleTiltInput,
@@ -365,8 +366,16 @@ export function buildStandardExistingLayoutReflow(input: {
   if (roofPanels.some((panel) => Math.abs(panel.angleDeg - angle) > 1e-6)) return null;
   const adapter = imageAdapter(input.roof, input.mppImage);
   const rotation = -angle;
-  const tiltDeg = Math.min(80, Math.max(0, input.roof.tiltDeg ?? 0));
-  const fallAzimuthDeg = resolveRoofFallAzimuth(input.roof);
+  const persistedPlanning = resolveSurfacePlanning(input.roof.surfacePlanning);
+  const supportedSurface = persistedPlanning.status === "supported-standard" &&
+    persistedPlanning.config.surface.kind === "pitched";
+  const tiltDeg = Math.min(80, Math.max(
+    0,
+    (supportedSurface ? persistedPlanning.config.surface.slopeDeg : undefined) ?? input.roof.tiltDeg ?? 0,
+  ));
+  const fallAzimuthDeg = supportedSurface
+    ? persistedPlanning.config.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(input.roof)
+    : resolveRoofFallAzimuth(input.roof);
   const surfaceProjection = tiltDeg > 0 && typeof fallAzimuthDeg === "number"
     ? { tiltDeg, fallAzimuthDeg }
     : undefined;

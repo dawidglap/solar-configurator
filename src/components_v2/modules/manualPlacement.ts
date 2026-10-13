@@ -17,6 +17,7 @@ import {
   groupThermalFields,
   groupRectangularThermalUnits,
   instantiateAdvancedBlock,
+  resolveSurfacePlanning,
   type AdvancedBlockDefinition,
   type AdvancedSurfacePlanningV1,
   type ThermalFieldLimits,
@@ -26,9 +27,13 @@ import {
   SNOW_GUARD_WIDTH_M,
   computeUsableRoof,
   imagePointToMetric,
+  imagePointToRoofLocalM,
   imagePolygonToMetric,
   metricPointToImage,
   metricPolygonToImage,
+  physicalLengthToProjectedPixels,
+  projectedCanvasAngleToRoofLocalDeg,
+  projectedVectorToRoofLocalM,
   polygonsIntersectOrTouch,
   rotateMetricPoint,
   validatePlacementFootprint,
@@ -38,6 +43,7 @@ import {
 } from "@/lib/planning-core/geometry-v2";
 import type { ModulesConfig, PanelInstance, PanelSpec, Pt, RoofArea } from "@/types/planner";
 import { resolveRoofEdgeMarginsM } from "@/lib/planning/roofProperties";
+import { resolveRoofFallAzimuth } from "../roof/roofOrientation";
 
 export type ManualPlacementReason =
   | "outside-usable-roof"
@@ -45,6 +51,22 @@ export type ManualPlacementReason =
   | "snow-guard"
   | "panel-overlap"
   | "unsupported-configuration";
+
+function standardRoofSurfaceProjection(roof: RoofArea) {
+  const planning = resolveSurfacePlanning(roof.surfacePlanning);
+  const supported = planning.status === "supported-standard" &&
+    planning.config.surface.kind === "pitched";
+  const tiltDeg = Math.min(80, Math.max(
+    0,
+    (supported ? planning.config.surface.slopeDeg : undefined) ?? roof.tiltDeg ?? 0,
+  ));
+  const fallAzimuthDeg = supported
+    ? planning.config.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(roof)
+    : resolveRoofFallAzimuth(roof);
+  return tiltDeg > 0 && typeof fallAzimuthDeg === "number"
+    ? { tiltDeg, fallAzimuthDeg }
+    : undefined;
+}
 
 export type ManualPlacementModule = {
   cx: number;
@@ -210,6 +232,7 @@ export function createPanelPlacementValidator(input: {
     });
   const gapXM = Math.max(0, input.moduleGapXM ?? 0);
   const gapYM = Math.max(0, input.moduleGapYM ?? 0);
+  const surfaceProjection = standardRoofSurfaceProjection(input.roof);
   const spacingEpsilonM = 1e-6;
 
   return (panels) => {
@@ -271,8 +294,20 @@ export function createPanelPlacementValidator(input: {
         const dyM = (other.cy - panel.cy) * input.mppImage;
         const duM = Math.abs(dxM * cos + dyM * sin);
         const dvM = Math.abs(-dxM * sin + dyM * cos);
-        const minU = (panel.wPx + other.wPx) * input.mppImage / 2 + gapXM;
-        const minV = (panel.hPx + other.hPx) * input.mppImage / 2 + gapYM;
+        const surfaceAware = panel.standard?.geometrySpace === "roof-surface-v1" &&
+          other.standard?.geometrySpace === "roof-surface-v1";
+        const projectedGapXM = surfaceAware
+          ? physicalLengthToProjectedPixels(
+              gapXM, panel.angleDeg, input.mppImage, surfaceProjection,
+            ) * input.mppImage
+          : gapXM;
+        const projectedGapYM = surfaceAware
+          ? physicalLengthToProjectedPixels(
+              gapYM, panel.angleDeg + 90, input.mppImage, surfaceProjection,
+            ) * input.mppImage
+          : gapYM;
+        const minU = (panel.wPx + other.wPx) * input.mppImage / 2 + projectedGapXM;
+        const minV = (panel.hPx + other.hPx) * input.mppImage / 2 + projectedGapYM;
         return duM < minU - spacingEpsilonM && dvM < minV - spacingEpsilonM;
       });
     });
@@ -919,17 +954,49 @@ export function regroupStandardPanelsAfterManualCommit(input: {
   const spacingX = input.modules.spacingXM ?? input.modules.spacingM;
   const spacingY = input.modules.spacingYM ?? input.modules.spacingM;
   const first = roofPanels[0];
+  const resolvedSurfaceProjection = standardRoofSurfaceProjection(input.roof);
+  const surfaceProjection = first.standard?.geometrySpace === "roof-surface-v1" &&
+    resolvedSurfaceProjection
+    ? resolvedSurfaceProjection
+    : undefined;
+  const surfaceExtent = (panel: PanelInstance, axis: "width" | "height") => {
+    if (!surfaceProjection) {
+      return (axis === "width" ? panel.wPx : panel.hPx) * input.mppImage;
+    }
+    const radians = (panel.angleDeg + (axis === "height" ? 90 : 0)) * Math.PI / 180;
+    const lengthPx = axis === "width" ? panel.wPx : panel.hPx;
+    const vector = projectedVectorToRoofLocalM({
+      x: Math.cos(radians) * lengthPx,
+      y: Math.sin(radians) * lengthPx,
+    }, input.mppImage, surfaceProjection);
+    return Math.hypot(vector.x, vector.y);
+  };
+  const firstWidthM = surfaceExtent(first, "width");
+  const firstHeightM = surfaceExtent(first, "height");
   const grouping = groupRectangularThermalUnits({
     units: roofPanels.map((panel) => ({
       unitKey: panel.id,
-      centerM: { x: panel.cx * input.mppImage, y: -panel.cy * input.mppImage },
-      widthM: panel.wPx * input.mppImage,
-      heightM: panel.hPx * input.mppImage,
-      rotationCartesianDeg: -(panel.angleDeg ?? 0),
+      centerM: surfaceProjection
+        ? imagePointToRoofLocalM(
+            { x: panel.cx, y: panel.cy },
+            { x: 0, y: 0 },
+            input.mppImage,
+            surfaceProjection,
+          )
+        : { x: panel.cx * input.mppImage, y: -panel.cy * input.mppImage },
+      widthM: surfaceExtent(panel, "width"),
+      heightM: surfaceExtent(panel, "height"),
+      rotationCartesianDeg: surfaceProjection
+        ? projectedCanvasAngleToRoofLocalDeg(
+            panel.angleDeg,
+            input.mppImage,
+            surfaceProjection,
+          )
+        : -(panel.angleDeg ?? 0),
     })),
     pitchM: {
-      x: first.wPx * input.mppImage + spacingX,
-      y: first.hPx * input.mppImage + spacingY,
+      x: firstWidthM + spacingX,
+      y: firstHeightM + spacingY,
     },
     limits: input.limits,
   });

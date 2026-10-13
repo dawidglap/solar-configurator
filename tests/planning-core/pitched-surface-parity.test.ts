@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { buildDirectStandardRoofLayout } from "../../src/components_v2/modules/advanced/advancedPlanningApplication";
 import { buildStandardExistingLayoutReflow } from "../../src/components_v2/modules/panels/existingLayoutReflow";
+import { createPanelPlacementValidator } from "../../src/components_v2/modules/manualPlacement";
 import {
   computeUsableRoof,
   imagePointToRoofLocalM,
@@ -119,6 +120,25 @@ test("roof-local point round-trips for roof, projected module and Randabstand ve
     close(projected.x, point.x);
     close(projected.y, point.y);
   });
+});
+
+test("canonical validator accepts the committed 19 mm physical neighbour spacing", () => {
+  const result = build();
+  const rows = [...new Set(result.panels.map((panel) => panel.cy))].sort((a, b) => a - b);
+  const candidate = result.panels.find((panel) => Math.abs(panel.cy - rows[1]) < 1e-8);
+  assert.ok(candidate);
+  const validator = createPanelPlacementValidator({
+    roof: ROOF,
+    marginM: MODULES.marginM,
+    mppImage: MPP,
+    zones: [],
+    snowGuards: [],
+    panels: result.panels,
+    excludePanelIds: new Set([candidate.id]),
+    moduleGapXM: 0.019,
+    moduleGapYM: 0.019,
+  });
+  assert.equal(validator([candidate]), true);
 });
 
 test("roof resize and regeneration keep catalog size and row pitch fixed", () => {

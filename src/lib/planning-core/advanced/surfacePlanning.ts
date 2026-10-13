@@ -155,7 +155,7 @@ export function isValidStandardModuleSpacingM(value: unknown): value is number {
 export type StandardPanelMetadata = {
   layoutMode: "standard";
   moduleTiltMode: StandardModuleTiltInput["mode"];
-  /** Applied physical module inclination; it does not alter legacy-v1 plan geometry. */
+  /** Applied physical module inclination. */
   effectiveTiltDeg: number;
   /** The stored 2D footprint is the top-down projection of fixed catalog dimensions. */
   geometrySpace?: "roof-surface-v1";

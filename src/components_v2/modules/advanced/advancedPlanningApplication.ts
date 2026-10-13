@@ -415,6 +415,7 @@ export function buildStandardSurfacePlanning(input: {
 export function buildStandardPanelMetadata(input: {
   roofSlopeDeg?: number;
   moduleTilt?: StandardModuleTiltInput;
+  geometrySpace?: "roof-surface-v1";
 }): StandardPanelMetadata | undefined {
   const resolved = resolveStandardModuleTilt(input);
   return resolved.effectiveTiltDeg === undefined
@@ -423,13 +424,21 @@ export function buildStandardPanelMetadata(input: {
         layoutMode: "standard",
         moduleTiltMode: resolved.mode,
         effectiveTiltDeg: resolved.effectiveTiltDeg,
-        geometrySpace: "roof-surface-v1",
+        ...(input.geometrySpace ? { geometrySpace: input.geometrySpace } : {}),
       };
 }
 
 function standardRoofSurfaceProjection(roof: RoofArea): RoofSurfaceProjection | undefined {
-  const tiltDeg = Math.min(80, Math.max(0, roof.tiltDeg ?? 0));
-  const fallAzimuthDeg = resolveRoofFallAzimuth(roof);
+  const planning = resolveSurfacePlanning(roof.surfacePlanning);
+  const supported = planning.status === "supported-standard" &&
+    planning.config.surface.kind === "pitched";
+  const tiltDeg = Math.min(80, Math.max(
+    0,
+    (supported ? planning.config.surface.slopeDeg : undefined) ?? roof.tiltDeg ?? 0,
+  ));
+  const fallAzimuthDeg = supported
+    ? planning.config.surface.fallAzimuthDeg ?? resolveRoofFallAzimuth(roof)
+    : resolveRoofFallAzimuth(roof);
   return tiltDeg > 0 && typeof fallAzimuthDeg === "number"
     ? { tiltDeg, fallAzimuthDeg }
     : undefined;
@@ -2043,6 +2052,9 @@ export function buildDirectStandardRoofLayout(input: {
     panelMetadata: buildStandardPanelMetadata({
       roofSlopeDeg: input.roof.tiltDeg,
       moduleTilt: input.moduleTilt,
+      geometrySpace: standardRoofSurfaceProjection(input.roof)
+        ? "roof-surface-v1"
+        : undefined,
     }),
     createPanelId: input.createPanelId,
     fillBoundaryPx: input.fillBoundaryPx,
