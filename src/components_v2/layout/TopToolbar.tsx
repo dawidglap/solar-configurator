@@ -807,42 +807,75 @@ export default function TopToolbar() {
           tooltipKeys={["Ziehen"]}
         />
 
-        {canUseBuildingTools && selectedRoof ? (
-          <div
-            className="ml-1 inline-flex h-8 items-center rounded-lg border border-border bg-secondary/35 p-0.5"
-            role="group"
-            aria-label="Dachform bearbeiten"
+        {/* Schneefang zeichnen + live Kalkulation */}
+        <div className="flex items-center gap-1">
+          <ActionBtn
+            actionId="planner-draw-snow-guard"
+            active={tool === "draw-snow-guard"}
+            onClick={() =>
+              go(
+                tool === "draw-snow-guard" ? "select" : "draw-snow-guard",
+              )
+            }
+            Icon={LuSnowflake}
+            label=""
+            disabled={!canUseBuildingTools}
+            tooltipLabel="Schneefang zeichnen"
+            tooltipKeys={["Klicken und ziehen"]}
+          />
+          <button
+            type="button"
+            onClick={() => setIsSnowDialogOpen(true)}
+            className="whitespace-nowrap rounded px-1 py-0.5 text-[11px] text-muted-foreground transition hover:bg-secondary/70 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+            aria-label="Schneefang – Kalkulation öffnen"
+            title="Schneefang – Kalkulation"
           >
-            <button
-              type="button"
-              onClick={() => setRoofShapeMode("normal")}
-              aria-pressed={roofShapeMode === "normal"}
-              title="Normalmodus (N)"
-              className={[
-                "h-7 rounded-md px-2 text-[11px] font-medium transition focus:outline-none focus:ring-2 focus:ring-primary/25",
-                roofShapeMode === "normal"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-              ].join(" ")}
-            >
-              Normal <span className="ml-1 opacity-65">N</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setRoofShapeMode("trapezio")}
-              aria-pressed={roofShapeMode === "trapezio"}
-              title="Trapezmodus (T)"
-              className={[
-                "h-7 rounded-md px-2 text-[11px] font-medium transition focus:outline-none focus:ring-2 focus:ring-primary/25",
-                roofShapeMode === "trapezio"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-              ].join(" ")}
-            >
-              Trapez <span className="ml-1 opacity-65">T</span>
-            </button>
-          </div>
-        ) : null}
+            {totalSnowM.toFixed(1)} m · {totalSnowChf.toFixed(2)} CHF
+          </button>
+        </div>
+
+        <div
+          className={[
+            "ml-1 inline-flex h-8 items-center rounded-lg border border-border bg-secondary/35 p-0.5 transition-opacity",
+            canUseBuildingTools && selectedRoof ? "opacity-100" : "opacity-45",
+          ].join(" ")}
+          role="group"
+          aria-label="Dachform bearbeiten"
+          aria-disabled={!canUseBuildingTools || !selectedRoof}
+        >
+          <button
+            type="button"
+            onClick={() => setRoofShapeMode("normal")}
+            aria-pressed={roofShapeMode === "normal"}
+            disabled={!canUseBuildingTools || !selectedRoof}
+            title="Normalmodus (N)"
+            className={[
+              "h-7 rounded-md px-2 text-[11px] font-medium transition focus:outline-none focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed",
+              roofShapeMode === "normal"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-secondary hover:text-foreground disabled:hover:bg-transparent",
+            ].join(" ")}
+          >
+            Normal <span className="ml-1 opacity-65">N</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRoofShapeMode("trapezio")}
+            aria-pressed={roofShapeMode === "trapezio"}
+            disabled={!canUseBuildingTools || !selectedRoof}
+            title="Trapezmodus (T)"
+            className={[
+              "h-7 rounded-md px-2 text-[11px] font-medium transition focus:outline-none focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed",
+              roofShapeMode === "trapezio"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-secondary hover:text-foreground disabled:hover:bg-transparent",
+            ].join(" ")}
+          >
+            Trapez <span className="ml-1 opacity-65">T</span>
+          </button>
+        </div>
+
+        <div className="mx-1 h-6 w-px bg-border" />
 
         {/* Module-only */}
         <ActionBtn
@@ -879,35 +912,6 @@ export default function TopToolbar() {
           tooltipLabel={manualPlacementLabel}
           tooltipKeys={["Klick"]}
         />
-
-        <div className="mx-1 h-6 w-px bg-border" />
-
-        {/* Schneefang zeichnen + live Kalkulation */}
-        <div className="flex items-center gap-1">
-          <ActionBtn
-            actionId="planner-draw-snow-guard"
-            active={tool === "draw-snow-guard"}
-            onClick={() =>
-              go(
-                tool === "draw-snow-guard" ? "select" : "draw-snow-guard",
-              )
-            }
-            Icon={LuSnowflake}
-            label=""
-            disabled={!canUseBuildingTools}
-            tooltipLabel="Schneefang zeichnen"
-            tooltipKeys={["Klicken und ziehen"]}
-          />
-          <button
-            type="button"
-            onClick={() => setIsSnowDialogOpen(true)}
-            className="whitespace-nowrap rounded px-1 py-0.5 text-[11px] text-muted-foreground transition hover:bg-secondary/70 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
-            aria-label="Schneefang – Kalkulation öffnen"
-            title="Schneefang – Kalkulation"
-          >
-            {totalSnowM.toFixed(1)} m · {totalSnowChf.toFixed(2)} CHF
-          </button>
-        </div>
 
         {/* Controls specifici moduli (sempre visibili; clic portarli in 'modules') */}
         {/* <div className="mx-1 h-6 w-px bg-neutral-200" />

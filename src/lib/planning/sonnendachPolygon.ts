@@ -13,16 +13,44 @@ export type SonnendachSimplificationConfig = {
 
 export const SONNENDACH_SIMPLIFICATION: Readonly<SonnendachSimplificationConfig> = {
   mergeDistanceM: 0.25,
-  collinearDistanceM: 0.12,
+  collinearDistanceM: 0.15,
   collinearAngleDeg: 5,
   shortEdgeM: 0.45,
   shortEdgeDeviationM: 0.16,
   shortEdgeAngleDeg: 18,
   maxAreaChangeRatio: 0.02,
-  maxPasses: 8,
-} as const;
+  maxPasses: 32,
+};
 
 export type SonnendachSimplificationOptions = Partial<SonnendachSimplificationConfig>;
+export type SonnendachVertexMetric = {
+  sourceIndex: number;
+  pointM: Pt;
+  outgoingEdgeM: number;
+  turnAngleDeg: number;
+  internalAngleDeg: number;
+};
+export type SonnendachRemovedVertex = {
+  sourceIndex: number;
+  pointM: Pt;
+  reason: "closing-duplicate" | "near-duplicate" | "near-collinear" | "short-edge-jitter";
+  deviationM: number;
+  shortestAdjacentEdgeM: number;
+  turnAngleDeg: number;
+};
+export type SonnendachSimplificationReport = {
+  points: Pt[];
+  before: SonnendachVertexMetric[];
+  after: SonnendachVertexMetric[];
+  removed: SonnendachRemovedVertex[];
+  areaBeforeM2: number;
+  areaAfterM2: number;
+  areaChangeRatio: number;
+  windingPreserved: boolean;
+  valid: boolean;
+};
+
+type IndexedMetricPoint = Pt & { sourceIndex: number; sourcePoint: Pt };
 
 function distance(a: Pt, b: Pt): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -75,90 +103,145 @@ function segmentsIntersect(a: Pt, b: Pt, c: Pt, d: Pt): boolean {
   const o2 = orientation(a, b, d);
   const o3 = orientation(c, d, a);
   const o4 = orientation(c, d, b);
-  return o1 * o2 < -epsilon && o3 * o4 < -epsilon;
+  if (o1 * o2 < -epsilon && o3 * o4 < -epsilon) return true;
+  const onSegment = (start: Pt, point: Pt, end: Pt) =>
+    point.x >= Math.min(start.x, end.x) - epsilon &&
+    point.x <= Math.max(start.x, end.x) + epsilon &&
+    point.y >= Math.min(start.y, end.y) - epsilon &&
+    point.y <= Math.max(start.y, end.y) + epsilon;
+  return (
+    (Math.abs(o1) <= epsilon && onSegment(a, c, b)) ||
+    (Math.abs(o2) <= epsilon && onSegment(a, d, b)) ||
+    (Math.abs(o3) <= epsilon && onSegment(c, a, d)) ||
+    (Math.abs(o4) <= epsilon && onSegment(c, b, d))
+  );
 }
 
-function isSimplePolygon(points: readonly Pt[]): boolean {
+export function isSimpleSonnendachPolygon(points: readonly Pt[]): boolean {
   for (let first = 0; first < points.length; first += 1) {
     const firstNext = (first + 1) % points.length;
     for (let second = first + 1; second < points.length; second += 1) {
       const secondNext = (second + 1) % points.length;
-      if (
-        first === second ||
-        firstNext === second ||
-        secondNext === first
-      ) continue;
-      if (segmentsIntersect(
-        points[first],
-        points[firstNext],
-        points[second],
-        points[secondNext],
-      )) return false;
+      if (firstNext === second || secondNext === first) continue;
+      if (segmentsIntersect(points[first], points[firstNext], points[second], points[secondNext])) {
+        return false;
+      }
     }
   }
   return true;
 }
 
-function sanitizeRing(points: readonly Pt[], mergeDistancePx: number): Pt[] {
-  const finite = points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
-  if (finite.length > 1 && distance(finite[0], finite[finite.length - 1]) <= mergeDistancePx) {
-    finite.pop();
-  }
-  const result: Pt[] = [];
-  for (const point of finite) {
-    if (!result.length || distance(result[result.length - 1], point) > mergeDistancePx) {
-      result.push({ x: point.x, y: point.y });
-    }
-  }
-  if (result.length > 2 && distance(result[0], result[result.length - 1]) <= mergeDistancePx) {
-    result.pop();
-  }
-  return result;
+function metrics(points: readonly IndexedMetricPoint[]): SonnendachVertexMetric[] {
+  return points.map((point, index) => {
+    const previous = points[(index - 1 + points.length) % points.length];
+    const next = points[(index + 1) % points.length];
+    const turn = turnAngleDeg(previous, point, next);
+    return {
+      sourceIndex: point.sourceIndex,
+      pointM: { x: point.x, y: point.y },
+      outgoingEdgeM: distance(point, next),
+      turnAngleDeg: turn,
+      internalAngleDeg: 180 - turn,
+    };
+  });
 }
 
-/**
- * Removes survey/API noise from a closed Sonnendach ring while preserving its
- * winding, area and topology. All public tolerances are expressed in metres.
- */
-export function simplifySonnendachPolygon(
+function resolvedOptions(overrides: SonnendachSimplificationOptions): SonnendachSimplificationConfig {
+  const options: SonnendachSimplificationConfig = { ...SONNENDACH_SIMPLIFICATION };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value !== undefined) options[key as keyof SonnendachSimplificationConfig] = value;
+  }
+  return options;
+}
+
+function unchangedReport(source: readonly Pt[]): SonnendachSimplificationReport {
+  return {
+    points: source.map((point) => ({ ...point })),
+    before: [],
+    after: [],
+    removed: [],
+    areaBeforeM2: 0,
+    areaAfterM2: 0,
+    areaChangeRatio: 0,
+    windingPreserved: true,
+    valid: false,
+  };
+}
+
+/** Simplifies in roof-local metres and returns an auditable removal report. */
+export function simplifySonnendachPolygonWithReport(
   source: readonly Pt[],
   metresPerPixel: number,
   overrides: SonnendachSimplificationOptions = {},
-): Pt[] {
+): SonnendachSimplificationReport {
   if (!Number.isFinite(metresPerPixel) || metresPerPixel <= 0 || source.length < 3) {
-    return source.map((point) => ({ ...point }));
+    return unchangedReport(source);
   }
-
-  const options: SonnendachSimplificationConfig = { ...SONNENDACH_SIMPLIFICATION };
-  for (const [key, value] of Object.entries(overrides)) {
-    if (value !== undefined) {
-      options[key as keyof typeof SONNENDACH_SIMPLIFICATION] = value;
+  const options = resolvedOptions(overrides);
+  const finite = source
+    .map((point, sourceIndex) => ({ point, sourceIndex }))
+    .filter(({ point }) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  if (finite.length < 3) return unchangedReport(source);
+  const origin = finite[0].point;
+  const local = finite.map<IndexedMetricPoint>(({ point, sourceIndex }) => ({
+    x: (point.x - origin.x) * metresPerPixel,
+    y: (point.y - origin.y) * metresPerPixel,
+    sourceIndex,
+    sourcePoint: { ...point },
+  }));
+  const removed: SonnendachRemovedVertex[] = [];
+  if (local.length > 1 && distance(local[0], local[local.length - 1]) <= options.mergeDistanceM) {
+    const closing = local.pop()!;
+    removed.push({
+      sourceIndex: closing.sourceIndex,
+      pointM: { x: closing.x, y: closing.y },
+      reason: "closing-duplicate",
+      deviationM: distance(local[0], closing),
+      shortestAdjacentEdgeM: 0,
+      turnAngleDeg: 0,
+    });
+  }
+  const sanitized: IndexedMetricPoint[] = [];
+  for (const point of local) {
+    const previous = sanitized[sanitized.length - 1];
+    if (previous && distance(previous, point) <= options.mergeDistanceM) {
+      removed.push({
+        sourceIndex: point.sourceIndex,
+        pointM: { x: point.x, y: point.y },
+        reason: "near-duplicate",
+        deviationM: distance(previous, point),
+        shortestAdjacentEdgeM: distance(previous, point),
+        turnAngleDeg: 0,
+      });
+    } else {
+      sanitized.push(point);
     }
   }
-  const toPixels = (metres: number) => metres / metresPerPixel;
-  const original = sanitizeRing(source, toPixels(options.mergeDistanceM));
-  if (original.length < 3) return source.map((point) => ({ ...point }));
-
+  if (sanitized.length < 3) return unchangedReport(source);
+  const original = sanitized;
+  const before = metrics(original);
   const originalArea = signedArea(original);
-  if (Math.abs(originalArea) <= Number.EPSILON || !isSimplePolygon(original)) return original;
+  if (Math.abs(originalArea) <= Number.EPSILON || !isSimpleSonnendachPolygon(original)) {
+    return unchangedReport(source);
+  }
 
-  let result = original;
-  for (let pass = 0; pass < options.maxPasses; pass += 1) {
-    let removed = false;
+  let result = [...original];
+  const passLimit = Math.max(options.maxPasses, original.length);
+  for (let pass = 0; pass < passLimit; pass += 1) {
+    let removedInPass = false;
     for (let index = 0; index < result.length && result.length > 3; index += 1) {
       const previous = result[(index - 1 + result.length) % result.length];
       const current = result[index];
       const next = result[(index + 1) % result.length];
-      const angle = turnAngleDeg(previous, current, next);
+      const turn = turnAngleDeg(previous, current, next);
       const deviation = pointToSegmentDistance(current, previous, next);
       const shortestAdjacent = Math.min(distance(previous, current), distance(current, next));
       const nearlyCollinear =
-        angle <= options.collinearAngleDeg &&
-        deviation <= toPixels(options.collinearDistanceM);
+        turn <= options.collinearAngleDeg && deviation <= options.collinearDistanceM;
       const shortNoise =
-        shortestAdjacent <= toPixels(options.shortEdgeM) &&
-        angle <= options.shortEdgeAngleDeg &&
-        deviation <= toPixels(options.shortEdgeDeviationM);
+        shortestAdjacent <= options.shortEdgeM &&
+        turn <= options.shortEdgeAngleDeg &&
+        deviation <= options.shortEdgeDeviationM;
       if (!nearlyCollinear && !shortNoise) continue;
 
       const candidate = result.filter((_, candidateIndex) => candidateIndex !== index);
@@ -167,14 +250,41 @@ export function simplifySonnendachPolygon(
       if (
         Math.sign(candidateArea) !== Math.sign(originalArea) ||
         areaChange > options.maxAreaChangeRatio ||
-        !isSimplePolygon(candidate)
+        !isSimpleSonnendachPolygon(candidate)
       ) continue;
-
+      removed.push({
+        sourceIndex: current.sourceIndex,
+        pointM: { x: current.x, y: current.y },
+        reason: nearlyCollinear ? "near-collinear" : "short-edge-jitter",
+        deviationM: deviation,
+        shortestAdjacentEdgeM: shortestAdjacent,
+        turnAngleDeg: turn,
+      });
       result = candidate;
-      removed = true;
+      removedInPass = true;
       break;
     }
-    if (!removed) break;
+    if (!removedInPass) break;
   }
-  return result;
+
+  const areaAfter = signedArea(result);
+  return {
+    points: result.map((point) => ({ ...point.sourcePoint })),
+    before,
+    after: metrics(result),
+    removed,
+    areaBeforeM2: Math.abs(originalArea),
+    areaAfterM2: Math.abs(areaAfter),
+    areaChangeRatio: Math.abs(Math.abs(areaAfter) - Math.abs(originalArea)) / Math.abs(originalArea),
+    windingPreserved: Math.sign(areaAfter) === Math.sign(originalArea),
+    valid: isSimpleSonnendachPolygon(result),
+  };
+}
+
+export function simplifySonnendachPolygon(
+  source: readonly Pt[],
+  metresPerPixel: number,
+  overrides: SonnendachSimplificationOptions = {},
+): Pt[] {
+  return simplifySonnendachPolygonWithReport(source, metresPerPixel, overrides).points;
 }

@@ -90,10 +90,14 @@ test('Normal/Trapez lives in the Gebäude toolbar and not in the canvas HUD', ()
   assert.match(canvas, /SELECTION_UI_CANVAS_Z_INDEX = 190/);
   assert.match(canvas, /if \(target === st \|\| targetName === "bg-catcher"\) \{\s*store\.select\?\.\(undefined\)/);
   assert.doesNotMatch(canvas, /<RoofHudOverlay/);
-  assert.match(toolbar, /canUseBuildingTools && selectedRoof/);
+  assert.doesNotMatch(toolbar, /\{canUseBuildingTools && selectedRoof \? \(/);
   assert.match(toolbar, /aria-label="Dachform bearbeiten"/);
+  assert.match(toolbar, /aria-disabled=\{!canUseBuildingTools \|\| !selectedRoof\}/);
+  assert.match(toolbar, /disabled=\{!canUseBuildingTools \|\| !selectedRoof\}/);
   assert.match(toolbar, /aria-pressed=\{roofShapeMode === "normal"\}/);
   assert.match(toolbar, /aria-pressed=\{roofShapeMode === "trapezio"\}/);
+  assert.ok(toolbar.indexOf('actionId="planner-draw-snow-guard"') < toolbar.indexOf('aria-label="Dachform bearbeiten"'));
+  assert.ok(toolbar.indexOf('aria-label="Dachform bearbeiten"') < toolbar.indexOf('actionId="planner-regenerate-layout"'));
 });
 
 test('roof and obstacle vertex commits are undoable without resetting Trapez geometry', async () => {

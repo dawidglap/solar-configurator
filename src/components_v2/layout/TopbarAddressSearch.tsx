@@ -28,6 +28,7 @@ import {
 import { dispatchBuildingRevealRequest } from "../canvas/buildingRevealEvent";
 import type { SonnendachRevealRoof } from "@/lib/planning/viewport/buildingReveal";
 import { resolveInitialSonnendachRoofType } from "../modules/advanced/advancedPlanningApplication";
+import { normalizeSonnendachImportGeometry } from "@/lib/planning/sonnendachImport";
 
 function stripHtml(input: string) {
   return input.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -344,7 +345,10 @@ export default function TopbarAddressSearch() {
 
         plannerHistory.push("before import roofs");
 
-        const roofs = await fetchRoofsAtPointToPx(lat, lon, snapObj);
+        const rawRoofs = await fetchRoofsAtPointToPx(lat, lon, snapObj);
+        const roofs = rawRoofs.map((roof) =>
+          normalizeSonnendachImportGeometry(roof, snapObj.mppImage).roof,
+        );
 
         const importedRoofs = roofs.map((p, i) => {
           const id = `sd_${p.id}_${i}`;
