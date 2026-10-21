@@ -512,7 +512,7 @@ export async function createSignedOrderPdf(args: {
   signerIp: string;
   signerUserAgent: string;
   sourcePdfSha256: string;
-  documentKind?: "Auftragsbestätigung" | "Angebot";
+  documentKind?: "Auftragsbestätigung" | "Angebot" | "Heizungsangebot";
   openedAt?: Date | null;
   tokenId?: string;
   signaturePlace?: string;

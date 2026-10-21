@@ -58,6 +58,22 @@ type BuildPlanningDocumentPdfArgs = {
   orderId?: string | null;
   orderGeneratedAt?: Date | string | null;
   sections?: PlanningReportSections;
+  issuedAt?: Date;
+  commercialSummary?: Awaited<ReturnType<typeof computePlanningCommercialSummary>>;
+};
+
+export type CanonicalCommercialItem = {
+  position: number;
+  category: string;
+  brand: string;
+  model: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  unitLabel: string;
+  unitPriceNet: number;
+  lineTotalNet: number;
+  optional: boolean;
 };
 
 function pickBoolean(...values: unknown[]) {
@@ -229,6 +245,42 @@ function buildCustomerAddressLines(profile: any, summary: any) {
   return [salutation, name, street, place].filter(Boolean);
 }
 
+export function resolveHeatingDocumentCustomer(planning: any, customer: any) {
+  const profile = planning?.data?.profile ?? {};
+  const name =
+    [
+      safeString(profile?.firstName ?? profile?.contactFirstName),
+      safeString(profile?.lastName ?? profile?.contactLastName),
+    ]
+      .filter(Boolean)
+      .join(" ") ||
+    safeString(profile?.companyName) ||
+    safeString(customer?.name) ||
+    safeString(customer?.companyName) ||
+    [safeString(customer?.firstName), safeString(customer?.lastName)]
+      .filter(Boolean)
+      .join(" ") ||
+    safeString(planning?.summary?.customerName) ||
+    "—";
+  const street = safeString(profile?.buildingStreet || customer?.buildingStreet);
+  const houseNumber = safeString(profile?.buildingStreetNo || customer?.buildingStreetNo);
+  const zip = safeString(profile?.buildingZip || customer?.buildingZip);
+  const city = safeString(profile?.buildingCity || customer?.buildingCity);
+  return {
+    name,
+    objectAddress: {
+      formatted: [
+        [street, houseNumber].filter(Boolean).join(" "),
+        [zip, city].filter(Boolean).join(" "),
+      ].filter(Boolean).join(", "),
+      street: street || null,
+      houseNumber: houseNumber || null,
+      zip: zip || null,
+      city: city || null,
+    },
+  };
+}
+
 function getItemLineTotal(item: any) {
   const directTotal = safeNumber(
     item?.lineTotalNet ??
@@ -286,6 +338,29 @@ function buildOptionalCommercialItem(item: any): OptionalCommercialItem {
     qty: safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0),
     unit: safeString(item?.unitLabel ?? item?.unit ?? item?.einheit) || "Stk.",
     priceChf: roundChf05(getItemLineTotal(item)),
+  };
+}
+
+function buildCanonicalCommercialItem(item: any, position: number): CanonicalCommercialItem {
+  return {
+    position,
+    category: safeString(item?.category ?? item?.kategorie),
+    brand: safeString(item?.brand ?? item?.marke),
+    model: safeString(item?.model),
+    name: safeString(item?.name ?? item?.label ?? item?.beschreibung),
+    quantity: safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0),
+    unit: safeString(item?.unit),
+    unitLabel: safeString(item?.unitLabel ?? item?.unit ?? item?.einheit),
+    unitPriceNet: roundChf05(safeNumber(
+      item?.unitPriceNet ??
+        item?.unitPrice ??
+        item?.einzelpreis ??
+        item?.priceNet ??
+        item?.priceChf,
+      0,
+    )),
+    lineTotalNet: roundChf05(getItemLineTotal(item)),
+    optional: isOptionalItem(item),
   };
 }
 
@@ -491,6 +566,9 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
   const optionalItems: OptionalCommercialItem[] = optionalSourceItems.map(
     buildOptionalCommercialItem,
   );
+  const issuedItems = items.map((item: any, index: number) =>
+    buildCanonicalCommercialItem(item, index + 1),
+  );
   const optionalTotalChf = sumChf05(
     optionalSourceItems.map((item: any) => getItemLineTotal(item)),
   );
@@ -572,6 +650,7 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
   return {
     projectType,
     items,
+    issuedItems,
     catalogDocs,
     reportSummary,
     partsTotalNet,
@@ -653,7 +732,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     totalInvestmentChf,
     taxSavingsChf,
     effectiveCostChf,
-  } = await computePlanningCommercialSummary(db, planning);
+  } = args.commercialSummary ?? await computePlanningCommercialSummary(db, planning);
 
   const catalogById = new Map<string, any>();
   const catalogByCompositeKey = new Map<string, any>();
@@ -710,7 +789,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   });
 
   const dcPowerKw = safeNumber(summary?.dcPowerKw, 0);
-  const today = new Date();
+  const today = args.issuedAt ? new Date(args.issuedAt) : new Date();
   const validUntilDate = new Date(today);
   validUntilDate.setDate(validUntilDate.getDate() + 30);
   const todayFormatted = formatDateCH(today);
@@ -723,21 +802,8 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     safeString(profile?.companyName) ||
     safeString(summary?.customerName) ||
     "—";
-  const heatingCustomerName =
-    [
-      safeString(profile?.firstName ?? profile?.contactFirstName),
-      safeString(profile?.lastName ?? profile?.contactLastName),
-    ]
-      .filter(Boolean)
-      .join(" ") ||
-    safeString(profile?.companyName) ||
-    safeString(customer?.name) ||
-    safeString(customer?.companyName) ||
-    [safeString(customer?.firstName), safeString(customer?.lastName)]
-      .filter(Boolean)
-      .join(" ") ||
-    safeString(summary?.customerName) ||
-    "—";
+  const heatingDocumentCustomer = resolveHeatingDocumentCustomer(planning, customer);
+  const heatingCustomerName = heatingDocumentCustomer.name;
   const customerName = isHeating ? heatingCustomerName : photovoltaicCustomerName;
 
   const customerSalutation = safeString(
@@ -940,22 +1006,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   ]
     .filter(Boolean)
     .join(", ");
-  const heatingProjectAddress = [
-    [
-      safeString(profile?.buildingStreet || customer?.buildingStreet),
-      safeString(profile?.buildingStreetNo || customer?.buildingStreetNo),
-    ]
-      .filter(Boolean)
-      .join(" "),
-    [
-      safeString(profile?.buildingZip || customer?.buildingZip),
-      safeString(profile?.buildingCity || customer?.buildingCity),
-    ]
-      .filter(Boolean)
-      .join(" "),
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const heatingProjectAddress = heatingDocumentCustomer.objectAddress.formatted;
   const projectAddress = isHeating
     ? heatingProjectAddress
     : safeString(plannerSnapshot?.address) || profileProjectAddress;

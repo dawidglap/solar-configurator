@@ -44,6 +44,20 @@ test("treats a separate Vollmacht request as explicit activation", () => {
   assert.equal(badges.vollmachtStatus, "pending");
 });
 
+test("never exposes a Vollmacht state for Heating even with stale PV flags", () => {
+  const badges = derivePlanningBadgeFields({
+    projectType: "heating",
+    vollmachtManuallyActivated: true,
+    vollmachtSubmittedAt: new Date("2026-08-18T10:15:00.000Z"),
+    offerSignaturePlace: "onsite_customer",
+    offerSignedAt: new Date("2026-08-18T10:15:00.000Z"),
+    data: { parts: { formDocuments: { vollmacht: true } } },
+  });
+  assert.equal(badges.vollmachtRequired, false);
+  assert.equal(badges.vollmachtStatus, "not_required");
+  assert.equal(badges.withdrawalUntil, null);
+});
+
 test("returns withdrawalUntil only for an onsite-customer signature", () => {
   const signedAt = "2026-08-18T12:30:00.000Z";
   assert.equal(derivePlanningBadgeFields({

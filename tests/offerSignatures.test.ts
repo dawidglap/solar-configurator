@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { PDFDocument } from "pdf-lib";
 
@@ -408,6 +409,189 @@ test("defaults Vollmacht to required and honors an explicit false flag", async (
     }),
     true,
   );
+  assert.equal(
+    isOfferVollmachtRequired({
+      projectType: "heating",
+      vollmachtManuallyActivated: true,
+      data: { parts: { formDocuments: { vollmacht: true } } },
+    }),
+    false,
+  );
+});
+
+test("freezes the canonical Heating issuance contract and rejects empty offers", async () => {
+  const {
+    assertHeatingOfferIssuable,
+    buildHeatingOfferIssuedSnapshot,
+  } = await loadOffer();
+  const planning = {
+    _id: "64f000000000000000000101",
+    companyId: "64f000000000000000000102",
+    customerId: "64f000000000000000000103",
+    projectType: "heating",
+    planningNumber: "ANG-H-2026-001",
+    data: {
+      profile: {
+        firstName: "Ada",
+        lastName: "Muster",
+        street: "Altweg",
+        streetNo: "7",
+        zip: "8000",
+        city: "Zürich",
+        buildingStreet: "Objektweg",
+        buildingStreetNo: "4",
+        buildingZip: "9000",
+        buildingCity: "St. Gallen",
+      },
+      reportOptions: {
+        paymentTerms: "50 % / 50 %",
+        skontoPct: 2,
+        skontoDays: 10,
+      },
+    },
+  };
+  const commercial = {
+    issuedItems: [
+      { position: 1, name: "Wärmepumpe", quantity: 1, unitLabel: "Stk.", unitPriceNet: 20000, lineTotalNet: 20000, optional: false },
+      { position: 2, name: "Rohrleitung", quantity: 18, unitLabel: "m", unitPriceNet: 100, lineTotalNet: 1800, optional: false },
+      { position: 3, name: "Montage", quantity: 1, unitLabel: "Stk.", unitPriceNet: 3000, lineTotalNet: 3000, optional: false },
+      { position: 4, name: "Servicepaket", quantity: 1, unitLabel: "Stk.", unitPriceNet: 500, lineTotalNet: 500, optional: true },
+    ],
+    partsTotalNet: 24800,
+    discountChf: 300,
+    discountPct: 2,
+    discountFromPctChf: 496,
+    totalDiscountChf: 796,
+    netAfterDiscountChf: 24004,
+    vatRatePct: 8.1,
+    vatAmountChf: 1944.3,
+    grossPriceChf: 25948.3,
+    reportSummary: { skontoPct: 2 },
+  };
+  const issued = buildHeatingOfferIssuedSnapshot({
+    planning,
+    customer: { email: "ada@example.ch", phone: "+41 79 111 22 33" },
+    commercial,
+    issuedAt: new Date("2026-10-21T10:00:00.000Z"),
+    pdfFileId: "64f000000000000000000104",
+    pdfSha256: "frozen-pdf-hash",
+  });
+
+  assert.equal(issued.projectType, "heating");
+  assert.equal(issued.documentTitle, "Heizungsangebot");
+  assert.equal(issued.items[1].quantity, 18);
+  assert.equal(issued.optionalItems.length, 1);
+  assert.equal(issued.pricing.totalGross, 25948.3);
+  assert.equal(issued.objectAddress.formatted, "Objektweg 4, 9000 St. Gallen");
+  assert.equal(issued.pdfSha256, "frozen-pdf-hash");
+  assert.equal(issued.payments.length, 2);
+  assert.throws(
+    () => assertHeatingOfferIssuable({ issuedItems: [], grossPriceChf: 0 }),
+    /Vertragspositionen/,
+  );
+});
+
+test("serves Heating public commercial and customer data only from the issued snapshot", async () => {
+  const { buildHeatingOfferIssuedSnapshot, buildPublicOffer } = await loadOffer();
+  const planning: any = {
+    _id: "64f000000000000000000111",
+    companyId: "64f000000000000000000112",
+    customerId: "64f000000000000000000113",
+    projectType: "heating",
+    planningNumber: "ANG-H-2026-002",
+    offerSignatureStatus: "viewed",
+    offerSignatureTokenExpiresAt: new Date("2026-11-21T10:00:00.000Z"),
+    data: {
+      profile: {
+        firstName: "Issued",
+        lastName: "Customer",
+        street: "Issuedstrasse",
+        streetNo: "1",
+        zip: "3000",
+        city: "Bern",
+        buildingStreet: "Issuedobjekt",
+        buildingStreetNo: "9",
+        buildingZip: "3010",
+        buildingCity: "Bern",
+      },
+      reportOptions: { paymentTerms: "100 %" },
+    },
+  };
+  planning.heatingOfferIssuedSnapshot = buildHeatingOfferIssuedSnapshot({
+    planning,
+    customer: { email: "issued@example.ch", phone: "+41 79 000 00 01" },
+    commercial: {
+      issuedItems: [
+        { position: 1, name: "Rohrleitung", quantity: 18, unitLabel: "m", unitPriceNet: 100, lineTotalNet: 1800, optional: false },
+      ],
+      partsTotalNet: 1800,
+      discountChf: 0,
+      discountPct: 0,
+      discountFromPctChf: 0,
+      totalDiscountChf: 0,
+      netAfterDiscountChf: 1800,
+      vatRatePct: 8.1,
+      vatAmountChf: 145.8,
+      grossPriceChf: 1945.8,
+      reportSummary: {},
+    },
+    issuedAt: new Date("2026-10-21T10:00:00.000Z"),
+    pdfFileId: "64f000000000000000000114",
+    pdfSha256: "issued-hash",
+  });
+
+  planning.data.profile.firstName = "Changed";
+  planning.data.profile.street = "Changedstrasse";
+  planning.data.profile.buildingStreet = "Changedobjekt";
+  planning.data.parts = { items: [{ name: "Rohrleitung", quantity: 40, lineTotalNet: 99999 }] };
+  let customerCollectionRead = false;
+  const db = {
+    collection: (name: string) => ({
+      findOne: async () => {
+        if (name === "customers") customerCollectionRead = true;
+        if (name === "companies") return { name: "SOLA", contact: {} };
+        return null;
+      },
+    }),
+  } as any;
+  const publicOffer = await buildPublicOffer({
+    db,
+    planning,
+    token: "x".repeat(43),
+    req: new Request("https://app.helionic.ch/api/public/offer-signature/token"),
+  });
+
+  assert.equal(customerCollectionRead, false);
+  assert.equal(publicOffer.documentTitle, "Heizungsangebot");
+  assert.equal(publicOffer.customerName, "Issued Customer");
+  assert.equal(publicOffer.objectAddress, "Issuedobjekt 9, 3010 Bern");
+  assert.equal(publicOffer.items[0].quantity, 18);
+  assert.equal(publicOffer.totalInklMwst, 1945.8);
+  assert.equal(publicOffer.vollmachtRequired, false);
+  assert.equal("subsidyChf" in publicOffer, false);
+  assert.equal("egid" in publicOffer, false);
+  assert.equal("parcelNumber" in publicOffer, false);
+  assert.equal("orderId" in publicOffer, false);
+});
+
+test("keeps Heating signing isolated from PV order, Vollmacht and customer side effects", () => {
+  const source = readFileSync(
+    new URL("../src/app/api/public/offer-signature/[token]/sign/route.ts", import.meta.url),
+    "utf8",
+  );
+  const start = source.indexOf("async function signHeatingOffer");
+  const end = source.indexOf("async function deliverOfferAcceptedEmail", start);
+  assert.ok(start >= 0 && end > start);
+  const heatingBranch = source.slice(start, end);
+  assert.doesNotMatch(
+    heatingBranch,
+    /generateOrder|generate-order|collection\(["'](?:auftraege|customers|invoices|montages|executionTasks)/,
+  );
+  assert.doesNotMatch(heatingBranch, /subsidyPayout|parcelNumber|buildingNumber|egid|createOfferVollmacht/);
+  assert.match(heatingBranch, /offerSignatureStatus:\s*["']signed["']/);
+  assert.match(heatingBranch, /category:\s*["']offer_signiert["']/);
+  assert.match(heatingBranch, /offerConfirmationPdfFileId:\s*null/);
+  assert.match(heatingBranch, /offerVollmachtPdfFileId:\s*null/);
 });
 
 test("creates reusable manual Vollmacht tokens independently of the offer status", async () => {

@@ -4,6 +4,7 @@ import { mongoIdToString, safeString, toObjectIdOrNull, type SessionPayload } fr
 import {
   buildPlanningDocumentPdf,
   computePlanningCommercialSummary,
+  resolveHeatingDocumentCustomer,
   resolveReportSections,
 } from "@/lib/planningDocuments";
 import {
@@ -29,6 +30,7 @@ import { downloadCompanyDocumentBuffer } from "@/lib/companyDocuments";
 import { isValidIban, normalizeIban } from "@/lib/swissQrBill";
 import { resolvePlanningSellerContact } from "@/lib/userProfiles";
 import { derivePlanningBadgeFields } from "@/lib/statusBadges";
+import { resolveProjectType } from "@/lib/projectType";
 
 export const OFFER_SIGNATURE_STATUSES = [
   "none",
@@ -41,6 +43,58 @@ export const OFFER_SIGNATURE_STATUSES = [
 export const OFFER_VOLLMACHT_VALIDITY_MS = 30 * 86_400_000;
 export const MAX_VOLLMACHT_REQUEST_DAYS = 90;
 export type OfferSignatureStatus = (typeof OFFER_SIGNATURE_STATUSES)[number];
+
+export type HeatingOfferIssuedSnapshot = {
+  schemaVersion: 1;
+  projectType: "heating";
+  planningId: string;
+  offerNumber: string;
+  documentTitle: "Heizungsangebot";
+  issuedAt: string;
+  customer: {
+    name: string;
+    email: string | null;
+    phone: string | null;
+    salutation: string | null;
+    lastName: string | null;
+    type: "private" | "company";
+    companyName: string | null;
+    address: {
+      street: string | null;
+      houseNumber: string | null;
+      zip: string | null;
+      city: string | null;
+    };
+  };
+  objectAddress: {
+    formatted: string;
+    street: string | null;
+    houseNumber: string | null;
+    zip: string | null;
+    city: string | null;
+  };
+  items: Array<Record<string, unknown>>;
+  optionalItems: Array<Record<string, unknown>>;
+  pricing: {
+    subtotalNet: number;
+    discount: {
+      fixedChf: number;
+      percent: number;
+      percentAmountChf: number;
+      totalChf: number;
+    };
+    netAfterDiscount: number;
+    vatRate: number;
+    vatAmount: number;
+    totalGross: number;
+  };
+  paymentTerms: string;
+  payments: Array<{ label: string; pct: number; amount: number; dueDate: string | null }>;
+  skonto: { percent: number; days: number };
+  validity: { validUntil: string };
+  pdfFileId: string;
+  pdfSha256: string;
+};
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -92,6 +146,7 @@ export function buildDefaultOfferSignatureFields() {
     withdrawalRightApplies: false,
     withdrawalUntil: null,
     offerSnapshotFileId: null,
+    heatingOfferIssuedSnapshot: null,
     offerSignatureAudit: [],
     offerSignatureProcessingId: null,
     offerSignatureProcessingAt: null,
@@ -294,6 +349,7 @@ function parseIsoLocalDate(value: unknown, label: string) {
 }
 
 export function isOfferVollmachtRequired(planning: any) {
+  if (resolveProjectType(planning?.projectType) === "heating") return false;
   return planning?.vollmachtManuallyActivated === true ||
     planning?.data?.parts?.formDocuments?.vollmacht !== false;
 }
@@ -835,6 +891,114 @@ export async function ensureActiveOfferToken(db: Db, planning: any) {
   return null;
 }
 
+export function assertHeatingOfferIssuable(commercial: any) {
+  const contractualItems = Array.isArray(commercial?.issuedItems)
+    ? commercial.issuedItems.filter((item: any) => item?.optional !== true)
+    : [];
+  if (
+    contractualItems.length === 0 ||
+    !contractualItems.some((item: any) => Number(item?.lineTotalNet) > 0) ||
+    Number(commercial?.grossPriceChf ?? 0) <= 0
+  ) {
+    throw new Error("Das Heizungsangebot enthält keine abrechenbaren Vertragspositionen.");
+  }
+}
+
+export function buildHeatingOfferIssuedSnapshot(args: {
+  planning: any;
+  customer: any;
+  commercial: any;
+  issuedAt: Date;
+  pdfFileId: string;
+  pdfSha256: string;
+}): HeatingOfferIssuedSnapshot {
+  assertHeatingOfferIssuable(args.commercial);
+  const profile = args.planning?.data?.profile ?? {};
+  const publicCustomer = buildPublicOfferCustomerFields(args.planning, args.customer);
+  const heatingDocumentCustomer = resolveHeatingDocumentCustomer(args.planning, args.customer);
+  const issuedItems = Array.isArray(args.commercial?.issuedItems)
+    ? args.commercial.issuedItems
+    : [];
+  const paymentTerms =
+    safeString(args.planning?.data?.reportOptions?.paymentTerms) ||
+    safeString(args.planning?.data?.reportOptions?.zahlungsbedingungen);
+  const validUntil = new Date(args.issuedAt);
+  validUntil.setDate(validUntil.getDate() + 30);
+  const customerStreet = splitOfferStreetAndHouseNumber(
+    profile?.billingStreet ?? profile?.street ?? args.customer?.street,
+    profile?.billingStreetNo ?? profile?.streetNo ?? args.customer?.streetNo,
+  );
+
+  return {
+    schemaVersion: 1,
+    projectType: "heating",
+    planningId: mongoIdToString(args.planning?._id),
+    offerNumber: safeString(args.planning?.planningNumber),
+    documentTitle: "Heizungsangebot",
+    issuedAt: args.issuedAt.toISOString(),
+    customer: {
+      name: heatingDocumentCustomer.name,
+      email: resolveCustomerEmail(args.planning, args.customer) || null,
+      phone: resolvePublicCustomerPhone(args.planning, args.customer),
+      salutation: publicCustomer.salutation,
+      lastName: publicCustomer.customerLastName || null,
+      type: publicCustomer.customerType as "private" | "company",
+      companyName: publicCustomer.customerCompanyName,
+      address: {
+        street: customerStreet.street || null,
+        houseNumber: customerStreet.houseNumber || null,
+        zip: safeString(profile?.billingZip ?? profile?.zip ?? args.customer?.zip) || null,
+        city: safeString(profile?.billingCity ?? profile?.city ?? args.customer?.city) || null,
+      },
+    },
+    objectAddress: {
+      ...heatingDocumentCustomer.objectAddress,
+    },
+    items: issuedItems.filter((item: any) => item?.optional !== true),
+    optionalItems: issuedItems.filter((item: any) => item?.optional === true),
+    pricing: {
+      subtotalNet: Number(args.commercial?.partsTotalNet ?? 0),
+      discount: {
+        fixedChf: Number(args.commercial?.discountChf ?? 0),
+        percent: Number(args.commercial?.discountPct ?? 0),
+        percentAmountChf: Number(args.commercial?.discountFromPctChf ?? 0),
+        totalChf: Number(args.commercial?.totalDiscountChf ?? 0),
+      },
+      netAfterDiscount: Number(args.commercial?.netAfterDiscountChf ?? 0),
+      vatRate: Number(args.commercial?.vatRatePct ?? 8.1),
+      vatAmount: Number(args.commercial?.vatAmountChf ?? 0),
+      totalGross: Number(args.commercial?.grossPriceChf ?? 0),
+    },
+    paymentTerms,
+    payments: normalizeSignaturePayments(
+      args.planning,
+      Number(args.commercial?.grossPriceChf ?? 0),
+    ),
+    skonto: {
+      percent: Number(args.commercial?.reportSummary?.skontoPct ?? args.planning?.data?.reportOptions?.skontoPct ?? 0),
+      days: Number(args.planning?.data?.reportOptions?.skontoDays ?? 10),
+    },
+    validity: { validUntil: validUntil.toISOString() },
+    pdfFileId: args.pdfFileId,
+    pdfSha256: args.pdfSha256,
+  };
+}
+
+export function getHeatingOfferIssuedSnapshot(planning: any): HeatingOfferIssuedSnapshot {
+  const snapshot = planning?.heatingOfferIssuedSnapshot;
+  if (
+    !snapshot ||
+    snapshot.schemaVersion !== 1 ||
+    snapshot.projectType !== "heating" ||
+    safeString(snapshot.planningId) !== mongoIdToString(planning?._id) ||
+    !safeString(snapshot.pdfFileId) ||
+    !safeString(snapshot.pdfSha256)
+  ) {
+    throw new Error("Ausgestellter Heizungsangebots-Snapshot nicht gefunden.");
+  }
+  return snapshot as HeatingOfferIssuedSnapshot;
+}
+
 export async function buildAndStoreOfferSnapshot(args: {
   db: Db;
   planning: any;
@@ -843,29 +1007,50 @@ export async function buildAndStoreOfferSnapshot(args: {
 }) {
   const planningId = mongoIdToString(args.planning?._id);
   const companyId = safeString(args.planning?.companyId);
+  const projectType = resolveProjectType(args.planning?.projectType);
+  const issuedAt = new Date();
+  const commercial = projectType === "heating"
+    ? await computePlanningCommercialSummary(args.db, args.planning)
+    : null;
+  if (projectType === "heating") assertHeatingOfferIssuable(commercial);
   const files = getPlanningFilesCollection(args.db);
-  const current = await files.findOne(
-    {
-      companyId,
-      planningId,
-      isDeleted: { $ne: true },
-      mimeType: "application/pdf",
-      $or: [{ category: "offer" }, { type: "angebot" }],
-    },
-    { sort: { createdAt: -1, _id: -1 } },
-  );
+  const current = projectType === "photovoltaic"
+    ? await files.findOne(
+        {
+          companyId,
+          planningId,
+          isDeleted: { $ne: true },
+          mimeType: "application/pdf",
+          $or: [{ category: "offer" }, { type: "angebot" }],
+        },
+        { sort: { createdAt: -1, _id: -1 } },
+      )
+    : null;
   const buffer = current
     ? await fetchPlanningFileBuffer(current)
-    : (
-        await buildPlanningDocumentPdf({
-          db: args.db,
-          planning: args.planning,
-          company: args.company,
-          session: args.session,
-          documentType: "angebot",
-          sections: resolveReportSections(args.planning),
-        })
-      ).pdfBytes;
+    : projectType === "heating"
+      ? (
+          await buildPlanningDocumentPdf({
+            db: args.db,
+            planning: args.planning,
+            company: args.company,
+            session: args.session,
+            documentType: "angebot",
+            sections: resolveReportSections(args.planning),
+            issuedAt,
+            commercialSummary: commercial!,
+          })
+        ).pdfBytes
+      : (
+          await buildPlanningDocumentPdf({
+            db: args.db,
+            planning: args.planning,
+            company: args.company,
+            session: args.session,
+            documentType: "angebot",
+            sections: resolveReportSections(args.planning),
+          })
+        ).pdfBytes;
   if (buffer.subarray(0, 5).toString("ascii") !== "%PDF-") {
     throw new Error("Angebots-PDF ist ungültig.");
   }
@@ -879,12 +1064,29 @@ export async function buildAndStoreOfferSnapshot(args: {
     buffer,
     actorName: safeString(args.session?.name) || "System",
   });
-  return { file, buffer, hash: sha256(buffer) };
+  const hash = sha256(buffer);
+  const heatingIssuedSnapshot = projectType === "heating"
+    ? buildHeatingOfferIssuedSnapshot({
+        planning: args.planning,
+        customer: await loadPlanningCustomer(args.db, args.planning),
+        commercial,
+        issuedAt,
+        pdfFileId: mongoIdToString(file._id),
+        pdfSha256: hash,
+      })
+    : null;
+  return { file, buffer, hash, heatingIssuedSnapshot };
 }
 
 export async function getOfferSnapshot(db: Db, planning: any) {
   const fileId = toObjectIdOrNull(planning?.offerSnapshotFileId);
   if (!fileId) throw new Error("Angebots-Snapshot nicht gefunden.");
+  const heatingSnapshot = resolveProjectType(planning?.projectType) === "heating"
+    ? getHeatingOfferIssuedSnapshot(planning)
+    : null;
+  if (heatingSnapshot && heatingSnapshot.pdfFileId !== mongoIdToString(fileId)) {
+    throw new Error("Heizungsangebots-Snapshot verweist auf ein anderes PDF.");
+  }
   const file = await getPlanningFilesCollection(db).findOne({
     _id: fileId,
     companyId: safeString(planning?.companyId),
@@ -894,7 +1096,11 @@ export async function getOfferSnapshot(db: Db, planning: any) {
   });
   if (!file) throw new Error("Angebots-Snapshot nicht gefunden.");
   const buffer = await fetchPlanningFileBuffer(file);
-  return { file, buffer, hash: sha256(buffer) };
+  const hash = sha256(buffer);
+  if (heatingSnapshot && heatingSnapshot.pdfSha256 !== hash) {
+    throw new Error("Heizungsangebots-Snapshot stimmt nicht mit dem PDF überein.");
+  }
+  return { file, buffer, hash };
 }
 
 export async function getOfferPublicFile(db: Db, planning: any, kind: string) {
@@ -913,7 +1119,14 @@ export async function getOfferPublicFile(db: Db, planning: any, kind: string) {
     isDeleted: { $ne: true },
   });
   if (!file) return null;
-  return { file, buffer: await fetchPlanningFileBuffer(file) };
+  const buffer = await fetchPlanningFileBuffer(file);
+  if (kind === "snapshot" && resolveProjectType(planning?.projectType) === "heating") {
+    const snapshot = getHeatingOfferIssuedSnapshot(planning);
+    if (snapshot.pdfFileId !== mongoIdToString(file._id) || snapshot.pdfSha256 !== sha256(buffer)) {
+      throw new Error("Heizungsangebots-Snapshot stimmt nicht mit dem PDF überein.");
+    }
+  }
+  return { file, buffer };
 }
 
 export function buildPublicOfferCustomerFields(planning: any, customer: any) {
@@ -965,9 +1178,73 @@ export function buildPublicOfferCustomerFields(planning: any, customer: any) {
   };
 }
 
-export async function buildPublicOffer(args: { db: Db; planning: any; token: string; req: Request }) {
+export async function buildPublicOffer(args: { db: Db; planning: any; token: string; req: Request }): Promise<any> {
   const companyId = safeString(args.planning?.companyId);
   const companyObjectId = toObjectIdOrNull(companyId);
+  const projectType = resolveProjectType(args.planning?.projectType);
+  if (projectType === "heating") {
+    const snapshot = getHeatingOfferIssuedSnapshot(args.planning);
+    const [company, terms] = await Promise.all([
+      companyObjectId ? args.db.collection("companies").findOne({ _id: companyObjectId }) : null,
+      downloadCompanyDocumentBuffer(args.db, companyId, "agb").catch(() => null),
+    ]);
+    const seller = await resolvePlanningSellerContact({
+      db: args.db,
+      planning: args.planning,
+      company,
+    });
+    const base = getPublicApiBaseUrl(args.req);
+    const status = normalizeOfferSignatureStatus(args.planning?.offerSignatureStatus);
+    const { agbUrl, termsUrl } = buildPublicOfferTermsUrls(base, args.token, !!terms);
+    return {
+      projectType: "heating",
+      documentTitle: snapshot.documentTitle,
+      vollmachtRequired: false,
+      offerNumber: snapshot.offerNumber,
+      planningId: snapshot.planningId,
+      issuedAt: snapshot.issuedAt,
+      companyName: safeString(company?.name),
+      companyLogoUrl: safeString(company?.branding?.logoUrl),
+      ...buildPublicCompanyFields(company),
+      sellerName: seller.sellerName,
+      sellerEmail: seller.sellerEmail,
+      sellerPhone: seller.sellerPhone,
+      customerName: snapshot.customer.name,
+      customerEmail: snapshot.customer.email,
+      customerPhone: snapshot.customer.phone,
+      salutation: snapshot.customer.salutation,
+      customerLastName: snapshot.customer.lastName,
+      customerType: snapshot.customer.type,
+      customerCompanyName: snapshot.customer.companyName,
+      customerAddress: snapshot.customer.address,
+      projectTitle: snapshot.documentTitle,
+      objectAddress: snapshot.objectAddress.formatted,
+      items: snapshot.items,
+      optionalItems: snapshot.optionalItems,
+      pricing: snapshot.pricing,
+      totalInklMwst: snapshot.pricing.totalGross,
+      optionalTotalChf: snapshot.optionalItems.reduce(
+        (sum, item) => sum + Number(item?.lineTotalNet ?? 0),
+        0,
+      ),
+      paymentTerms: snapshot.paymentTerms,
+      payments: snapshot.payments,
+      skonto: snapshot.skonto,
+      validUntil: snapshot.validity.validUntil,
+      pdfSha256: snapshot.pdfSha256,
+      pdfUrl: `${base}/api/public/offer-signature/${encodeURIComponent(args.token)}/pdf`,
+      agbUrl,
+      termsUrl,
+      status,
+      expiresAt: iso(args.planning?.offerSignatureTokenExpiresAt),
+      signedAt: iso(args.planning?.offerSignedAt),
+      signedPdfUrl:
+        status === "signed"
+          ? `${base}/api/public/offer-signature/${encodeURIComponent(args.token)}/pdf?type=signed`
+          : null,
+      confirmationPdfUrl: null,
+    };
+  }
   const [company, customer, commercial, terms] = await Promise.all([
     companyObjectId ? args.db.collection("companies").findOne({ _id: companyObjectId }) : null,
     loadPlanningCustomer(args.db, args.planning),

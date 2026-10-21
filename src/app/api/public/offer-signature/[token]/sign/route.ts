@@ -27,6 +27,7 @@ import {
   ensureActiveOfferToken,
   ensureOfferSignatureIndexes,
   findOfferByToken,
+  getHeatingOfferIssuedSnapshot,
   getOfferSnapshot,
   isOfferVollmachtRequired,
   normalizeOfferSignaturePlace,
@@ -44,6 +45,7 @@ import { buildIdVariants } from "@/lib/tasks";
 import { resolvePlanningSellerContact } from "@/lib/userProfiles";
 import { queueSignatureDocumentEmail } from "@/lib/signatureEmails";
 import { emitCompanyRealtimeEvent } from "@/lib/realtime";
+import { resolveProjectType } from "@/lib/projectType";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +57,18 @@ export async function OPTIONS(req: Request) { return new Response(null, { status
 
 function signedResult(req: Request, planning: any, token: string) {
   const base = getPublicApiBaseUrl(req);
+  if (resolveProjectType(planning?.projectType) === "heating") {
+    return {
+      ok: true,
+      projectType: "heating",
+      documentTitle: "Heizungsangebot",
+      orderId: null,
+      signedPdfUrl: `${base}/api/public/offer-signature/${encodeURIComponent(token)}/pdf?type=signed`,
+      confirmationPdfUrl: null,
+      withdrawalRightApplies: false,
+      withdrawalUntil: null,
+    };
+  }
   return {
     ok: true,
     orderId: safeString(planning?.orderId),
@@ -66,6 +80,124 @@ function signedResult(req: Request, planning: any, token: string) {
         ? planning.withdrawalUntil.toISOString()
         : safeString(planning?.withdrawalUntil) || null,
   };
+}
+
+async function signHeatingOffer(args: {
+  db: Awaited<ReturnType<typeof getDb>>;
+  planning: any;
+  snapshot: Awaited<ReturnType<typeof getOfferSnapshot>>;
+  req: Request;
+  tokenHash: string;
+  processingId: string;
+  signerName: string;
+  signerEmail: string;
+  place: string;
+  placeName: string;
+  signatureImage: unknown;
+  signaturePng: Buffer;
+}) {
+  const issued = getHeatingOfferIssuedSnapshot(args.planning);
+  const signedAt = new Date();
+  const signerIp = extractRequestIp(args.req);
+  const signerUserAgent = safeString(args.req.headers.get("user-agent")).slice(0, 1000);
+  const protocolPlace = args.placeName || (
+    args.place === "onsite_customer"
+      ? "Beim Kunden"
+      : args.place === "onsite_company"
+        ? "Geschäftsräume der Anbieterin"
+        : args.place
+  );
+  const signedOffer = await createSignedOrderPdf({
+    sourcePdf: args.snapshot.buffer,
+    signaturePng: args.signaturePng,
+    orderId: issued.offerNumber,
+    customerName: issued.customer.name,
+    projectTitle: issued.documentTitle,
+    totalInklMwst: issued.pricing.totalGross,
+    signerName: args.signerName,
+    signerEmail: args.signerEmail,
+    place: protocolPlace,
+    signedAt,
+    signerIp,
+    signerUserAgent,
+    sourcePdfSha256: args.snapshot.hash,
+    documentKind: "Heizungsangebot",
+    openedAt: args.planning?.offerSignatureViewedAt
+      ? new Date(args.planning.offerSignatureViewedAt)
+      : null,
+    tokenId: args.tokenHash,
+    signaturePlace: ["onsite_customer", "onsite_company"].includes(args.place)
+      ? args.place
+      : undefined,
+    legalText: "Elektronische Annahme des Heizungsangebots und einfache elektronische Signatur (EES) gemäss Art. 1/3 ff. und Art. 14 OR.",
+  });
+  const signedPdfSha256 = sha256(signedOffer);
+  const signedOfferFile = await storeGeneratedSignatureFile({
+    db: args.db,
+    planning: args.planning,
+    category: "offer_signiert",
+    title: `Heizungsangebot ${issued.offerNumber} (unterschrieben)`,
+    fileName: `heizungsangebot-${issued.offerNumber}-unterschrieben.pdf`,
+    mimeType: "application/pdf",
+    buffer: signedOffer,
+    actorName: "System",
+  });
+  const result = await args.db.collection<any>("plannings").updateOne(
+    {
+      _id: args.planning._id,
+      offerSignatureTokenHash: args.tokenHash,
+      offerSignatureProcessingId: args.processingId,
+    },
+    {
+      $set: {
+        offerSignatureStatus: "signed",
+        offerSignedAt: signedAt,
+        offerSignerName: args.signerName,
+        offerSignerEmail: args.signerEmail,
+        offerSignerIp: signerIp,
+        offerSignerUserAgent: signerUserAgent,
+        offerSignaturePlace: args.place,
+        offerSignaturePlaceName: args.placeName || null,
+        offerSignatureImage: safeString(args.signatureImage),
+        offerSignedPdfFileId: signedOfferFile._id,
+        offerSignedPdfSha256: signedPdfSha256,
+        offerConfirmationPdfFileId: null,
+        withdrawalRightApplies: false,
+        withdrawalUntil: null,
+        offerVollmachtTokenExpiresAt: null,
+        offerVollmachtPdfFileId: null,
+        offerSignatureProcessingId: null,
+        offerSignatureProcessingAt: null,
+        updatedAt: signedAt,
+      },
+      $push: {
+        offerSignatureAudit: buildOfferAuditEntry({
+          event: "signed",
+          req: args.req,
+          tokenHash: args.tokenHash,
+          at: signedAt,
+          meta: {
+            projectType: "heating",
+            signerName: args.signerName,
+            signerEmail: args.signerEmail,
+            place: args.place,
+            placeName: args.placeName || null,
+            viewedAt: args.planning.offerSignatureViewedAt ?? null,
+            snapshotSha256: args.snapshot.hash,
+            signedPdfSha256,
+          },
+        }) as never,
+      },
+    },
+  );
+  if (!result.matchedCount) throw new Error("Signaturstatus konnte nicht abgeschlossen werden.");
+  await emitCompanyRealtimeEvent(safeString(args.planning?.companyId), "offer.signed", {
+    planningId: String(args.planning._id),
+    projectType: "heating",
+    signedAt: signedAt.toISOString(),
+  });
+  const completed = await args.db.collection("plannings").findOne({ _id: args.planning._id });
+  return completed;
 }
 
 async function deliverOfferAcceptedEmail(args: {
@@ -131,7 +263,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     let planning = await findOfferByToken(db, token);
     if (!planning) return response(origin, { ok: false, message: "Link ungültig." }, 404);
     if (planning.offerSignatureStatus === "signed") {
-      await deliverOfferAcceptedEmail({ db, planning, token, req });
+      if (resolveProjectType(planning?.projectType) === "photovoltaic") {
+        await deliverOfferAcceptedEmail({ db, planning, token, req });
+      }
       return response(origin, signedResult(req, planning, token));
     }
     planning = await ensureActiveOfferToken(db, planning);
@@ -143,9 +277,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const signerEmail = safeString(body?.signerEmail).toLowerCase().slice(0, 320);
     const placeName = safeString(body?.placeName);
     const place = normalizeOfferSignaturePlace(body?.place);
-    const acceptance = parseOfferAcceptanceDetails(body);
-    const bankAccountHolder = acceptance.bankAccountHolder;
-    const bankIban = acceptance.bankIban;
+    const isHeating = resolveProjectType(planning?.projectType) === "heating";
+    const acceptance = isHeating ? null : parseOfferAcceptanceDetails(body);
+    const bankAccountHolder = acceptance?.bankAccountHolder ?? null;
+    const bankIban = acceptance?.bankIban ?? null;
     if (!signerName) return response(origin, { ok: false, message: "Name ist erforderlich." }, 400);
     if (!EMAIL_PATTERN.test(signerEmail)) return response(origin, { ok: false, message: "Ungültige E-Mail-Adresse." }, 400);
     const signatureImage = body?.signatureImage ?? body?.signatureData;
@@ -176,34 +311,52 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     claimedPlanningId = planning._id;
 
     const snapshot = await getOfferSnapshot(db, planning);
+    if (isHeating) {
+      const tokenHash = sha256(token);
+      const completed = await signHeatingOffer({
+        db,
+        planning,
+        snapshot,
+        req,
+        tokenHash,
+        processingId,
+        signerName,
+        signerEmail,
+        place,
+        placeName,
+        signatureImage,
+        signaturePng,
+      });
+      return response(origin, signedResult(req, completed, token));
+    }
     const customer = await loadPlanningCustomer(db, planning);
     const profile = planning?.data?.profile ?? {};
     const propertyStreet =
-      acceptance.propertyStreet || safeString(profile?.buildingStreet) || safeString(customer?.buildingStreet) || null;
+      acceptance!.propertyStreet || safeString(profile?.buildingStreet) || safeString(customer?.buildingStreet) || null;
     const propertyHouseNumber =
-      acceptance.propertyHouseNumber || safeString(profile?.buildingStreetNo) || safeString(customer?.buildingStreetNo) || null;
+      acceptance!.propertyHouseNumber || safeString(profile?.buildingStreetNo) || safeString(customer?.buildingStreetNo) || null;
     const propertyZip =
-      acceptance.propertyZip || safeString(profile?.buildingZip) || safeString(customer?.buildingZip) || null;
+      acceptance!.propertyZip || safeString(profile?.buildingZip) || safeString(customer?.buildingZip) || null;
     const propertyCity =
-      acceptance.propertyCity || safeString(profile?.buildingCity) || safeString(customer?.buildingCity) || null;
+      acceptance!.propertyCity || safeString(profile?.buildingCity) || safeString(customer?.buildingCity) || null;
     const buildingNumber =
-      acceptance.buildingNumber ||
+      acceptance!.buildingNumber ||
       safeString(profile?.buildingNumber ?? profile?.egid) ||
       safeString(customer?.buildingNumber ?? customer?.egid) ||
       null;
     const parcelNumber =
-      acceptance.parcelNumber || safeString(profile?.parcelNumber) || safeString(customer?.parcelNumber) || null;
+      acceptance!.parcelNumber || safeString(profile?.parcelNumber) || safeString(customer?.parcelNumber) || null;
     const landRegisterNumber =
       safeString(planning?.landRegisterNumber) ||
       safeString(profile?.landRegisterNumber) ||
       safeString(customer?.landRegisterNumber) ||
       null;
-    const buildingNumberSource = acceptance.buildingNumber
+    const buildingNumberSource = acceptance!.buildingNumber
       ? "manual"
       : safeString(profile?.buildingNumberSource ?? customer?.buildingNumberSource) === "manual"
         ? "manual"
         : "auto";
-    const parcelNumberSource = acceptance.parcelNumber
+    const parcelNumberSource = acceptance!.parcelNumber
       ? "manual"
       : safeString(profile?.parcelNumberSource ?? customer?.parcelNumberSource) === "manual"
         ? "manual"

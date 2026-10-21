@@ -1,4 +1,5 @@
 import { safeString } from "@/lib/api-session";
+import { resolveProjectType } from "@/lib/projectType";
 
 export const BADGE_SIGNATURE_STATUSES = [
   "none",
@@ -26,8 +27,11 @@ export function normalizeBadgeSignatureStatus(value: unknown): BadgeSignatureSta
 }
 
 export function derivePlanningBadgeFields(planning: any) {
-  const vollmachtRequired = planning?.vollmachtManuallyActivated === true ||
-    planning?.data?.parts?.formDocuments?.vollmacht !== false;
+  const projectType = resolveProjectType(planning?.projectType);
+  const vollmachtRequired = projectType === "heating"
+    ? false
+    : planning?.vollmachtManuallyActivated === true ||
+      planning?.data?.parts?.formDocuments?.vollmacht !== false;
   const vollmachtSubmittedAt = iso(planning?.vollmachtSubmittedAt);
   const vollmachtStatus: VollmachtStatus = !vollmachtRequired
     ? "not_required"
@@ -40,7 +44,7 @@ export function derivePlanningBadgeFields(planning: any) {
   ).toLowerCase();
   const signedAt = iso(planning?.offerSignedAt ?? planning?.signedAt);
   const storedWithdrawalUntil = iso(planning?.withdrawalUntil);
-  const withdrawalUntil = signaturePlace === "onsite_customer"
+  const withdrawalUntil = projectType === "photovoltaic" && signaturePlace === "onsite_customer"
     ? signedAt
       ? new Date(new Date(signedAt).getTime() + 14 * 86_400_000).toISOString()
       : storedWithdrawalUntil

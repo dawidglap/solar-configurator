@@ -44,6 +44,7 @@ import {
 import { resolvePlanningSellerContact } from "@/lib/userProfiles";
 import { queueSignatureDocumentEmail } from "@/lib/signatureEmails";
 import { emitCompanyRealtimeEvent } from "@/lib/realtime";
+import { resolveProjectType } from "@/lib/projectType";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,6 +73,9 @@ async function loadVollmachtContext(req: Request, token: string) {
   if (!(await enforceOfferPublicRateLimit(db, req))) return { rateLimited: true as const };
   const planning = await findOfferForVollmacht(db, token);
   if (!planning) return { notFound: true as const };
+  if (resolveProjectType(planning?.projectType) === "heating") {
+    return { notFound: true as const };
+  }
   const tokenContext = resolveVollmachtTokenContext(planning, token);
   if (!tokenContext) return { notFound: true as const };
   const companyId = mongoIdToString(planning?.companyId) || safeString(planning?.companyId);
