@@ -678,9 +678,6 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   const { db, planning, company, session, documentType } = args;
   const projectType = resolveProjectType(planning?.projectType);
   const isHeating = projectType === "heating";
-  if (isHeating && documentType !== "angebot") {
-    throw new Error("Heating-Auftragsdokumente sind in Phase 4C-A nicht aktiviert.");
-  }
   const users = db.collection("users");
   const snapshotCache = db.collection("snapshotCache");
   const sections = args.sections ?? resolveReportSections(planning);
@@ -852,7 +849,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
 
   const offer = {
     title: isHeating
-      ? "Heizungsangebot"
+      ? documentType === "auftrag" ? "Heizungsauftrag" : "Heizungsangebot"
       : safeString(planning?.title) || "Photovoltaik-Angebot",
     planningNumber: safeString(planning?.planningNumber) || "—",
     pv: {
@@ -958,7 +955,9 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   pdf.setTitle(`${identifiers.documentTitle} ${identifiers.documentNumber}`);
   pdf.setSubject(
     isHeating
-      ? "Angebot für eine Heizungsanlage"
+      ? documentType === "auftrag"
+        ? "Auftragsbestätigung für eine Heizungsanlage"
+        : "Angebot für eine Heizungsanlage"
       : documentType === "angebot"
       ? "Angebot für eine Photovoltaikanlage"
       : "Auftragsbestätigung für eine Photovoltaikanlage",

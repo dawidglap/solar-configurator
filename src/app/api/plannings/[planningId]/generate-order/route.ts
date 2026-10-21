@@ -1,6 +1,7 @@
 import { getDb, getMongoClient } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
-import { readSession, safeString } from "@/lib/api-session";
+import crypto from "node:crypto";
+import { readSession, safeString, toObjectIdOrNull } from "@/lib/api-session";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import {
   buildOrderAuditFields,
@@ -32,6 +33,7 @@ import {
   ensureAuftragStepStateForOrder,
   getHydratedAuftragState,
   getSessionActor,
+  normalizeAuftrag,
   persistAuftragStepsState,
   runWithOptionalTransaction,
 } from "@/lib/auftragPipeline";
@@ -45,6 +47,14 @@ import {
 } from "@/lib/planningFiles";
 import { ensureExecutionTasksForWonPlanning } from "@/lib/executionTasks";
 import { emitCompanyRealtimeEvent, emitInvoiceUpdatedEvent } from "@/lib/realtime";
+import { resolveProjectType } from "@/lib/projectType";
+import { getOfferPublicFile, getOfferSnapshot } from "@/lib/offerSignatures";
+import {
+  assertHeatingOrderPreconditions,
+  buildHeatingAuftragRecord,
+  buildHeatingOrderCommercialSummary,
+  buildHeatingOrderDocumentPlanning,
+} from "@/lib/heatingOrders";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -279,6 +289,365 @@ async function persistManagedOrderFiles(args: {
   };
 }
 
+async function buildHeatingOrderResponse(args: {
+  db: Awaited<ReturnType<typeof getDb>>;
+  companyId: string;
+  planningId: string;
+  planning: any;
+  auftrag: any;
+  alreadyGenerated: boolean;
+}) {
+  const orderFileId = toObjectIdOrNull(args.planning?.orderSnapshotFileId);
+  const offerSnapshotFileId = toObjectIdOrNull(
+    args.planning?.angebotSnapshotFileId ?? args.planning?.offerSnapshotFileId,
+  );
+  const [orderFile, offerSnapshotFile] = await Promise.all([
+    orderFileId
+      ? getPlanningFilesCollection(args.db).findOne({
+          _id: orderFileId,
+          companyId: args.companyId,
+          planningId: args.planningId,
+          category: "auftrag",
+          isDeleted: { $ne: true },
+        })
+      : null,
+    offerSnapshotFileId
+      ? getPlanningFilesCollection(args.db).findOne({
+          _id: offerSnapshotFileId,
+          companyId: args.companyId,
+          planningId: args.planningId,
+          category: "offer_snapshot",
+          isDeleted: { $ne: true },
+        })
+      : null,
+  ]);
+  const orderId = safeString(args.planning?.orderId ?? args.auftrag?.orderId);
+  return {
+    ok: true,
+    projectType: "heating",
+    alreadyGenerated: args.alreadyGenerated,
+    ...(args.alreadyGenerated ? { message: "Auftrag wurde bereits generiert." } : {}),
+    order: {
+      orderId,
+      status: "generated",
+      currentStepKey: safeString(args.auftrag?.currentStepKey) || AUFTRAG_LOCKED_FIRST_STEP.key,
+      completedAt: null,
+    },
+    planning: normalizePlanningForOrder(args.planning),
+    invoices: [],
+    stepsState: [],
+    checklist: { items: [], updatedAt: null },
+    auftrag: normalizeAuftrag(args.auftrag),
+    orderId,
+    orderStatus: "generated",
+    orderSnapshotFileId: orderFileId?.toString() ?? null,
+    angebotSnapshotFileId: offerSnapshotFileId?.toString() ?? null,
+    files: {
+      auftrag: orderFile
+        ? {
+            id: safeString(orderFile?._id?.toString?.() ?? orderFile?._id),
+            cloudinarySecureUrl: safeString(orderFile?.cloudinarySecureUrl),
+          }
+        : null,
+      angebotSnapshot: offerSnapshotFile
+        ? {
+            id: safeString(offerSnapshotFile?._id?.toString?.() ?? offerSnapshotFile?._id),
+            cloudinarySecureUrl: safeString(offerSnapshotFile?.cloudinarySecureUrl),
+          }
+        : null,
+    },
+    ...(orderFile ? { orderFile: normalizePlanningFile(orderFile) } : {}),
+    ...(offerSnapshotFile ? { angebotSnapshotFile: normalizePlanningFile(offerSnapshotFile) } : {}),
+  };
+}
+
+async function generateHeatingOrder(args: {
+  db: Awaited<ReturnType<typeof getDb>>;
+  planning: any;
+  company: any;
+  session: any;
+  companyId: string;
+  planningId: string;
+  planningObjectId: any;
+  companyObjectId: any;
+}) {
+  const plannings = args.db.collection<any>("plannings");
+  await ensureAuftragIndexes(args.db);
+  const existingAuftrag = await args.db.collection<any>("auftraege").findOne({
+    companyId: args.companyObjectId,
+    planningId: args.planningObjectId,
+  });
+  if (existingAuftrag || safeString(args.planning?.orderStatus) === "generated") {
+    if (!existingAuftrag) {
+      throw new GenerateOrderError(
+        "AUFTRAG_INIT_FAILED",
+        "Der Heating-Auftragsstatus ist inkonsistent.",
+        409,
+      );
+    }
+    if (safeString(args.planning?.orderStatus) !== "generated") {
+      const snapshot = assertHeatingOrderPreconditions(args.planning);
+      const recoveredAt = existingAuftrag?.createdAt instanceof Date
+        ? existingAuftrag.createdAt
+        : new Date();
+      const auditFields = buildOrderAuditFields(args.session);
+      const wonStageKey = getWonStageKey(args.company);
+      await plannings.updateOne(
+        { _id: args.planningObjectId, companyId: args.companyId, offerSignatureStatus: "signed" },
+        {
+          $set: {
+            orderStatus: "generated",
+            orderId: safeString(existingAuftrag?.orderId),
+            orderGeneratedAt: recoveredAt,
+            orderGeneratedByUserId: auditFields.orderGeneratedByUserId,
+            orderGeneratedByName: auditFields.orderGeneratedByName,
+            commercialLockedAt: recoveredAt,
+            "commercial.stage": wonStageKey,
+            "commercial.valueChf": snapshot.pricing.totalGross,
+            "commercial.stageHistory": buildStageHistoryForTransition(
+              args.planning,
+              wonStageKey,
+              args.session,
+            ),
+            orderSnapshotFileId: existingAuftrag?.orderSnapshotFileId ?? null,
+            angebotSnapshotFileId: toObjectIdOrNull(snapshot.pdfFileId),
+            heatingOrderSignedOfferFileId: toObjectIdOrNull(args.planning?.offerSignedPdfFileId),
+            heatingOrderProcessingId: null,
+            heatingOrderProcessingAt: null,
+            updatedAt: new Date(),
+          },
+        },
+      );
+    }
+    const currentPlanning = await plannings.findOne({
+      _id: args.planningObjectId,
+      companyId: args.companyId,
+    });
+    return {
+      body: await buildHeatingOrderResponse({
+        db: args.db,
+        companyId: args.companyId,
+        planningId: args.planningId,
+        planning: currentPlanning ?? args.planning,
+        auftrag: existingAuftrag,
+        alreadyGenerated: true,
+      }),
+      status: 409,
+    };
+  }
+
+  const snapshot = assertHeatingOrderPreconditions(args.planning);
+  const [issuedPdf, signedPdf] = await Promise.all([
+    getOfferSnapshot(args.db, args.planning),
+    getOfferPublicFile(args.db, args.planning, "signed"),
+  ]);
+  if (!signedPdf) {
+    throw new GenerateOrderError(
+      "ORDER_DOCUMENT_PDF_FAILED",
+      "Unterschriebenes Heizungsangebot wurde nicht gefunden.",
+      409,
+    );
+  }
+  const signedHash = crypto.createHash("sha256").update(signedPdf.buffer).digest("hex");
+  if (
+    snapshot.pdfFileId !== safeString(issuedPdf.file?._id?.toString?.() ?? issuedPdf.file?._id) ||
+    snapshot.pdfSha256 !== issuedPdf.hash ||
+    safeString(args.planning?.offerSignedPdfFileId?.toString?.() ?? args.planning?.offerSignedPdfFileId) !==
+      safeString(signedPdf.file?._id?.toString?.() ?? signedPdf.file?._id) ||
+    safeString(args.planning?.offerSignedPdfSha256) !== signedHash
+  ) {
+    throw new GenerateOrderError(
+      "ORDER_DOCUMENT_PDF_FAILED",
+      "Signiertes Heizungsangebot und Issuance-Snapshot sind inkonsistent.",
+      409,
+    );
+  }
+
+  const processingId = crypto.randomUUID();
+  const staleBefore = new Date(Date.now() - 15 * 60_000);
+  const claimed = await plannings.findOneAndUpdate(
+    {
+      _id: args.planningObjectId,
+      companyId: args.companyId,
+      projectType: "heating",
+      offerSignatureStatus: "signed",
+      orderStatus: { $ne: "generated" },
+      $or: [
+        { heatingOrderProcessingId: null },
+        { heatingOrderProcessingId: { $exists: false } },
+        { heatingOrderProcessingAt: { $lt: staleBefore } },
+      ],
+    },
+    { $set: { heatingOrderProcessingId: processingId, heatingOrderProcessingAt: new Date() } },
+    { returnDocument: "after", includeResultMetadata: false },
+  );
+  if (!claimed) {
+    const racedOrder = await args.db.collection<any>("auftraege").findOne({
+      companyId: args.companyObjectId,
+      planningId: args.planningObjectId,
+    });
+    if (racedOrder) {
+      const currentPlanning = await plannings.findOne({ _id: args.planningObjectId, companyId: args.companyId });
+      return {
+        body: await buildHeatingOrderResponse({
+          db: args.db,
+          companyId: args.companyId,
+          planningId: args.planningId,
+          planning: currentPlanning ?? args.planning,
+          auftrag: racedOrder,
+          alreadyGenerated: true,
+        }),
+        status: 409,
+      };
+    }
+    throw new GenerateOrderError(
+      "AUFTRAG_INIT_FAILED",
+      "Heating-Auftrag wird bereits erstellt. Bitte erneut versuchen.",
+      409,
+    );
+  }
+
+  try {
+    const now = new Date();
+    const orderId = await nextOrderId(args.db, args.companyId, now);
+    const documentPlanning = buildHeatingOrderDocumentPlanning(claimed, snapshot);
+    documentPlanning.orderId = orderId;
+    const commercialSummary = buildHeatingOrderCommercialSummary(snapshot);
+    const { pdfBytes } = await buildPlanningDocumentPdf({
+      db: args.db,
+      planning: documentPlanning,
+      company: args.company,
+      session: args.session,
+      documentType: "auftrag",
+      orderId,
+      orderGeneratedAt: now,
+      issuedAt: now,
+      commercialSummary,
+      sections: {
+        projektuebersicht: false,
+        technischeEckdaten: true,
+        analyse: false,
+      },
+    });
+    const managedFile = await upsertManagedPlanningFile({
+      db: args.db,
+      companyId: args.companyId,
+      planningId: args.planningId,
+      category: "auftrag",
+      title: `Auftragsbestätigung ${orderId}`,
+      originalFileName: `auftragsbestaetigung-${orderId}.pdf`,
+      mimeType: "application/pdf",
+      buffer: pdfBytes,
+      customerId: safeString(args.planning?.customerId) || undefined,
+      session: args.session,
+    });
+    const actor = getSessionActor(args.session);
+    const auditFields = buildOrderAuditFields(args.session);
+    const wonStageKey = getWonStageKey(args.company);
+    const insertDoc = buildHeatingAuftragRecord({
+      companyId: args.companyObjectId,
+      planningId: args.planningObjectId,
+      customerId: args.planning?.customerId,
+      orderId,
+      planning: claimed,
+      snapshot,
+      orderSnapshotFileId: managedFile.doc._id,
+      actor,
+      now,
+    });
+    const client = await getMongoClient();
+    let auftragDoc: any = null;
+    await runWithOptionalTransaction(client, async (txnSession) => {
+      const existing = await args.db.collection<any>("auftraege").findOne(
+        { companyId: args.companyObjectId, planningId: args.planningObjectId },
+        txnSession ? { session: txnSession } : undefined,
+      );
+      if (existing) {
+        auftragDoc = existing;
+        return;
+      }
+      const inserted = await args.db.collection<any>("auftraege").insertOne(
+        insertDoc,
+        txnSession ? { session: txnSession } : undefined,
+      );
+      auftragDoc = { ...insertDoc, _id: inserted.insertedId };
+      const planningUpdate = await plannings.updateOne(
+        {
+          _id: args.planningObjectId,
+          companyId: args.companyId,
+          heatingOrderProcessingId: processingId,
+          offerSignatureStatus: "signed",
+        },
+        {
+          $set: {
+            orderStatus: "generated",
+            orderId,
+            orderGeneratedAt: now,
+            orderGeneratedByUserId: auditFields.orderGeneratedByUserId,
+            orderGeneratedByName: auditFields.orderGeneratedByName,
+            commercialLockedAt: now,
+            "commercial.stage": wonStageKey,
+            "commercial.valueChf": snapshot.pricing.totalGross,
+            "commercial.stageHistory": buildStageHistoryForTransition(
+              args.planning,
+              wonStageKey,
+              args.session,
+            ),
+            orderSnapshotFileId: managedFile.doc._id,
+            angebotSnapshotFileId: toObjectIdOrNull(snapshot.pdfFileId),
+            heatingOrderSignedOfferFileId: toObjectIdOrNull(args.planning?.offerSignedPdfFileId),
+            heatingOrderProcessingId: null,
+            heatingOrderProcessingAt: null,
+            updatedAt: now,
+          },
+        },
+        txnSession ? { session: txnSession } : undefined,
+      );
+      if (!planningUpdate.matchedCount) {
+        throw new GenerateOrderError(
+          "AUFTRAG_INIT_FAILED",
+          "Heating-Auftrag konnte nicht mit der signierten Planung verknüpft werden.",
+          409,
+        );
+      }
+    });
+
+    const updatedPlanning = await plannings.findOne({
+      _id: args.planningObjectId,
+      companyId: args.companyId,
+    });
+    await emitCompanyRealtimeEvent(args.companyId, "order.created", {
+      planningId: args.planningId,
+      orderId,
+      projectType: "heating",
+      createdAt: now.toISOString(),
+    });
+    await emitCompanyRealtimeEvent(args.companyId, "orders", {
+      orderId,
+      status: "generated",
+      projectType: "heating",
+      currentStepKey: AUFTRAG_LOCKED_FIRST_STEP.key,
+    });
+    return {
+      body: await buildHeatingOrderResponse({
+        db: args.db,
+        companyId: args.companyId,
+        planningId: args.planningId,
+        planning: updatedPlanning,
+        auftrag: auftragDoc,
+        alreadyGenerated: false,
+      }),
+      status: 200,
+    };
+  } catch (error) {
+    await plannings.updateOne(
+      { _id: args.planningObjectId, companyId: args.companyId, heatingOrderProcessingId: processingId },
+      { $set: { heatingOrderProcessingId: null, heatingOrderProcessingAt: null } },
+    ).catch(() => undefined);
+    throw error;
+  }
+}
+
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin");
   return new Response(null, {
@@ -339,6 +708,20 @@ export async function POST(
         new GenerateOrderError("COMPANY_NOT_FOUND", "Firma nicht gefunden.", 404),
       );
       return jsonResponse(origin, errorResponse.body, errorResponse.status);
+    }
+
+    if (resolveProjectType((planning as any)?.projectType) === "heating") {
+      const result = await generateHeatingOrder({
+        db,
+        planning,
+        company,
+        session,
+        companyId,
+        planningId,
+        planningObjectId,
+        companyObjectId,
+      });
+      return jsonResponse(origin, result.body, result.status);
     }
 
     const alreadyGenerated = safeString((planning as any)?.orderStatus) === "generated";

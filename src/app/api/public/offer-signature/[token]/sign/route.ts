@@ -200,6 +200,74 @@ async function signHeatingOffer(args: {
   return completed;
 }
 
+async function generateHeatingOrderFromSignedOffer(args: {
+  db: Awaited<ReturnType<typeof getDb>>;
+  planning: any;
+  signerName: string;
+  req: Request;
+  origin: string | null;
+  tokenHash: string;
+}) {
+  const failure = async (message: string, code?: string | null) => {
+    await args.db.collection<any>("plannings").updateOne(
+      { _id: args.planning._id },
+      {
+        $push: {
+          offerSignatureAudit: buildOfferAuditEntry({
+            event: "order_generation_failed",
+            req: args.req,
+            tokenHash: args.tokenHash,
+            meta: { projectType: "heating", code: code || null, message },
+          }) as never,
+        },
+      },
+    );
+    return {
+      orderId: null,
+      orderGeneration: { status: "failed", retryable: true, message },
+    };
+  };
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) return failure("Auftrag konnte nicht automatisch erstellt werden.", "SESSION_SECRET_MISSING");
+  try {
+    const internalSession = buildInternalOrderSession(args.planning, args.signerName);
+    const internalRequest = new Request(
+      `${new URL(args.req.url).origin}/api/plannings/${args.planning._id}/generate-order`,
+      {
+        method: "POST",
+        headers: {
+          cookie: buildSignedSessionCookie(internalSession, secret),
+          "content-type": "application/json",
+          origin: args.origin || "https://app.helionic.ch",
+        },
+        body: "{}",
+      },
+    );
+    const orderResponse = await generateOrder(internalRequest, {
+      params: Promise.resolve({ planningId: String(args.planning._id) }),
+    });
+    const orderBody = await orderResponse.json().catch(() => ({}));
+    if (orderBody?.ok === true && safeString(orderBody?.orderId)) {
+      return {
+        orderId: safeString(orderBody.orderId),
+        orderGeneration: {
+          status: orderBody?.alreadyGenerated === true ? "existing" : "created",
+          retryable: false,
+        },
+      };
+    }
+    return failure(
+      safeString(orderBody?.message) || "Auftrag konnte nicht automatisch erstellt werden.",
+      safeString(orderBody?.code) || null,
+    );
+  } catch (error: any) {
+    return failure(
+      safeString(error?.message) || "Auftrag konnte nicht automatisch erstellt werden.",
+      safeString(error?.code) || null,
+    );
+  }
+}
+
 async function deliverOfferAcceptedEmail(args: {
   db: Awaited<ReturnType<typeof getDb>>;
   planning: any;
@@ -263,7 +331,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     let planning = await findOfferByToken(db, token);
     if (!planning) return response(origin, { ok: false, message: "Link ungültig." }, 404);
     if (planning.offerSignatureStatus === "signed") {
-      if (resolveProjectType(planning?.projectType) === "photovoltaic") {
+      if (resolveProjectType(planning?.projectType) === "heating") {
+        const orderResult = await generateHeatingOrderFromSignedOffer({
+          db,
+          planning,
+          signerName: safeString(planning?.offerSignerName),
+          req,
+          origin,
+          tokenHash: sha256(token),
+        });
+        return response(origin, { ...signedResult(req, planning, token), ...orderResult });
+      } else {
         await deliverOfferAcceptedEmail({ db, planning, token, req });
       }
       return response(origin, signedResult(req, planning, token));
@@ -327,7 +405,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         signatureImage,
         signaturePng,
       });
-      return response(origin, signedResult(req, completed, token));
+      const orderResult = await generateHeatingOrderFromSignedOffer({
+        db,
+        planning: completed,
+        signerName,
+        req,
+        origin,
+        tokenHash,
+      });
+      return response(origin, { ...signedResult(req, completed, token), ...orderResult });
     }
     const customer = await loadPlanningCustomer(db, planning);
     const profile = planning?.data?.profile ?? {};

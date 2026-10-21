@@ -352,3 +352,104 @@ test("same customer PV and heating projects keep document identity, address and 
   assert.match(heatingText, /Wärmepumpe SOLA Therm 12/);
   assert.doesNotMatch(heatingText, /SOLA Modul 400 Wp|Solarweg 1|Photovoltaik/);
 });
+
+test("heating order confirmation renders only the signed issuance context", async () => {
+  const { buildPlanningDocumentPdf } = await import("../src/lib/planningDocuments");
+  const {
+    buildHeatingOrderCommercialSummary,
+    buildHeatingOrderDocumentPlanning,
+  } = await import("../src/lib/heatingOrders");
+  const livePlanning = heatingPlanning({
+    data: {
+      ...heatingPlanning().data,
+      profile: {
+        firstName: "Live Changed",
+        buildingStreet: "Liveweg",
+        buildingStreetNo: "99",
+        buildingZip: "9999",
+        buildingCity: "Liveort",
+      },
+      parts: {
+        ...heatingPlanning().data.parts,
+        items: [{ name: "Live Rohrleitung", quantity: 40, lineTotalNet: 40_000 }],
+      },
+      reportOptions: { paymentTerms: "100 %" },
+    },
+  });
+  const snapshot: any = {
+    schemaVersion: 1,
+    projectType: "heating",
+    planningId: livePlanning._id,
+    offerNumber: "ANG-H-SIGNED",
+    documentTitle: "Heizungsangebot",
+    issuedAt: "2026-10-21T10:00:00.000Z",
+    customer: {
+      name: "Issued Kunde",
+      email: "issued@example.ch",
+      phone: null,
+      salutation: "herr",
+      lastName: "Kunde",
+      type: "private",
+      companyName: null,
+      address: { street: "Rechnungsweg", houseNumber: "3", zip: "3000", city: "Bern" },
+    },
+    objectAddress: {
+      formatted: "Issued Heizweg 7, 3010 Bern",
+      street: "Issued Heizweg",
+      houseNumber: "7",
+      zip: "3010",
+      city: "Bern",
+    },
+    items: [
+      { position: 1, category: "Heizung", name: "Issued Wärmepumpe", quantity: 1, unitLabel: "Stk.", unitPriceNet: 25_000, lineTotalNet: 25_000, optional: false },
+      { position: 2, category: "Installation", name: "Issued Rohrleitung", quantity: 18, unitLabel: "m", unitPriceNet: 100, lineTotalNet: 1_800, optional: false },
+      { position: 3, category: "Installation", name: "Issued Montage", quantity: 1, unitLabel: "Pauschal", unitPriceNet: 2_650, lineTotalNet: 2_650, optional: false },
+    ],
+    optionalItems: [],
+    pricing: {
+      subtotalNet: 29_450,
+      discount: { fixedChf: 0, percent: 0, percentAmountChf: 0, totalChf: 0 },
+      netAfterDiscount: 29_450,
+      vatRate: 8.1,
+      vatAmount: 2_385.45,
+      totalGross: 31_835.45,
+    },
+    paymentTerms: "50 % / 50 %",
+    payments: [],
+    skonto: { percent: 0, days: 10 },
+    validity: { validUntil: "2026-11-20T10:00:00.000Z" },
+    pdfFileId: "64f000000000000000000044",
+    pdfSha256: "issued-hash",
+  };
+  const documentPlanning = buildHeatingOrderDocumentPlanning(livePlanning, snapshot);
+  const commercialSummary = buildHeatingOrderCommercialSummary(snapshot);
+  const result = await buildPlanningDocumentPdf({
+    db: documentDb(),
+    planning: documentPlanning,
+    company,
+    session: { activeCompanyId: COMPANY_ID, name: "Berater" },
+    documentType: "auftrag",
+    orderId: "AB-2026-0042",
+    orderGeneratedAt: new Date("2026-10-23T10:00:00.000Z"),
+    issuedAt: new Date("2026-10-23T10:00:00.000Z"),
+    commercialSummary,
+    sections: { projektuebersicht: false, technischeEckdaten: true, analyse: false },
+  });
+  const loaded = await PDFDocument.load(result.pdfBytes);
+  const text = await extractPdfText(result.pdfBytes);
+
+  assert.equal(loaded.getSubject(), "Auftragsbestätigung für eine Heizungsanlage");
+  assert.match(text, /Auftragsbestätigung/);
+  assert.match(text, /Heizungsauftrag/);
+  assert.match(text, /Issued Kunde/);
+  assert.match(text, /Issued Heizweg 7/);
+  assert.match(text, /Issued Wärmepumpe/);
+  assert.match(text, /Issued Rohrleitung/);
+  assert.match(text, /50 % \/ 50 %/);
+  assert.equal(result.pricing.totalInklMwst, 31_835.45);
+  assert.doesNotMatch(text, /Live Changed|Liveweg|Live Rohrleitung|40'000/);
+  assert.doesNotMatch(
+    text,
+    /Photovoltaik|kWp|Module|Wechselrichter|Förderung|Schneefang|Vollmacht|Netzanschluss|Analyse/,
+  );
+});

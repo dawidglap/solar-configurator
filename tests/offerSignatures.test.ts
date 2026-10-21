@@ -580,7 +580,7 @@ test("keeps Heating signing isolated from PV order, Vollmacht and customer side 
     "utf8",
   );
   const start = source.indexOf("async function signHeatingOffer");
-  const end = source.indexOf("async function deliverOfferAcceptedEmail", start);
+  const end = source.indexOf("async function generateHeatingOrderFromSignedOffer", start);
   assert.ok(start >= 0 && end > start);
   const heatingBranch = source.slice(start, end);
   assert.doesNotMatch(

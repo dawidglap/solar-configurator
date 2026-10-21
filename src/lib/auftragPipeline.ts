@@ -1028,6 +1028,7 @@ export async function migrateLegacyAuftraegeLockedSteps(
 }
 
 export function normalizeAuftrag(doc: any) {
+  const isHeating = safeString(doc?.projectType) === "heating";
   return {
     id: mongoIdToString(doc?._id),
     companyId: mongoIdToString(doc?.companyId),
@@ -1050,6 +1051,17 @@ export function normalizeAuftrag(doc: any) {
         ? doc.updatedAt.toISOString()
         : safeString(doc?.updatedAt) || null,
     createdBy: normalizeStepActor(doc?.createdBy),
+    ...(isHeating
+      ? {
+          projectType: "heating" as const,
+          contractTotalGrossChf: Number(doc?.contractTotalGrossChf ?? 0),
+          currency: safeString(doc?.currency) || "CHF",
+          heatingOrderSnapshot: doc?.heatingOrderSnapshot ?? null,
+          issuedOfferSnapshotFileId: mongoIdToString(doc?.issuedOfferSnapshotFileId) || null,
+          signedOfferFileId: mongoIdToString(doc?.signedOfferFileId) || null,
+          orderSnapshotFileId: mongoIdToString(doc?.orderSnapshotFileId) || null,
+        }
+      : {}),
   };
 }
 
