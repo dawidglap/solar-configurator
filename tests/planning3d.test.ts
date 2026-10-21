@@ -6,6 +6,10 @@ import {
   TECHNICAL_GROUND_CLEARANCE_M,
   buildPlanner3DScene,
 } from "../src/lib/planning-3d/buildPlanner3DScene";
+import {
+  canUseExperimental3D,
+  resolveEffectivePlannerViewMode,
+} from "../src/lib/experimental3dAccess";
 import { distance3D } from "../src/lib/planning-3d/coordinates";
 import { triangulatePolygon } from "../src/lib/planning-3d/triangulate";
 import { computeUsableRoof, roofSegmentLengthM } from "../src/lib/planning-core/geometry-v2";
@@ -47,6 +51,33 @@ function build(overrides: Partial<Parameters<typeof buildPlanner3DScene>[0]> = {
     ...overrides,
   });
 }
+
+test("temporary 3D gate authorizes only the authenticated demo owner", () => {
+  assert.equal(canUseExperimental3D({ email: "owner@demo-energie.ch" }), true);
+  assert.equal(canUseExperimental3D({ email: "other@example.com" }), false);
+  assert.equal(canUseExperimental3D(null), false);
+});
+
+test("temporary 3D gate normalizes authenticated email casing and whitespace", () => {
+  assert.equal(canUseExperimental3D({ email: " OWNER@DEMO-ENERGIE.CH " }), true);
+});
+
+test("unauthorized and logged-out sessions force requested 3D state back to 2D", () => {
+  assert.equal(resolveEffectivePlannerViewMode("3d", true), "3d");
+  assert.equal(resolveEffectivePlannerViewMode("3d", false), "2d");
+  assert.equal(resolveEffectivePlannerViewMode("2d", false), "2d");
+});
+
+test("session changes cannot leak an authorized account's 3D view", () => {
+  const requestedViewMode = "3d" as const;
+  const authorized = canUseExperimental3D({ email: "owner@demo-energie.ch" });
+  const unauthorized = canUseExperimental3D({ email: "new-user@example.com" });
+  const loggedOut = canUseExperimental3D(undefined);
+
+  assert.equal(resolveEffectivePlannerViewMode(requestedViewMode, authorized), "3d");
+  assert.equal(resolveEffectivePlannerViewMode(requestedViewMode, unauthorized), "2d");
+  assert.equal(resolveEffectivePlannerViewMode(requestedViewMode, loggedOut), "2d");
+});
 
 test("converts canonical image metres without depending on viewport state", () => {
   const scene = build();
@@ -415,5 +446,7 @@ test("3D layer has no planner-store or mutation API imports", () => {
     assert.doesNotMatch(source, forbidden, file);
   });
   const shell = readFileSync(join(process.cwd(), "src/components_v2/layout/PlannerShell.tsx"), "utf8");
-  assert.match(shell, /useState<"2d" \| "3d">\("2d"\)/);
+  assert.match(shell, /useState<PlannerViewMode>\("2d"\)/);
+  assert.match(shell, /viewMode=\{effectiveViewMode\}/);
+  assert.match(shell, /onViewModeChange=\{canUse3D \? setRequestedViewMode : undefined\}/);
 });

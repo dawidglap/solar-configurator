@@ -2,12 +2,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useMe } from "@/hooks/useMe";
+import {
+  canUseExperimental3D,
+  resolveEffectivePlannerViewMode,
+  type PlannerViewMode,
+} from "@/lib/experimental3dAccess";
 import CanvasStage from "../canvas/CanvasStage";
 import PageContainer from "../layout/PageContainer";
 import { usePlannerV2Store } from "../state/plannerV2Store";
 
 export default function PlannerShell() {
-  const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
+  const [requestedViewMode, setRequestedViewMode] = useState<PlannerViewMode>("2d");
+  const meQuery = useMe();
+  const canUse3D = canUseExperimental3D(meQuery.data?.user);
+  const effectiveViewMode = resolveEffectivePlannerViewMode(requestedViewMode, canUse3D);
   const snap = usePlannerV2Store((s) => s.snapshot);
   const step = usePlannerV2Store((s) => s.step);
   const leftOpen = usePlannerV2Store((s) => s.ui.leftPanelOpen);
@@ -19,10 +28,17 @@ export default function PlannerShell() {
     if (step !== "building" && leftOpen) setUI({ leftPanelOpen: false });
   }, [step, leftOpen, setUI]);
 
+  useEffect(() => {
+    if (!canUse3D && requestedViewMode !== "2d") setRequestedViewMode("2d");
+  }, [canUse3D, requestedViewMode]);
+
   return (
     <PageContainer>
       <div className="relative h-[calc(100vh-0px)] w-full overflow-hidden bg-background">
-        <CanvasStage viewMode={viewMode} onViewModeChange={setViewMode} />
+        <CanvasStage
+          viewMode={effectiveViewMode}
+          onViewModeChange={canUse3D ? setRequestedViewMode : undefined}
+        />
       </div>
     </PageContainer>
   );
