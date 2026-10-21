@@ -15,6 +15,7 @@ import { htmlToPlainText } from "@/lib/htmlToPlainText";
 import { allocateChf05, roundChf05, sumChf05 } from "@/lib/chf";
 import { addCompanyVollmachtPage } from "@/lib/vollmachtPdf";
 import { mergeCanonicalSnowProtectionCommercialItem } from "@/lib/planning/snowProtectionCommercial";
+import { resolveProjectType, type ProjectType } from "@/lib/projectType";
 
 export type PlanningDocumentType = "angebot" | "auftrag";
 export type PlanningReportSections = {
@@ -316,6 +317,7 @@ function getDocumentIdentifiers(args: {
   planning: any;
   documentType: PlanningDocumentType;
   orderId?: string | null;
+  projectType?: ProjectType;
 }) {
   const orderId = safeString(args.orderId) || safeString(args.planning?.orderId) || "—";
   const planningNumber = safeString(args.planning?.planningNumber) || "—";
@@ -326,6 +328,15 @@ function getDocumentIdentifiers(args: {
       documentNumber: orderId,
       documentNumberLabel: `Auftragsbestätigung Nr. ${orderId}`,
       fileStem: `auftragsbestaetigung-${orderId}`,
+    };
+  }
+
+  if (args.projectType === "heating") {
+    return {
+      documentTitle: "Heizungsangebot",
+      documentNumber: planningNumber,
+      documentNumberLabel: `Heizungsangebot Nr. ${planningNumber}`,
+      fileStem: `Heizungsangebot_${planningNumber}`,
     };
   }
 
@@ -458,6 +469,8 @@ export function resolveReportSections(planning: any): PlanningReportSections {
 }
 
 export async function computePlanningCommercialSummary(db: Db, planning: any) {
+  const projectType = resolveProjectType(planning?.projectType);
+  const isHeating = projectType === "heating";
   const data = planning?.data ?? {};
   const parts = data?.parts ?? {};
   const reportOptions = data?.reportOptions ?? {};
@@ -469,11 +482,10 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
       isActive: true,
     })
     .toArray();
-  const items = mergeCanonicalSnowProtectionCommercialItem(
-    Array.isArray(parts?.items) ? parts.items : [],
-    catalogDocs,
-    planning,
-  );
+  const sourceItems = Array.isArray(parts?.items) ? parts.items : [];
+  const items = isHeating
+    ? sourceItems
+    : mergeCanonicalSnowProtectionCommercialItem(sourceItems, catalogDocs, planning);
   const includedItems = items.filter((item: any) => !isOptionalItem(item));
   const optionalSourceItems = items.filter(isOptionalItem);
   const optionalItems: OptionalCommercialItem[] = optionalSourceItems.map(
@@ -483,7 +495,17 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
     optionalSourceItems.map((item: any) => getItemLineTotal(item)),
   );
 
-  const reportSummary = buildReportSummary(planning, catalogDocs);
+  const reportSummary: any = isHeating
+    ? {
+        discountChf: safeNumber(reportOptions?.discountChf, 0),
+        discountPct: safeNumber(reportOptions?.discountPct, 0),
+        mwstIncluded: pickBoolean(reportOptions?.mwstIncluded) ?? true,
+        paymentTerms: safeString(
+          reportOptions?.paymentTerms ?? reportOptions?.zahlungsbedingungen,
+        ),
+        skontoPct: safeNumber(reportOptions?.skontoPct, 0),
+      }
+    : buildReportSummary(planning, catalogDocs);
   const mwstIncluded =
     pickBoolean(
       planning?.data?.reportOptions?.mwstIncluded,
@@ -522,26 +544,33 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
     : netAfterDiscountChf;
 
   const dcPowerKw = safeNumber(summary?.dcPowerKw, 0);
-  const automaticPvSubsidyChf = roundChf05(safeNumber(
-    reportSummary?.automaticPvSubsidyChf,
-    dcPowerKw <= 0 ? 0 : dcPowerKw <= 30 ? dcPowerKw * 360 : dcPowerKw * 300,
-  ));
-  const manualAdditionalSubsidyChf = roundChf05(safeNumber(
-    reportSummary?.manualAdditionalSubsidyChf ?? reportOptions?.additionalSubsidyChf,
-    0,
-  ));
+  const automaticPvSubsidyChf = isHeating
+    ? 0
+    : roundChf05(safeNumber(
+        reportSummary?.automaticPvSubsidyChf,
+        dcPowerKw <= 0 ? 0 : dcPowerKw <= 30 ? dcPowerKw * 360 : dcPowerKw * 300,
+      ));
+  const manualAdditionalSubsidyChf = isHeating
+    ? 0
+    : roundChf05(safeNumber(
+        reportSummary?.manualAdditionalSubsidyChf ?? reportOptions?.additionalSubsidyChf,
+        0,
+      ));
   const subsidyChf = roundChf05(
     automaticPvSubsidyChf + manualAdditionalSubsidyChf,
   );
   const totalInvestmentChf = roundChf05(
     Math.max(0, grossPriceChf - subsidyChf),
   );
-  const taxSavingsChf = roundChf05(safeNumber((reportSummary as any)?.taxSavingsChf, 0));
+  const taxSavingsChf = isHeating
+    ? 0
+    : roundChf05(safeNumber((reportSummary as any)?.taxSavingsChf, 0));
   const effectiveCostChf = roundChf05(
     Math.max(0, totalInvestmentChf - taxSavingsChf),
   );
 
   return {
+    projectType,
     items,
     catalogDocs,
     reportSummary,
@@ -568,6 +597,11 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
 
 export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArgs) {
   const { db, planning, company, session, documentType } = args;
+  const projectType = resolveProjectType(planning?.projectType);
+  const isHeating = projectType === "heating";
+  if (isHeating && documentType !== "angebot") {
+    throw new Error("Heating-Auftragsdokumente sind in Phase 4C-A nicht aktiviert.");
+  }
   const users = db.collection("users");
   const snapshotCache = db.collection("snapshotCache");
   const sections = args.sections ?? resolveReportSections(planning);
@@ -591,6 +625,13 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   const parts = data?.parts ?? {};
   const reportOptions = data?.reportOptions ?? {};
   const summary = planning?.summary ?? {};
+  const customerObjectId = isHeating ? toObjectIdOrNull(planning?.customerId) : null;
+  const customer = customerObjectId
+    ? await db.collection("customers").findOne({
+        _id: customerObjectId,
+        companyId: planning?.companyId,
+      })
+    : null;
 
   const {
     items,
@@ -675,13 +716,29 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   const todayFormatted = formatDateCH(today);
   const validUntilFormatted = formatDateCH(validUntilDate);
 
-  const customerName =
+  const photovoltaicCustomerName =
     [safeString(profile?.firstName), safeString(profile?.lastName)]
       .filter(Boolean)
       .join(" ") ||
     safeString(profile?.companyName) ||
     safeString(summary?.customerName) ||
     "—";
+  const heatingCustomerName =
+    [
+      safeString(profile?.firstName ?? profile?.contactFirstName),
+      safeString(profile?.lastName ?? profile?.contactLastName),
+    ]
+      .filter(Boolean)
+      .join(" ") ||
+    safeString(profile?.companyName) ||
+    safeString(customer?.name) ||
+    safeString(customer?.companyName) ||
+    [safeString(customer?.firstName), safeString(customer?.lastName)]
+      .filter(Boolean)
+      .join(" ") ||
+    safeString(summary?.customerName) ||
+    "—";
+  const customerName = isHeating ? heatingCustomerName : photovoltaicCustomerName;
 
   const customerSalutation = safeString(
     profile?.salutation ?? profile?.title ?? profile?.gender,
@@ -689,12 +746,12 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   const customerLastName = safeString(profile?.lastName ?? profile?.contactLastName);
   const customerType = safeString(profile?.type ?? profile?.customerType).toLowerCase();
 
-  const batteryItems = items.filter((item: any) => {
+  const batteryItems = isHeating ? [] : items.filter((item: any) => {
     if (isOptionalItem(item)) return false;
     const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
     return category === "batterie" || category === "battery" || category === "speicher";
   });
-  const wallboxItems = items.filter((item: any) => {
+  const wallboxItems = isHeating ? [] : items.filter((item: any) => {
     if (isOptionalItem(item)) return false;
     const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
     return category === "ladestation" || category === "wallbox";
@@ -709,20 +766,28 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     wallboxItems.map((item: any) => getItemLineTotal(item)),
   );
   const baseSystemNetChf = roundChf05(
-    Math.max(0, partsTotalNet - batteryPriceChf - wallboxPriceChf),
+    Math.max(
+      0,
+      isHeating
+        ? partsTotalNet
+        : partsTotalNet - batteryPriceChf - wallboxPriceChf,
+    ),
   );
 
   const identifiers = getDocumentIdentifiers({
     planning,
     documentType,
     orderId: args.orderId,
+    projectType,
   });
   const orderGeneratedAt = parseDate(args.orderGeneratedAt ?? planning?.orderGeneratedAt);
   const invoiceDate =
     documentType === "auftrag" ? orderGeneratedAt ?? today : today;
 
   const offer = {
-    title: safeString(planning?.title) || "Photovoltaik-Angebot",
+    title: isHeating
+      ? "Heizungsangebot"
+      : safeString(planning?.title) || "Photovoltaik-Angebot",
     planningNumber: safeString(planning?.planningNumber) || "—",
     pv: {
       dcPowerKw,
@@ -826,15 +891,19 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   const pdf = await PDFDocument.create();
   pdf.setTitle(`${identifiers.documentTitle} ${identifiers.documentNumber}`);
   pdf.setSubject(
-    documentType === "angebot"
+    isHeating
+      ? "Angebot für eine Heizungsanlage"
+      : documentType === "angebot"
       ? "Angebot für eine Photovoltaikanlage"
       : "Auftragsbestätigung für eine Photovoltaikanlage",
   );
-  const snapshotEntry = await snapshotCache.findOne({
-    planningId: String(planning?._id),
-    companyId: planning?.companyId,
-    expiresAt: { $gt: new Date() },
-  });
+  const snapshotEntry = isHeating
+    ? null
+    : await snapshotCache.findOne({
+        planningId: String(planning?._id),
+        companyId: planning?.companyId,
+        expiresAt: { $gt: new Date() },
+      });
 
   const projectSnapshotDataUrl = safeString(snapshotEntry?.snapshotDataUrl);
   const planner = data?.planner ?? {};
@@ -855,20 +924,45 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
         .join(" ")
     : selectedPanelId || "—";
 
-  const projectAddress =
-    safeString(plannerSnapshot?.address) ||
+  const profileProjectAddress = [
     [
-      [safeString(profile?.buildingStreet || profile?.street), safeString(profile?.buildingStreetNo || profile?.houseNumber)]
-        .filter(Boolean)
-        .join(" "),
-      [safeString(profile?.buildingZip || profile?.zip), safeString(profile?.buildingCity || profile?.city)]
-        .filter(Boolean)
-        .join(" "),
+      safeString(profile?.buildingStreet || profile?.street),
+      safeString(profile?.buildingStreetNo || profile?.houseNumber),
     ]
       .filter(Boolean)
-      .join(", ");
+      .join(" "),
+    [
+      safeString(profile?.buildingZip || profile?.zip),
+      safeString(profile?.buildingCity || profile?.city),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const heatingProjectAddress = [
+    [
+      safeString(profile?.buildingStreet || customer?.buildingStreet),
+      safeString(profile?.buildingStreetNo || customer?.buildingStreetNo),
+    ]
+      .filter(Boolean)
+      .join(" "),
+    [
+      safeString(profile?.buildingZip || customer?.buildingZip),
+      safeString(profile?.buildingCity || customer?.buildingCity),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const projectAddress = isHeating
+    ? heatingProjectAddress
+    : safeString(plannerSnapshot?.address) || profileProjectAddress;
 
-  const inverterLabel =
+  const inverterLabel = isHeating
+    ? ""
+    :
     items
       .filter((item: any) => {
         const category = safeString(item?.category ?? item?.kategorie).toLowerCase();
@@ -886,6 +980,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       .join(", ") || "—";
 
   await addCoverPage(pdf, {
+    projectType,
     title: offer.title,
     planningNumber: offer.planningNumber,
     kWp: offer.pv.dcPowerKw,
@@ -954,7 +1049,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       }
     : null;
 
-  if (sections.technischeEckdaten) {
+  if (isHeating || sections.technischeEckdaten) {
     await renderTechnischeEckdaten(pdf, {
       offer,
       company: companyForPdf,
@@ -964,7 +1059,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     });
   }
 
-  if (sections.projektuebersicht) {
+  if (!isHeating && sections.projektuebersicht) {
     await renderProjektuebersicht(pdf, {
       title: offer.title,
       planningNumber: offer.planningNumber,
@@ -987,7 +1082,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     });
   }
 
-  if (sections.analyse) {
+  if (!isHeating && sections.analyse) {
     await renderAnalyse(pdf, {
       planningNumber: offer.planningNumber,
       companyName: offer.companyName,
@@ -1009,7 +1104,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
     companyId: String(planning?.companyId || session?.activeCompanyId || ""),
   });
 
-  if (shouldAppendVollmachtPage(planning, documentType)) {
+  if (!isHeating && shouldAppendVollmachtPage(planning, documentType)) {
     await addCompanyVollmachtPage(pdf, {
       company,
       values: {

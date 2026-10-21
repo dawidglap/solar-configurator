@@ -41,6 +41,7 @@
     "test:planning-3d": "tsx --test tests/planning3d.test.ts",
     "test:project-type": "tsx --test tests/projectType.test.ts",
     "test:project-type-routes": "tsx scripts/test-project-type-routes.ts",
+    "test:planning-documents": "tsx --test tests/planningDocuments.test.ts",
     "test:heating-questionnaire": "tsx --test tests/heatingQuestionnaire.test.ts",
     "test:heating-questionnaire-routes": "tsx scripts/test-heating-questionnaire-routes.ts",
     "test:snow-protection-persistence": "tsx scripts/test-snow-protection-persistence.ts",

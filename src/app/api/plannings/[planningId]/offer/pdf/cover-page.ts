@@ -3,8 +3,10 @@ import path from "path";
 import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
 import { sanitizePdfText } from "@/lib/pdfText";
 import { allocateChf05, roundChf05 } from "@/lib/chf";
+import type { ProjectType } from "@/lib/projectType";
 
 type OfferCoverData = {
+  projectType?: ProjectType;
   title: string;
   planningNumber: string;
   kWp: number;
@@ -312,6 +314,7 @@ function drawPricingRows(args: {
 }
 
 export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
+  const isHeating = data.projectType === "heating";
   const page = pdf.addPage([595.28, 841.89]);
   const { width } = page.getSize();
 
@@ -349,16 +352,26 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     color: rgb(1, 1, 1),
   });
 
-  const heroBytes = await readPublicAsset("hero-pdf.jpg");
-  const heroImage = await pdf.embedJpg(heroBytes);
-  const heroDims = fitCover(heroImage.width, heroImage.height, heroW, heroH);
+  if (isHeating) {
+    page.drawRectangle({
+      x: heroX,
+      y: heroY,
+      width: heroW,
+      height: heroH,
+      color: teal,
+    });
+  } else {
+    const heroBytes = await readPublicAsset("hero-pdf.jpg");
+    const heroImage = await pdf.embedJpg(heroBytes);
+    const heroDims = fitCover(heroImage.width, heroImage.height, heroW, heroH);
 
-  page.drawImage(heroImage, {
-    x: heroX + (heroW - heroDims.width) / 2,
-    y: heroY + (heroH - heroDims.height) / 2,
-    width: heroDims.width,
-    height: heroDims.height,
-  });
+    page.drawImage(heroImage, {
+      x: heroX + (heroW - heroDims.width) / 2,
+      y: heroY + (heroH - heroDims.height) / 2,
+      width: heroDims.width,
+      height: heroDims.height,
+    });
+  }
 
   page.drawRectangle({
     x: logoBoxX,
@@ -400,7 +413,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
       .filter(Boolean)
       .join(" — ") || data.title || "Photovoltaik-Angebot";
   const subtitle =
-    [data.kWp > 0 ? `${money(data.kWp)} kWp` : "", safeText(data.projectAddress)]
+    [!isHeating && data.kWp > 0 ? `${money(data.kWp)} kWp` : "", safeText(data.projectAddress)]
       .filter(Boolean)
       .join(" - ");
   const titleWrap = fitWrappedTitle(title, bold, titleBoxW - 32);
@@ -456,11 +469,17 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   drawText(page, buildGreeting(data), pageMarginX, y, 12.5, bold, textDark);
   y -= 22;
 
-  const introLines = [
-    `Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit ${data.companyName || "uns"}.`,
-    `Mit ${data.companyName || "uns"} haben Sie einen verlässlichen Partner für innovative`,
-    "Photovoltaik-Lösungen an Ihrer Seite.",
-  ];
+  const introLines = isHeating
+    ? [
+        `Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit ${data.companyName || "uns"}.`,
+        `Mit ${data.companyName || "uns"} haben Sie einen verlässlichen Partner für Ihre`,
+        "Heizungslösung an Ihrer Seite.",
+      ]
+    : [
+        `Vielen Dank für Ihr Interesse an einer Zusammenarbeit mit ${data.companyName || "uns"}.`,
+        `Mit ${data.companyName || "uns"} haben Sie einen verlässlichen Partner für innovative`,
+        "Photovoltaik-Lösungen an Ihrer Seite.",
+      ];
 
   for (const line of introLines) {
     drawText(page, line, pageMarginX, y, 9.2, font, textDark);
@@ -468,7 +487,7 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
   }
 
   y -= 16;
-  drawText(page, "Photovoltaik-Anlage", pageMarginX, y, 12.2, bold, textDark);
+  drawText(page, isHeating ? "Heizungsanlage" : "Photovoltaik-Anlage", pageMarginX, y, 12.2, bold, textDark);
   y -= 16;
 
   const grossPrice = roundChf05(Number(data.grossPriceChf || 0));
@@ -532,8 +551,8 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
 
   const costRows: Row[] = [
     {
-      left: "Kosten*",
-      middle: systemSummary || "Solaranlage",
+      left: isHeating ? "Netto" : "Kosten*",
+      middle: isHeating ? "Heizungsanlage" : systemSummary || "Solaranlage",
       right: `${money(data.netSystemPriceChf)} CHF`,
     },
     ...optionRows,
@@ -570,7 +589,13 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
       : []),
     {
       left: "",
-      middle: mwstIncluded ? "Total inkl. MWST." : "Total exkl. MWST.",
+      middle: isHeating
+        ? mwstIncluded
+          ? "Brutto inkl. MWST."
+          : "Total exkl. MWST."
+        : mwstIncluded
+          ? "Total inkl. MWST."
+          : "Total exkl. MWST.",
       right: `${money(grossPrice)} CHF`,
       bold: true,
     },
@@ -628,85 +653,89 @@ export async function addCoverPage(pdf: PDFDocument, data: OfferCoverData) {
     drawLine(page, tableX, y + 7, tableX + tableW, y + 7, 1, lineGray);
   }
 
-  y -= 10;
+  if (isHeating) {
+    y -= 14;
+  } else {
+    y -= 10;
 
-  const investmentRows: Row[] = [
-    {
-      left: "Ihre Investition",
-      middle: "Ihre Gesamtinvestition",
-      right: `${money(data.totalInvestmentChf)} CHF`,
-    },
-    ...(taxSavings > 0
-      ? [
-          {
-            left: "",
-            middle: "Erwartete Steuerersparnis***",
-            right: `${money(taxSavings)} CHF`,
-          } satisfies Row,
-        ]
-      : []),
-    {
-      left: "",
-      middle: "Effektive Kosten",
-      right: `${money(effectiveCost)} CHF`,
-      bold: true,
-    },
-  ];
+    const investmentRows: Row[] = [
+      {
+        left: "Ihre Investition",
+        middle: "Ihre Gesamtinvestition",
+        right: `${money(data.totalInvestmentChf)} CHF`,
+      },
+      ...(taxSavings > 0
+        ? [
+            {
+              left: "",
+              middle: "Erwartete Steuerersparnis***",
+              right: `${money(taxSavings)} CHF`,
+            } satisfies Row,
+          ]
+        : []),
+      {
+        left: "",
+        middle: "Effektive Kosten",
+        right: `${money(effectiveCost)} CHF`,
+        bold: true,
+      },
+    ];
 
-  y = drawPricingRows({
-    page,
-    rows: investmentRows,
-    x: tableX,
-    y,
-    width: tableW,
-    font,
-    bold,
-    size: 9.5,
-    lineHeight: 17,
-  });
+    y = drawPricingRows({
+      page,
+      rows: investmentRows,
+      x: tableX,
+      y,
+      width: tableW,
+      font,
+      bold,
+      size: 9.5,
+      lineHeight: 17,
+    });
 
-  drawLine(page, tableX, y + 7, tableX + tableW, y + 7, 1, lineGray);
+    drawLine(page, tableX, y + 7, tableX + tableW, y + 7, 1, lineGray);
 
-  y -= 14;
-  drawText(
-    page,
-    "*   Kosten gelten bei Bestellung aller aufgeführten Systeme.",
-    tableX,
-    y,
-    7.8,
-    font,
-    textDark
-  );
-  y -= 10;
-  drawText(
-    page,
-    `**  Pronovo-Einmalvergütung: ${data.kWp <= 30 ? "360 CHF/kWp" : "300 CHF/kWp"} auf Basis von ${money(data.kWp)} kWp.`,
-    tableX,
-    y,
-    7.8,
-    font,
-    textDark
-  );
-  y -= 10;
-  drawText(
-    page,
-    "    Weitere Fördergelder (z. B. Kanton / Gemeinde) wurden, falls vorhanden, separat berücksichtigt.",
-    tableX,
-    y,
-    7.8,
-    font,
-    textDark
-  );
-  y -= 10;
-  drawText(
-    page,
-    "    Förderungen und Steuerersparnisse sind unverbindliche Schätzwerte und nicht garantiert.",
-    tableX,
-    y,
-    7.8,
-    font,
-    textDark
-  );
+    y -= 14;
+    drawText(
+      page,
+      "*   Kosten gelten bei Bestellung aller aufgeführten Systeme.",
+      tableX,
+      y,
+      7.8,
+      font,
+      textDark
+    );
+    y -= 10;
+    drawText(
+      page,
+      `**  Pronovo-Einmalvergütung: ${data.kWp <= 30 ? "360 CHF/kWp" : "300 CHF/kWp"} auf Basis von ${money(data.kWp)} kWp.`,
+      tableX,
+      y,
+      7.8,
+      font,
+      textDark
+    );
+    y -= 10;
+    drawText(
+      page,
+      "    Weitere Fördergelder (z. B. Kanton / Gemeinde) wurden, falls vorhanden, separat berücksichtigt.",
+      tableX,
+      y,
+      7.8,
+      font,
+      textDark
+    );
+    y -= 10;
+    drawText(
+      page,
+      "    Förderungen und Steuerersparnisse sind unverbindliche Schätzwerte und nicht garantiert.",
+      tableX,
+      y,
+      7.8,
+      font,
+      textDark
+    );
+  }
 
   if (data.documentType !== "auftrag") {
     y -= 22;
