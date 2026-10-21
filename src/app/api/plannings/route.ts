@@ -19,6 +19,7 @@ import { buildDefaultOrderSignatureFields } from "@/lib/orderSignatures";
 import { buildDefaultOfferSignatureFields } from "@/lib/offerSignatures";
 import { getCompanyDocumentsMap } from "@/lib/companyDocuments";
 import { deriveSnowProtectionSummaryFromPlanning } from "@/lib/planning/snowProtectionSummary";
+import { isProjectType, resolveProjectType } from "@/lib/projectType";
 
 export const runtime = "nodejs";
 
@@ -169,9 +170,17 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({} as any));
 
+  if (body?.projectType !== undefined && !isProjectType(body.projectType)) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "Invalid projectType" }),
+      { status: 400, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } },
+    );
+  }
+
   const customerId = safeString(body?.customerId) || null;
   const title = safeString(body?.title) || "Neues Projekt";
   const planningNumber = safeString(body?.planningNumber) || buildPlanningNumber();
+  const projectType = resolveProjectType(body?.projectType);
 
   const commercialStage = safeString(body?.commercial?.stage) || "lead";
   const commercialValueChf =
@@ -234,6 +243,7 @@ export async function POST(req: Request) {
     const doc = {
       companyId: session.activeCompanyId,
       customerId,
+      projectType,
       createdByUserId: session.userId,
       createdByName: getSessionUserName(session as any) || "unknown",
 
@@ -304,7 +314,7 @@ export async function POST(req: Request) {
     }
 
     return new Response(
-      JSON.stringify({ ok: true, planningId: res.insertedId.toString() }),
+      JSON.stringify({ ok: true, planningId: res.insertedId.toString(), projectType }),
       { status: 200, headers: { "Content-Type": "application/json", ...getCorsHeaders(origin) } }
     );
   } catch (e: any) {
@@ -377,6 +387,7 @@ export async function GET(req: Request) {
           _id: 1,
           companyId: 1,
           customerId: 1,
+          projectType: 1,
           createdByUserId: 1,
           status: 1,
           currentStep: 1,
@@ -449,6 +460,7 @@ export async function GET(req: Request) {
         id: String(d._id),
         companyId: d.companyId ?? null,
         customerId: d.customerId ?? null,
+        projectType: resolveProjectType(d.projectType),
         createdByUserId: d.createdByUserId ?? null,
         status: d.status ?? "draft",
         currentStep: d.currentStep ?? null,

@@ -6,6 +6,7 @@ import { enforceActiveSubscription } from "@/lib/subscription";
 import { normalizeOrderFields } from "@/lib/orders";
 import { buildDefaultOrderSignatureFields } from "@/lib/orderSignatures";
 import { buildDefaultOfferSignatureFields } from "@/lib/offerSignatures";
+import { resolveProjectType } from "@/lib/projectType";
 
 export const runtime = "nodejs";
 
@@ -157,6 +158,7 @@ export async function POST(
 
       title: newTitle,
       planningNumber: newPlanningNumber,
+      projectType: resolveProjectType((source as any).projectType),
 
       status: "draft",
       currentStep: safeString((source as any).currentStep) || "profile",
@@ -198,6 +200,7 @@ export async function POST(
         id: String(res.insertedId),
         title: duplicated.title,
         planningNumber: duplicated.planningNumber,
+        projectType: duplicated.projectType,
         variantOfPlanningId: duplicated.variantOfPlanningId,
         variantNumber: duplicated.variantNumber,
         ...normalizeOrderFields(duplicated),

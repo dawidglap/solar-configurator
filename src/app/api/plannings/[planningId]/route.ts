@@ -36,6 +36,10 @@ import {
   normalizeSnowProtectionConfiguration,
   withSnowProtectionSummary,
 } from "@/lib/planning/snowProtectionSummary";
+import {
+  resolveProjectType,
+  resolveProjectTypeUpdate,
+} from "@/lib/projectType";
 
 export const runtime = "nodejs";
 
@@ -472,6 +476,7 @@ export async function PATCH(
   }
 
   const body = await req.json().catch(() => ({} as any));
+  const projectTypeProvided = hasOwn(body, "projectType");
 
   let profile = body?.profile;
   const ist = body?.ist;
@@ -516,7 +521,8 @@ export async function PATCH(
     typeof customerId === "string" ||
     typeof planningNumber === "string" ||
     (commercial && typeof commercial === "object") ||
-    (summary && typeof summary === "object");
+    (summary && typeof summary === "object") ||
+    projectTypeProvided;
 
   if (!hasPlannerPayload && !hasCrmPayload) {
     return jsonResponse(
@@ -555,6 +561,27 @@ export async function PATCH(
 
     if (!existingPlanning) {
       return jsonResponse(origin, { ok: false, error: "Planning not found" }, 404);
+    }
+
+    const projectTypeUpdate = resolveProjectTypeUpdate(
+      (existingPlanning as any)?.projectType,
+      body?.projectType,
+      projectTypeProvided,
+    );
+    if (!projectTypeUpdate.ok) {
+      return jsonResponse(
+        origin,
+        {
+          ok: false,
+          error: projectTypeUpdate.reason === "immutable"
+            ? "projectType cannot be changed after creation"
+            : "Invalid projectType",
+        },
+        projectTypeUpdate.reason === "immutable" ? 409 : 400,
+      );
+    }
+    if (projectTypeUpdate.provided) {
+      setObj.projectType = projectTypeUpdate.projectType;
     }
 
     if (profile && typeof profile === "object") {
@@ -1084,6 +1111,7 @@ if (ist && typeof ist === "object") {
     const normalized = withSnowProtectionSummary({
       ...updatedWithoutComments,
       _id: String((updated as any)._id),
+      projectType: resolveProjectType((updated as any)?.projectType),
       summary: deriveSummaryFromPlanner(updated),
       title: safeString((updated as any)?.title) || "Unbenanntes Projekt",
       planningNumber: safeString((updated as any)?.planningNumber) || "",
@@ -1204,6 +1232,7 @@ export async function GET(
     const normalized = withSnowProtectionSummary({
       ...docWithoutComments,
       _id: String((doc as any)._id),
+      projectType: resolveProjectType((doc as any)?.projectType),
       summary: deriveSummaryFromPlanner(doc),
       title: safeString((doc as any)?.title) || "Unbenanntes Projekt",
       planningNumber: safeString((doc as any)?.planningNumber) || "",
