@@ -139,10 +139,16 @@ export async function POST(
 
     const doc = {
       companyId: String(session.activeCompanyId),
+      projectType: safeString(parentInvoice?.projectType) || "photovoltaic",
+      customerId: parentInvoice?.customerId ?? null,
       planningId: safeString(parentInvoice?.planningId),
       orderId: safeString(parentInvoice?.orderId),
       invoiceType: "mahnung",
       parentInvoiceId: parentInvoice._id,
+      ...(parentInvoice?.heatingInvoiceSnapshot
+        ? { heatingInvoiceSnapshot: parentInvoice.heatingInvoiceSnapshot }
+        : {}),
+      ...(parentInvoice?.vatRatePct != null ? { vatRatePct: parentInvoice.vatRatePct } : {}),
       rateIndex: safeNumber(parentInvoice?.rateIndex, 0),
       pct: safeNumber(parentInvoice?.pct, 0),
       amount,
@@ -162,6 +168,7 @@ export async function POST(
         rateIndex: safeNumber(parentInvoice?.rateIndex, 0),
         pct: safeNumber(parentInvoice?.pct, 0),
         dueDate: nextDueDate,
+        projectType: safeString(parentInvoice?.projectType) === "heating" ? "heating" : "photovoltaic",
       }),
       internalNote: safeString(existingMahnung?.internalNote),
       updatedAt: now,

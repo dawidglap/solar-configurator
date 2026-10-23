@@ -35,6 +35,7 @@ type PaymentSlipPageData = {
   showIbanWarning?: boolean;
   paymentPartPdfBytes?: Buffer | null;
   showPaymentPartPlaceholder?: boolean;
+  categoryLabel?: string;
 };
 
 const PAGE_W = 595.28;
@@ -300,7 +301,7 @@ export async function addPaymentSlipPage(pdf: PDFDocument, data: PaymentSlipPage
   const metaRows = [
     ["Rechnungsdatum", data.invoiceDate],
     ["Fällig am", data.dueDate],
-    ["Kategorie", "Photovoltaik-Anlage"],
+    ["Kategorie", data.categoryLabel || "Photovoltaik-Anlage"],
     ["Zahlung", "Einmalig"],
   ];
 

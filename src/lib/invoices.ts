@@ -251,6 +251,14 @@ export async function ensureInvoiceIndexes(db: Db) {
   const invoiceEvents = getInvoiceEventsCollection(db);
   await Promise.all([
     invoices.createIndex({ companyId: 1, orderId: 1, rateIndex: 1, invoiceType: 1, createdAt: 1 }),
+    invoices.createIndex(
+      { companyId: 1, orderId: 1, projectType: 1, invoiceType: 1, rateIndex: 1 },
+      {
+        name: "uniq_heating_contract_installment",
+        unique: true,
+        partialFilterExpression: { projectType: "heating", invoiceType: "rechnung" },
+      },
+    ),
     invoices.createIndex({ companyId: 1, invoiceNumber: 1 }, { unique: true }),
     invoices.createIndex({ companyId: 1, planningId: 1, createdAt: -1 }),
     invoices.createIndex({ companyId: 1, dueDate: 1, paymentStatus: 1 }),
@@ -337,17 +345,20 @@ export function buildInvoiceDefaultBodyText(args: {
   invoiceType: InvoiceType;
   rateIndex: number;
   pct: number;
-  dueDate: Date;
+  dueDate: Date | null;
   dunningLevel?: number;
+  projectType?: "photovoltaic" | "heating";
 }) {
   const template = safeString(args.company?.templates?.invoiceText);
   const recipientName = getInvoiceRecipientDisplayName(args.planning);
   const anrede = buildInvoiceAnrede(args.planning);
-  const dueDateLabel = new Intl.DateTimeFormat("de-CH", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(args.dueDate);
+  const dueDateLabel = args.dueDate
+    ? new Intl.DateTimeFormat("de-CH", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }).format(args.dueDate)
+    : "gemäss Vereinbarung";
 
   if (template) {
     return template
@@ -359,10 +370,11 @@ export function buildInvoiceDefaultBodyText(args: {
   }
 
   if (args.invoiceType === "mahnung") {
+    const subject = args.projectType === "heating" ? "Ihres Heizungsauftrags" : "unserer Photovoltaik-Anlage";
     return [
       `${anrede}`,
       "",
-      `für die Rate ${args.rateIndex + 1} unserer Photovoltaik-Anlage ist der offene Betrag weiterhin ausstehend.`,
+      `für die Rate ${args.rateIndex + 1} ${subject} ist der offene Betrag weiterhin ausstehend.`,
       `Bitte begleichen Sie die Forderung bis spätestens ${dueDateLabel}.`,
       "Mahnung",
     ].join("\n");
@@ -381,7 +393,9 @@ export function buildInvoiceDefaultBodyText(args: {
     `${anrede}`,
     "",
     "vielen Dank für Ihren Auftrag. Nachfolgend stellen wir Ihnen die vereinbarte Rate in Rechnung.",
-    `Bitte begleichen Sie den Betrag bis zum ${dueDateLabel}.`,
+    args.dueDate
+      ? `Bitte begleichen Sie den Betrag bis zum ${dueDateLabel}.`
+      : "Die Fälligkeit richtet sich nach der vertraglichen Vereinbarung.",
   ].join("\n");
 }
 
@@ -403,6 +417,8 @@ export function normalizeInvoice(doc: any) {
   return {
     id: mongoIdToString(doc?._id),
     companyId: safeString(doc?.companyId),
+    projectType: safeString(doc?.projectType) || "photovoltaic",
+    customerId: mongoIdToString(doc?.customerId) || safeString(doc?.customerId) || null,
     planningId: safeString(doc?.planningId),
     orderId: safeString(doc?.orderId),
     invoiceNumber: safeString(doc?.invoiceNumber),

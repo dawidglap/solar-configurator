@@ -226,6 +226,38 @@ function buildRecipientLines(planning: any, invoice: any) {
   ].filter(Boolean);
 }
 
+export function buildInvoiceDocumentPlanning(invoice: any, livePlanning: any) {
+  if (safeString(invoice?.projectType) !== "heating" || !invoice?.heatingInvoiceSnapshot) {
+    return livePlanning;
+  }
+  const snapshot = invoice.heatingInvoiceSnapshot;
+  const customer = snapshot?.customer ?? {};
+  const address = customer?.address ?? {};
+  const isCompany = safeString(customer?.type) === "company";
+  return {
+    _id: invoice?.planningId,
+    companyId: invoice?.companyId,
+    customerId: invoice?.customerId,
+    projectType: "heating",
+    orderId: invoice?.orderId,
+    summary: { customerName: safeString(customer?.name) },
+    data: {
+      profile: {
+        type: safeString(customer?.type),
+        companyName: isCompany ? safeString(customer?.companyName) || safeString(customer?.name) : "",
+        firstName: isCompany ? "" : safeString(customer?.name),
+        lastName: "",
+        salutation: safeString(customer?.salutation),
+        street: safeString(address?.street),
+        streetNo: safeString(address?.houseNumber),
+        zip: safeString(address?.zip),
+        city: safeString(address?.city),
+        country: safeString(address?.country) || "CH",
+      },
+    },
+  };
+}
+
 function getInvoiceHeading(invoice: any) {
   const invoiceType = safeString(invoice?.invoiceType).toLowerCase() as InvoiceType;
   if (invoiceType === "mahnung") {
@@ -257,6 +289,7 @@ function drawCancelledWatermark(page: PDFPage, bold: PDFFont) {
 }
 
 export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
+  const planning = buildInvoiceDocumentPlanning(args.invoice, args.planning);
   const pdf = await PDFDocument.create();
   pdf.setTitle(`Rechnung ${safeString(args.invoice?.invoiceNumber) || "Dokument"}`);
   const page = pdf.addPage([595.28, 841.89]);
@@ -346,7 +379,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
     );
   }
 
-  const recipientLines = buildRecipientLines(args.planning, args.invoice);
+  const recipientLines = buildRecipientLines(planning, args.invoice);
   page.drawText("Empfänger", {
     x: marginX,
     y: isCancelled ? 624 : 640,
@@ -368,7 +401,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
 
   const issueDate = parseDate(args.invoice?.issueDate);
   const dueDate = parseDate(args.invoice?.dueDate);
-  const customerNumber = safeString(args.planning?.customerId) || safeString(args.planning?.data?.profile?.customerNumber) || "—";
+  const customerNumber = safeString(args.invoice?.customerId) || safeString(planning?.customerId) || safeString(planning?.data?.profile?.customerNumber) || "—";
   const detailRows = [
     ["Rechnungsnummer", safeString(args.invoice?.invoiceNumber) || "—"],
     ["Auftragsnummer", safeString(args.invoice?.orderId) || "—"],
@@ -439,7 +472,9 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   page.drawText("Betrag", { x: 478, y: tableTop + 8, size: 9, font: bold, color: cText });
 
   const rowY = tableTop - 24;
-  const description = `Photovoltaik-Anlage - Rate ${safeNumber(args.invoice?.rateIndex, 0) + 1} (${safeNumber(args.invoice?.pct, 0)}%)`;
+  const description = safeString(args.invoice?.projectType) === "heating"
+    ? `Heizungsanlage - ${safeString(args.invoice?.rateLabel) || `Rate ${safeNumber(args.invoice?.rateIndex, 0) + 1}`} (${safeNumber(args.invoice?.pct, 0)}%)`
+    : `Photovoltaik-Anlage - Rate ${safeNumber(args.invoice?.rateIndex, 0) + 1} (${safeNumber(args.invoice?.pct, 0)}%)`;
   page.drawText(pdfText(description), { x: marginX + 12, y: rowY, size: 9.5, font, color: cText });
   const amountLabel = `${pdfText(args.invoice?.currency) || "CHF"} ${money(safeNumber(args.invoice?.amount, 0))}`;
   const amountWidth = bold.widthOfTextAtSize(amountLabel, 9.5);
@@ -452,7 +487,11 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   });
 
   const totalY = rowY - 36;
-  const vatLabel = `MwSt. bereits enthalten (${money(roundChf05(safeNumber(args.invoice?.amount, 0) / 1.081 * 0.081))} CHF)`;
+  const vatRate = safeString(args.invoice?.projectType) === "heating"
+    ? safeNumber(args.invoice?.vatRatePct, safeNumber(args.invoice?.heatingInvoiceSnapshot?.pricing?.vatRate, 8.1))
+    : 8.1;
+  const vatFactor = 1 + vatRate / 100;
+  const vatLabel = `MwSt. bereits enthalten (${money(roundChf05(safeNumber(args.invoice?.amount, 0) / vatFactor * (vatRate / 100)))} CHF)`;
   page.drawText(vatLabel, { x: marginX + 12, y: totalY, size: 8.5, font, color: cMuted });
   page.drawText("Total", { x: 424, y: totalY, size: 9.5, font: bold, color: cText });
   page.drawText(amountLabel, {
@@ -507,7 +546,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
   try {
     qrPaymentPart = await createInvoiceQrPaymentPart({
       invoice: args.invoice,
-      planning: args.planning,
+      planning,
       company: args.company,
       customer: args.customer,
     });
@@ -534,6 +573,7 @@ export async function buildInvoicePdf(args: BuildInvoicePdfArgs) {
     try {
       await addPaymentSlipPage(pdf, {
         documentType: "auftrag",
+        categoryLabel: safeString(args.invoice?.projectType) === "heating" ? "Heizungsanlage" : "Photovoltaik-Anlage",
         documentNumber: pdfText(args.invoice?.invoiceNumber) || "-",
         documentNumberLabel: `Rechnung Nr. ${pdfText(args.invoice?.invoiceNumber) || "-"}`,
         invoiceDate: formatDateCH(issueDate),
@@ -694,5 +734,11 @@ export async function getInvoiceContextById(args: {
       })
     : null;
 
-  return { invoice, planning, company, customer };
+  const documentPlanning = buildInvoiceDocumentPlanning(invoice, planning);
+  return {
+    invoice,
+    planning: documentPlanning,
+    company,
+    customer: safeString(invoice?.projectType) === "heating" ? null : customer,
+  };
 }

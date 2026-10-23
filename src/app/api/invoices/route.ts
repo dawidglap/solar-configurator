@@ -26,6 +26,7 @@ import { getSessionUserEmail, getSessionUserMeta, safeNumber } from "@/lib/tasks
 import { roundChf05 } from "@/lib/chf";
 import { expandOrderSearchTerm, getOrderIdQuery } from "@/lib/orderIds";
 import { emitInvoiceUpdatedEvent } from "@/lib/realtime";
+import { resolveProjectType } from "@/lib/projectType";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -554,6 +555,13 @@ export async function POST(req: Request) {
       return jsonResponse(origin, { ok: false, message: "Stornierte Aufträge können nicht fakturiert werden." }, 400);
     }
 
+    if (resolveProjectType((planningAny as any)?.projectType) === "heating") {
+      return jsonResponse(origin, {
+        ok: false,
+        message: "Heizungsdokumente müssen über die kanonischen Auftrags- und Rechnungsaktionen erstellt werden.",
+      }, 409);
+    }
+
     const companyObjectId = toObjectIdOrNull(companyId);
     const companyDoc = companyObjectId
       ? await db.collection("companies").findOne({ _id: companyObjectId })
@@ -647,11 +655,17 @@ export async function POST(req: Request) {
 
     const doc = {
       companyId,
+      projectType: safeString(parentInvoice?.projectType) || resolveProjectType((planningAny as any)?.projectType),
+      customerId: parentInvoice?.customerId ?? (planningAny as any)?.customerId ?? null,
       planningId: safeString((planningAny as any)?._id?.toString?.() ?? (planningAny as any)?._id),
       orderId: resolvedOrderId,
       invoiceNumber,
       invoiceType,
       parentInvoiceId: parentInvoice?._id ?? null,
+      ...(parentInvoice?.heatingInvoiceSnapshot
+        ? { heatingInvoiceSnapshot: parentInvoice.heatingInvoiceSnapshot }
+        : {}),
+      ...(parentInvoice?.vatRatePct != null ? { vatRatePct: parentInvoice.vatRatePct } : {}),
       rateIndex,
       position,
       rateLabel: normalizedRateLabel,
@@ -687,6 +701,7 @@ export async function POST(req: Request) {
           rateIndex,
           pct,
           dueDate: dueDateForText,
+          projectType: safeString(parentInvoice?.projectType) === "heating" ? "heating" : resolveProjectType((planningAny as any)?.projectType),
         }),
       internalNote,
       pdfFileId: null,
