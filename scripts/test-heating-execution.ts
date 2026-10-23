@@ -7,6 +7,11 @@ import {
   GET as getExecutionTask,
   PATCH as patchExecutionTask,
 } from "@/app/api/execution-tasks/[taskId]/route";
+import { GET as getCalendarEvents } from "@/app/api/calendar-events/route";
+import {
+  DELETE as deleteCalendarEvent,
+  PATCH as patchCalendarEvent,
+} from "@/app/api/calendar-events/[eventId]/route";
 import { getDb } from "@/lib/db";
 import {
   ensureExecutionTasksForWonPlanning,
@@ -230,28 +235,188 @@ async function main() {
       { params: Promise.resolve({ taskId }) },
     );
     assert(itemResponse.status === 200, "Heating item fetch failed");
+    const unscheduledEvents = await db.collection("calendar_events").countDocuments({
+      companyId: companyA.toString(),
+      managedSource: "execution_task",
+      executionTrack: "heating",
+      linkedTaskId: taskId,
+    });
+    assert(unscheduledEvents === 0, "unscheduled Heating task created a calendar event");
 
+    const manualEventId = new ObjectId();
+    await db.collection("calendar_events").insertOne({
+      _id: manualEventId,
+      companyId: companyA.toString(),
+      title: "Manual event must survive",
+      description: "manual",
+      startDate: "2026-11-03",
+      endDate: "2026-11-03",
+      startTime: "10:00",
+      endTime: "11:00",
+      allDay: false,
+      notes: "untouched",
+      assigneeUserIds: [],
+      assignees: [],
+      linkedTaskId: taskId,
+      linkedPlanningId: heatingPlanningId.toString(),
+      linkedProjectId: heatingPlanningId.toString(),
+      linkedCustomerId: customerId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const manualBefore = JSON.stringify(
+      await db.collection("calendar_events").findOne({ _id: manualEventId }),
+    );
+    const invoiceCountBefore = await db.collection("invoices").countDocuments({
+      companyId: companyA.toString(),
+    });
+
+    const scheduleBody = {
+      assignedUserIds: [heatingUserId.toString()],
+      scheduledStart: "2026-11-03T00:00:00.000Z",
+      scheduledEnd: "2026-11-05T00:00:00.000Z",
+      startTime: "08:00",
+      endTime: "16:00",
+      stage: "geplant",
+      notes: "Heating lifecycle test",
+    };
     const patchResponse = await patchExecutionTask(
       apiRequest(cookieA, `/api/execution-tasks/${taskId}`, {
         method: "PATCH",
-        body: {
-          assignedUserIds: [heatingUserId.toString()],
-          scheduledStart: "2026-11-03T00:00:00.000Z",
-          scheduledEnd: "2026-11-03T00:00:00.000Z",
-          startTime: "08:00",
-          endTime: "16:00",
-          stage: "abgeschlossen",
-          notes: "Heating lifecycle test",
-        },
+        body: scheduleBody,
       }),
       { params: Promise.resolve({ taskId }) },
     );
     const patchBody = await responseBody(patchResponse);
     assert(patchResponse.status === 200, `Heating lifecycle PATCH failed: ${JSON.stringify(patchBody)}`);
     assert(patchBody.item.track === "heating", "PATCH changed Heating track");
-    assert(patchBody.item.stage === "abgeschlossen", "Heating completion stage failed");
+    assert(patchBody.item.stage === "geplant", "Heating planned stage failed");
     assert(patchBody.item.assignedUserIds.includes(heatingUserId.toString()), "Heating assignment failed");
     assert(patchBody.item.scheduledStart, "Heating scheduling failed");
+    assert(patchBody.calendarSync.items.length === 3, "Heating schedule must create one event per working day");
+
+    let managedEvents = await db.collection("calendar_events")
+      .find({
+        companyId: companyA.toString(),
+        managedSource: "execution_task",
+        executionTrack: "heating",
+        linkedTaskId: taskId,
+      })
+      .sort({ occurrenceDate: 1 })
+      .toArray();
+    assert(managedEvents.length === 3, "Heating schedule did not persist three occurrences");
+    assert(
+      managedEvents.map((event) => event.occurrenceDate).join(",") ===
+        "2026-11-03,2026-11-04,2026-11-05",
+      "Heating working-day occurrences are incorrect",
+    );
+    assert(
+      managedEvents.every(
+        (event) =>
+          event.startDate === event.endDate &&
+          event.startTime === "08:00" &&
+          event.endTime === "16:00" &&
+          event.allDay === false &&
+          event.executionStage === "geplant" &&
+          event.assigneeUserIds.includes(heatingUserId.toString()) &&
+          event.title.startsWith("Heizung · "),
+      ),
+      "Heating calendar projection fields are incorrect",
+    );
+    const managedCalendarList = await getCalendarEvents(
+      apiRequest(cookieA, `/api/calendar-events?taskId=${taskId}`),
+    );
+    const managedCalendarBody = await responseBody(managedCalendarList);
+    assert(
+      managedCalendarList.status === 200 &&
+        managedCalendarBody.items.filter((item: any) => item.readOnly).length === 3 &&
+        managedCalendarBody.items.every(
+          (item: any) => !item.readOnly || item.executionTrack === "heating",
+        ),
+      "calendar API did not expose managed Heating occurrences as read-only",
+    );
+
+    const repeatResponse = await patchExecutionTask(
+      apiRequest(cookieA, `/api/execution-tasks/${taskId}`, {
+        method: "PATCH",
+        body: scheduleBody,
+      }),
+      { params: Promise.resolve({ taskId }) },
+    );
+    assert(repeatResponse.status === 200, "identical Heating schedule retry failed");
+    assert(
+      await db.collection("calendar_events").countDocuments({
+        companyId: companyA.toString(),
+        managedSource: "execution_task",
+        executionTrack: "heating",
+        linkedTaskId: taskId,
+      }) === 3,
+      "identical Heating schedule retry created duplicates",
+    );
+
+    const rescheduleResponse = await patchExecutionTask(
+      apiRequest(cookieA, `/api/execution-tasks/${taskId}`, {
+        method: "PATCH",
+        body: {
+          scheduledStart: "2026-11-04T00:00:00.000Z",
+          scheduledEnd: "2026-11-05T00:00:00.000Z",
+          startTime: "09:00",
+          endTime: "17:00",
+          stage: "in_ausfuehrung",
+        },
+      }),
+      { params: Promise.resolve({ taskId }) },
+    );
+    assert(rescheduleResponse.status === 200, "Heating reschedule failed");
+    managedEvents = await db.collection("calendar_events")
+      .find({
+        companyId: companyA.toString(),
+        managedSource: "execution_task",
+        executionTrack: "heating",
+        linkedTaskId: taskId,
+      })
+      .sort({ occurrenceDate: 1 })
+      .toArray();
+    assert(
+      managedEvents.length === 2 &&
+        managedEvents.map((event) => event.occurrenceDate).join(",") === "2026-11-04,2026-11-05" &&
+        managedEvents.every((event) => event.startTime === "09:00" && event.endTime === "17:00"),
+      "Heating reschedule left stale or incorrect occurrences",
+    );
+
+    const managedEventId = managedEvents[0]._id.toString();
+    const ownerCalendarPatch = await patchCalendarEvent(
+      apiRequest(cookieA, `/api/calendar-events/${managedEventId}`, {
+        method: "PATCH",
+        body: { startDate: "2026-12-01", endDate: "2026-12-01" },
+      }),
+      { params: Promise.resolve({ eventId: managedEventId }) },
+    );
+    assert(ownerCalendarPatch.status === 409, "managed Heating event was editable from calendar API");
+    const ownerCalendarDelete = await deleteCalendarEvent(
+      apiRequest(cookieA, `/api/calendar-events/${managedEventId}`, { method: "DELETE" }),
+      { params: Promise.resolve({ eventId: managedEventId }) },
+    );
+    assert(ownerCalendarDelete.status === 409, "managed Heating event was deletable from calendar API");
+
+    const completionResponse = await patchExecutionTask(
+      apiRequest(cookieA, `/api/execution-tasks/${taskId}`, {
+        method: "PATCH",
+        body: { stage: "abgeschlossen" },
+      }),
+      { params: Promise.resolve({ taskId }) },
+    );
+    assert(completionResponse.status === 200, "Heating completion failed");
+    assert(
+      await db.collection("calendar_events").countDocuments({
+        companyId: companyA.toString(),
+        managedSource: "execution_task",
+        executionTrack: "heating",
+        linkedTaskId: taskId,
+        executionStage: "abgeschlossen",
+      }) === 2,
+      "Heating completion must retain and mark calendar history",
+    );
 
     const crossTenantGet = await getExecutionTask(
       apiRequest(cookieB, `/api/execution-tasks/${taskId}`),
@@ -266,6 +431,95 @@ async function main() {
       { params: Promise.resolve({ taskId }) },
     );
     assert(crossTenantPatch.status === 404, "other tenant updated Heating task");
+    const crossTenantCalendarList = await getCalendarEvents(
+      apiRequest(cookieB, `/api/calendar-events?taskId=${taskId}`),
+    );
+    const crossTenantCalendarBody = await responseBody(crossTenantCalendarList);
+    assert(
+      crossTenantCalendarList.status === 200 && crossTenantCalendarBody.items.length === 0,
+      "other tenant listed Heating calendar events",
+    );
+    const crossTenantCalendarPatch = await patchCalendarEvent(
+      apiRequest(cookieB, `/api/calendar-events/${managedEventId}`, {
+        method: "PATCH",
+        body: { title: "cross-tenant" },
+      }),
+      { params: Promise.resolve({ eventId: managedEventId }) },
+    );
+    assert(crossTenantCalendarPatch.status === 404, "other tenant updated Heating calendar event");
+    const crossTenantCalendarDelete = await deleteCalendarEvent(
+      apiRequest(cookieB, `/api/calendar-events/${managedEventId}`, { method: "DELETE" }),
+      { params: Promise.resolve({ eventId: managedEventId }) },
+    );
+    assert(crossTenantCalendarDelete.status === 404, "other tenant deleted Heating calendar event");
+
+    const legacyTaskId = recoveryResult.items[0]._id.toString();
+    await getExecutionTasksCollection(db).updateOne(
+      { _id: recoveryResult.items[0]._id },
+      {
+        $set: {
+          scheduledStart: new Date("2026-11-09T00:00:00.000Z"),
+          scheduledEnd: new Date("2026-11-10T00:00:00.000Z"),
+          workingDays: ["2026-11-09", "2026-11-10"],
+          startTime: null,
+          endTime: null,
+          stage: "geplant",
+        },
+      },
+    );
+    const legacyRead = await getExecutionTask(
+      apiRequest(cookieA, `/api/execution-tasks/${legacyTaskId}`),
+      { params: Promise.resolve({ taskId: legacyTaskId }) },
+    );
+    assert(legacyRead.status === 200, "pre-4F-C Heating task read-sync failed");
+    assert(
+      await db.collection("calendar_events").countDocuments({
+        companyId: companyA.toString(),
+        managedSource: "execution_task",
+        executionTrack: "heating",
+        linkedTaskId: legacyTaskId,
+      }) === 2,
+      "pre-4F-C Heating task did not recover calendar occurrences exactly once",
+    );
+    for (const pvTask of pvResult.items) {
+      await getExecutionTask(
+        apiRequest(cookieA, `/api/execution-tasks/${pvTask._id.toString()}`),
+        { params: Promise.resolve({ taskId: pvTask._id.toString() }) },
+      );
+    }
+    assert(
+      await db.collection("calendar_events").countDocuments({
+        managedSource: "execution_task",
+        linkedTaskId: { $in: pvResult.items.map((item) => item._id.toString()) },
+      }) === 0,
+      "PV task calendar behavior changed",
+    );
+
+    const unscheduleResponse = await patchExecutionTask(
+      apiRequest(cookieA, `/api/execution-tasks/${taskId}`, {
+        method: "PATCH",
+        body: { scheduledStart: null, scheduledEnd: null, startTime: null, endTime: null },
+      }),
+      { params: Promise.resolve({ taskId }) },
+    );
+    assert(unscheduleResponse.status === 200, "Heating unschedule failed");
+    assert(
+      await db.collection("calendar_events").countDocuments({
+        companyId: companyA.toString(),
+        managedSource: "execution_task",
+        executionTrack: "heating",
+        linkedTaskId: taskId,
+      }) === 0,
+      "Heating unschedule left stale calendar appointments",
+    );
+    const manualAfter = JSON.stringify(
+      await db.collection("calendar_events").findOne({ _id: manualEventId }),
+    );
+    assert(manualAfter === manualBefore, "Heating sync changed a manual calendar event");
+    const invoiceCountAfter = await db.collection("invoices").countDocuments({
+      companyId: companyA.toString(),
+    });
+    assert(invoiceCountAfter === invoiceCountBefore, "Heating calendar sync created invoice side effects");
 
     const montageCount = await db.collection("montages").countDocuments({
       companyId: { $in: [companyA, companyA.toString()] },
@@ -278,6 +532,7 @@ async function main() {
     await Promise.all([
       db.collection("executionTasks").deleteMany({ companyId: companyA.toString() }),
       db.collection("executionActivities").deleteMany({ companyId: companyA.toString() }),
+      db.collection("calendar_events").deleteMany({ companyId: companyA.toString() }),
       db.collection("auftraege").deleteMany({ companyId: companyA }),
       db.collection("plannings").deleteMany({
         _id: {

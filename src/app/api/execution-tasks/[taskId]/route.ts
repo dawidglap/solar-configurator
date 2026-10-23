@@ -51,6 +51,7 @@ import {
   ExecutionWorkingDaysError,
   resolveExecutionWorkingDayFields,
 } from "@/lib/executionWorkingDays";
+import { syncHeatingExecutionCalendarForTask } from "@/lib/heatingExecutionCalendar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -108,6 +109,13 @@ export async function GET(req: Request, { params }: Params) {
     if (!doc) {
       return jsonResponse(origin, { ok: false, error: "Execution task not found" }, 404);
     }
+
+    await syncHeatingExecutionCalendarForTask({
+      db,
+      companyId: String(session.activeCompanyId),
+      taskId,
+      session,
+    });
 
     const [item] = await hydrateExecutionTasks(db, String(session.activeCompanyId), [doc]);
     return jsonResponse(origin, { ok: true, item }, 200);
@@ -856,10 +864,26 @@ export async function PATCH(req: Request, { params }: Params) {
       return jsonResponse(origin, { ok: false, error: "Execution task not found after update" }, 404);
     }
 
+    const calendarSync = await syncHeatingExecutionCalendarForTask({
+      db,
+      companyId,
+      taskId,
+      session,
+    });
+
     const [item] = await hydrateExecutionTasks(db, companyId, [updated]);
     const validate = new URL(req.url).searchParams.get("validate") === "1";
     const conflicts = validate ? await findExecutionCrewConflicts({ db, companyId, task: updated }) : null;
-    return jsonResponse(origin, { ok: true, item, ...(validate ? { conflicts } : {}) }, 200);
+    return jsonResponse(
+      origin,
+      {
+        ok: true,
+        item,
+        ...(calendarSync.managed ? { calendarSync } : {}),
+        ...(validate ? { conflicts } : {}),
+      },
+      200,
+    );
   } catch (e: any) {
     if (e instanceof ExecutionCrewRequestError) {
       return jsonResponse(

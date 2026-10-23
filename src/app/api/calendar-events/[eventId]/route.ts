@@ -77,6 +77,20 @@ export async function PATCH(
     if (!existing) {
       return jsonResponse(origin, { ok: false, message: "Kalendereintrag nicht gefunden." }, 404);
     }
+    if (
+      safeString(existing.managedSource) === "execution_task" &&
+      safeString(existing.executionTrack) === "heating"
+    ) {
+      return jsonResponse(
+        origin,
+        {
+          ok: false,
+          message: "Dieser Heizungstermin wird über die Ausführung verwaltet.",
+          code: "MANAGED_EXECUTION_EVENT_READ_ONLY",
+        },
+        409,
+      );
+    }
 
     const input = await buildCalendarEventInput({
       db,
@@ -175,14 +189,30 @@ export async function DELETE(
     if (subscriptionError) return subscriptionError;
     await ensureCalendarEventIndexes(db);
 
-    const result = await getCalendarEventsCollection(db).deleteOne({
+    const collection = getCalendarEventsCollection(db);
+    const existing = await collection.findOne({
       _id: eventObjectId,
       companyId: String(session.activeCompanyId),
     });
-
-    if (!result.deletedCount) {
+    if (!existing) {
       return jsonResponse(origin, { ok: false, message: "Kalendereintrag nicht gefunden." }, 404);
     }
+    if (
+      safeString(existing.managedSource) === "execution_task" &&
+      safeString(existing.executionTrack) === "heating"
+    ) {
+      return jsonResponse(
+        origin,
+        {
+          ok: false,
+          message: "Dieser Heizungstermin wird über die Ausführung verwaltet.",
+          code: "MANAGED_EXECUTION_EVENT_READ_ONLY",
+        },
+        409,
+      );
+    }
+
+    await collection.deleteOne({ _id: existing._id });
 
     return jsonResponse(origin, { ok: true }, 200);
   } catch (error: any) {

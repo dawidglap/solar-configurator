@@ -47,6 +47,17 @@ export async function ensureCalendarEventIndexes(db: Db) {
     getCalendarEventsCollection(db).createIndex({ companyId: 1, startDate: 1, endDate: 1, createdAt: -1 }),
     getCalendarEventsCollection(db).createIndex({ companyId: 1, assigneeUserIds: 1, startDate: 1 }),
     getCalendarEventsCollection(db).createIndex({ companyId: 1, linkedTaskId: 1, startDate: 1 }),
+    getCalendarEventsCollection(db).createIndex(
+      { companyId: 1, managedSource: 1, linkedTaskId: 1, occurrenceDate: 1 },
+      {
+        unique: true,
+        partialFilterExpression: {
+          managedSource: "execution_task",
+          executionTrack: "heating",
+        },
+        name: "unique_heating_execution_calendar_occurrence",
+      },
+    ),
     getCalendarEventsCollection(db).createIndex({ companyId: 1, linkedPlanningId: 1, startDate: 1 }),
     getCalendarEventsCollection(db).createIndex({ companyId: 1, linkedProjectId: 1, startDate: 1 }),
   ])
@@ -275,6 +286,13 @@ export function normalizeCalendarEvent(doc: any) {
     linkedPlanningId: safeString(doc?.linkedPlanningId) || null,
     linkedProjectId: safeString(doc?.linkedProjectId) || null,
     linkedCustomerId: safeString(doc?.linkedCustomerId) || null,
+    managedSource: safeString(doc?.managedSource) || null,
+    executionTrack: safeString(doc?.executionTrack) || null,
+    occurrenceDate: safeString(doc?.occurrenceDate) || null,
+    executionStage: safeString(doc?.executionStage) || null,
+    readOnly:
+      safeString(doc?.managedSource) === "execution_task" &&
+      safeString(doc?.executionTrack) === "heating",
     createdAt: createdAt.toISOString(),
     createdByUserId: safeString(doc?.createdByUserId),
     createdByName: safeString(doc?.createdByName),

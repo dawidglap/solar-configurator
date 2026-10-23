@@ -77,3 +77,21 @@ test("existing execution APIs are generic and tenant-scoped", () => {
   assert.match(itemSource, /scheduledStart/);
   assert.match(itemSource, /validateExecutionAssignees/);
 });
+
+test("Heating calendar projection is execution-owned, day-based and loop-free", () => {
+  const syncSource = readFileSync(
+    new URL("../src/lib/heatingExecutionCalendar.ts", import.meta.url),
+    "utf8",
+  );
+  const calendarItemSource = readFileSync(
+    new URL("../src/app/api/calendar-events/[eventId]/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(syncSource, /getExecutionWorkingDays/);
+  assert.match(syncSource, /for \(const occurrenceDate of workingDays\)/);
+  assert.match(syncSource, /managedSource: HEATING_EXECUTION_CALENDAR_SOURCE/);
+  assert.match(syncSource, /linkedTaskId: taskId/);
+  assert.match(syncSource, /deleteMany\(managedFilter\)/);
+  assert.doesNotMatch(syncSource, /invoices|montages/);
+  assert.match(calendarItemSource, /MANAGED_EXECUTION_EVENT_READ_ONLY/g);
+});
