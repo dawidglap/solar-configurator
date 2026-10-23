@@ -32,6 +32,7 @@ import {
   metricPointToImage,
   metricPolygonToImage,
   physicalLengthToProjectedPixels,
+  physicalRectangleToProjectedPixels,
   projectedCanvasAngleToRoofLocalDeg,
   projectedVectorToRoofLocalM,
   polygonsIntersectOrTouch,
@@ -52,7 +53,7 @@ export type ManualPlacementReason =
   | "panel-overlap"
   | "unsupported-configuration";
 
-function standardRoofSurfaceProjection(roof: RoofArea) {
+export function resolveStandardRoofSurfaceProjection(roof: RoofArea) {
   const planning = resolveSurfacePlanning(roof.surfacePlanning);
   const supported = planning.status === "supported-standard" &&
     planning.config.surface.kind === "pitched";
@@ -232,7 +233,7 @@ export function createPanelPlacementValidator(input: {
     });
   const gapXM = Math.max(0, input.moduleGapXM ?? 0);
   const gapYM = Math.max(0, input.moduleGapYM ?? 0);
-  const surfaceProjection = standardRoofSurfaceProjection(input.roof);
+  const surfaceProjection = resolveStandardRoofSurfaceProjection(input.roof);
   const spacingEpsilonM = 1e-6;
 
   return (panels) => {
@@ -408,8 +409,16 @@ export function buildStandardManualCandidate(input: {
 }): ManualPlacementCandidate {
   const widthM = input.orientation === "portrait" ? input.panel.widthM : input.panel.heightM;
   const heightM = input.orientation === "portrait" ? input.panel.heightM : input.panel.widthM;
-  const wPx = widthM / input.mppImage;
-  const hPx = heightM / input.mppImage;
+  const surfaceProjection = resolveStandardRoofSurfaceProjection(input.roof);
+  const projectedFootprint = physicalRectangleToProjectedPixels({
+    widthM,
+    heightM,
+    canvasAngleDeg: input.angleDeg,
+    mppImage: input.mppImage,
+    projection: surfaceProjection,
+  });
+  const wPx = projectedFootprint.widthPx;
+  const hPx = projectedFootprint.heightPx;
   const footprintPx = rectangle(input.centerPx, wPx, hPx, input.angleDeg);
   const adapter = imageAdapter(input.roof, input.mppImage);
   const footprintM = imagePolygonToMetric(footprintPx, adapter);
@@ -417,6 +426,18 @@ export function buildStandardManualCandidate(input: {
   const radians = (input.angleDeg * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
+  const gapXPx = physicalLengthToProjectedPixels(
+    input.gapXM ?? 0,
+    input.angleDeg,
+    input.mppImage,
+    surfaceProjection,
+  );
+  const gapYPx = physicalLengthToProjectedPixels(
+    input.gapYM ?? 0,
+    input.angleDeg + 90,
+    input.mppImage,
+    surfaceProjection,
+  );
   const tooClose = input.panels.some((panel) => {
     if (panel.roofId !== input.roof.id) return false;
     const angleDifference = Math.abs(
@@ -428,8 +449,8 @@ export function buildStandardManualCandidate(input: {
     const du = Math.abs(dx * cos + dy * sin);
     const dv = Math.abs(-dx * sin + dy * cos);
     return (
-      du < (wPx + panel.wPx) / 2 + (input.gapXM ?? 0) / input.mppImage - 1e-6 &&
-      dv < (hPx + panel.hPx) / 2 + (input.gapYM ?? 0) / input.mppImage - 1e-6
+      du < (wPx + panel.wPx) / 2 + gapXPx - 1e-6 &&
+      dv < (hPx + panel.hPx) / 2 + gapYPx - 1e-6
     );
   });
   if (tooClose && !validation.reasons.includes("panel-overlap")) {
@@ -954,7 +975,7 @@ export function regroupStandardPanelsAfterManualCommit(input: {
   const spacingX = input.modules.spacingXM ?? input.modules.spacingM;
   const spacingY = input.modules.spacingYM ?? input.modules.spacingM;
   const first = roofPanels[0];
-  const resolvedSurfaceProjection = standardRoofSurfaceProjection(input.roof);
+  const resolvedSurfaceProjection = resolveStandardRoofSurfaceProjection(input.roof);
   const surfaceProjection = first.standard?.geometrySpace === "roof-surface-v1" &&
     resolvedSurfaceProjection
     ? resolvedSurfaceProjection

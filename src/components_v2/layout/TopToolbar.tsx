@@ -157,17 +157,13 @@ export default function TopToolbar({
   // dati necessari per "In Module umwandeln"
   const layers = usePlannerV2Store((s) => s.layers);
   const selectedId = usePlannerV2Store((s) => s.selectedId);
-  const modules = usePlannerV2Store((s) => s.modules);
   const panels = usePlannerV2Store((s) => s.panels);
-  const setModules = usePlannerV2Store((s) => s.setModules);
-  const commitRoofLayout = usePlannerV2Store((s) => s.commitRoofLayout);
   const snapshot = usePlannerV2Store((s) => s.snapshot);
   const snowGuards = usePlannerV2Store((s) => s.snowGuards);
   const snowProtection = usePlannerV2Store((s) => s.snowProtection);
   const setManualSnowProtectionSegments = usePlannerV2Store(
     (s) => s.setManualSnowProtectionSegments,
   );
-  const selSpec = usePlannerV2Store((s) => s.getSelectedPanel());
   const selectedPlanningDraft = usePlannerV2Store((s) =>
     s.selectedId ? s.roofPlanningDrafts[s.selectedId] : undefined,
   );
@@ -551,23 +547,40 @@ export default function TopToolbar({
       return false;
     }
 
-    if (!st.getSelectedPanel()) {
-      toast.error("Wähle ein Solarmodell aus dem Katalog aus.");
-      return false;
-    }
-
     if (!st.snapshot?.mppImage) {
       toast.error("Maßstab fehlt (mppImage im Snapshot).");
       return false;
     }
 
     const roof = st.layers.find((item) => item.id === st.selectedId);
-    const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: st.panels, draft: roof ? st.roofPlanningDrafts[roof.id] : undefined });
+    const draft = roof ? st.roofPlanningDrafts[roof.id] : undefined;
+    const mode = resolveRoofModuleMode({ roof, roofId: roof?.id, panels: st.panels, draft });
     if (!mode) {
       toast.error(resolveInitialSonnendachRoofType(roof) === "flat"
         ? "Zuerst Süd oder Ost-West wählen"
         : "Zuerst Hochformat oder Querformat wählen");
       return false;
+    }
+
+    if (mode === "portrait" || mode === "landscape") {
+      const panelSpecId = draft?.targetMode === "standard"
+        ? draft.panelSpecId
+        : st.selectedPanelId;
+      if (!st.catalogPanels.some((panel) => panel.id === panelSpecId)) {
+        toast.error("Wähle ein Solarmodell aus dem Katalog aus.");
+        return false;
+      }
+    } else {
+      const persisted = resolveSurfacePlanning(roof?.surfacePlanning);
+      const config = draft?.targetMode === "advanced"
+        ? draft.config
+        : persisted.status === "supported-advanced"
+          ? persisted.config
+          : undefined;
+      if (!config?.advanced.module.panelSpecId) {
+        toast.error("Wähle ein Solarmodell aus dem Katalog aus.");
+        return false;
+      }
     }
 
     return true;
@@ -659,29 +672,37 @@ export default function TopToolbar({
   /* ── Handler: In Module umwandeln (icona #3) ─────────────────────── */
   function handleConvertToModules() {
     endManualPlacement();
-    // Porta l'interfaccia in "modules"
-    if (step !== "modules") setStep("modules" as any);
-
-    // prerequisiti base
-    if (!selectedId || !snapshot?.mppImage) return;
-
-    const roof = layers.find((l) => l.id === selectedId);
-    if (!roof?.points?.length) return;
+    // Generation and commit intentionally use one fresh store snapshot. This
+    // avoids a mode click followed by U reading stale React render closures.
     const currentState = usePlannerV2Store.getState();
-    const mode = resolveRoofModuleMode({ roof, roofId: selectedId, panels: currentState.panels, draft: currentState.roofPlanningDrafts[selectedId] });
+    if (currentState.step !== "modules") currentState.setStep("modules" as any);
+    const roofId = currentState.selectedId;
+    const mppImage = currentState.snapshot?.mppImage;
+    if (!roofId || !mppImage) return;
+
+    const roof = currentState.layers.find((item) => item.id === roofId);
+    if (!roof?.points?.length) return;
+    const draft = currentState.roofPlanningDrafts[roofId];
+    const persistedPlanning = resolveSurfacePlanning(roof.surfacePlanning);
+    const mode = resolveRoofModuleMode({
+      roof,
+      roofId,
+      panels: currentState.panels,
+      draft,
+    });
     if (!mode) return;
     const runId = nanoid();
     if (mode === "portrait" || mode === "landscape") {
-      const standardDraft = selectedPlanningDraft?.targetMode === "standard" ? selectedPlanningDraft : undefined;
-      const standardModules = standardDraft?.modules ?? modules;
+      const standardDraft = draft?.targetMode === "standard" ? draft : undefined;
+      const standardModules = standardDraft?.modules ?? currentState.modules;
       const standardPanel = standardDraft
-        ? catalogPanels.find((panel) => panel.id === standardDraft.panelSpecId)
-        : selSpec;
+        ? currentState.catalogPanels.find((panel) => panel.id === standardDraft.panelSpecId)
+        : currentState.getSelectedPanel();
       if (!standardPanel) return;
       const moduleTilt = standardDraft?.moduleTilt ?? resolveStandardTiltInput(roof.surfacePlanning);
       const companyLimits = resolveCompanyThermalFieldLimits({ company: currentState.companyPlannerDefaults, roofKind: "pitched" });
       const thermalFieldLimits = standardDraft?.thermalFieldLimits ??
-        (persistedSurfacePlanning.status === "supported-standard" ? persistedSurfacePlanning.config.thermalFieldLimits : undefined) ??
+        (persistedPlanning.status === "supported-standard" ? persistedPlanning.config.thermalFieldLimits : undefined) ??
         (companyLimits.kind === "pitched-grid" ? companyLimits : undefined);
       const generated = buildDirectStandardRoofLayout({
         roof,
@@ -689,46 +710,57 @@ export default function TopToolbar({
         modules: standardModules,
         orientation: mode,
         moduleTilt,
-        mppImage: snapshot.mppImage,
+        mppImage,
         zones: currentState.zones,
         snowGuards: currentState.snowGuards,
         thermalFieldLimits,
         maximizeCoverage: true,
-        createPanelId: (index) => `${selectedId}_p_${runId}_${index}`,
+        createPanelId: (index) => `${roofId}_p_${runId}_${index}`,
       });
-      if (!generated) return;
+      if (!generated) {
+        toast.error("Auf dieser Dachfläche konnte kein gültiges Layout erstellt werden.");
+        return;
+      }
       history.push("Layout neu erstellen");
-      commitRoofLayout({ roofId: selectedId, panels: generated.panels, surfacePlanning: generated.config });
-      setSelectedPanel(standardPanel.id);
-      setModules(generated.modules);
+      currentState.commitRoofLayout({ roofId, panels: generated.panels, surfacePlanning: generated.config });
+      currentState.setSelectedPanel(standardPanel.id);
+      currentState.setModules(generated.modules);
     } else {
-      if (!displayedAdvancedConfig) return;
+      const advancedConfig = draft?.targetMode === "advanced"
+        ? draft.config
+        : persistedPlanning.status === "supported-advanced"
+          ? persistedPlanning.config
+          : undefined;
+      if (!advancedConfig) return;
       const config = alignAdvancedLayoutParallelToRoofEdge({
         config: withEffectiveAdvancedThermalLimits(
-          displayedAdvancedConfig,
+          advancedConfig,
           currentState.companyPlannerDefaults,
         ),
         roof,
-        mppImage: snapshot.mppImage,
+        mppImage,
       });
       const generated = buildDirectAdvancedRoofLayout({
         roof,
         config,
-        mppImage: snapshot.mppImage,
+        mppImage,
         zones: currentState.zones,
         snowGuards: currentState.snowGuards,
         maximizeCoverage: true,
         layoutRunId: runId,
-        createPanelId: (index) => `${selectedId}_advanced_${runId}_${index}`,
+        createPanelId: (index) => `${roofId}_advanced_${runId}_${index}`,
       });
-      if (!generated) return;
+      if (!generated) {
+        toast.error("Auf dieser Dachfläche konnte kein gültiges Layout erstellt werden.");
+        return;
+      }
       history.push("Layout neu erstellen");
-      commitRoofLayout({ roofId: selectedId, panels: generated.panels, surfacePlanning: generated.config });
+      currentState.commitRoofLayout({ roofId, panels: generated.panels, surfacePlanning: generated.config });
     }
 
-    currentState.clearRoofPlanningDraft(selectedId);
+    currentState.clearRoofPlanningDraft(roofId);
     // torna allo strumento selezione
-    setTool("select" as any);
+    currentState.setTool("select" as any);
     toast.success("Layout neu erstellt");
   }
 

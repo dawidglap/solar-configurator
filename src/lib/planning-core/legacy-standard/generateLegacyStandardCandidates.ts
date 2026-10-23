@@ -8,6 +8,7 @@ import { generateAnchoredAxisPositions } from "../geometry-v2/grid";
 import {
   computeUsableRoof,
   physicalLengthToProjectedPixels,
+  physicalRectangleToProjectedPixels,
   validatePlacementFootprint,
   type MetricPolygon,
   type UsableRoofGeometry,
@@ -249,22 +250,19 @@ export function computeLegacyStandardContactPhases(input: {
     toLocal({ x: point.x / generation.mppImage, y: point.y / generation.mppImage }),
   ));
   const bounds = boundsOfPolygons(usableLocal);
-  const panelWidth = physicalLengthToProjectedPixels(
-    generation.orientation === "portrait"
+  const panelFootprint = physicalRectangleToProjectedPixels({
+    widthM: generation.orientation === "portrait"
       ? generation.panelSizeM.widthM
       : generation.panelSizeM.heightM,
-    angleDeg,
-    generation.mppImage,
-    generation.surfaceProjection,
-  );
-  const panelHeight = physicalLengthToProjectedPixels(
-    generation.orientation === "portrait"
+    heightM: generation.orientation === "portrait"
       ? generation.panelSizeM.heightM
       : generation.panelSizeM.widthM,
-    angleDeg + 90,
-    generation.mppImage,
-    generation.surfaceProjection,
-  );
+    canvasAngleDeg: angleDeg,
+    mppImage: generation.mppImage,
+    projection: generation.surfaceProjection,
+  });
+  const panelWidth = panelFootprint.widthPx;
+  const panelHeight = panelFootprint.heightPx;
   const gapX = physicalLengthToProjectedPixels(
     generation.spacingXM ?? generation.spacingM,
     angleDeg,
@@ -370,14 +368,15 @@ function generateLegacyStandardCandidates(
       mppImage,
       input.surfaceProjection,
     );
-  const panelWidth = pixelsAlong(
-    orientation === "portrait" ? panelSizeM.widthM : panelSizeM.heightM,
-    angleDeg,
-  );
-  const panelHeight = pixelsAlong(
-    orientation === "portrait" ? panelSizeM.heightM : panelSizeM.widthM,
-    angleDeg + 90,
-  );
+  const panelFootprint = physicalRectangleToProjectedPixels({
+    widthM: orientation === "portrait" ? panelSizeM.widthM : panelSizeM.heightM,
+    heightM: orientation === "portrait" ? panelSizeM.heightM : panelSizeM.widthM,
+    canvasAngleDeg: angleDeg,
+    mppImage,
+    projection: input.surfaceProjection,
+  });
+  const panelWidth = panelFootprint.widthPx;
+  const panelHeight = panelFootprint.heightPx;
   const gapX = pixelsAlong(
     typeof spacingXM === "number" && Number.isFinite(spacingXM)
       ? spacingXM

@@ -15,6 +15,10 @@ import {
   type AdvancedSurfacePlanningV1,
 } from "@/lib/planning-core/advanced";
 import { resolveRoofEdgeMarginM } from "@/lib/planning/roofProperties";
+import {
+  physicalLengthToProjectedPixels,
+  physicalRectangleToProjectedPixels,
+} from "@/lib/planning-core/geometry-v2";
 import { plannerTheme } from "../theme/plannerTheme";
 import ModuleSprite from "./ModuleSprite";
 import ModuleSlopeArrow from "./panels/ModuleSlopeArrow";
@@ -32,6 +36,7 @@ import {
   buildStandardManualCandidate,
   materializeManualAdvancedPanels,
   resolveManualAdvancedBlockDefinition,
+  resolveStandardRoofSurfaceProjection,
   regroupK2PanelsAfterManualAdd,
   snapAdvancedManualCenter,
   snapStandardManualCenter,
@@ -141,15 +146,27 @@ export default function ManualPlacementLayer({
     const heightM = standardModules.orientation === "portrait" ? standardPanel.heightM : standardPanel.widthM;
     const spacingX = standardModules.spacingXM ?? standardModules.spacingM;
     const spacingY = standardModules.spacingYM ?? standardModules.spacingM;
+    const surfaceProjection = resolveStandardRoofSurfaceProjection(roof);
+    const footprint = physicalRectangleToProjectedPixels({
+      widthM,
+      heightM,
+      canvasAngleDeg: angleDeg,
+      mppImage: snapshot.mppImage,
+      projection: surfaceProjection,
+    });
     const centerPx = snapStandardManualCenter({
       pointerPx: raw,
       roofId: roof.id,
       panels,
       angleDeg,
-      widthPx: widthM / snapshot.mppImage,
-      heightPx: heightM / snapshot.mppImage,
-      gapXPx: spacingX / snapshot.mppImage,
-      gapYPx: spacingY / snapshot.mppImage,
+      widthPx: footprint.widthPx,
+      heightPx: footprint.heightPx,
+      gapXPx: physicalLengthToProjectedPixels(
+        spacingX, angleDeg, snapshot.mppImage, surfaceProjection,
+      ),
+      gapYPx: physicalLengthToProjectedPixels(
+        spacingY, angleDeg + 90, snapshot.mppImage, surfaceProjection,
+      ),
       activationThresholdPx: 12 / Math.max(stageScale, 0.01),
       disableSnap: raw.disableSnap,
     });
@@ -203,6 +220,9 @@ export default function ManualPlacementLayer({
       const standardMetadata = buildStandardPanelMetadata({
         roofSlopeDeg: roof.tiltDeg,
         moduleTilt,
+        geometrySpace: resolveStandardRoofSurfaceProjection(roof)
+          ? "roof-surface-v1"
+          : undefined,
       });
       const persistedStandardPlanning = resolveSurfacePlanning(roof.surfacePlanning);
       const standardThermalFieldLimits = standardDraft?.thermalFieldLimits ??

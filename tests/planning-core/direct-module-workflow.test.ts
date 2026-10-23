@@ -8,6 +8,7 @@ import {
   resolveSurfacePlanning,
 } from "../../src/lib/planning-core/advanced";
 import {
+  applyRoofLayoutTransaction,
   buildDirectAdvancedRoofLayout,
   buildDirectStandardRoofLayout,
   createInitialAdvancedPlanning,
@@ -17,6 +18,7 @@ import {
   resolveRoofModuleMode,
   setAdvancedMountingOrientation,
 } from "../../src/components_v2/modules/advanced/advancedPlanningApplication";
+import { createPanelPlacementValidator } from "../../src/components_v2/modules/manualPlacement";
 import { resolveStandardAutoLayoutCanvasAngle } from "../../src/components_v2/modules/legacyStandardApplicationPolicy";
 import type {
   ModulesConfig,
@@ -111,6 +113,67 @@ test("first pitched mode selection creates real maximum-valid panels aligned to 
     roof: { ...ROOF, surfacePlanning: generated.config },
     panels: generated.panels,
   }), false);
+});
+
+test("empty-roof Vollbelegung respects its obstacle and commits only the selected roof", () => {
+  const otherRoof: RoofArea = {
+    ...ROOF,
+    id: "roof-other",
+    points: ROOF.points.map((point) => ({ x: point.x + 400, y: point.y })),
+  };
+  const otherPanel: PanelInstance = {
+    id: "other-panel",
+    roofId: otherRoof.id,
+    cx: 500,
+    cy: 80,
+    wPx: 10,
+    hPx: 17,
+    angleDeg: 0,
+    orientation: "portrait",
+    panelId: PANEL.id,
+  };
+  const zone = {
+    roofId: ROOF.id,
+    type: "riservata",
+    points: [
+      { x: 120, y: 50 },
+      { x: 180, y: 50 },
+      { x: 180, y: 130 },
+      { x: 120, y: 130 },
+    ],
+  };
+  const generated = buildDirectStandardRoofLayout({
+    roof: ROOF,
+    panel: PANEL,
+    modules: MODULES,
+    orientation: "portrait",
+    moduleTilt: { mode: "inherit-roof" },
+    mppImage: 0.1,
+    zones: [zone],
+    snowGuards: [],
+    maximizeCoverage: true,
+    createPanelId: (index) => `selected-${index}`,
+  });
+  assert.ok(generated?.panels.length);
+  const validatesObstacle = createPanelPlacementValidator({
+    roof: ROOF,
+    marginM: generated.modules.marginM,
+    mppImage: 0.1,
+    zones: [zone],
+    snowGuards: [],
+    panels: [],
+  });
+  assert.equal(validatesObstacle(generated.panels), true);
+
+  const committed = applyRoofLayoutTransaction({
+    roofs: [ROOF, otherRoof],
+    panels: [otherPanel],
+    roofId: ROOF.id,
+    nextPanels: generated.panels,
+    surfacePlanning: generated.config,
+  });
+  assert.equal(committed.panels.some((panel) => panel.id === otherPanel.id), true);
+  assert.equal(committed.panels.filter((panel) => panel.roofId === ROOF.id).length, generated.panels.length);
 });
 
 test("canonical Standard generation resets manual rotation while additive generation preserves it", () => {
@@ -455,6 +518,13 @@ test("customer UI is mode-explicit, direct and free of obsolete full-layout cont
   assert.ok(toolbar.includes('actionId="planner-regenerate-layout"'));
   assert.ok(toolbar.includes("Zuerst Hochformat oder Querformat wählen"));
   assert.ok(toolbar.includes("Zuerst Süd oder Ost-West wählen"));
+  const fullCoverageHandler = toolbar.slice(
+    toolbar.indexOf("function handleConvertToModules()"),
+    toolbar.indexOf("function requestLayoutRegeneration()"),
+  );
+  assert.match(fullCoverageHandler, /const currentState = usePlannerV2Store\.getState\(\)/);
+  assert.match(fullCoverageHandler, /const draft = currentState\.roofPlanningDrafts\[roofId\]/);
+  assert.doesNotMatch(fullCoverageHandler, /selectedPlanningDraft|displayedAdvancedConfig|\bsnapshot\.mppImage\b/);
 });
 
 test("flat roof list shows presentation-only 0° while geometry and module direction remain independent", () => {

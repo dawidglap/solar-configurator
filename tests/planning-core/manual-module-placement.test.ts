@@ -7,6 +7,7 @@ import {
   K2_S_DOME_SYSTEM_ID,
 } from "../../src/lib/planning-core/advanced";
 import {
+  buildDirectStandardRoofLayout,
   createInitialAdvancedPlanning,
   setAdvancedMountingOrientation,
   updateDefaultFlatSystem,
@@ -17,10 +18,14 @@ import {
   materializeManualAdvancedPanels,
   resolveAdvancedManualCenterSnap,
   resolveManualAdvancedBlockDefinition,
+  resolveStandardRoofSurfaceProjection,
   regroupK2PanelsAfterManualAdd,
   snapAdvancedManualCenter,
   snapStandardManualCenter,
 } from "../../src/components_v2/modules/manualPlacement";
+import {
+  physicalLengthToProjectedPixels,
+} from "../../src/lib/planning-core/geometry-v2";
 import type { ModulesConfig, PanelInstance, PanelSpec, RoofArea } from "../../src/types/planner";
 import { resolvePanelSelectionIds } from "../../src/components_v2/modules/panels/panelSelection";
 import {
@@ -157,6 +162,116 @@ test("Standard manual add creates one correctly oriented candidate and rejects m
   });
   assert.equal(insufficientGap.valid, false);
   assert.ok(insufficientGap.reasons.includes("panel-overlap"));
+});
+
+test("manual Standard footprint matches auto-layout on flat and pitched roofs at every supported orientation", () => {
+  const almostEqual = (actual: number, expected: number, label: string) => {
+    assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: ${actual} !== ${expected}`);
+  };
+
+  for (const tiltDeg of [0, 25, 47, 65]) {
+    for (const orientation of ["portrait", "landscape"] as const) {
+      for (const angleDeg of [0, 90, 31]) {
+        const roof: RoofArea = {
+          ...ROOF,
+          roofKind: "pitched",
+          tiltDeg,
+          azimuthDeg: 180,
+          referenceEdgeIndex: 0,
+          points: [
+            { x: 0, y: 0 },
+            { x: 400, y: 0 },
+            { x: 400, y: 300 },
+            { x: 0, y: 300 },
+          ],
+        };
+        const modules: ModulesConfig = {
+          ...MODULES,
+          orientation,
+          gridAngleDeg: 0,
+          perRoofAngles: { [roof.id]: angleDeg },
+        };
+        const automatic = buildDirectStandardRoofLayout({
+          roof,
+          panel: PANEL,
+          modules,
+          orientation,
+          moduleTilt: { mode: "inherit-roof" },
+          mppImage: 0.1,
+          zones: [],
+          snowGuards: [],
+          alignmentMode: "current",
+          createPanelId: (index) => `auto-${tiltDeg}-${orientation}-${angleDeg}-${index}`,
+        });
+        assert.ok(automatic?.panels.length);
+        const autoPanel = automatic.panels[0];
+        const manual = buildStandardManualCandidate({
+          roof,
+          panel: PANEL,
+          orientation,
+          angleDeg: autoPanel.angleDeg,
+          centerPx: { x: 200, y: 150 },
+          marginM: 0,
+          gapXM: modules.spacingXM,
+          gapYM: modules.spacingYM,
+          mppImage: 0.1,
+          zones: [],
+          snowGuards: [],
+          panels: [],
+        });
+        assert.equal(manual.valid, true);
+        almostEqual(manual.modules[0].wPx, autoPanel.wPx, `${tiltDeg}° ${orientation} ${angleDeg}° width`);
+        almostEqual(manual.modules[0].hPx, autoPanel.hPx, `${tiltDeg}° ${orientation} ${angleDeg}° height`);
+
+        const restored = JSON.parse(JSON.stringify(manual.modules[0])) as typeof manual.modules[0];
+        almostEqual(restored.wPx, autoPanel.wPx, "persisted width");
+        almostEqual(restored.hPx, autoPanel.hPx, "persisted height");
+      }
+    }
+  }
+});
+
+test("pitched manual snap uses the same projected gap and footprint as committed panels", () => {
+  const roof: RoofArea = { ...ROOF, roofKind: "pitched", tiltDeg: 47, azimuthDeg: 180 };
+  const projection = resolveStandardRoofSurfaceProjection(roof);
+  assert.ok(projection);
+  const existing = buildStandardManualCandidate({
+    ...BASE,
+    roof,
+    centerPx: { x: 60, y: 60 },
+    panel: PANEL,
+    orientation: "portrait",
+    angleDeg: 0,
+    marginM: 0,
+    gapXM: MODULES.spacingXM,
+    gapYM: MODULES.spacingYM,
+  }).modules[0];
+  const gapXPx = physicalLengthToProjectedPixels(MODULES.spacingXM!, 0, 0.1, projection);
+  const targetX = existing.cx + existing.wPx + gapXPx;
+  const snapped = snapStandardManualCenter({
+    pointerPx: { x: targetX + 1, y: existing.cy },
+    roofId: roof.id,
+    panels: [{
+      id: "existing-projected",
+      roofId: roof.id,
+      cx: existing.cx,
+      cy: existing.cy,
+      wPx: existing.wPx,
+      hPx: existing.hPx,
+      angleDeg: existing.angleDeg,
+      orientation: "portrait",
+      panelId: PANEL.id,
+    }],
+    angleDeg: 0,
+    widthPx: existing.wPx,
+    heightPx: existing.hPx,
+    gapXPx,
+    gapYPx: physicalLengthToProjectedPixels(MODULES.spacingYM!, 90, 0.1, projection),
+    activationThresholdPx: 2,
+    disableSnap: false,
+  });
+  assert.ok(Math.abs(snapped.x - targetX) < 1e-9);
+  assert.ok(Math.abs(snapped.y - existing.cy) < 1e-9);
 });
 
 test("manual candidate rejects a reserved zone and snow guard using its footprint", () => {

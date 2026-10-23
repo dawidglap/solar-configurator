@@ -102,6 +102,33 @@ export function physicalLengthToProjectedPixels(
   );
 }
 
+/**
+ * Projects the two physical axes of a rectangular roof-surface object into
+ * the canonical 2D canvas footprint used by Standard auto-layout.
+ */
+export function physicalRectangleToProjectedPixels(input: {
+  widthM: number;
+  heightM: number;
+  canvasAngleDeg: number;
+  mppImage: number;
+  projection?: RoofSurfaceProjection;
+}): { widthPx: number; heightPx: number } {
+  return {
+    widthPx: physicalLengthToProjectedPixels(
+      input.widthM,
+      input.canvasAngleDeg,
+      input.mppImage,
+      input.projection,
+    ),
+    heightPx: physicalLengthToProjectedPixels(
+      input.heightM,
+      input.canvasAngleDeg + 90,
+      input.mppImage,
+      input.projection,
+    ),
+  };
+}
+
 export function projectedCanvasAngleToRoofLocalDeg(
   canvasAngleDeg: number,
   mppImage: number,
