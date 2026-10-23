@@ -18,6 +18,7 @@ export type RoofEdgeAnnotation = {
   outward: Pt;
   readableAngleDeg: number;
   lengthM: number;
+  semanticLabel: string;
   label: string;
   isReference: boolean;
 };
@@ -123,6 +124,7 @@ export function buildRoofAnnotationModel(input: {
         Math.atan2(edge.direction.y, edge.direction.x) * 180 / Math.PI,
       ),
       lengthM,
+      semanticLabel,
       label: `${semanticLabel} · ${formatRoofEdgeLengthM(lengthM)}`,
       isReference,
     };

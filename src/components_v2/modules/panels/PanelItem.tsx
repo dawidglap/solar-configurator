@@ -199,7 +199,7 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
           offsetY={hPx / 2}
           rotation={visualRotationDeg}
           stroke={plannerModuleVisual.frame}
-          strokeWidth={0.7}
+          strokeWidth={plannerModuleVisual.frameStrokeWidth2d}
           listening={false}
           perfectDrawEnabled={false}
         />

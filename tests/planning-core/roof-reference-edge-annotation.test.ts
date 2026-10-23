@@ -57,7 +57,7 @@ test("Dachtyp changes only the semantic terminology without duplicate labels", (
   assert.equal(flat.includes("FIRST"), false);
 });
 
-test("semantic copy uses the same high-contrast edge pills in building and module planning", () => {
+test("normal mode uses compact non-interactive edge pills with hover-only measurements", () => {
   const annotations = readFileSync(
     new URL("../../src/components_v2/canvas/RoofAnnotationsLayer.tsx", import.meta.url),
     "utf8",
@@ -67,17 +67,17 @@ test("semantic copy uses the same high-contrast edge pills in building and modul
     "utf8",
   );
 
-  assert.match(annotations, /const displayLabel = edge\.label/);
+  assert.match(annotations, /edge\.isReference \? edge\.semanticLabel : `K\$\{edge\.edgeIndex \+ 1\}`/);
+  assert.match(annotations, /`Kante \$\{edge\.edgeIndex \+ 1\} · \$\{formatRoofEdgeLengthM\(edge\.lengthM\)\}/);
   assert.match(annotations, /useSharedEdgePills = !selectedZone/);
   assert.match(annotations, /fill="#FFFFFF"/);
   assert.match(annotations, /fill="#000000"/);
-  assert.match(annotations, /EDGE_PILL_SCALE = 1\.25/);
-  assert.match(annotations, /EDGE_PILL_FONT_SIZE = 10\.5 \* EDGE_PILL_SCALE/);
-  assert.match(annotations, /EDGE_PILL_MIN_WIDTH = 84 \* EDGE_PILL_SCALE/);
-  assert.match(annotations, /EDGE_PILL_HEIGHT = 24 \* EDGE_PILL_SCALE/);
-  assert.match(annotations, /fontSize = \(useSharedEdgePills \? EDGE_PILL_FONT_SIZE : 8\.5\)/);
+  assert.match(annotations, /EDGE_PILL_MIN_WIDTH = 26/);
+  assert.match(annotations, /EDGE_PILL_HEIGHT = 20/);
   assert.match(annotations, /fontStyle="600"/);
   assert.match(annotations, /cornerRadius=\{EDGE_PILL_RADIUS \* inverseScale\}/);
+  assert.match(annotations, /container\.addEventListener\("pointermove"/);
+  assert.match(annotations, /<Group ref=\{groupRef\} listening=\{false\}>/);
   assert.doesNotMatch(annotations, /text="GEFÄLLE"/);
   assert.match(annotations, /showRoofFallArrow =\s*step === "building" &&\s*roofKind === "pitched"/);
   assert.match(annotations, /showRoofFallArrow && \(\s*<RoofAzimuthArrows/);
@@ -87,6 +87,22 @@ test("semantic copy uses the same high-contrast edge pills in building and modul
   assert.match(accentLayer, /listening=\{false\}/);
   assert.doesNotMatch(accentLayer, /<(Rect|Text)\b/);
   assert.doesNotMatch(annotations, /edge\.lengthM\.toFixed\(2\)\} m`/);
+});
+
+test("trapez mode suppresses edge HUD and its reference accent without touching handles", () => {
+  const annotations = readFileSync(
+    new URL("../../src/components_v2/canvas/RoofAnnotationsLayer.tsx", import.meta.url),
+    "utf8",
+  );
+  const trapezHandles = readFileSync(
+    new URL("../../src/components_v2/canvas/RoofTrapezInteractionOverlay.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(annotations, /showEdgeInfo = showLabels && shapeMode !== "trapezio"/);
+  assert.match(annotations, /!selectedZone && shapeMode !== "trapezio"/);
+  assert.match(trapezHandles, /<RoofHandlesKonva/);
+  assert.match(trapezHandles, /onChange=\{\(points\) =>/);
 });
 
 test("shared edge pills remain upright after arbitrary viewport rotations", () => {

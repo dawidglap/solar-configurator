@@ -2,7 +2,16 @@ export const plannerModuleVisual = {
   surface: '#050505',
   frame: '#c3c8ce',
   frameSide3d: '#9da4ac',
+  frameStrokeWidth2d: 0.36,
   selected: '#40d9c8',
+} as const;
+
+export const plannerSnowGuardVisual = {
+  fill: '#FACC15',
+  fillSoft: 'rgba(250, 204, 21, 0.72)',
+  selected: '#FEF08A',
+  railLight: '#FEF9C3',
+  railDark: '#CA8A04',
 } as const;
 
 export const plannerTheme = {

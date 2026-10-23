@@ -213,7 +213,7 @@ export default function AdvancedPreviewLayer({
                   points={module.footprintPx.flatMap((point) => [point.x, point.y])}
                   closed
                   stroke={plannerModuleVisual.frame}
-                  strokeWidth={0.7}
+                  strokeWidth={plannerModuleVisual.frameStrokeWidth2d}
                   fill={plannerModuleVisual.surface}
                   opacity={0.78}
                 />

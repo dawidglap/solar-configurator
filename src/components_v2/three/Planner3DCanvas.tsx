@@ -12,13 +12,13 @@ import type {
   Planner3DSceneModel,
   Vec3,
 } from "@/lib/planning-3d/types";
-import { plannerModuleVisual } from "../theme/plannerTheme";
+import { plannerModuleVisual, plannerSnowGuardVisual } from "../theme/plannerTheme";
 
 const COLORS = {
   roof: "#aab4b2",
   roofSelected: "#77c9bd",
   obstacle: "#7d8786",
-  snowGuard: "#c8d0d1",
+  snowGuard: plannerSnowGuardVisual.fill,
   ground: "#dce2e0",
   margin: "#a94f55",
 } as const;

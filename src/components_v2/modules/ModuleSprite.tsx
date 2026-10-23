@@ -19,7 +19,7 @@ export default function ModuleSprite({ x, y, w, h, rotationDeg = 0, selected }: 
         x={0} y={0} width={w} height={h}
         cornerRadius={2}
         stroke={selected ? plannerTheme.panelSelected : plannerModuleVisual.frame}
-        strokeWidth={selected ? 1.2 : 0.6}
+        strokeWidth={selected ? 1.2 : plannerModuleVisual.frameStrokeWidth2d}
         fill={plannerModuleVisual.surface}
       />
     </Group>

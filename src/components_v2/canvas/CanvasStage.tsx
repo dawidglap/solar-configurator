@@ -89,7 +89,7 @@ import IstSituationStep from "../steps/IstSituationStep";
 import StucklisteScreen from "../steps/StucklisteScreen";
 import ReportScreen from "../steps/ReportScreen";
 import OfferScreen from "../steps/OfferScreen";
-import { plannerTheme } from "../theme/plannerTheme";
+import { plannerSnowGuardVisual, plannerTheme } from "../theme/plannerTheme";
 import { setCurrentCanvasRotationDeg } from "./canvasRotationState";
 import PlannerEmptyState from "../layout/PlannerEmptyState";
 import type { Tool } from "@/types/planner";
@@ -1637,16 +1637,8 @@ export default function CanvasStage({
                       <Line
                         points={strip.flatMap((point) => [point.x, point.y])}
                         closed
-                        fillLinearGradientStartPoint={strip[0]}
-                        fillLinearGradientEndPoint={strip[3]}
-                        fillLinearGradientColorStops={[
-                          0, "rgba(71, 85, 105, 0.96)",
-                          0.18, "rgba(203, 213, 225, 0.98)",
-                          0.48, "rgba(248, 250, 252, 0.98)",
-                          0.72, "rgba(148, 163, 184, 0.98)",
-                          1, "rgba(51, 65, 85, 0.96)",
-                        ]}
-                        stroke={isSel ? plannerTheme.panelSelected : "#475569"}
+                        fill={plannerSnowGuardVisual.fillSoft}
+                        stroke={isSel ? plannerSnowGuardVisual.selected : plannerSnowGuardVisual.fill}
                         strokeWidth={isSel ? 1.8 : 0.8}
                         lineJoin="miter"
                         listening={!drawingCapturesPointer && !exclusiveTrapez}
@@ -1679,14 +1671,14 @@ export default function CanvasStage({
                       />
                       <Line
                         points={rail(0.28)}
-                        stroke="rgba(248, 250, 252, 0.95)"
+                        stroke={plannerSnowGuardVisual.railLight}
                         strokeWidth={0.55}
                         listening={false}
                         perfectDrawEnabled={false}
                       />
                       <Line
                         points={rail(0.72)}
-                        stroke="rgba(51, 65, 85, 0.9)"
+                        stroke={plannerSnowGuardVisual.railDark}
                         strokeWidth={0.55}
                         listening={false}
                         perfectDrawEnabled={false}

@@ -400,7 +400,7 @@ export default function ModulesPreview({
             rotation={r.angleDeg}
             fill={plannerModuleVisual.surface}
             stroke={plannerModuleVisual.frame}
-            strokeWidth={0.7}
+            strokeWidth={plannerModuleVisual.frameStrokeWidth2d}
             opacity={0.85}
             listening={false}
           />

@@ -16,9 +16,11 @@ test("all 2D module renderers use the shared flat black and silver visual tokens
 
   assert.match(theme, /surface:\s*'#050505'/);
   assert.match(theme, /frame:\s*'#c3c8ce'/);
+  assert.match(theme, /frameStrokeWidth2d:\s*0\.36/);
   for (const renderer of [sprite, committed, standardPreview, advancedPreview]) {
     assert.match(renderer, /plannerModuleVisual\.surface/);
     assert.match(renderer, /plannerModuleVisual\.frame/);
+    assert.match(renderer, /plannerModuleVisual\.frameStrokeWidth2d/);
     assert.doesNotMatch(renderer, /panel\.webp|fillPatternImage|KonvaImage/);
   }
   assert.match(committed, /stroke=\{plannerModuleVisual\.frame\}[\s\S]*listening=\{false\}/);

@@ -136,9 +136,30 @@ test("planner Schneefang interaction is drag-to-commit and both preview and canv
   assert.doesNotMatch(drawingHook, /2 click/);
   assert.match(preview, /createButtEndedStripPolygon/);
   assert.match(canvas, /width: SNOW_GUARD_WIDTH_M \/ snap\.mppImage/);
-  assert.match(canvas, /fillLinearGradientColorStops/);
-  assert.match(canvas, /rgba\(203, 213, 225/);
-  assert.match(preview, /fillLinearGradientColorStops/);
+  assert.match(canvas, /plannerSnowGuardVisual\.fillSoft/);
+  assert.match(canvas, /plannerSnowGuardVisual\.selected/);
+  assert.match(preview, /plannerSnowGuardVisual\.fillSoft/);
+  assert.match(preview, /plannerSnowGuardVisual\.fill/);
+  assert.doesNotMatch(canvas, /rgba\(203, 213, 225/);
+});
+
+test("Schneefang uses the shared amber token in 2D and 3D without recoloring margins", () => {
+  const theme = readFileSync(
+    new URL("../../src/components_v2/theme/plannerTheme.ts", import.meta.url),
+    "utf8",
+  );
+  const canvas3d = readFileSync(
+    new URL("../../src/components_v2/three/Planner3DCanvas.tsx", import.meta.url),
+    "utf8",
+  );
+  const marginBand = readFileSync(
+    new URL("../../src/components_v2/modules/panels/RoofMarginBand.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(theme, /fill:\s*'#FACC15'/);
+  assert.match(canvas3d, /snowGuard: plannerSnowGuardVisual\.fill/);
+  assert.match(marginBand, /rgba\(239, 68, 68, 0\.16\)/);
 });
 
 test("top toolbar exposes the canonical Schneefang drawing tool beside the live summary", () => {

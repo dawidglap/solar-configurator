@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import { Group, Line, Text } from "react-konva";
 
 import type { Pt, Tool } from "@/types/planner";
-import { plannerTheme } from "../theme/plannerTheme";
+import { plannerSnowGuardVisual, plannerTheme } from "../theme/plannerTheme";
 import type { RafPointChannel } from "./performance/rafPointChannel";
 import {
   createButtEndedStripPolygon,
@@ -106,16 +106,8 @@ export default function TransientDrawingPreviews({
         <Line
           points={strip.flatMap((point) => [point.x, point.y])}
           closed
-          fillLinearGradientStartPoint={strip[0]}
-          fillLinearGradientEndPoint={strip[3]}
-          fillLinearGradientColorStops={[
-            0, "rgba(71, 85, 105, 0.9)",
-            0.2, "rgba(203, 213, 225, 0.94)",
-            0.5, "rgba(248, 250, 252, 0.96)",
-            0.75, "rgba(148, 163, 184, 0.94)",
-            1, "rgba(51, 65, 85, 0.9)",
-          ]}
-          stroke={plannerTheme.primary}
+          fill={plannerSnowGuardVisual.fillSoft}
+          stroke={plannerSnowGuardVisual.fill}
           strokeWidth={1.2}
           lineJoin="miter"
           dash={[4, 3]}
@@ -124,14 +116,14 @@ export default function TransientDrawingPreviews({
         />
         <Line
           points={rail(0.28)}
-          stroke="rgba(248, 250, 252, 0.95)"
+          stroke={plannerSnowGuardVisual.railLight}
           strokeWidth={0.55}
           listening={false}
           perfectDrawEnabled={false}
         />
         <Line
           points={rail(0.72)}
-          stroke="rgba(51, 65, 85, 0.9)"
+          stroke={plannerSnowGuardVisual.railDark}
           strokeWidth={0.55}
           listening={false}
           perfectDrawEnabled={false}
