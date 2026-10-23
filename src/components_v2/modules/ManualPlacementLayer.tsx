@@ -388,7 +388,6 @@ export default function ManualPlacementLayer({
                   w={module.wPx}
                   h={module.hPx}
                   rotationDeg={module.angleDeg}
-                  textureUrl="/images/panel.webp"
                 />
                 <ModuleSlopeArrow
                   cx={module.cx}

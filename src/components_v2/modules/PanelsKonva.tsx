@@ -59,7 +59,6 @@ type PanelInst = HookPanel & PanelInstance;
 export default function PanelsKonva(props: {
   roofId: string;
   roofPolygon: Pt[];
-  textureUrl?: string;
   selectedPanelId?: string;               // legacy compat (fallback)
   onSelect?: (id?: string, opts?: { additive?: boolean }) => void;
   onDragStart?: () => void;
@@ -71,7 +70,6 @@ export default function PanelsKonva(props: {
   const {
     roofId,
     roofPolygon,
-    textureUrl,
     selectedPanelId,
     onSelect,
     onDragStart,
@@ -140,17 +138,6 @@ export default function PanelsKonva(props: {
   const gapPx = React.useMemo(() => (mpp ? spacingM / mpp : 0), [spacingM, mpp]);
   const gapXPx = React.useMemo(() => (mpp ? spacingXM / mpp : 0), [spacingXM, mpp]);
   const gapYPx = React.useMemo(() => (mpp ? spacingYM / mpp : 0), [spacingYM, mpp]);
-
-  // texture pannello (opzionale)
-  const [img, setImg] = React.useState<HTMLImageElement | null>(null);
-  React.useEffect(() => {
-    if (!textureUrl) { setImg(null); return; }
-    const i = new Image();
-    i.crossOrigin = 'anonymous';
-    i.onload = () => setImg(i);
-    i.src = textureUrl;
-    return () => setImg(null);
-  }, [textureUrl]);
 
   // clip falda
   const clipFunc = React.useCallback((ctx: any) => {
@@ -908,7 +895,6 @@ const startPanelDrag = React.useCallback((panelId: string, e: any) => {
               ? pitchedArrowAzimuthDeg
               : opposingArrowAzimuths.get(p.id) ?? flatSouthArrowAzimuthDeg}
             selected={sel}
-            image={img}
             onStartDrag={startPanelDrag}
             onSelect={onSelect}
             onRoutePointerDown={routePanelPointerDown}

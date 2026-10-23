@@ -12,12 +12,11 @@ import type {
   Planner3DSceneModel,
   Vec3,
 } from "@/lib/planning-3d/types";
+import { plannerModuleVisual } from "../theme/plannerTheme";
 
 const COLORS = {
   roof: "#aab4b2",
   roofSelected: "#77c9bd",
-  panel: "#172c38",
-  panelSelected: "#18a999",
   obstacle: "#7d8786",
   snowGuard: "#c8d0d1",
   ground: "#dce2e0",
@@ -56,11 +55,19 @@ function roofGeometry(roofs: readonly Planner3DRoof[], selected: boolean): THREE
   return geometryFromPositions(positions);
 }
 
-function panelGeometry(panels: readonly Planner3DPanel[], selected: boolean): THREE.BufferGeometry {
+function panelSurfaceGeometry(panels: readonly Planner3DPanel[], selected: boolean): THREE.BufferGeometry {
   const positions: MutablePositions = [];
   panels.filter((panel) => panel.selected === selected).forEach((panel) => {
     const [a, b, c, d] = panel.corners;
     pushQuad(positions, a, b, c, d);
+  });
+  return geometryFromPositions(positions);
+}
+
+function panelFrameGeometry(panels: readonly Planner3DPanel[], selected: boolean): THREE.BufferGeometry {
+  const positions: MutablePositions = [];
+  panels.filter((panel) => panel.selected === selected).forEach((panel) => {
+    const [a, b, c, d] = panel.corners;
     const bottom = panel.corners.map((corner) => ({ ...corner, y: corner.y - panel.thicknessM })) as [Vec3, Vec3, Vec3, Vec3];
     pushQuad(positions, bottom[3], bottom[2], bottom[1], bottom[0]);
     pushQuad(positions, a, bottom[0], bottom[1], b);
@@ -108,13 +115,23 @@ function TechnicalMeshes({ scene }: { scene: Readonly<Planner3DSceneModel> }) {
   const geometries = useMemo(() => ({
     roofs: roofGeometry(scene.roofs, false),
     selectedRoofs: roofGeometry(scene.roofs, true),
-    panels: panelGeometry(scene.panels, false),
-    selectedPanels: panelGeometry(scene.panels, true),
+    panelSurfaces: panelSurfaceGeometry(scene.panels, false),
+    selectedPanelSurfaces: panelSurfaceGeometry(scene.panels, true),
+    panelFrames: panelFrameGeometry(scene.panels, false),
+    selectedPanelFrames: panelFrameGeometry(scene.panels, true),
     obstacles: obstacleGeometry(scene.obstacles),
     marginBands: marginBandGeometry(scene.marginBands),
   }), [scene]);
 
-  useEffect(() => () => Object.values(geometries).forEach((geometry) => geometry.dispose()), [geometries]);
+  const panelEdges = useMemo(() => ({
+    panels: new THREE.EdgesGeometry(geometries.panelSurfaces, 1),
+    selectedPanels: new THREE.EdgesGeometry(geometries.selectedPanelSurfaces, 1),
+  }), [geometries.panelSurfaces, geometries.selectedPanelSurfaces]);
+
+  useEffect(() => () => {
+    Object.values(geometries).forEach((geometry) => geometry.dispose());
+    Object.values(panelEdges).forEach((geometry) => geometry.dispose());
+  }, [geometries, panelEdges]);
 
   return (
     <>
@@ -124,12 +141,24 @@ function TechnicalMeshes({ scene }: { scene: Readonly<Planner3DSceneModel> }) {
       <mesh geometry={geometries.selectedRoofs} castShadow receiveShadow>
         <meshStandardMaterial color={COLORS.roofSelected} roughness={0.76} metalness={0.04} side={THREE.DoubleSide} />
       </mesh>
-      <mesh geometry={geometries.panels} castShadow>
-        <meshStandardMaterial color={COLORS.panel} roughness={0.34} metalness={0.3} side={THREE.DoubleSide} />
+      <mesh geometry={geometries.panelSurfaces} castShadow>
+        <meshStandardMaterial color={plannerModuleVisual.surface} roughness={0.68} metalness={0.08} side={THREE.DoubleSide} />
       </mesh>
-      <mesh geometry={geometries.selectedPanels} castShadow>
-        <meshStandardMaterial color={COLORS.panelSelected} roughness={0.34} metalness={0.25} side={THREE.DoubleSide} />
+      <mesh geometry={geometries.selectedPanelSurfaces} castShadow>
+        <meshStandardMaterial color={plannerModuleVisual.surface} roughness={0.68} metalness={0.08} side={THREE.DoubleSide} />
       </mesh>
+      <mesh geometry={geometries.panelFrames} castShadow>
+        <meshStandardMaterial color={plannerModuleVisual.frameSide3d} roughness={0.32} metalness={0.72} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh geometry={geometries.selectedPanelFrames} castShadow>
+        <meshStandardMaterial color={plannerModuleVisual.frameSide3d} roughness={0.32} metalness={0.72} side={THREE.DoubleSide} />
+      </mesh>
+      <lineSegments geometry={panelEdges.panels}>
+        <lineBasicMaterial color={plannerModuleVisual.frame} />
+      </lineSegments>
+      <lineSegments geometry={panelEdges.selectedPanels}>
+        <lineBasicMaterial color={plannerModuleVisual.selected} />
+      </lineSegments>
       <mesh geometry={geometries.obstacles} castShadow receiveShadow>
         <meshStandardMaterial color={COLORS.obstacle} roughness={0.9} side={THREE.DoubleSide} />
       </mesh>

@@ -2,10 +2,10 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Group, Rect, Line, Image as KonvaImage } from 'react-konva';
+import { Group, Rect, Line } from 'react-konva';
 import { computeAutoLayoutRects } from './layout';      // ← stessa cartella
 import { overlapsReservedRect, overlapsSnowGuard } from '../zones/utils';
-import { plannerTheme } from '../theme/plannerTheme';
+import { plannerModuleVisual, plannerTheme } from '../theme/plannerTheme';
 import ModuleSlopeArrow from './panels/ModuleSlopeArrow';
 import {
   groupRectangularThermalUnits,
@@ -36,7 +36,6 @@ type Props = {
   marginM: number;                         // metri bordo falda
   edgeMarginsM?: number[];                 // canonical Kante 1..N overrides
   showGrid?: boolean;
-  textureUrl?: string;
 
   // controlli di allineamento/origine griglia
   phaseX?: number;
@@ -130,7 +129,6 @@ export default function ModulesPreview({
   marginM,
   edgeMarginsM,
   showGrid = true,
-  textureUrl = '/images/panel.webp',
   phaseX = 0,
   phaseY = 0,
   anchorX = 'start',
@@ -365,18 +363,7 @@ export default function ModulesPreview({
     panelSizeM, spacingM, spacingXM, spacingYM, marginM, edgeMarginsM, phaseX, phaseY, anchorX, anchorY,
   ]);
 
-  // 4) texture opzionale
-  const [img, setImg] = React.useState<HTMLImageElement | null>(null);
-  React.useEffect(() => {
-    if (!textureUrl) { setImg(null); return; }
-    const i = new Image();
-    i.crossOrigin = 'anonymous';
-    i.onload = () => setImg(i);
-    i.src = textureUrl;
-    return () => setImg(null);
-  }, [textureUrl]);
-
-  // 5) render con clip al poligono
+  // 4) render con clip al poligono
   return (
     <Group
       listening={false}
@@ -403,33 +390,20 @@ export default function ModulesPreview({
       {/* moduli (preview = commit, ma filtrati da hindernis + snow-guard) */}
       {rects.map((r, index) => (
         <Group key={index} listening={false}>
-          {img ? (
-            <KonvaImage
-              image={img}
-              x={r.cx}
-              y={r.cy}
-              width={r.wPx}
-              height={r.hPx}
-              offsetX={r.wPx / 2}
-              offsetY={r.hPx / 2}
-              rotation={r.angleDeg}
-              listening={false}
-              opacity={0.85}
-            />
-          ) : (
-            <Rect
-              x={r.cx}
-              y={r.cy}
-              width={r.wPx}
-              height={r.hPx}
-              offsetX={r.wPx / 2}
-              offsetY={r.hPx / 2}
-              rotation={r.angleDeg}
-              fill={plannerTheme.panelFill}
-              opacity={0.85}
-              listening={false}
-            />
-          )}
+          <Rect
+            x={r.cx}
+            y={r.cy}
+            width={r.wPx}
+            height={r.hPx}
+            offsetX={r.wPx / 2}
+            offsetY={r.hPx / 2}
+            rotation={r.angleDeg}
+            fill={plannerModuleVisual.surface}
+            stroke={plannerModuleVisual.frame}
+            strokeWidth={0.7}
+            opacity={0.85}
+            listening={false}
+          />
           <ModuleSlopeArrow
             cx={r.cx}
             cy={r.cy}

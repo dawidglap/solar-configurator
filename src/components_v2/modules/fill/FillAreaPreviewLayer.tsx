@@ -38,7 +38,6 @@ export default function FillAreaPreviewLayer({ channel }: { channel: TransientFi
             w={rect.wPx}
             h={rect.hPx}
             rotationDeg={rect.angleDeg}
-            textureUrl="/images/panel.webp"
           />
         ))}
       </Group>

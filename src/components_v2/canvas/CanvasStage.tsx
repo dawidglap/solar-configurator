@@ -1557,7 +1557,6 @@ export default function CanvasStage({
                       spacingYM={resolveStandardAutoLayoutSpacingAxes(standardPreviewModules).y}
                       marginM={standardPreviewMarginM}
                       edgeMarginsM={standardPreviewEdgeMarginsM}
-                      textureUrl="/images/panel.webp"
                       phaseX={standardPreviewModules.gridPhaseX || 0}
                       phaseY={standardPreviewModules.gridPhaseY || 0}
                       anchorX={(standardPreviewModules.gridAnchorX as any) || "start"}
@@ -1719,7 +1718,6 @@ export default function CanvasStage({
                   >
                     <PanelsLayer
                       layers={layers}
-                      textureUrl="/images/panel.webp"
                       selectedPanelId={
                         usePlannerV2Store.getState().selectedPanelId
                       }

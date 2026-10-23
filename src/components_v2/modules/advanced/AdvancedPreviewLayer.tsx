@@ -13,7 +13,7 @@ import {
 } from "@/lib/planning-core/advanced";
 import type { Pt } from "@/types/planner";
 import { geographicAzimuthToCartesianDeg } from "@/lib/planning-core/geometry-v2";
-import { plannerTheme } from "../../theme/plannerTheme";
+import { plannerModuleVisual, plannerTheme } from "../../theme/plannerTheme";
 import { usePlannerV2Store } from "../../state/plannerV2Store";
 import { computeAdvancedPlanningPreview } from "./advancedPlanningApplication";
 import ModuleSlopeArrow from "../panels/ModuleSlopeArrow";
@@ -212,9 +212,10 @@ export default function AdvancedPreviewLayer({
                 <Line
                   points={module.footprintPx.flatMap((point) => [point.x, point.y])}
                   closed
-                  stroke={plannerTheme.panelStroke}
+                  stroke={plannerModuleVisual.frame}
                   strokeWidth={0.7}
-                  fill="rgba(30, 64, 175, 0.45)"
+                  fill={plannerModuleVisual.surface}
+                  opacity={0.78}
                 />
                 <ModuleSlopeArrow
                   cx={module.cx}

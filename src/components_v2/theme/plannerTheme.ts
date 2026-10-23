@@ -1,3 +1,10 @@
+export const plannerModuleVisual = {
+  surface: '#050505',
+  frame: '#c3c8ce',
+  frameSide3d: '#9da4ac',
+  selected: '#40d9c8',
+} as const;
+
 export const plannerTheme = {
   primary: '#40d9c8',
   primarySoft: 'rgba(64, 217, 200, 0.16)',
@@ -13,7 +20,7 @@ export const plannerTheme = {
 
   panelFill: '#071b33',
   panelStroke: 'rgba(234, 246, 255, 0.40)',
-  panelSelected: '#40d9c8',
+  panelSelected: plannerModuleVisual.selected,
 
   danger: '#ff5f56',
   dangerSoft: 'rgba(255, 95, 86, 0.16)',

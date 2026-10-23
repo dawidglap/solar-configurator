@@ -12,7 +12,6 @@ type LayerRoof = { id: string; points: Pt[] };
 
 export default function PanelsLayer({
   layers,
-  textureUrl,
   selectedPanelId,   // compat legacy
   stageToImg,
   canvasRotationDeg,
@@ -21,7 +20,6 @@ export default function PanelsLayer({
   selectionOverlayRef,
 }: {
   layers: LayerRoof[];
-  textureUrl?: string;
   selectedPanelId?: string;
   onSelect?: (id?: string) => void;
   stageToImg?: (x: number, y: number) => Pt;
@@ -71,7 +69,6 @@ const handleSelect = (id?: string, opts?: { additive?: boolean }) => {
           key={`panels-${r.id}`}
           roofId={r.id}
           roofPolygon={r.points}
-          textureUrl={textureUrl}
           selectedPanelId={compatSelectedId}
           onSelect={handleSelect}      // ora accetta anche opts.additive
           onDragStart={onAnyDragStart}

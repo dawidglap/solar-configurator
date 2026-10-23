@@ -2,8 +2,8 @@
 'use client';
 
 import React from 'react';
-import { Image as KonvaImage, Rect } from 'react-konva';
-import { plannerTheme } from '../../theme/plannerTheme';
+import { Rect } from 'react-konva';
+import { plannerModuleVisual, plannerTheme } from '../../theme/plannerTheme';
 import ModuleSlopeArrow from './ModuleSlopeArrow';
 import {
   getTransientPanelGeometry,
@@ -20,7 +20,6 @@ export type PanelItemProps = {
   rotationDeg: number;
   slopeArrowAzimuthDeg?: number;
   selected: boolean;
-  image?: HTMLImageElement | null;
   onStartDrag: (panelId: string, e: any) => void;
   onSelect?: (id?: string, opts?: { additive?: boolean }) => void;
   onRoutePointerDown?: (panelId: string, e: any) => "continue" | "consume" | "ignore";
@@ -30,7 +29,7 @@ const DRAG_THRESHOLD_PX = 3; // piccola soglia per distinguere click vs drag
 const INTERACTIVE_NAME = 'interactive-panel';
 
 export const PanelItem: React.FC<PanelItemProps> = React.memo(
-  ({ id, cx, cy, wPx, hPx, rotationDeg, slopeArrowAzimuthDeg, selected, image, onStartDrag, onSelect, onRoutePointerDown }) => {
+  ({ id, cx, cy, wPx, hPx, rotationDeg, slopeArrowAzimuthDeg, selected, onStartDrag, onSelect, onRoutePointerDown }) => {
     const transient = React.useSyncExternalStore(
       React.useCallback((listener) => subscribeTransientPanelGeometry(id, listener), [id]),
       React.useCallback(() => getTransientPanelGeometry(id), [id]),
@@ -190,11 +189,20 @@ export const PanelItem: React.FC<PanelItemProps> = React.memo(
 
     return (
       <>
-        {image ? (
-          <KonvaImage image={image} opacity={1} {...(base as any)} />
-        ) : (
-          <Rect fill={plannerTheme.panelFill} opacity={0.95} {...(base as any)} />
-        )}
+        <Rect fill={plannerModuleVisual.surface} opacity={1} {...(base as any)} />
+        <Rect
+          x={visualCx}
+          y={visualCy}
+          width={wPx}
+          height={hPx}
+          offsetX={wPx / 2}
+          offsetY={hPx / 2}
+          rotation={visualRotationDeg}
+          stroke={plannerModuleVisual.frame}
+          strokeWidth={0.7}
+          listening={false}
+          perfectDrawEnabled={false}
+        />
 
         <ModuleSlopeArrow
           id={`panel-slope-arrow-${id}`}
