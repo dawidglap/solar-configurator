@@ -1,4 +1,4 @@
-import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
+import { PDFDocument, PDFPage, PDFFont, rgb, type RGB } from "pdf-lib";
 import { sanitizePdfText } from "@/lib/pdfText";
 import { roundChf05, sumChf05 } from "@/lib/chf";
 import { htmlToPlainText } from "@/lib/htmlToPlainText";
@@ -56,6 +56,7 @@ type AddDetailPagesArgs = {
   documentType?: "angebot" | "auftrag";
   documentTitle?: string;
   documentNumberLabel?: string;
+  projectType?: "photovoltaic" | "heating";
 };
 
 const PAGE_W = 595.28;
@@ -425,6 +426,18 @@ export async function addDetailPages(pdf: PDFDocument, args: AddDetailPagesArgs)
 
   const footerLines = buildFooterLines(args.company);
 
+  if (args.projectType === "heating" && args.documentType === "angebot") {
+    await addBoundedHeatingDetailPages(pdf, {
+      ...args,
+      includedItems,
+      optionalItems,
+      font,
+      bold,
+      footerLines,
+    });
+    return;
+  }
+
   let pageNumber = pdf.getPageCount() + 1;
   let page = createPage(pdf, {
     pageNumber,
@@ -588,6 +601,275 @@ export async function addDetailPages(pdf: PDFDocument, args: AddDetailPagesArgs)
       createNextPage();
     }
   }
+}
+
+type BoundedLine = {
+  text: string;
+  x: number;
+  size: number;
+  font: PDFFont;
+  color: RGB;
+  lineHeight: number;
+  bullet?: boolean;
+};
+
+function buildBoundedItemLines(item: DetailItem, font: PDFFont, bold: PDFFont) {
+  const tableCol = POSITION_COLUMN_LAYOUT;
+  const lines: BoundedLine[] = [];
+  const pushWrapped = (args: {
+    text: string;
+    x?: number;
+    width?: number;
+    size: number;
+    lineHeight: number;
+    font?: PDFFont;
+    color?: RGB;
+    bullet?: boolean;
+  }) => {
+    const lineFont = args.font ?? font;
+    const x = args.x ?? tableCol.descX;
+    const width = args.width ?? tableCol.descWidth;
+    const wrapped = wrapTextStrict(args.text, width, lineFont, args.size);
+    wrapped.forEach((text, index) => {
+      lines.push({
+        text,
+        x,
+        size: args.size,
+        font: lineFont,
+        color: args.color ?? COLOR_TEXT,
+        lineHeight: args.lineHeight,
+        bullet: args.bullet === true && index === 0,
+      });
+    });
+  };
+
+  pushWrapped({
+    text: buildItemTitle(item),
+    size: 9.6,
+    lineHeight: 11,
+    font: bold,
+  });
+
+  const subline = buildItemSubline(item);
+  if (subline) {
+    pushWrapped({
+      text: subline,
+      size: 8.2,
+      lineHeight: 10,
+      color: COLOR_MUTED,
+    });
+  }
+
+  const description = plainText(item.description);
+  if (description) {
+    pushWrapped({ text: description, size: 9.5, lineHeight: 11 });
+  }
+
+  const longDescription = plainText(item.longDescription);
+  if (longDescription) {
+    pushWrapped({ text: longDescription, size: 9.2, lineHeight: 11 });
+  }
+
+  for (const feature of safeStringArray(item.features)) {
+    pushWrapped({
+      text: feature,
+      x: tableCol.descX + 16,
+      width: tableCol.descWidth - 16,
+      size: 8.8,
+      lineHeight: 10,
+      bullet: true,
+    });
+  }
+
+  const extras = [
+    plainText(item.warranty) ? `Garantie: ${plainText(item.warranty)}` : "",
+    plainText(item.compatibility) ? `Kompatibilität: ${plainText(item.compatibility)}` : "",
+    plainText(item.notes) ? `Hinweise: ${plainText(item.notes)}` : "",
+  ].filter(Boolean);
+  for (const extra of extras) {
+    pushWrapped({ text: extra, size: 8.5, lineHeight: 10, color: COLOR_MUTED });
+  }
+
+  return lines;
+}
+
+async function addBoundedHeatingDetailPages(
+  pdf: PDFDocument,
+  args: AddDetailPagesArgs & {
+    includedItems: DetailItem[];
+    optionalItems: DetailItem[];
+    font: PDFFont;
+    bold: PDFFont;
+    footerLines: string[];
+  },
+) {
+  const { font, bold, footerLines } = args;
+  let pageNumber = pdf.getPageCount() + 1;
+  let page = createPage(pdf, {
+    pageNumber,
+    offerTitle: safeString(args.offer?.title) || "Heizungsangebot",
+    planningNumber: safeString(args.offer?.planningNumber),
+    company: args.company,
+    font,
+    bold,
+    footerLines,
+    documentTitle: args.documentTitle,
+    documentNumberLabel: args.documentNumberLabel,
+  });
+  let y = page.cursorY;
+
+  const nextPage = () => {
+    pageNumber += 1;
+    page = createPage(pdf, {
+      pageNumber,
+      offerTitle: safeString(args.offer?.title) || "Heizungsangebot",
+      planningNumber: safeString(args.offer?.planningNumber),
+      company: args.company,
+      font,
+      bold,
+      footerLines,
+      documentTitle: args.documentTitle,
+      documentNumberLabel: args.documentNumberLabel,
+    });
+    y = page.cursorY;
+  };
+
+  const ensureSpace = (height: number) => {
+    if (y - height < CONTENT_BOTTOM) nextPage();
+  };
+
+  const drawItem = (item: DetailItem, optionalStyle = false) => {
+    const lines = buildBoundedItemLines(item, font, bold);
+    const dividerHeight = 16;
+    const itemHeight = lines.reduce((sum, line) => sum + line.lineHeight, 0) + dividerHeight;
+    const fullPageCapacity = page.cursorY - CONTENT_BOTTOM;
+
+    if (itemHeight <= fullPageCapacity && y - itemHeight < CONTENT_BOTTOM) {
+      nextPage();
+    } else if (y - Math.min(itemHeight, 38) < CONTENT_BOTTOM) {
+      nextPage();
+    }
+
+    const tableCol = POSITION_COLUMN_LAYOUT;
+    const rowTopY = y;
+    const qty = safeNumber(item.quantity, 0);
+    const unitLabel = safeString(item.unitLabel) || safeString(item.unit) || "Stk.";
+    const qtyText = qty > 0 ? `${qty} ${unitLabel}` : "-";
+    const unitPriceText = `${money(item.unitPriceNet)} CHF`;
+    const lineTotalText = `${money(item.lineTotalNet)} CHF`;
+
+    drawText(page.page, String(item.position || "-"), tableCol.posX, rowTopY, 9.2, font, COLOR_TEXT);
+    drawText(
+      page.page,
+      qtyText,
+      rightAlignedTextX(tableCol.qtyRight, font.widthOfTextAtSize(qtyText, 9)),
+      rowTopY,
+      9,
+      font,
+      COLOR_TEXT,
+    );
+    drawText(
+      page.page,
+      unitPriceText,
+      rightAlignedTextX(tableCol.priceRight, font.widthOfTextAtSize(unitPriceText, 9)),
+      rowTopY,
+      9,
+      font,
+      COLOR_TEXT,
+    );
+    drawText(
+      page.page,
+      lineTotalText,
+      rightAlignedTextX(tableCol.totalRight, bold.widthOfTextAtSize(lineTotalText, 9.2)),
+      rowTopY,
+      9.2,
+      bold,
+      COLOR_TEXT,
+    );
+
+    if (optionalStyle) {
+      const badgeX = tableCol.posX;
+      page.page.drawRectangle({
+        x: badgeX,
+        y: rowTopY - 15,
+        width: 34,
+        height: 12,
+        color: COLOR_OPTIONAL_BORDER,
+      });
+      drawText(page.page, "Optional", badgeX + 4, rowTopY - 12, 6.3, bold, COLOR_TEXT);
+    }
+
+    let continuation = false;
+    for (const line of lines) {
+      if (y - line.lineHeight < CONTENT_BOTTOM) {
+        nextPage();
+        continuation = true;
+        drawText(page.page, String(item.position || "-"), tableCol.posX, y, 9.2, font, COLOR_TEXT);
+        drawText(
+          page.page,
+          `Position ${item.position || "-"} (Fortsetzung)`,
+          tableCol.descX,
+          y,
+          8.6,
+          bold,
+          COLOR_MUTED,
+        );
+        y -= 18;
+      }
+
+      if (line.bullet) {
+        drawText(page.page, "•", tableCol.descX + 4, y, 9, bold, COLOR_TEXT);
+      }
+      drawText(page.page, line.text, line.x, y, line.size, line.font, line.color);
+      y -= line.lineHeight;
+    }
+
+    if (continuation && y - dividerHeight < CONTENT_BOTTOM) {
+      y = CONTENT_BOTTOM;
+      return;
+    }
+    y -= 4;
+    if (y >= CONTENT_BOTTOM) {
+      drawLine(
+        page.page,
+        POSITION_TABLE_BOUNDS.left,
+        y,
+        POSITION_TABLE_BOUNDS.right,
+        y,
+        0.6,
+        optionalStyle ? COLOR_OPTIONAL_BORDER : COLOR_LINE,
+      );
+    }
+    y -= 12;
+  };
+
+  if (args.includedItems.length) {
+    ensureSpace(estimateSectionHeaderHeight() + 38);
+    y = drawSectionHeader(page.page, {
+      y,
+      label: "Positionen",
+      font,
+      bold,
+    });
+    for (const item of args.includedItems) drawItem(item);
+  }
+
+  if (!args.optionalItems.length) return;
+
+  ensureSpace(OPTIONAL_HEADER_HEIGHT + 38);
+  y = drawOptionalSectionHeader(page.page, { y, bold });
+  for (const item of args.optionalItems) drawItem(item, true);
+
+  ensureSpace(OPTIONAL_SUMMARY_HEIGHT);
+  const optionalTotal = sumChf05(
+    args.optionalItems.map((item) => safeNumber(item.lineTotalNet, 0)),
+  );
+  y = drawOptionalSummary(page.page, {
+    y,
+    total: optionalTotal,
+    font,
+    bold,
+  });
 }
 
 function drawOptionalSectionHeader(

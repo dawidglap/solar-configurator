@@ -678,6 +678,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
   const { db, planning, company, session, documentType } = args;
   const projectType = resolveProjectType(planning?.projectType);
   const isHeating = projectType === "heating";
+  const isHeatingOffer = isHeating && documentType === "angebot";
   const users = db.collection("users");
   const snapshotCache = db.collection("snapshotCache");
   const sections = args.sections ?? resolveReportSections(planning);
@@ -899,6 +900,8 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       wallboxPriceChf,
     },
     detailItems: enrichedItems.map((item: any, index: number) => {
+      const includeCustomerDetails =
+        !isHeatingOffer || item?.includeDescriptionInOffer === true;
       const rowLongDescription = htmlToPlainText(item?.longDescription);
       const catalogLongDescription = htmlToPlainText(item?.catalogLongDescription);
       const explicitFeatures = safeStringArray(item?.features)
@@ -933,19 +936,26 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
         lineTotalNet: roundChf05(getItemLineTotal(item)),
         catalogItemId: safeString(item?.catalogItemId),
         pdfSection: safeString(item?.pdfSection),
-        description: htmlToPlainText(item?.catalogDescription),
-        longDescription: finalLongDescription,
+        description: includeCustomerDetails
+          ? htmlToPlainText(item?.catalogDescription)
+          : "",
+        longDescription: includeCustomerDetails ? finalLongDescription : "",
         features:
-          fallbackFeatures.length > 0
-            ? fallbackFeatures
-            : safeStringArray(item?.catalogFeatures)
-                .map(htmlToPlainText)
-                .filter(Boolean),
-        warranty: safeString(item?.catalogWarranty),
-        compatibility: safeString(item?.catalogCompatibility),
-        notes:
-          htmlToPlainText(item?.notes) ||
-          htmlToPlainText(item?.catalogNotes),
+          includeCustomerDetails
+            ? fallbackFeatures.length > 0
+              ? fallbackFeatures
+              : safeStringArray(item?.catalogFeatures)
+                  .map(htmlToPlainText)
+                  .filter(Boolean)
+            : [],
+        warranty: includeCustomerDetails ? safeString(item?.catalogWarranty) : "",
+        compatibility: includeCustomerDetails
+          ? safeString(item?.catalogCompatibility)
+          : "",
+        notes: includeCustomerDetails
+          ? htmlToPlainText(item?.notes) ||
+            htmlToPlainText(item?.catalogNotes)
+          : "",
         optional: isOptionalItem(item),
       };
     }),
@@ -1106,6 +1116,7 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       documentType,
       documentTitle: identifiers.documentTitle,
       documentNumberLabel: identifiers.documentNumberLabel,
+      projectType,
     });
   }
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -42,6 +42,18 @@ async function extractPdfText(bytes: Uint8Array) {
     await writeFile(file, bytes);
     const { stdout } = await execFileAsync("pdftotext", ["-layout", file, "-"]);
     return stdout.replace(/\s+/g, " ").trim();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function extractPdfBbox(bytes: Uint8Array) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "sola-offer-pdf-bbox-"));
+  const file = path.join(dir, "offer.pdf");
+  try {
+    await writeFile(file, bytes);
+    const { stdout } = await execFileAsync("pdftotext", ["-bbox", file, "-"]);
+    return stdout;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -304,6 +316,7 @@ test("heating offer PDF is commercial-only and keeps optional rows outside the t
   assert.match(text, /Brutto inkl\. MWST\./);
   assert.match(text, /50 % \/ 50 %/);
   assert.match(text, /Angebot gültig bis/);
+  assert.doesNotMatch(text, /Luft-Wasser-Wärmepumpe|Leiser Betrieb/);
   assert.doesNotMatch(
     text,
     /Photovoltaik|PV-Anlage|kWp|Module|Wechselrichter|Förderung|Förderbeitrag|Schneefang|Vollmacht|Analyse/,
@@ -311,6 +324,96 @@ test("heating offer PDF is commercial-only and keeps optional rows outside the t
   assert.equal(result.pricing.totalInklMwst, 11_674.8);
   assert.equal(result.pricing.totalInvestmentChf, 11_674.8);
   assert.equal(result.pricing.effectiveCostChf, 11_674.8);
+});
+
+test("heating offer PDF keeps imported rows compact and splits explicit customer details safely", async () => {
+  const { buildPlanningDocumentPdf } = await import("../src/lib/planningDocuments");
+  const planning: any = heatingPlanning();
+  const customerDetailTokens = Array.from(
+    { length: 520 },
+    (_, index) => `CUSTOMERLINE${String(index + 1).padStart(4, "0")}`,
+  );
+
+  planning.data.parts.items = Array.from({ length: 65 }, (_, index) => {
+    const position = index + 1;
+    const explicitlyIncluded = position === 33;
+    const zeroPrice = position === 10;
+    return {
+      id: `heating-${position}`,
+      category: index % 2 === 0 ? "Heizung" : "Installation",
+      brand: index % 3 === 0 ? "SOLA" : "",
+      model: index % 3 === 0 ? `HT-${position}` : "",
+      name: `HeatingItem${String(position).padStart(3, "0")}${
+        position % 7 === 0 ? " Wärmepumpen-Komplettsystem" : ""
+      }`,
+      quantity: 1,
+      unitLabel: ["Stk.", "MAL", "Set"][index % 3],
+      unitPriceNet: zeroPrice ? 0 : 100 + position,
+      lineTotalNet: zeroPrice ? 0 : 100 + position,
+      optional: position === 65,
+      sourcePosition: `SOURCE-POS-${position}`,
+      articleNumber: `SUPPLIER-ARTICLE-${position}`,
+      importedFromOffer: true,
+      importSourceDescription: `NEVER-PRINT-SOURCE-DESCRIPTION-${position}`,
+      longDescription: explicitlyIncluded
+        ? customerDetailTokens.join(" ")
+        : `SUPPLIER-DUMP-LONG-DESCRIPTION-${position}`,
+      features: explicitlyIncluded ? ["CUSTOMER-FACING-FEATURE"] : [],
+      notes: explicitlyIncluded ? "CUSTOMER-FACING-NOTE" : `SUPPLIER-NOTE-${position}`,
+      includeDescriptionInOffer: explicitlyIncluded,
+    };
+  });
+
+  const result = await buildPlanningDocumentPdf({
+    db: documentDb(),
+    planning,
+    company,
+    session: { activeCompanyId: COMPANY_ID, name: "Heizungsberater" },
+    documentType: "angebot",
+  });
+  const loaded = await PDFDocument.load(result.pdfBytes);
+  const [text, bbox] = await Promise.all([
+    extractPdfText(result.pdfBytes),
+    extractPdfBbox(result.pdfBytes),
+  ]);
+
+  let previousItemOffset = -1;
+  for (let position = 1; position <= 65; position += 1) {
+    const itemName = `HeatingItem${String(position).padStart(3, "0")}`;
+    assert.equal((text.match(new RegExp(itemName, "g")) || []).length, 1);
+    const itemOffset = text.indexOf(itemName);
+    assert.ok(itemOffset > previousItemOffset, `${itemName} is out of order`);
+    previousItemOffset = itemOffset;
+  }
+  assert.match(text, /CUSTOMERLINE0001/);
+  assert.match(text, /CUSTOMERLINE0520/);
+  assert.match(text, /CUSTOMER-FACING-FEATURE/);
+  assert.match(text, /CUSTOMER-FACING-NOTE/);
+  assert.match(text, /HeatingItem010/);
+  assert.match(text, /0[.,]00 CHF/);
+  assert.match(text, /Position 33 \(Fortsetzung\)/);
+  assert.doesNotMatch(
+    text,
+    /NEVER-PRINT-SOURCE-DESCRIPTION|SUPPLIER-DUMP-LONG-DESCRIPTION|SUPPLIER-NOTE|SOURCE-POS|SUPPLIER-ARTICLE/,
+  );
+  assert.ok(loaded.getPageCount() > 4);
+  assert.ok(loaded.getPageCount() < 15);
+  assert.equal(result.pricing.totalInklMwst, 8_143.15);
+  assert.equal(result.pricing.totalInvestmentChf, 8_143.15);
+
+  const detailWords = [...bbox.matchAll(
+    /<word\s+xMin="[^"]+"\s+yMin="[^"]+"\s+xMax="[^"]+"\s+yMax="([^"]+)">CUSTOMERLINE\d+<\/word>/g,
+  )];
+  assert.ok(detailWords.length >= 500);
+  for (const match of detailWords) {
+    assert.ok(Number(match[1]) <= 719.9, `detail text crossed footer boundary at yMax=${match[1]}`);
+  }
+
+  const qaOutput = process.env.HEATING_OFFER_QA_OUTPUT;
+  if (qaOutput) {
+    await mkdir(path.dirname(qaOutput), { recursive: true });
+    await writeFile(qaOutput, result.pdfBytes);
+  }
 });
 
 test("same customer PV and heating projects keep document identity, address and positions separate", async () => {
