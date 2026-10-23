@@ -144,7 +144,7 @@ test("persists one canonical Heating Auftrag shape with signed-offer linkage", a
   assert.equal("stepsState" in record, false);
 });
 
-test("Heating generate-order bypasses PV pipeline, invoice and execution side effects", () => {
+test("Heating generate-order bypasses PV pipeline/invoices and ensures canonical execution", () => {
   const source = readFileSync(
     new URL("../src/app/api/plannings/[planningId]/generate-order/route.ts", import.meta.url),
     "utf8",
@@ -155,8 +155,9 @@ test("Heating generate-order bypasses PV pipeline, invoice and execution side ef
   const heatingBranch = source.slice(start, end);
   assert.doesNotMatch(
     heatingBranch,
-    /createInvoicesForOrderIfMissing|ensureExecutionTasksForWonPlanning|ensureCompanyAuftragPipelineTemplate|persistAuftragStepsState|collection\(["']montages/,
+    /createInvoicesForOrderIfMissing|ensureCompanyAuftragPipelineTemplate|persistAuftragStepsState|collection\(["']montages/,
   );
+  assert.match(heatingBranch, /ensureHeatingExecutionTaskForOrder/);
   assert.match(heatingBranch, /nextOrderId/);
   assert.match(heatingBranch, /collection<any>\(["']auftraege["']\)\.insertOne/);
   assert.match(heatingBranch, /orderStatus:\s*["']generated["']/);

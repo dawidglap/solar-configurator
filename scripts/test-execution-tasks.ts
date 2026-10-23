@@ -188,6 +188,10 @@ async function main() {
       .find({ companyId, projectId: planningId.toString() })
       .toArray();
     assert(allTasks.length === 2, `expected 2 execution tasks, got ${allTasks.length}`);
+    assert(
+      allTasks.map((task) => task.track).sort().join(",") === "elektro,montage",
+      "expected legacy/PV planning to retain exactly montage + elektro",
+    );
 
     const backfillTasks = await getExecutionTasksCollection(db)
       .find({ companyId, projectId: backfillPlanningId.toString() })

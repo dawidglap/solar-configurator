@@ -4,6 +4,10 @@ import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
 import { enforceActiveSubscription } from "@/lib/subscription";
 import { normalizeUserProfile } from "@/lib/userProfiles";
+import {
+  normalizeExecutionRoles,
+  normalizeExecutionTrack,
+} from "@/lib/executionTasks";
 
 export const runtime = "nodejs";
 
@@ -107,11 +111,7 @@ function normalizeUser(doc: any, activeCompanyId: string) {
     jobTitle: normalizeUserProfile(doc).jobTitle,
     emailSignature: normalizeUserProfile(doc).emailSignature,
     role: safeString(membership?.role) || "",
-    executionRoles: Array.isArray(doc?.executionRoles)
-      ? doc.executionRoles
-          .map((value: unknown) => safeString(value).toLowerCase())
-          .filter((value: string) => value === "montage" || value === "elektro")
-      : [],
+    executionRoles: normalizeExecutionRoles(doc?.executionRoles),
     status: safeString(membership?.status) || safeString(doc?.status) || "active",
     isPlatformSuperAdmin: !!doc?.isPlatformSuperAdmin,
     createdAt: doc?.createdAt ?? null,
@@ -142,9 +142,10 @@ export async function GET(req: Request) {
 
   const activeCompanyId = String(session.activeCompanyId);
   const activeCompanyObjectId = objectIdOrNull(activeCompanyId);
-  const executionRole = safeString(new URL(req.url).searchParams.get("executionRole")).toLowerCase();
+  const requestedExecutionRole = new URL(req.url).searchParams.get("executionRole");
+  const executionRole = normalizeExecutionTrack(requestedExecutionRole);
 
-  if (executionRole && executionRole !== "montage" && executionRole !== "elektro") {
+  if (requestedExecutionRole && !executionRole) {
     return jsonResponse(origin, { ok: false, error: "Invalid executionRole" }, 400);
   }
 

@@ -8,7 +8,7 @@ import {
 import { buildIdVariants, getCompanyMembersByIds } from "@/lib/tasks";
 import { deriveExecutionWorkingDays, getExecutionWorkingDays } from "@/lib/executionWorkingDays";
 
-export const TEAM_TRACKS = ["montage", "elektro"] as const;
+export const TEAM_TRACKS = ["montage", "elektro", "heating"] as const;
 export const TEAM_ROLES = ["leiter", "monteur", "elektriker", "lehrling"] as const;
 export const TEAM_STATUSES = ["active", "archived"] as const;
 export const TEAM_OVERRIDE_REASONS = [

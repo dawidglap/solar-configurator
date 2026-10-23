@@ -44,6 +44,7 @@
     "test:planning-documents": "tsx --test tests/planningDocuments.test.ts",
     "test:heating-orders": "tsx --test tests/heatingOrders.test.ts",
     "test:heating-order-read": "tsx --test tests/heatingOrderRead.test.ts",
+    "test:heating-execution": "tsx --test tests/heatingExecution.test.ts && tsx scripts/test-heating-execution.ts",
     "test:heating-questionnaire": "tsx --test tests/heatingQuestionnaire.test.ts",
     "test:heating-questionnaire-routes": "tsx scripts/test-heating-questionnaire-routes.ts",
     "test:snow-protection-persistence": "tsx scripts/test-snow-protection-persistence.ts",

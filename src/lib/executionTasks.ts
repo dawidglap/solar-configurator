@@ -34,8 +34,11 @@ import {
   type BadgeSignatureStatus,
   type VollmachtStatus,
 } from "@/lib/statusBadges";
+import { resolveProjectType, type ProjectType } from "@/lib/projectType";
 
-export const EXECUTION_TRACKS = ["montage", "elektro"] as const;
+export const EXECUTION_TRACKS = ["montage", "elektro", "heating"] as const;
+export const PHOTOVOLTAIC_EXECUTION_TRACKS = ["montage", "elektro"] as const;
+export const HEATING_EXECUTION_TRACKS = ["heating"] as const;
 export const EXECUTION_STAGES = [
   "offen",
   "geplant",
@@ -165,6 +168,15 @@ export function normalizeExecutionRoles(input: unknown): ExecutionTrack[] {
     ? input.map((value) => normalizeExecutionTrack(value)).filter(Boolean)
     : [];
   return Array.from(new Set(values)) as ExecutionTrack[];
+}
+
+export function getExecutionTracksForProjectType(
+  value: unknown,
+): readonly ExecutionTrack[] {
+  const projectType: ProjectType = resolveProjectType(value);
+  return projectType === "heating"
+    ? HEATING_EXECUTION_TRACKS
+    : PHOTOVOLTAIC_EXECUTION_TRACKS;
 }
 
 export function normalizeExecutionAddress(address: any) {
@@ -893,6 +905,27 @@ export async function ensureExecutionTasksForWonPlanning(
     return { created: 0, items: [] as any[] };
   }
 
+  const projectType = resolveProjectType(planning?.projectType);
+  const tracks = getExecutionTracksForProjectType(projectType);
+  const companyId =
+    mongoIdToString(planning?.companyId) || safeString(planning?.companyId);
+  const projectId = getPlanningProjectId(planning);
+  const planningId = mongoIdToString(planning?._id);
+
+  // Heating execution starts only after the canonical Heating Auftrag exists.
+  // This also prevents generic "won" planning updates from creating Heating
+  // execution prematurely.
+  if (projectType === "heating") {
+    const auftrag = await db.collection("auftraege").findOne({
+      companyId: { $in: buildIdVariants(companyId) },
+      planningId: { $in: buildIdVariants(planningId) },
+      projectType: "heating",
+    });
+    if (!auftrag) {
+      return { created: 0, items: [] as any[] };
+    }
+  }
+
   await ensureExecutionTaskIndexes(db);
   const customerId =
     mongoIdToString(planning?.customerId) || safeString(planning?.customerId);
@@ -905,14 +938,10 @@ export async function ensureExecutionTasksForWonPlanning(
         })
       : null;
 
-  const companyId =
-    mongoIdToString(planning?.companyId) || safeString(planning?.companyId);
-  const projectId = getPlanningProjectId(planning);
-  const planningId = mongoIdToString(planning?._id);
   const executionTasks = getExecutionTasksCollection(db);
   let created = 0;
 
-  for (const track of EXECUTION_TRACKS) {
+  for (const track of tracks) {
     const seed = buildExecutionTaskSeed({ planning, track, session, customer });
     const { planningId: seedPlanningId, customerId: seedCustomerId, address: seedAddress, updatedAt: _seedUpdatedAt, ...seedOnInsert } = seed;
     const result = await executionTasks.updateOne(
@@ -934,7 +963,7 @@ export async function ensureExecutionTasksForWonPlanning(
   }
 
   const items = await executionTasks
-    .find({ companyId, projectId, track: { $in: [...EXECUTION_TRACKS] } })
+    .find({ companyId, projectId, track: { $in: [...tracks] } })
     .toArray();
 
   return { created, items };
@@ -988,6 +1017,11 @@ export async function backfillExecutionTasksForWonPlannings(
   let processed = 0;
   for (const planning of plannings) {
     if (!(await isPlanningWon(db, planning))) {
+      continue;
+    }
+    // This existing maintenance path remains PV-only. Missing Heating tasks
+    // are recovered by retrying the canonical Heating order operation.
+    if (resolveProjectType(planning?.projectType) !== "photovoltaic") {
       continue;
     }
     const result = await ensureExecutionTasksForWonPlanning(db, planning, session);

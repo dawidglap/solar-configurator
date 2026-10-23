@@ -10,10 +10,11 @@ import {
   parseAvailabilityDate,
 } from "../src/lib/teams";
 
-test("normalizes team tracks and rejects duplicate members", () => {
-  assert.deepEqual(normalizeTeamTracks(["montage", "elektro", "montage", "invalid"]), [
+test("normalizes team tracks including Heating and rejects duplicate members", () => {
+  assert.deepEqual(normalizeTeamTracks(["montage", "elektro", "heating", "montage", "invalid"]), [
     "montage",
     "elektro",
+    "heating",
   ]);
   const userId = new ObjectId().toString();
   assert.throws(

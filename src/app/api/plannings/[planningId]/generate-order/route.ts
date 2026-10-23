@@ -296,6 +296,7 @@ async function buildHeatingOrderResponse(args: {
   planning: any;
   auftrag: any;
   alreadyGenerated: boolean;
+  executionTasksWarning?: string | null;
 }) {
   const orderFileId = toObjectIdOrNull(args.planning?.orderSnapshotFileId);
   const offerSnapshotFileId = toObjectIdOrNull(
@@ -358,7 +359,42 @@ async function buildHeatingOrderResponse(args: {
     },
     ...(orderFile ? { orderFile: normalizePlanningFile(orderFile) } : {}),
     ...(offerSnapshotFile ? { angebotSnapshotFile: normalizePlanningFile(offerSnapshotFile) } : {}),
+    ...(args.executionTasksWarning
+      ? { executionTasksWarning: args.executionTasksWarning }
+      : {}),
   };
+}
+
+async function ensureHeatingExecutionTaskForOrder(args: {
+  db: Awaited<ReturnType<typeof getDb>>;
+  planning: any;
+  session: any;
+  companyId: string;
+  planningId: string;
+}) {
+  try {
+    if (!args.planning) {
+      throw new Error("Heating planning was not found after order creation");
+    }
+    const result = await ensureExecutionTasksForWonPlanning(
+      args.db,
+      args.planning,
+      args.session,
+    );
+    const heatingTasks = result.items.filter((item: any) => item?.track === "heating");
+    if (heatingTasks.length !== 1) {
+      throw new Error(`Expected one Heating execution task, found ${heatingTasks.length}`);
+    }
+    return null;
+  } catch (error) {
+    console.error(
+      "[generate-order:heating-execution-task] planningId=%s companyId=%s",
+      args.planningId,
+      args.companyId,
+      error,
+    );
+    return "Heating-Ausführung konnte nicht synchronisiert werden.";
+  }
 }
 
 async function generateHeatingOrder(args: {
@@ -423,6 +459,13 @@ async function generateHeatingOrder(args: {
       _id: args.planningObjectId,
       companyId: args.companyId,
     });
+    const executionTasksWarning = await ensureHeatingExecutionTaskForOrder({
+      db: args.db,
+      planning: currentPlanning ?? args.planning,
+      session: args.session,
+      companyId: args.companyId,
+      planningId: args.planningId,
+    });
     return {
       body: await buildHeatingOrderResponse({
         db: args.db,
@@ -431,6 +474,7 @@ async function generateHeatingOrder(args: {
         planning: currentPlanning ?? args.planning,
         auftrag: existingAuftrag,
         alreadyGenerated: true,
+        executionTasksWarning,
       }),
       status: 409,
     };
@@ -488,6 +532,13 @@ async function generateHeatingOrder(args: {
     });
     if (racedOrder) {
       const currentPlanning = await plannings.findOne({ _id: args.planningObjectId, companyId: args.companyId });
+      const executionTasksWarning = await ensureHeatingExecutionTaskForOrder({
+        db: args.db,
+        planning: currentPlanning ?? args.planning,
+        session: args.session,
+        companyId: args.companyId,
+        planningId: args.planningId,
+      });
       return {
         body: await buildHeatingOrderResponse({
           db: args.db,
@@ -496,6 +547,7 @@ async function generateHeatingOrder(args: {
           planning: currentPlanning ?? args.planning,
           auftrag: racedOrder,
           alreadyGenerated: true,
+          executionTasksWarning,
         }),
         status: 409,
       };
@@ -616,6 +668,13 @@ async function generateHeatingOrder(args: {
       _id: args.planningObjectId,
       companyId: args.companyId,
     });
+    const executionTasksWarning = await ensureHeatingExecutionTaskForOrder({
+      db: args.db,
+      planning: updatedPlanning,
+      session: args.session,
+      companyId: args.companyId,
+      planningId: args.planningId,
+    });
     await emitCompanyRealtimeEvent(args.companyId, "order.created", {
       planningId: args.planningId,
       orderId,
@@ -636,6 +695,7 @@ async function generateHeatingOrder(args: {
         planning: updatedPlanning,
         auftrag: auftragDoc,
         alreadyGenerated: false,
+        executionTasksWarning,
       }),
       status: 200,
     };
