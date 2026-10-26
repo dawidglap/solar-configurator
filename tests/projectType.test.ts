@@ -8,6 +8,11 @@ import {
   type ProjectType,
 } from "../src/lib/projectType";
 
+async function loadNormalizeOrderFields() {
+  process.env.MONGODB_URI ??= "mongodb://127.0.0.1:27017/project-type-unit-tests";
+  return (await import("../src/lib/orders")).normalizeOrderFields;
+}
+
 test("legacy project without projectType reads as photovoltaic without mutation", () => {
   const stored = { id: "legacy", title: "Bestandsprojekt" };
   const before = JSON.stringify(stored);
@@ -86,4 +91,127 @@ test("project routes retain authenticated company scoping and expose canonical p
   assert.match(detailRoute, /companyId: session\.activeCompanyId/);
   assert.match(collectionRoute, /projectType: resolveProjectType\(d\.projectType\)/);
   assert.match(detailRoute, /projectType: resolveProjectType\(\(doc as any\)\?\.projectType\)/);
+});
+
+test("planning list projection preserves canonical project address fallback fields", () => {
+  const collectionRoute = readFileSync(
+    new URL("../src/app/api/plannings/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(collectionRoute, /"data\.profile\.buildingStreet": 1/);
+  assert.match(collectionRoute, /"data\.profile\.buildingStreetNo": 1/);
+  assert.match(collectionRoute, /"data\.profile\.buildingZip": 1/);
+  assert.match(collectionRoute, /"data\.profile\.buildingCity": 1/);
+  assert.match(collectionRoute, /companyId: session\.activeCompanyId/);
+  assert.match(collectionRoute, /filter\.customerId = customerId/);
+});
+
+test("planning list addresses stay project-specific for multiple projects of one customer", async () => {
+  const normalizeOrderFields = await loadNormalizeOrderFields();
+  const customerId = "customer-with-three-sites";
+  const projects = [
+    {
+      customerId,
+      projectType: "photovoltaic",
+      data: {
+        profile: {
+          buildingStreet: "Erlenstrasse",
+          buildingStreetNo: "2b",
+          buildingZip: "9435",
+          buildingCity: "Heerbrugg",
+        },
+      },
+    },
+    {
+      customerId,
+      projectType: "heating",
+      data: {
+        profile: {
+          buildingStreet: "Schachenstrasse",
+          buildingStreetNo: "4",
+          buildingZip: "9450",
+          buildingCity: "Lüchingen",
+        },
+      },
+    },
+    {
+      customerId,
+      projectType: "photovoltaic",
+      data: {
+        profile: {
+          buildingStreet: "Im Moos",
+          buildingStreetNo: "7",
+          buildingZip: "9450",
+          buildingCity: "Lüchingen",
+        },
+      },
+    },
+  ];
+
+  assert.deepEqual(
+    projects.map((project) => {
+      const address = normalizeOrderFields(project);
+      return [
+        address.propertyStreet,
+        address.propertyHouseNumber,
+        address.propertyZip,
+        address.propertyCity,
+      ];
+    }),
+    [
+      ["Erlenstrasse", "2b", "9435", "Heerbrugg"],
+      ["Schachenstrasse", "4", "9450", "Lüchingen"],
+      ["Im Moos", "7", "9450", "Lüchingen"],
+    ],
+  );
+});
+
+test("planning address normalization keeps legacy precedence and never uses customer billing data", async () => {
+  const normalizeOrderFields = await loadNormalizeOrderFields();
+  const normalized = normalizeOrderFields({
+    projectType: "heating",
+    propertyStreet: "Legacyweg",
+    propertyHouseNumber: "9a",
+    propertyZip: "9000",
+    propertyCity: "St. Gallen",
+    data: {
+      profile: {
+        buildingStreet: "Nestedweg",
+        buildingStreetNo: "12",
+        buildingZip: "9450",
+        buildingCity: "Lüchingen",
+      },
+    },
+    customer: {
+      buildingStreet: "Billingstrasse",
+      buildingStreetNo: "99",
+      buildingZip: "8000",
+      buildingCity: "Zürich",
+    },
+  });
+
+  assert.deepEqual(
+    [
+      normalized.propertyStreet,
+      normalized.propertyHouseNumber,
+      normalized.propertyZip,
+      normalized.propertyCity,
+    ],
+    ["Legacyweg", "9a", "9000", "St. Gallen"],
+  );
+
+  const missing = normalizeOrderFields({
+    projectType: "photovoltaic",
+    customer: {
+      buildingStreet: "Billingstrasse",
+      buildingStreetNo: "99",
+      buildingZip: "8000",
+      buildingCity: "Zürich",
+    },
+  });
+  assert.deepEqual(
+    [missing.propertyStreet, missing.propertyHouseNumber, missing.propertyZip, missing.propertyCity],
+    [null, null, null, null],
+  );
 });
