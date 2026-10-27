@@ -21,6 +21,7 @@ import {
   OFFER_VOLLMACHT_VALIDITY_MS,
   buildInternalOrderSession,
   buildOfferAuditEntry,
+  buildSignatureCustomerPayoutUpdate,
   buildOfferVollmachtLink,
   buildSignedSessionCookie,
   enforceOfferPublicRateLimit,
@@ -690,29 +691,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     }
     if (
       customerId &&
-      (propertyStreet || propertyHouseNumber || propertyZip || propertyCity ||
-        buildingNumber || parcelNumber || bankAccountHolder || bankIban)
+      (bankAccountHolder || bankIban)
     ) {
+      const customerPayoutUpdatedAt = new Date();
       await db.collection("customers").updateOne(
         {
           _id: customerId,
           companyId: { $in: buildIdVariants(safeString(planning.companyId)) },
         },
         {
-          $set: {
-            subsidyPayoutAccountHolder: bankAccountHolder || null,
-            subsidyPayoutIban: bankIban || null,
-            buildingStreet: propertyStreet,
-            buildingStreetNo: propertyHouseNumber,
-            buildingZip: propertyZip,
-            buildingCity: propertyCity,
-            buildingNumber,
-            egid: buildingNumber,
-            buildingNumberSource,
-            parcelNumber,
-            parcelNumberSource,
-            updatedAt: new Date(),
-          },
+          $set: buildSignatureCustomerPayoutUpdate({
+            accountHolder: bankAccountHolder || null,
+            iban: bankIban || null,
+            updatedAt: customerPayoutUpdatedAt,
+          }),
         },
       ).catch((error) => console.error("STORE CUSTOMER PAYOUT ACCOUNT ERROR:", error));
     }

@@ -37,6 +37,147 @@ test("accepts an optional unrestricted signature place and defaults it to remote
   assert.throws(() => parseOfferSignatureRequest({ place: "remote", expiresInDays: 0 }), /zwischen 1 und 90/);
 });
 
+test("PV signature and Vollmacht payout updates cannot overwrite customer address or cadastral data", async () => {
+  const { buildSignatureCustomerPayoutUpdate } = await loadOffer();
+  const immutableCustomerFields = [
+    "street",
+    "streetNo",
+    "zip",
+    "city",
+    "country",
+    "buildingStreet",
+    "buildingStreetNo",
+    "buildingZip",
+    "buildingCity",
+    "egid",
+    "buildingNumber",
+    "buildingNumberSource",
+    "parcelNumber",
+    "parcelNumberSource",
+    "landRegisterNumber",
+  ] as const;
+  const customer = {
+    firstName: "Cengo",
+    lastName: "Tango",
+    street: "Schachenstrasse",
+    streetNo: "4",
+    zip: "9450",
+    city: "Lüchingen",
+    country: "CH",
+    buildingStreet: "Legacy Objektweg",
+    buildingStreetNo: "1",
+    buildingZip: "9000",
+    buildingCity: "St. Gallen",
+    egid: "legacy-egid",
+    buildingNumber: "legacy-building",
+    buildingNumberSource: "manual",
+    parcelNumber: "legacy-parcel",
+    parcelNumberSource: "manual",
+    landRegisterNumber: "legacy-land-register",
+  };
+  const before = Object.fromEntries(
+    immutableCustomerFields.map((field) => [field, customer[field]]),
+  );
+  const projects = [
+    {
+      id: "project-a",
+      data: { profile: {
+        buildingStreet: "Erlenstrasse",
+        buildingStreetNo: "2b",
+        buildingZip: "9435",
+        buildingCity: "Heerbrugg",
+      } },
+    },
+    {
+      id: "project-b",
+      data: { profile: {
+        buildingStreet: "Im Moos",
+        buildingStreetNo: "7",
+        buildingZip: "9450",
+        buildingCity: "Lüchingen",
+      } },
+    },
+  ];
+
+  for (const [index, project] of projects.entries()) {
+    Object.assign(customer, buildSignatureCustomerPayoutUpdate({
+      accountHolder: "Cengo Tango",
+      iban: "CH9300762011623852957",
+      ...(index === 1 ? { bankName: "Musterbank" } : {}),
+      updatedAt: new Date(`2026-10-27T0${8 + index}:00:00.000Z`),
+    }));
+    assert.deepEqual(
+      Object.fromEntries(immutableCustomerFields.map((field) => [field, customer[field]])),
+      before,
+      `${project.id} must not mutate the customer address domain`,
+    );
+  }
+
+  assert.deepEqual(projects.map((project) => Object.values(project.data.profile)), [
+    ["Erlenstrasse", "2b", "9435", "Heerbrugg"],
+    ["Im Moos", "7", "9450", "Lüchingen"],
+  ]);
+  assert.deepEqual(
+    Object.keys(buildSignatureCustomerPayoutUpdate({
+      accountHolder: "Cengo Tango",
+      iban: "CH9300762011623852957",
+      bankName: "Musterbank",
+      updatedAt: new Date("2026-10-27T09:00:00.000Z"),
+    })).sort(),
+    [
+      "subsidyPayoutAccountHolder",
+      "subsidyPayoutBankName",
+      "subsidyPayoutIban",
+      "updatedAt",
+    ],
+  );
+});
+
+test("public PV signature routes keep project writes but use the customer payout allowlist", () => {
+  const signRoute = readFileSync(
+    new URL("../src/app/api/public/offer-signature/[token]/sign/route.ts", import.meta.url),
+    "utf8",
+  );
+  const vollmachtRoute = readFileSync(
+    new URL("../src/app/api/public/offer-signature/[token]/vollmacht/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  for (const field of [
+    "buildingStreet",
+    "buildingStreetNo",
+    "buildingZip",
+    "buildingCity",
+    "buildingNumber",
+    "egid",
+    "parcelNumber",
+    "landRegisterNumber",
+  ]) {
+    assert.match(signRoute, new RegExp(`"data\\.profile\\.${field}":|\\b${field},`));
+  }
+  assert.match(vollmachtRoute, /"data\.profile\.buildingStreet": details\.propertyStreet/);
+  assert.match(vollmachtRoute, /"data\.profile\.parcelNumber": details\.parcelNumber/);
+  assert.match(vollmachtRoute, /"data\.profile\.landRegisterNumber": details\.landRegisterNumber/);
+  assert.equal((signRoute.match(/buildSignatureCustomerPayoutUpdate\(/g) ?? []).length, 1);
+  assert.equal((vollmachtRoute.match(/buildSignatureCustomerPayoutUpdate\(/g) ?? []).length, 1);
+
+  const forbiddenCustomerField = /\b(?:buildingStreet|buildingStreetNo|buildingZip|buildingCity|buildingNumber|buildingNumberSource|egid|parcelNumber|parcelNumberSource|landRegisterNumber)\s*:/;
+  for (const [routeName, source, expectedWrites] of [
+    ["signature", signRoute, 1],
+    ["vollmacht", vollmachtRoute, 2],
+  ] as const) {
+    const writeStarts = [...source.matchAll(/db\.collection\("customers"\)\.updateOne\(/g)];
+    assert.equal(writeStarts.length, expectedWrites, `${routeName} customer write count changed`);
+    for (const writeStart of writeStarts) {
+      assert.doesNotMatch(
+        source.slice(writeStart.index, writeStart.index + 900),
+        forbiddenCustomerField,
+        `${routeName} must not write project address or cadastral data to customer`,
+      );
+    }
+  }
+});
+
 test("offer signature status serialization exposes no token hash", async () => {
   const { buildDefaultOfferSignatureFields, buildOfferSignatureResponse } = await loadOffer();
   const response = buildOfferSignatureResponse({

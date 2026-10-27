@@ -1331,6 +1331,22 @@ export function buildInternalOrderSession(planning: any, signerName: string): Se
   };
 }
 
+export function buildSignatureCustomerPayoutUpdate(args: {
+  accountHolder: string | null;
+  iban: string | null;
+  bankName?: string | null;
+  updatedAt: Date;
+}) {
+  return {
+    subsidyPayoutAccountHolder: args.accountHolder,
+    subsidyPayoutIban: args.iban,
+    ...(args.bankName !== undefined
+      ? { subsidyPayoutBankName: args.bankName }
+      : {}),
+    updatedAt: args.updatedAt,
+  };
+}
+
 export function buildSignedSessionCookie(session: SessionPayload, secret: string) {
   const payload = Buffer.from(JSON.stringify(session)).toString("base64url");
   const signature = crypto.createHmac("sha256", secret).update(payload).digest("hex");

@@ -7,6 +7,7 @@ import {
   buildInternalOrderSession,
   buildOfferAuditEntry,
   buildOfferVollmachtResponse,
+  buildSignatureCustomerPayoutUpdate,
   enforceOfferPublicRateLimit,
   ensureOfferSignatureIndexes,
   findOfferForVollmacht,
@@ -245,21 +246,12 @@ export async function POST(req: Request, { params }: Params) {
         ? db.collection("customers").updateOne(
             { _id: customerId, companyId: { $in: buildIdVariants(companyId) } },
             {
-              $set: {
-                buildingStreet: details.propertyStreet,
-                buildingStreetNo: null,
-                buildingZip: details.propertyZip,
-                buildingCity: details.propertyCity,
-                parcelNumber: details.parcelNumber,
-                landRegisterNumber: details.landRegisterNumber,
-                buildingNumber: details.buildingNumber,
-                parcelNumberSource: "manual",
-                buildingNumberSource: "manual",
-                subsidyPayoutAccountHolder: details.bankAccountHolder,
-                subsidyPayoutIban: details.bankIban,
-                subsidyPayoutBankName: details.bankName,
+              $set: buildSignatureCustomerPayoutUpdate({
+                accountHolder: details.bankAccountHolder,
+                iban: details.bankIban,
+                bankName: details.bankName,
                 updatedAt: now,
-              },
+              }),
             },
           )
         : Promise.resolve(null),
