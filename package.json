@@ -41,6 +41,7 @@
     "test:planning-3d": "tsx --test tests/planning3d.test.ts",
     "test:project-type": "tsx --test tests/projectType.test.ts",
     "test:project-type-routes": "tsx scripts/test-project-type-routes.ts",
+    "test:address-contract": "tsx scripts/test-customer-project-address-contract.ts",
     "test:planning-documents": "tsx --test tests/planningDocuments.test.ts",
     "test:heating-orders": "tsx --test tests/heatingOrders.test.ts",
     "test:heating-order-read": "tsx --test tests/heatingOrderRead.test.ts",
