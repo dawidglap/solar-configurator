@@ -91,6 +91,8 @@ test("project routes retain authenticated company scoping and expose canonical p
   assert.match(detailRoute, /companyId: session\.activeCompanyId/);
   assert.match(collectionRoute, /projectType: resolveProjectType\(d\.projectType\)/);
   assert.match(detailRoute, /projectType: resolveProjectType\(\(doc as any\)\?\.projectType\)/);
+  assert.match(collectionRoute, /\.\.\.normalizeOrderFields\(d\)/);
+  assert.match(detailRoute, /\.\.\.normalizeOrderFields\(doc\)/);
 });
 
 test("planning list projection preserves canonical project address fallback fields", () => {
@@ -107,25 +109,33 @@ test("planning list projection preserves canonical project address fallback fiel
   assert.match(collectionRoute, /filter\.customerId = customerId/);
 });
 
-test("planning list addresses stay project-specific for multiple projects of one customer", async () => {
+test("planning list aliases use each project's canonical address for the same customer", async () => {
   const normalizeOrderFields = await loadNormalizeOrderFields();
   const customerId = "customer-with-three-sites";
   const projects = [
     {
       customerId,
       projectType: "photovoltaic",
+      propertyStreet: "Erlenstrasse",
+      propertyHouseNumber: "2b",
+      propertyZip: "9435",
+      propertyCity: "Heerbrugg",
       data: {
         profile: {
-          buildingStreet: "Erlenstrasse",
-          buildingStreetNo: "2b",
-          buildingZip: "9435",
-          buildingCity: "Heerbrugg",
+          buildingStreet: "Im Moos",
+          buildingStreetNo: "7",
+          buildingZip: "9450",
+          buildingCity: "Lüchingen",
         },
       },
     },
     {
       customerId,
       projectType: "heating",
+      propertyStreet: "Erlenstrasse",
+      propertyHouseNumber: "2b",
+      propertyZip: "9435",
+      propertyCity: "Heerbrugg",
       data: {
         profile: {
           buildingStreet: "Schachenstrasse",
@@ -138,12 +148,16 @@ test("planning list addresses stay project-specific for multiple projects of one
     {
       customerId,
       projectType: "photovoltaic",
+      propertyStreet: "Erlenstrasse",
+      propertyHouseNumber: "2b",
+      propertyZip: "9435",
+      propertyCity: "Heerbrugg",
       data: {
         profile: {
-          buildingStreet: "Im Moos",
-          buildingStreetNo: "7",
-          buildingZip: "9450",
-          buildingCity: "Lüchingen",
+          buildingStreet: "Erlenstrasse",
+          buildingStreetNo: "6",
+          buildingZip: "9445",
+          buildingCity: "Rebstein",
         },
       },
     },
@@ -160,49 +174,65 @@ test("planning list addresses stay project-specific for multiple projects of one
       ];
     }),
     [
-      ["Erlenstrasse", "2b", "9435", "Heerbrugg"],
-      ["Schachenstrasse", "4", "9450", "Lüchingen"],
       ["Im Moos", "7", "9450", "Lüchingen"],
+      ["Schachenstrasse", "4", "9450", "Lüchingen"],
+      ["Erlenstrasse", "6", "9445", "Rebstein"],
     ],
   );
 });
 
-test("planning address normalization keeps legacy precedence and never uses customer billing data", async () => {
+test("canonical nested project address wins over stale legacy aliases for PV and Heating", async () => {
   const normalizeOrderFields = await loadNormalizeOrderFields();
-  const normalized = normalizeOrderFields({
-    projectType: "heating",
-    propertyStreet: "Legacyweg",
-    propertyHouseNumber: "9a",
-    propertyZip: "9000",
-    propertyCity: "St. Gallen",
-    data: {
-      profile: {
-        buildingStreet: "Nestedweg",
-        buildingStreetNo: "12",
-        buildingZip: "9450",
-        buildingCity: "Lüchingen",
+  for (const projectType of ["photovoltaic", "heating"]) {
+    const planning = {
+      projectType,
+      propertyStreet: "Erlenstrasse",
+      propertyHouseNumber: "2b",
+      propertyZip: "9435",
+      propertyCity: "Heerbrugg",
+      data: {
+        profile: {
+          buildingStreet: "Im Moos",
+          buildingStreetNo: "7",
+          buildingZip: "9450",
+          buildingCity: "Lüchingen",
+        },
       },
-    },
-    customer: {
-      buildingStreet: "Billingstrasse",
-      buildingStreetNo: "99",
-      buildingZip: "8000",
-      buildingCity: "Zürich",
-    },
-  });
+    };
+    const before = JSON.stringify(planning);
+    const normalized = normalizeOrderFields(planning);
 
-  assert.deepEqual(
-    [
-      normalized.propertyStreet,
-      normalized.propertyHouseNumber,
-      normalized.propertyZip,
-      normalized.propertyCity,
-    ],
-    ["Legacyweg", "9a", "9000", "St. Gallen"],
-  );
+    assert.deepEqual(
+      [
+        normalized.propertyStreet,
+        normalized.propertyHouseNumber,
+        normalized.propertyZip,
+        normalized.propertyCity,
+      ],
+      ["Im Moos", "7", "9450", "Lüchingen"],
+    );
+    assert.equal(JSON.stringify(planning), before);
+  }
+});
+
+test("project address aliases support canonical-only, legacy-only and missing records", async () => {
+  const normalizeOrderFields = await loadNormalizeOrderFields();
+  const canonicalOnly = normalizeOrderFields({
+    data: { profile: {
+      buildingStreet: "Im Moos",
+      buildingStreetNo: "7",
+      buildingZip: "9450",
+      buildingCity: "Lüchingen",
+    } },
+  });
+  const legacyOnly = normalizeOrderFields({
+    propertyStreet: "Erlenstrasse",
+    propertyHouseNumber: "2b",
+    propertyZip: "9435",
+    propertyCity: "Heerbrugg",
+  });
 
   const missing = normalizeOrderFields({
-    projectType: "photovoltaic",
     customer: {
       buildingStreet: "Billingstrasse",
       buildingStreetNo: "99",
@@ -210,8 +240,32 @@ test("planning address normalization keeps legacy precedence and never uses cust
       buildingCity: "Zürich",
     },
   });
+  const values = (normalized: ReturnType<typeof normalizeOrderFields>) => [
+    normalized.propertyStreet,
+    normalized.propertyHouseNumber,
+    normalized.propertyZip,
+    normalized.propertyCity,
+  ];
+  assert.deepEqual(values(canonicalOnly), ["Im Moos", "7", "9450", "Lüchingen"]);
+  assert.deepEqual(values(legacyOnly), ["Erlenstrasse", "2b", "9435", "Heerbrugg"]);
+  assert.deepEqual(values(missing), [null, null, null, null]);
+});
+
+test("a partial canonical address never mixes fields from the legacy address family", async () => {
+  const normalizeOrderFields = await loadNormalizeOrderFields();
+  const normalized = normalizeOrderFields({
+    propertyStreet: "Erlenstrasse",
+    propertyHouseNumber: "2b",
+    propertyZip: "9435",
+    propertyCity: "Heerbrugg",
+    data: { profile: {
+      buildingStreet: "Im Moos",
+      buildingCity: "Lüchingen",
+    } },
+  });
+
   assert.deepEqual(
-    [missing.propertyStreet, missing.propertyHouseNumber, missing.propertyZip, missing.propertyCity],
-    [null, null, null, null],
+    [normalized.propertyStreet, normalized.propertyHouseNumber, normalized.propertyZip, normalized.propertyCity],
+    ["Im Moos", null, null, "Lüchingen"],
   );
 });

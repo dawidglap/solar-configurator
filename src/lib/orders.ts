@@ -57,7 +57,25 @@ export async function nextOrderId(db: Db, companyId: string, now = new Date()) {
   return `AB-${year}-${padded}`;
 }
 
+export function normalizePlanningPropertyAddress(planning: any) {
+  const canonical = {
+    propertyStreet: safeString(planning?.data?.profile?.buildingStreet) || null,
+    propertyHouseNumber: safeString(planning?.data?.profile?.buildingStreetNo) || null,
+    propertyZip: safeString(planning?.data?.profile?.buildingZip) || null,
+    propertyCity: safeString(planning?.data?.profile?.buildingCity) || null,
+  };
+  if (Object.values(canonical).some(Boolean)) return canonical;
+
+  return {
+    propertyStreet: safeString(planning?.propertyStreet) || null,
+    propertyHouseNumber: safeString(planning?.propertyHouseNumber) || null,
+    propertyZip: safeString(planning?.propertyZip) || null,
+    propertyCity: safeString(planning?.propertyCity) || null,
+  };
+}
+
 export function normalizeOrderFields(planning: any) {
+  const propertyAddress = normalizePlanningPropertyAddress(planning);
   return {
     orderStatus: safeString(planning?.orderStatus) || "none",
     orderId: safeString(planning?.orderId) || null,
@@ -94,14 +112,7 @@ export function normalizeOrderFields(planning: any) {
     cancelReason: safeString(planning?.cancelReason) || null,
     subsidyPayoutAccountHolder: safeString(planning?.subsidyPayoutAccountHolder) || null,
     subsidyPayoutIban: safeString(planning?.subsidyPayoutIban) || null,
-    propertyStreet:
-      safeString(planning?.propertyStreet ?? planning?.data?.profile?.buildingStreet) || null,
-    propertyHouseNumber:
-      safeString(planning?.propertyHouseNumber ?? planning?.data?.profile?.buildingStreetNo) || null,
-    propertyZip:
-      safeString(planning?.propertyZip ?? planning?.data?.profile?.buildingZip) || null,
-    propertyCity:
-      safeString(planning?.propertyCity ?? planning?.data?.profile?.buildingCity) || null,
+    ...propertyAddress,
     buildingNumber:
       safeString(planning?.buildingNumber ?? planning?.egid ?? planning?.data?.profile?.buildingNumber ?? planning?.data?.profile?.egid) || null,
     buildingNumberSource:
