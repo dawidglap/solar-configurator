@@ -3,7 +3,7 @@ import { getDb } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
-import { resolveSessionCookieDomain } from "@/lib/domainConfig";
+import { appendSetCookieHeaders, buildLoginSessionCookies } from "@/lib/authCookies";
 
 function sign(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
@@ -153,30 +153,18 @@ export async function POST(req: Request) {
     const sig = sign(payload, secret);
     const token = `${payload}.${sig}`;
 
-    const isProd = process.env.NODE_ENV === "production";
-
-    const cookieParts = [
-      `session=${token}`,
-      "Path=/",
-      "HttpOnly",
-    ];
-
-    if (isProd) {
-      cookieParts.push("Secure");
-      const cookieDomain = resolveSessionCookieDomain({ origin, requestUrl: req.url });
-      if (cookieDomain) cookieParts.push(`Domain=${cookieDomain}`);
-      cookieParts.push("SameSite=None");
-    } else {
-      cookieParts.push("SameSite=Lax");
-    }
+    const headers = appendSetCookieHeaders(
+      new Headers({
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        ...getCorsHeaders(origin),
+      }),
+      buildLoginSessionCookies(req, token),
+    );
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Set-Cookie": cookieParts.join("; "),
-        ...getCorsHeaders(origin),
-      },
+      headers,
     });
   } catch (e: any) {
     console.error("LOGIN ERROR:", e);

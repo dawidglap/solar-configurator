@@ -23,29 +23,39 @@ function sign(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
 }
 
-function getCookie(req: Request, name: string) {
+function getCookies(req: Request, name: string) {
   const cookie = req.headers.get("cookie") || "";
   const parts = cookie.split(";").map((p) => p.trim());
-  const found = parts.find((p) => p.startsWith(name + "="));
-  return found ? decodeURIComponent(found.split("=").slice(1).join("=")) : null;
+  return parts
+    .filter((part) => part.startsWith(name + "="))
+    .map((part) => {
+      const value = part.split("=").slice(1).join("=");
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return "";
+      }
+    })
+    .filter(Boolean);
 }
 
 export function readSession(
   req: Request,
   secret: string
 ): SessionPayload | null {
-  const token = getCookie(req, "session");
-  if (!token) return null;
-
-  const [payload, sig] = token.split(".");
-  if (!payload || !sig) return null;
-  if (sign(payload, secret) !== sig) return null;
-
-  try {
-    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-  } catch {
-    return null;
-  }
+  const candidates = getCookies(req, "session").flatMap((token) => {
+    const [payload, sig] = token.split(".");
+    if (!payload || !sig || sign(payload, secret) !== sig) return [];
+    try {
+      const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+      return [{ session: session as SessionPayload, iat: Number(session?.iat) || 0 }];
+    } catch {
+      return [];
+    }
+  });
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.iat - a.iat);
+  return candidates[0].session;
 }
 
 export function safeString(v: unknown) {

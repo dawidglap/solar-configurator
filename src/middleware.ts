@@ -34,13 +34,9 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // ✅ Se loggato e prova ad andare su /login: rimanda alla dashboard (/)
-  if (isLoggedIn && pathname === "/login") {
-    const url = req.nextUrl.clone();
-    url.pathname = "/";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
+  // Do not redirect /login based only on cookie presence. Middleware cannot
+  // validate the signature, and a stale migration cookie must not trap the
+  // browser in a redirect loop before it can authenticate again.
 
   return NextResponse.next();
 }

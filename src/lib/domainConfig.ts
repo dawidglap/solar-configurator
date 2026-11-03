@@ -22,6 +22,10 @@ const SHARED_COOKIE_DOMAINS = new Map<string, string>([
   ["planner.helionic.ch", ".helionic.ch"],
 ]);
 
+export function resolveSessionCookieDomainForHostname(hostname: string | null | undefined) {
+  return hostname ? SHARED_COOKIE_DOMAINS.get(hostname.trim().toLowerCase()) ?? null : null;
+}
+
 function hostnameFromUrl(value: string | null | undefined) {
   if (!value) return null;
   try {
@@ -37,7 +41,7 @@ export function resolveSessionCookieDomain(input: {
 }) {
   for (const value of [input.origin, input.requestUrl]) {
     const hostname = hostnameFromUrl(value);
-    const domain = hostname ? SHARED_COOKIE_DOMAINS.get(hostname) : null;
+    const domain = resolveSessionCookieDomainForHostname(hostname);
     if (domain) return domain;
   }
   return null;

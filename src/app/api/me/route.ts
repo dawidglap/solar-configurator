@@ -7,6 +7,7 @@ import {
   ensureCompanySubscriptionFields,
 } from "@/lib/subscription";
 import { hasCurrentSessionVersion, normalizeUserProfile } from "@/lib/userProfiles";
+import { appendSetCookieHeaders, buildLogoutSessionCookies } from "@/lib/authCookies";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,18 @@ function jsonResponse(origin: string | null, body: any, status = 200) {
       ...getCorsHeaders(origin),
     },
   });
+}
+
+function invalidSessionResponse(req: Request, origin: string | null, body: any) {
+  const headers = appendSetCookieHeaders(
+    new Headers({
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      ...getCorsHeaders(origin),
+    }),
+    buildLogoutSessionCookies(req),
+  );
+  return new Response(JSON.stringify(body), { status: 401, headers });
 }
 
 export async function OPTIONS(req: Request) {
@@ -40,14 +53,14 @@ export async function GET(req: Request) {
 
   const session = readSession(req, secret);
   if (!session?.userId) {
-    return jsonResponse(origin, { ok: false, error: "Not logged in" }, 401);
+    return invalidSessionResponse(req, origin, { ok: false, error: "Not logged in" });
   }
 
   let userObjectId: ObjectId;
   try {
     userObjectId = new ObjectId(String(session.userId));
   } catch {
-    return jsonResponse(origin, { ok: false, error: "Invalid session" }, 401);
+    return invalidSessionResponse(req, origin, { ok: false, error: "Invalid session" });
   }
 
   try {
@@ -65,10 +78,10 @@ export async function GET(req: Request) {
     );
 
     if (!user) {
-      return jsonResponse(origin, { ok: false, error: "User not found" }, 401);
+      return invalidSessionResponse(req, origin, { ok: false, error: "User not found" });
     }
     if (!hasCurrentSessionVersion(user, session)) {
-      return jsonResponse(origin, { ok: false, message: "Sitzung ungültig. Bitte erneut anmelden." }, 401);
+      return invalidSessionResponse(req, origin, { ok: false, message: "Sitzung ungültig. Bitte erneut anmelden." });
     }
 
     let activeCompany: any = null;

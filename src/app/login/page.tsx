@@ -53,6 +53,7 @@ export default function LoginPage() {
     // micro UX: dopo 900ms cambia testo, fa percepire avanzamento
     t1.current = window.setTimeout(() => setPhase("loading"), 900);
 
+    let succeeded = false;
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
@@ -69,6 +70,7 @@ export default function LoginPage() {
       }
 
       // success transition
+      succeeded = true;
       setPhase("success");
 
       // lascia 450ms per la transizione “premium” e poi naviga
@@ -78,11 +80,7 @@ export default function LoginPage() {
     } catch (err: any) {
       setError(err?.message || "Netzwerkfehler");
     } finally {
-      // se c'è errore, togli overlay
-      // se è success, overlay resta fino al redirect
-      if (!error) {
-        // non fare niente qui: l’overlay sparisce con la navigazione
-      } else {
+      if (!succeeded) {
         setLoading(false);
         setPhase("idle");
       }
