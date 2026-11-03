@@ -1,8 +1,10 @@
+import { CRM_ORIGINS, PLANNER_ORIGINS } from "@/lib/domainConfig";
+
 export function isAllowedCorsOrigin(origin: string | null) {
-  // origini statiche consentite
+  // Keep both registrable domains during the migration.
   const staticAllowed = [
-    "https://app.helionic.ch",
-    "https://planner.helionic.ch",
+    ...CRM_ORIGINS,
+    ...PLANNER_ORIGINS,
     "https://lovable.dev",
   ];
 

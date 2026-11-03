@@ -24,6 +24,7 @@ import {
 } from "@/lib/companyDocuments";
 import { allocateChf05, formatChf05, roundChf05 } from "@/lib/chf";
 import { addCompanyVollmachtPage } from "@/lib/vollmachtPdf";
+import { CANONICAL_CRM_ORIGIN, CANONICAL_PLANNER_ORIGIN } from "@/lib/domainConfig";
 
 export const SIGNATURE_STATUSES = [
   "none",
@@ -61,7 +62,7 @@ function unicodeSignaturePdfText(value: unknown) {
 }
 
 export function getAppBaseUrl() {
-  return (safeString(process.env.APP_BASE_URL) || "https://app.helionic.ch").replace(/\/+$/, "");
+  return (safeString(process.env.APP_BASE_URL) || CANONICAL_CRM_ORIGIN).replace(/\/+$/, "");
 }
 
 export function buildSignatureLink(token: string) {
@@ -72,7 +73,7 @@ export function getPublicApiBaseUrl(req?: Request) {
   const configured = safeString(process.env.PUBLIC_API_BASE_URL).replace(/\/+$/, "");
   if (configured) return configured;
   if (req) return new URL(req.url).origin;
-  return "https://planner.helionic.ch";
+  return CANONICAL_PLANNER_ORIGIN;
 }
 
 export function sha256(input: Buffer | Uint8Array | string) {

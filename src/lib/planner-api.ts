@@ -1,5 +1,7 @@
+import { CANONICAL_PLANNER_ORIGIN } from "@/lib/domainConfig";
+
 export const PLANNER_API_BASE =
-  process.env.NEXT_PUBLIC_PLANNER_API_BASE || "https://planner.helionic.ch/api";
+  process.env.NEXT_PUBLIC_PLANNER_API_BASE || `${CANONICAL_PLANNER_ORIGIN}/api`;
 
 export class ApiError extends Error {
   status: number;

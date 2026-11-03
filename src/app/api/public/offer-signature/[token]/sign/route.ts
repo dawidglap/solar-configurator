@@ -43,6 +43,7 @@ import {
 } from "@/lib/planningFiles";
 import { POST as generateOrder } from "@/app/api/plannings/[planningId]/generate-order/route";
 import { buildIdVariants } from "@/lib/tasks";
+import { CANONICAL_CRM_ORIGIN } from "@/lib/domainConfig";
 import { resolvePlanningSellerContact } from "@/lib/userProfiles";
 import { queueSignatureDocumentEmail } from "@/lib/signatureEmails";
 import { emitCompanyRealtimeEvent } from "@/lib/realtime";
@@ -239,7 +240,7 @@ async function generateHeatingOrderFromSignedOffer(args: {
         headers: {
           cookie: buildSignedSessionCookie(internalSession, secret),
           "content-type": "application/json",
-          origin: args.origin || "https://app.helionic.ch",
+          origin: args.origin || CANONICAL_CRM_ORIGIN,
         },
         body: "{}",
       },
@@ -514,7 +515,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       headers: {
         cookie: buildSignedSessionCookie(internalSession, secret),
         "content-type": "application/json",
-        origin: origin || "https://app.helionic.ch",
+        origin: origin || CANONICAL_CRM_ORIGIN,
       },
       body: "{}",
     });

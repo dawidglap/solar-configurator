@@ -6,12 +6,13 @@ import { jsonResponse as taskJsonResponse } from "../src/lib/tasks";
 
 describe("CORS headers", () => {
   test("allows authenticated PDF preview requests from the CRM", () => {
-    const headers = getCorsHeaders("https://app.helionic.ch");
-
-    assert.equal(headers["Access-Control-Allow-Origin"], "https://app.helionic.ch");
-    assert.match(headers["Access-Control-Allow-Headers"], /(?:^|,\s*)Authorization(?:,|$)/i);
-    assert.match(headers["Access-Control-Allow-Headers"], /(?:^|,\s*)Cache-Control(?:,|$)/i);
-    assert.match(headers["Access-Control-Expose-Headers"], /(?:^|,\s*)X-QR-Bill-Warning(?:,|$)/i);
+    for (const origin of ["https://app.vieon.ch", "https://app.helionic.ch"]) {
+      const headers = getCorsHeaders(origin);
+      assert.equal(headers["Access-Control-Allow-Origin"], origin);
+      assert.match(headers["Access-Control-Allow-Headers"], /(?:^|,\s*)Authorization(?:,|$)/i);
+      assert.match(headers["Access-Control-Allow-Headers"], /(?:^|,\s*)Cache-Control(?:,|$)/i);
+      assert.match(headers["Access-Control-Expose-Headers"], /(?:^|,\s*)X-QR-Bill-Warning(?:,|$)/i);
+    }
   });
 
   test("adds the frontend message alias to legacy error responses", async () => {

@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { getCorsHeaders } from "@/lib/cors";
+import { resolveSessionCookieDomain } from "@/lib/domainConfig";
 
 function sign(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
@@ -162,7 +163,8 @@ export async function POST(req: Request) {
 
     if (isProd) {
       cookieParts.push("Secure");
-      cookieParts.push("Domain=.helionic.ch");
+      const cookieDomain = resolveSessionCookieDomain({ origin, requestUrl: req.url });
+      if (cookieDomain) cookieParts.push(`Domain=${cookieDomain}`);
       cookieParts.push("SameSite=None");
     } else {
       cookieParts.push("SameSite=Lax");

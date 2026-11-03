@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import { getCorsHeaders } from "@/lib/cors";
 import { safeString, toObjectIdOrNull } from "@/lib/api-session";
 import { fetchPlanningFileBuffer, getPlanningFilesCollection } from "@/lib/planningFiles";
+import { PUBLIC_DOCUMENT_FRAME_ANCESTORS_CSP } from "@/lib/domainConfig";
 import {
   buildContentDispositionInline,
   enforcePublicSignatureIpRateLimit,
@@ -67,7 +68,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         "Content-Type": "application/pdf",
         "Content-Disposition": buildContentDispositionInline(fileName),
         "Content-Length": String(buffer.byteLength),
-        "Content-Security-Policy": "frame-ancestors https://app.helionic.ch https://*.lovableproject.com",
+        "Content-Security-Policy": PUBLIC_DOCUMENT_FRAME_ANCESTORS_CSP,
         "Cache-Control": "private, no-store, max-age=0",
       },
     });

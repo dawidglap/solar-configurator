@@ -36,6 +36,10 @@ test("creates opaque reset tokens and stable SHA-256 hashes", () => {
 
 test("allows only configured application origins for reset redirects", () => {
   assert.equal(
+    validatePasswordResetRedirect("https://app.vieon.ch/passwort-zuruecksetzen")?.origin,
+    "https://app.vieon.ch",
+  );
+  assert.equal(
     validatePasswordResetRedirect("https://app.helionic.ch/passwort-zuruecksetzen")?.origin,
     "https://app.helionic.ch",
   );

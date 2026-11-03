@@ -100,18 +100,18 @@ The backend now supports manual subscription management for platform super admin
 List companies:
 
 ```bash
-curl 'https://planner.helionic.ch/api/admin/companies' \
-  -H 'Origin: https://app.helionic.ch' \
+curl 'https://planner.vieon.ch/api/admin/companies' \
+  -H 'Origin: https://app.vieon.ch' \
   --cookie 'session=YOUR_SESSION_COOKIE'
 ```
 
 Create a company:
 
 ```bash
-curl 'https://planner.helionic.ch/api/admin/companies' \
+curl 'https://planner.vieon.ch/api/admin/companies' \
   -X POST \
   -H 'Content-Type: application/json' \
-  -H 'Origin: https://app.helionic.ch' \
+  -H 'Origin: https://app.vieon.ch' \
   --cookie 'session=YOUR_SESSION_COOKIE' \
   -d '{
     "name": "Neue Firma AG",
@@ -128,10 +128,10 @@ curl 'https://planner.helionic.ch/api/admin/companies' \
 Patch subscription:
 
 ```bash
-curl 'https://planner.helionic.ch/api/admin/companies/COMPANY_ID/subscription' \
+curl 'https://planner.vieon.ch/api/admin/companies/COMPANY_ID/subscription' \
   -X PATCH \
   -H 'Content-Type: application/json' \
-  -H 'Origin: https://app.helionic.ch' \
+  -H 'Origin: https://app.vieon.ch' \
   --cookie 'session=YOUR_SESSION_COOKIE' \
   -d '{
     "plan": "business",
@@ -143,7 +143,7 @@ curl 'https://planner.helionic.ch/api/admin/companies/COMPANY_ID/subscription' \
 Run subscription status cron:
 
 ```bash
-curl 'https://planner.helionic.ch/api/cron/subscription-status' \
+curl 'https://planner.vieon.ch/api/cron/subscription-status' \
   -X POST \
   -H 'x-cron-secret: YOUR_CRON_SECRET'
 ```
@@ -194,18 +194,18 @@ The project checklist remains the single source of truth on the linked planning.
 List all montage tasks:
 
 ```bash
-curl 'https://planner.helionic.ch/api/execution-tasks?track=montage' \
-  -H 'Origin: https://app.helionic.ch' \
+curl 'https://planner.vieon.ch/api/execution-tasks?track=montage' \
+  -H 'Origin: https://app.vieon.ch' \
   --cookie 'session=YOUR_SESSION_COOKIE'
 ```
 
 Update one execution task:
 
 ```bash
-curl 'https://planner.helionic.ch/api/execution-tasks/TASK_ID' \
+curl 'https://planner.vieon.ch/api/execution-tasks/TASK_ID' \
   -X PATCH \
   -H 'Content-Type: application/json' \
-  -H 'Origin: https://app.helionic.ch' \
+  -H 'Origin: https://app.vieon.ch' \
   --cookie 'session=YOUR_SESSION_COOKIE' \
   -d '{
     "stage": "geplant",
@@ -221,9 +221,9 @@ curl 'https://planner.helionic.ch/api/execution-tasks/TASK_ID' \
 Backfill missing execution tasks for already won projects:
 
 ```bash
-curl 'https://planner.helionic.ch/api/execution-tasks/backfill' \
+curl 'https://planner.vieon.ch/api/execution-tasks/backfill' \
   -X POST \
-  -H 'Origin: https://app.helionic.ch' \
+  -H 'Origin: https://app.vieon.ch' \
   --cookie 'session=YOUR_SESSION_COOKIE'
 ```
 

@@ -31,6 +31,7 @@ import { isValidIban, normalizeIban } from "@/lib/swissQrBill";
 import { resolvePlanningSellerContact } from "@/lib/userProfiles";
 import { derivePlanningBadgeFields } from "@/lib/statusBadges";
 import { resolveProjectType } from "@/lib/projectType";
+import { CANONICAL_CRM_ORIGIN } from "@/lib/domainConfig";
 
 export const OFFER_SIGNATURE_STATUSES = [
   "none",
@@ -221,7 +222,7 @@ export function buildOfferSignatureResponse(planning: any) {
 }
 
 export function buildOfferSignatureLink(token: string) {
-  const origin = (safeString(process.env.APP_ORIGIN) || safeString(process.env.APP_BASE_URL) || "https://app.helionic.ch").replace(/\/+$/, "");
+  const origin = (safeString(process.env.APP_ORIGIN) || safeString(process.env.APP_BASE_URL) || CANONICAL_CRM_ORIGIN).replace(/\/+$/, "");
   return `${origin}/angebot-signieren/${encodeURIComponent(token)}`;
 }
 
@@ -229,7 +230,7 @@ export function buildOfferVollmachtLink(token: string) {
   const origin = (
     safeString(process.env.APP_ORIGIN) ||
     safeString(process.env.APP_BASE_URL) ||
-    "https://app.helionic.ch"
+    CANONICAL_CRM_ORIGIN
   ).replace(/\/+$/, "");
   return `${origin}/vollmacht/${encodeURIComponent(token)}`;
 }

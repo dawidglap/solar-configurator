@@ -9,6 +9,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import ThemeSwitcher from "../theme/ThemeSwitcher";
+import { CANONICAL_CRM_ORIGIN } from "@/lib/domainConfig";
 
 type StoreKey =
   | "building"
@@ -101,7 +102,7 @@ export default function OverlayProgressStepper() {
       }
 
       await fetch(
-        `https://planner.helionic.ch/api/plannings/${planningId}/snapshot-cache`,
+        `/api/plannings/${planningId}/snapshot-cache`,
         {
           method: "POST",
           credentials: "include",
@@ -153,7 +154,7 @@ export default function OverlayProgressStepper() {
       params.set("project", planningId);
     }
     params.set("tab", mapReturnTab(requestedReturnStep));
-    const targetUrl = `https://app.helionic.ch/projekte?${params.toString()}`;
+    const targetUrl = `${CANONICAL_CRM_ORIGIN}/projekte?${params.toString()}`;
 
     try {
       if (window.top) {
