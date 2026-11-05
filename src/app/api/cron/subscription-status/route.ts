@@ -1,6 +1,10 @@
 import { getCorsHeaders } from "@/lib/cors";
 import { getDb } from "@/lib/db";
-import { buildActiveCompanyFilter, normalizeCompanySubscription } from "@/lib/subscription";
+import {
+  buildActiveCompanyFilter,
+  normalizeCompanySubscription,
+  resolveAutomatedCompanySubscriptionStatus,
+} from "@/lib/subscription";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,32 +49,12 @@ export async function POST(req: Request) {
       validUntil: 1,
     }).toArray();
 
-    const now = Date.now();
+    const now = new Date();
     let updated = 0;
 
     for (const company of docs) {
       const normalized = normalizeCompanySubscription(company);
-      const validUntil = normalized.validUntil;
-
-      if (validUntil === null) {
-        const nextStatus = normalized.subscriptionStatus === "suspended" ? "suspended" : "active";
-        if (company.subscriptionStatus !== nextStatus) {
-          await companies.updateOne(
-            { _id: company._id },
-            { $set: { subscriptionStatus: nextStatus, updatedAt: new Date() } },
-          );
-          updated += 1;
-        }
-        continue;
-      }
-
-      let nextStatus: "trial" | "active" | "expiring_soon" | "suspended" =
-        normalized.subscriptionStatus === "trial" ? "trial" : "active";
-      if (validUntil.getTime() <= now) {
-        nextStatus = "suspended";
-      } else if (validUntil.getTime() - now <= 7 * 24 * 60 * 60 * 1000) {
-        nextStatus = "expiring_soon";
-      }
+      const nextStatus = resolveAutomatedCompanySubscriptionStatus(normalized, now);
 
       if (company.subscriptionStatus !== nextStatus) {
         await companies.updateOne(

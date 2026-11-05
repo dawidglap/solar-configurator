@@ -133,6 +133,19 @@ export function computeDaysRemaining(validUntil: Date | string | null | undefine
   return Math.max(0, Math.ceil(diff / DAY_MS));
 }
 
+export function resolveAutomatedCompanySubscriptionStatus(
+  subscription: Pick<NormalizedCompanySubscription, "subscriptionStatus" | "validUntil">,
+  now = new Date(),
+): CompanySubscriptionStatus {
+  if (subscription.subscriptionStatus === "suspended") return "suspended";
+  if (subscription.validUntil === null) return "active";
+  if (subscription.validUntil.getTime() <= now.getTime()) return "suspended";
+  if (subscription.validUntil.getTime() - now.getTime() <= 7 * DAY_MS) {
+    return "expiring_soon";
+  }
+  return subscription.subscriptionStatus === "trial" ? "trial" : "active";
+}
+
 export function buildCompanySubscriptionResponse(company: any) {
   const normalized = normalizeCompanySubscription(company);
   const unlimited = normalized.validUntil === null;
