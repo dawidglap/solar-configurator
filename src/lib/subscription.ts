@@ -24,7 +24,7 @@ export type CompanySubscriptionStatus = (typeof COMPANY_SUBSCRIPTION_STATUSES)[n
 export type NormalizedCompanySubscription = {
   plan: CompanyPlan;
   subscriptionStatus: CompanySubscriptionStatus;
-  validUntil: Date;
+  validUntil: Date | null;
   maxUsers: number;
   notes: string;
 };
@@ -105,8 +105,9 @@ export function normalizeCompanySubscription(
   const subscriptionStatus = isValidCompanySubscriptionStatus(company?.subscriptionStatus)
     ? company.subscriptionStatus
     : fallback.subscriptionStatus;
-  const validUntil =
-    company?.validUntil instanceof Date && !Number.isNaN(company.validUntil.getTime())
+  const validUntil = company?.validUntil === null
+    ? null
+    : company?.validUntil instanceof Date && !Number.isNaN(company.validUntil.getTime())
       ? company.validUntil
       : fallback.validUntil;
   const maxUsers =
@@ -127,21 +128,23 @@ export function normalizeCompanySubscription(
 export function computeDaysRemaining(validUntil: Date | string | null | undefined) {
   const date =
     validUntil instanceof Date ? validUntil : typeof validUntil === "string" ? new Date(validUntil) : null;
-  if (!date || Number.isNaN(date.getTime())) return 0;
+  if (!date || Number.isNaN(date.getTime())) return null;
   const diff = date.getTime() - Date.now();
   return Math.max(0, Math.ceil(diff / DAY_MS));
 }
 
 export function buildCompanySubscriptionResponse(company: any) {
   const normalized = normalizeCompanySubscription(company);
+  const unlimited = normalized.validUntil === null;
   return {
     plan: normalized.plan,
     status: normalized.subscriptionStatus,
-    validUntil: normalized.validUntil.toISOString(),
+    validUntil: normalized.validUntil?.toISOString() ?? null,
+    unlimited,
     maxUsers: normalized.maxUsers,
     suspended: normalized.subscriptionStatus === "suspended",
     notes: normalized.notes,
-    daysRemaining: computeDaysRemaining(normalized.validUntil),
+    daysRemaining: unlimited ? null : computeDaysRemaining(normalized.validUntil),
   };
 }
 
@@ -149,8 +152,9 @@ export function hasStoredCompanySubscription(company: any) {
   return (
     isValidCompanyPlan(company?.plan) &&
     isValidCompanySubscriptionStatus(company?.subscriptionStatus) &&
-    company?.validUntil instanceof Date &&
-    !Number.isNaN(company.validUntil.getTime()) &&
+    (company?.validUntil === null ||
+      (company?.validUntil instanceof Date &&
+        !Number.isNaN(company.validUntil.getTime()))) &&
     typeof company?.maxUsers === "number" &&
     Number.isFinite(company.maxUsers) &&
     company.maxUsers >= 1
@@ -209,7 +213,10 @@ export async function ensureCompanySubscriptionFields(db: Db, company: any) {
     patch.subscriptionStatus = defaults.subscriptionStatus;
   }
 
-  if (!(company.validUntil instanceof Date) || Number.isNaN(company.validUntil.getTime())) {
+  if (
+    company.validUntil !== null &&
+    (!(company.validUntil instanceof Date) || Number.isNaN(company.validUntil.getTime()))
+  ) {
     patch.validUntil = defaults.validUntil;
   }
 
@@ -323,7 +330,7 @@ export async function enforceActiveSubscription(
   const now = new Date();
   let currentStatus = normalized.subscriptionStatus;
 
-  if (normalized.validUntil.getTime() < now.getTime()) {
+  if (normalized.validUntil !== null && normalized.validUntil.getTime() < now.getTime()) {
     currentStatus = "suspended";
     if (company.subscriptionStatus !== "suspended") {
       await db.collection("companies").updateOne(
@@ -344,7 +351,7 @@ export async function enforceActiveSubscription(
       {
         ok: false,
         error: "subscription_suspended",
-        validUntil: normalized.validUntil.toISOString(),
+        validUntil: normalized.validUntil?.toISOString() ?? null,
       },
       403,
     );
@@ -394,7 +401,7 @@ export function normalizeAdminCompanyListItem(company: any, userCount: number) {
     name: safeString(company?.name),
     plan: subscription.plan,
     subscriptionStatus: subscription.subscriptionStatus,
-    validUntil: subscription.validUntil.toISOString(),
+    validUntil: subscription.validUntil?.toISOString() ?? null,
     maxUsers: subscription.maxUsers,
     userCount,
     createdAt:

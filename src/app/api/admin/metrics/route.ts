@@ -68,10 +68,11 @@ export async function GET(req: Request) {
     const activeCompanies = normalizedCompanies.filter((company) => company.subscriptionStatus === "active").length;
     const suspendedCompanies = normalizedCompanies.filter((company) => company.subscriptionStatus === "suspended").length;
     const expiredCompanies = normalizedCompanies.filter(
-      (company) => company.validUntil.getTime() <= now,
+      (company) => company.validUntil !== null && company.validUntil.getTime() <= now,
     ).length;
     const trialCompanies = normalizedCompanies.filter((company) => company.subscriptionStatus === "trial").length;
     const expiringSoon = normalizedCompanies.filter((company) => {
+      if (company.validUntil === null) return false;
       const delta = company.validUntil.getTime() - now;
       return delta > 0 && delta <= 14 * 24 * 60 * 60 * 1000;
     }).length;

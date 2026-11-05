@@ -52,6 +52,18 @@ export async function POST(req: Request) {
       const normalized = normalizeCompanySubscription(company);
       const validUntil = normalized.validUntil;
 
+      if (validUntil === null) {
+        const nextStatus = normalized.subscriptionStatus === "suspended" ? "suspended" : "active";
+        if (company.subscriptionStatus !== nextStatus) {
+          await companies.updateOne(
+            { _id: company._id },
+            { $set: { subscriptionStatus: nextStatus, updatedAt: new Date() } },
+          );
+          updated += 1;
+        }
+        continue;
+      }
+
       let nextStatus: "trial" | "active" | "expiring_soon" | "suspended" =
         normalized.subscriptionStatus === "trial" ? "trial" : "active";
       if (validUntil.getTime() <= now) {

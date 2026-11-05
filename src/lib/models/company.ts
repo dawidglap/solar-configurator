@@ -8,7 +8,7 @@ export type Company = {
   plan: "starter" | "professional" | "business" | "enterprise";
 
   maxUsers: number;
-  validUntil: Date;
+  validUntil: Date | null;
   notes: string;
   deletedAt?: Date;
 

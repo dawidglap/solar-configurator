@@ -83,20 +83,29 @@ export async function PATCH(
   }
 
   if (body?.validUntil !== undefined) {
-    const validUntil = parseFutureDateInput(body.validUntil);
-    if (!validUntil) {
-      return jsonResponse(origin, { ok: false, message: "Invalid validUntil" }, 400);
+    if (body.validUntil === null) {
+      patch.validUntil = null;
+      changes.validUntil = null;
+      if (explicitStatus !== "suspended") {
+        patch.subscriptionStatus = "active";
+        changes.subscriptionStatus = "active";
+      }
+    } else {
+      const validUntil = parseFutureDateInput(body.validUntil);
+      if (!validUntil) {
+        return jsonResponse(origin, { ok: false, message: "Invalid validUntil" }, 400);
+      }
+      const suspendedExplicitly = explicitStatus === "suspended";
+      if (validUntil.getTime() <= Date.now() && !suspendedExplicitly) {
+        return jsonResponse(
+          origin,
+          { ok: false, message: "validUntil must be in the future unless suspended is set explicitly" },
+          400,
+        );
+      }
+      patch.validUntil = validUntil;
+      changes.validUntil = validUntil.toISOString();
     }
-    const suspendedExplicitly = explicitStatus === "suspended";
-    if (validUntil.getTime() <= Date.now() && !suspendedExplicitly) {
-      return jsonResponse(
-        origin,
-        { ok: false, message: "validUntil must be in the future unless suspended is set explicitly" },
-        400,
-      );
-    }
-    patch.validUntil = validUntil;
-    changes.validUntil = validUntil.toISOString();
   }
 
   if (body?.maxUsers !== undefined) {
