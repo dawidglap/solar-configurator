@@ -59,6 +59,20 @@ async function extractPdfBbox(bytes: Uint8Array) {
   }
 }
 
+async function extractPdfPages(bytes: Uint8Array) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "sola-offer-pdf-pages-"));
+  const file = path.join(dir, "offer.pdf");
+  try {
+    await writeFile(file, bytes);
+    const { stdout } = await execFileAsync("pdftotext", ["-layout", file, "-"]);
+    return stdout.split("\f").filter((page, index, pages) =>
+      index < pages.length - 1 || page.trim().length > 0,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 function pvPlanning(overrides: Record<string, unknown> = {}) {
   return {
     _id: "64f000000000000000000010",
@@ -204,7 +218,10 @@ const company = {
 };
 
 test("photovoltaic offer PDF preserves the existing document semantics", async () => {
-  const { buildPlanningDocumentPdf } = await import("../src/lib/planningDocuments");
+  const { buildPlanningDocumentPdf, computePlanningCommercialSummary } = await import("../src/lib/planningDocuments");
+  const commercial = await computePlanningCommercialSummary(documentDb(), pvPlanning());
+  assert.equal("longDescription" in commercial.issuedItems[0], false);
+  assert.equal("includeDescriptionInOffer" in commercial.issuedItems[0], false);
   const result = await buildPlanningDocumentPdf({
     db: documentDb(),
     planning: pvPlanning(),
@@ -316,7 +333,8 @@ test("heating offer PDF is commercial-only and keeps optional rows outside the t
   assert.match(text, /Brutto inkl\. MWST\./);
   assert.match(text, /50 % \/ 50 %/);
   assert.match(text, /Angebot gültig bis/);
-  assert.doesNotMatch(text, /Luft-Wasser-Wärmepumpe|Leiser Betrieb/);
+  assert.match(text, /Luft-Wasser-Wärmepumpe/);
+  assert.match(text, /Leiser Betrieb/);
   assert.doesNotMatch(
     text,
     /Photovoltaik|PV-Anlage|kWp|Module|Wechselrichter|Förderung|Förderbeitrag|Schneefang|Vollmacht|Analyse/,
@@ -326,7 +344,113 @@ test("heating offer PDF is commercial-only and keeps optional rows outside the t
   assert.equal(result.pricing.effectiveCostChf, 11_674.8);
 });
 
-test("heating offer PDF keeps imported rows compact and splits explicit customer details safely", async () => {
+test("heating offer description visibility is opt-out and uses customer-facing sources only", async () => {
+  const { buildPlanningDocumentPdf, computePlanningCommercialSummary } = await import("../src/lib/planningDocuments");
+  const planning: any = heatingPlanning();
+  planning.data.parts.items = [
+    {
+      id: "implicit",
+      name: "Implicit description",
+      quantity: 1,
+      unitLabel: "Stk.",
+      unitPriceNet: 100,
+      lineTotalNet: 100,
+      longDescription: "PROSE-PARAGRAPH-ONE\n\nPROSE-PARAGRAPH-TWO",
+      description: "LOWER-PRIORITY-DESCRIPTION-SHOULD-NOT-PRINT",
+      features: ["EXPLICIT-CUSTOMER-FEATURE"],
+      importSourceDescription: "SUPPLIER-IMPORT-SHOULD-NOT-PRINT",
+      notes: "SUPPLIER-NOTE-SHOULD-NOT-PRINT",
+    },
+    {
+      id: "explicit-true",
+      name: "Explicit true description",
+      quantity: 1,
+      unitLabel: "Stk.",
+      unitPriceNet: 50,
+      lineTotalNet: 50,
+      longDescription: "EXPLICIT-TRUE-DESCRIPTION",
+      includeDescriptionInOffer: true,
+    },
+    {
+      id: "explicit-false",
+      name: "Explicit false description",
+      quantity: 1,
+      unitLabel: "Stk.",
+      unitPriceNet: 25,
+      lineTotalNet: 25,
+      longDescription: "EXPLICIT-FALSE-HIDDEN",
+      includeDescriptionInOffer: false,
+    },
+    {
+      id: "zero-price",
+      name: "Zero price description",
+      quantity: 1,
+      unitLabel: "Stk.",
+      unitPriceNet: 0,
+      lineTotalNet: 0,
+      description: "ZERO-PRICE-CUSTOMER-DESCRIPTION",
+    },
+    {
+      id: "catalog-fallback",
+      catalogItemId: "catalog-customer-item",
+      name: "Catalog fallback description",
+      quantity: 1,
+      unitLabel: "Stk.",
+      unitPriceNet: 10,
+      lineTotalNet: 10,
+      importSourceDescription: "CATALOG-IMPORT-SOURCE-SHOULD-NOT-PRINT",
+    },
+  ];
+
+  const db = documentDb({
+    catalogItems: [{
+      _id: "catalog-customer-item",
+      name: "Catalog fallback description",
+      longDescription: "MATCHED-CATALOG-CUSTOMER-DESCRIPTION",
+    }],
+  });
+  const commercial = await computePlanningCommercialSummary(db, planning);
+  assert.equal(commercial.issuedItems[0].longDescription, "PROSE-PARAGRAPH-ONE\nPROSE-PARAGRAPH-TWO");
+  assert.equal(commercial.issuedItems[0].includeDescriptionInOffer, true);
+  assert.equal(commercial.issuedItems[2].longDescription, "");
+  assert.equal("importSourceDescription" in commercial.issuedItems[0], false);
+
+  const result = await buildPlanningDocumentPdf({
+    db,
+    planning,
+    company,
+    session: { activeCompanyId: COMPANY_ID, name: "Heizungsberater" },
+    documentType: "angebot",
+  });
+  const [text, bbox] = await Promise.all([
+    extractPdfText(result.pdfBytes),
+    extractPdfBbox(result.pdfBytes),
+  ]);
+
+  assert.match(text, /PROSE-PARAGRAPH-ONE/);
+  assert.match(text, /PROSE-PARAGRAPH-TWO/);
+  assert.match(text, /EXPLICIT-CUSTOMER-FEATURE/);
+  assert.match(text, /EXPLICIT-TRUE-DESCRIPTION/);
+  assert.match(text, /ZERO-PRICE-CUSTOMER-DESCRIPTION/);
+  assert.match(text, /MATCHED-CATALOG-CUSTOMER-DESCRIP\s*TION/);
+  assert.doesNotMatch(
+    text,
+    /EXPLICIT-FALSE-HIDDEN|SUPPLIER-IMPORT-SHOULD-NOT-PRINT|SUPPLIER-NOTE-SHOULD-NOT-PRINT|CATALOG-IMPORT-SOURCE-SHOULD-NOT-PRINT|LOWER-PRIORITY-DESCRIPTION-SHOULD-NOT-PRINT/,
+  );
+
+  const proseWords = [...bbox.matchAll(
+    /<word\s+xMin="([^"]+)"[^>]*>PROSE-PARAGRAPH-(?:ONE|TWO)<\/word>/g,
+  )];
+  const featureWord = bbox.match(
+    /<word\s+xMin="([^"]+)"[^>]*>EXPLICIT-CUSTOMER-FEATURE<\/word>/,
+  );
+  assert.equal(proseWords.length, 2);
+  assert.ok(featureWord);
+  assert.equal(Number(proseWords[0][1]), Number(proseWords[1][1]));
+  assert.ok(Number(featureWord![1]) > Number(proseWords[0][1]));
+});
+
+test("heating offer PDF renders 65 rows and paginates long descriptions within hard bounds", async () => {
   const { buildPlanningDocumentPdf } = await import("../src/lib/planningDocuments");
   const planning: any = heatingPlanning();
   const customerDetailTokens = Array.from(
@@ -336,8 +460,9 @@ test("heating offer PDF keeps imported rows compact and splits explicit customer
 
   planning.data.parts.items = Array.from({ length: 65 }, (_, index) => {
     const position = index + 1;
-    const explicitlyIncluded = position === 33;
     const zeroPrice = position === 10;
+    const veryLong = position === 33;
+    const mediumLong = position === 18 || position === 47;
     return {
       id: `heating-${position}`,
       category: index % 2 === 0 ? "Heizung" : "Installation",
@@ -355,12 +480,22 @@ test("heating offer PDF keeps imported rows compact and splits explicit customer
       articleNumber: `SUPPLIER-ARTICLE-${position}`,
       importedFromOffer: true,
       importSourceDescription: `NEVER-PRINT-SOURCE-DESCRIPTION-${position}`,
-      longDescription: explicitlyIncluded
-        ? customerDetailTokens.join(" ")
-        : `SUPPLIER-DUMP-LONG-DESCRIPTION-${position}`,
-      features: explicitlyIncluded ? ["CUSTOMER-FACING-FEATURE"] : [],
-      notes: explicitlyIncluded ? "CUSTOMER-FACING-NOTE" : `SUPPLIER-NOTE-${position}`,
-      includeDescriptionInOffer: explicitlyIncluded,
+      longDescription: veryLong
+        ? `LONG-PARAGRAPH-START\n\n${customerDetailTokens.join(" ")}\n\nLONG-PARAGRAPH-END`
+        : mediumLong
+          ? Array.from({ length: 90 }, (_, tokenIndex) =>
+              `MEDIUM${position}-${String(tokenIndex + 1).padStart(3, "0")}`,
+            ).join(" ")
+          : zeroPrice
+            ? "ZERO-PRICE-TECHNICAL-DESCRIPTION"
+            : position === 25
+              ? `PRODUCTCODE-${"X".repeat(180)}`
+              : position % 5 === 0
+                ? `CUSTOMER-DESCRIPTION-${position}`
+                : "",
+      features: position === 47 ? ["CUSTOMER-FACING-FEATURE"] : [],
+      notes: position === 47 ? "" : `SUPPLIER-NOTE-${position}`,
+      includeDescriptionInOffer: position === 47 ? true : undefined,
     };
   });
 
@@ -372,9 +507,10 @@ test("heating offer PDF keeps imported rows compact and splits explicit customer
     documentType: "angebot",
   });
   const loaded = await PDFDocument.load(result.pdfBytes);
-  const [text, bbox] = await Promise.all([
+  const [text, bbox, pages] = await Promise.all([
     extractPdfText(result.pdfBytes),
     extractPdfBbox(result.pdfBytes),
+    extractPdfPages(result.pdfBytes),
   ]);
 
   let previousItemOffset = -1;
@@ -387,17 +523,26 @@ test("heating offer PDF keeps imported rows compact and splits explicit customer
   }
   assert.match(text, /CUSTOMERLINE0001/);
   assert.match(text, /CUSTOMERLINE0520/);
+  assert.match(text, /LONG-PARAGRAPH-START/);
+  assert.match(text, /LONG-PARAGRAPH-END/);
   assert.match(text, /CUSTOMER-FACING-FEATURE/);
-  assert.match(text, /CUSTOMER-FACING-NOTE/);
+  assert.match(text, /ZERO-PRICE-TECHNICAL-DESCRIPTION/);
+  assert.match(text, /PRODUCTCODE-/);
   assert.match(text, /HeatingItem010/);
   assert.match(text, /0[.,]00 CHF/);
   assert.match(text, /Position 33 \(Fortsetzung\)/);
   assert.doesNotMatch(
     text,
-    /NEVER-PRINT-SOURCE-DESCRIPTION|SUPPLIER-DUMP-LONG-DESCRIPTION|SUPPLIER-NOTE|SOURCE-POS|SUPPLIER-ARTICLE/,
+    /NEVER-PRINT-SOURCE-DESCRIPTION|SUPPLIER-NOTE|SOURCE-POS|SUPPLIER-ARTICLE/,
   );
   assert.ok(loaded.getPageCount() > 4);
   assert.ok(loaded.getPageCount() < 15);
+  assert.equal(pages.length, loaded.getPageCount());
+  assert.ok(pages.every((pageText) => pageText.trim().length > 0), "PDF contains a blank page");
+  assert.deepEqual(
+    [...text.matchAll(/Seite (\d+)/g)].map((match) => Number(match[1])),
+    Array.from({ length: loaded.getPageCount() - 1 }, (_, index) => index + 2),
+  );
   assert.equal(result.pricing.totalInklMwst, 8_143.15);
   assert.equal(result.pricing.totalInvestmentChf, 8_143.15);
 
@@ -407,6 +552,17 @@ test("heating offer PDF keeps imported rows compact and splits explicit customer
   assert.ok(detailWords.length >= 500);
   for (const match of detailWords) {
     assert.ok(Number(match[1]) <= 719.9, `detail text crossed footer boundary at yMax=${match[1]}`);
+  }
+
+  const allWords = [...bbox.matchAll(
+    /<word\s+xMin="([^"]+)"\s+yMin="([^"]+)"\s+xMax="([^"]+)"\s+yMax="([^"]+)">([^<]+)<\/word>/g,
+  )];
+  for (const match of allWords) {
+    assert.ok(Number(match[1]) >= 41.5, `content crossed left bound at xMin=${match[1]}: ${match[5]}`);
+    assert.ok(Number(match[3]) <= 555.5, `content crossed right bound at xMax=${match[3]}: ${match[5]}`);
+    if (/^(?:HeatingItem\d+|CUSTOMERLINE\d+|MEDIUM\d+-\d+|CUSTOMER-DESCRIPTION|ZERO-PRICE|LONG-PARAGRAPH)/.test(match[5])) {
+      assert.ok(Number(match[4]) <= 719.9, `position content crossed footer boundary at yMax=${match[4]}: ${match[5]}`);
+    }
   }
 
   const qaOutput = process.env.HEATING_OFFER_QA_OUTPUT;

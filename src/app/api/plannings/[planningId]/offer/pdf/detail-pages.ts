@@ -625,20 +625,29 @@ function buildBoundedItemLines(item: DetailItem, font: PDFFont, bold: PDFFont) {
     font?: PDFFont;
     color?: RGB;
     bullet?: boolean;
+    preserveParagraphs?: boolean;
   }) => {
     const lineFont = args.font ?? font;
     const x = args.x ?? tableCol.descX;
     const width = args.width ?? tableCol.descWidth;
-    const wrapped = wrapTextStrict(args.text, width, lineFont, args.size);
-    wrapped.forEach((text, index) => {
-      lines.push({
-        text,
-        x,
-        size: args.size,
-        font: lineFont,
-        color: args.color ?? COLOR_TEXT,
-        lineHeight: args.lineHeight,
-        bullet: args.bullet === true && index === 0,
+    const paragraphs = args.preserveParagraphs
+      ? safeString(args.text).split(/\r?\n+/).map((text) => text.trim()).filter(Boolean)
+      : [args.text];
+    paragraphs.forEach((paragraph, paragraphIndex) => {
+      const wrapped = wrapTextStrict(paragraph, width, lineFont, args.size);
+      wrapped.forEach((text, index) => {
+        const isLastLine = index === wrapped.length - 1;
+        lines.push({
+          text,
+          x,
+          size: args.size,
+          font: lineFont,
+          color: args.color ?? COLOR_TEXT,
+          lineHeight:
+            args.lineHeight +
+            (args.preserveParagraphs && isLastLine && paragraphIndex < paragraphs.length - 1 ? 4 : 0),
+          bullet: args.bullet === true && index === 0,
+        });
       });
     });
   };
@@ -662,12 +671,18 @@ function buildBoundedItemLines(item: DetailItem, font: PDFFont, bold: PDFFont) {
 
   const description = plainText(item.description);
   if (description) {
-    pushWrapped({ text: description, size: 9.5, lineHeight: 11 });
+    pushWrapped({ text: description, size: 9.5, lineHeight: 11, preserveParagraphs: true });
   }
 
   const longDescription = plainText(item.longDescription);
   if (longDescription) {
-    pushWrapped({ text: longDescription, size: 9.2, lineHeight: 11 });
+    pushWrapped({
+      text: longDescription,
+      size: 9.2,
+      lineHeight: 11,
+      color: COLOR_MUTED,
+      preserveParagraphs: true,
+    });
   }
 
   for (const feature of safeStringArray(item.features)) {

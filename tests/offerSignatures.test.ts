@@ -593,7 +593,18 @@ test("freezes the canonical Heating issuance contract and rejects empty offers",
   };
   const commercial = {
     issuedItems: [
-      { position: 1, name: "Wärmepumpe", quantity: 1, unitLabel: "Stk.", unitPriceNet: 20000, lineTotalNet: 20000, optional: false },
+      {
+        position: 1,
+        name: "Wärmepumpe",
+        quantity: 1,
+        unitLabel: "Stk.",
+        unitPriceNet: 20000,
+        lineTotalNet: 20000,
+        optional: false,
+        includeDescriptionInOffer: true,
+        longDescription: "Kundenseitige technische Beschreibung",
+        features: ["Modulierender Betrieb"],
+      },
       { position: 2, name: "Rohrleitung", quantity: 18, unitLabel: "m", unitPriceNet: 100, lineTotalNet: 1800, optional: false },
       { position: 3, name: "Montage", quantity: 1, unitLabel: "Stk.", unitPriceNet: 3000, lineTotalNet: 3000, optional: false },
       { position: 4, name: "Servicepaket", quantity: 1, unitLabel: "Stk.", unitPriceNet: 500, lineTotalNet: 500, optional: true },
@@ -621,6 +632,9 @@ test("freezes the canonical Heating issuance contract and rejects empty offers",
   assert.equal(issued.projectType, "heating");
   assert.equal(issued.documentTitle, "Heizungsangebot");
   assert.equal(issued.items[1].quantity, 18);
+  assert.equal(issued.items[0].longDescription, "Kundenseitige technische Beschreibung");
+  assert.deepEqual(issued.items[0].features, ["Modulierender Betrieb"]);
+  assert.equal("importSourceDescription" in issued.items[0], false);
   assert.equal(issued.optionalItems.length, 1);
   assert.equal(issued.pricing.totalGross, 25948.3);
   assert.equal(issued.objectAddress.formatted, "Objektweg 4, 9000 St. Gallen");

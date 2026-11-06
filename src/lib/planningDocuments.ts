@@ -74,6 +74,9 @@ export type CanonicalCommercialItem = {
   unitPriceNet: number;
   lineTotalNet: number;
   optional: boolean;
+  includeDescriptionInOffer?: boolean;
+  longDescription?: string;
+  features?: string[];
 };
 
 function pickBoolean(...values: unknown[]) {
@@ -341,7 +344,36 @@ function buildOptionalCommercialItem(item: any): OptionalCommercialItem {
   };
 }
 
-function buildCanonicalCommercialItem(item: any, position: number): CanonicalCommercialItem {
+function buildCanonicalCommercialItem(
+  item: any,
+  position: number,
+  catalogItem?: any,
+  includeCustomerContent = false,
+): CanonicalCommercialItem {
+  const includeDescriptionInOffer = item?.includeDescriptionInOffer !== false;
+  const longDescription = includeDescriptionInOffer
+    ? htmlToPlainText(item?.longDescription) ||
+      htmlToPlainText(item?.description) ||
+      htmlToPlainText(catalogItem?.longDescription) ||
+      htmlToPlainText(catalogItem?.description)
+    : "";
+  const explicitFeatures = safeStringArray(item?.features)
+    .map(htmlToPlainText)
+    .filter(Boolean);
+  const catalogFeatures = safeStringArray(catalogItem?.features)
+    .map(htmlToPlainText)
+    .filter(Boolean);
+
+  const customerContent = includeCustomerContent
+    ? {
+        includeDescriptionInOffer,
+        longDescription,
+        features: includeDescriptionInOffer
+          ? explicitFeatures.length > 0 ? explicitFeatures : catalogFeatures
+          : [],
+      }
+    : {};
+
   return {
     position,
     category: safeString(item?.category ?? item?.kategorie),
@@ -361,6 +393,7 @@ function buildCanonicalCommercialItem(item: any, position: number): CanonicalCom
     )),
     lineTotalNet: roundChf05(getItemLineTotal(item)),
     optional: isOptionalItem(item),
+    ...customerContent,
   };
 }
 
@@ -376,6 +409,32 @@ function buildCatalogLookupKey(input: {
     safeString(input.model).toLowerCase(),
     safeString(input.name).toLowerCase(),
   ].join("::");
+}
+
+function findCatalogItemForCommercialItem(item: any, catalogDocs: any[]) {
+  const catalogItemId =
+    safeString(item?.catalogItemId) ||
+    safeString(item?.catalogId) ||
+    safeString(item?.sourceCatalogItemId) ||
+    safeString(item?.itemId);
+  if (catalogItemId) {
+    const byId = catalogDocs.find((doc) => String(doc?._id ?? "") === catalogItemId);
+    if (byId) return byId;
+  }
+
+  const itemKey = buildCatalogLookupKey({
+    category: item?.category ?? item?.kategorie,
+    brand: item?.brand ?? item?.marke,
+    model: item?.model,
+    name: item?.name ?? item?.beschreibung,
+  });
+  if (itemKey === ":::") return null;
+  return catalogDocs.find((doc) => buildCatalogLookupKey({
+    category: doc?.category,
+    brand: doc?.brand,
+    model: doc?.model,
+    name: doc?.name,
+  }) === itemKey) ?? null;
 }
 
 function resolveDocumentType(planning: any, input?: unknown): PlanningDocumentType {
@@ -567,7 +626,12 @@ export async function computePlanningCommercialSummary(db: Db, planning: any) {
     buildOptionalCommercialItem,
   );
   const issuedItems = items.map((item: any, index: number) =>
-    buildCanonicalCommercialItem(item, index + 1),
+    buildCanonicalCommercialItem(
+      item,
+      index + 1,
+      isHeating ? findCatalogItemForCommercialItem(item, catalogDocs) : undefined,
+      isHeating,
+    ),
   );
   const optionalTotalChf = sumChf05(
     optionalSourceItems.map((item: any) => getItemLineTotal(item)),
@@ -900,13 +964,65 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
       wallboxPriceChf,
     },
     detailItems: enrichedItems.map((item: any, index: number) => {
-      const includeCustomerDetails =
-        !isHeatingOffer || item?.includeDescriptionInOffer === true;
       const rowLongDescription = htmlToPlainText(item?.longDescription);
+      const rowDescription = htmlToPlainText(item?.description);
+      const catalogDescription = htmlToPlainText(item?.catalogDescription);
       const catalogLongDescription = htmlToPlainText(item?.catalogLongDescription);
       const explicitFeatures = safeStringArray(item?.features)
         .map(htmlToPlainText)
         .filter(Boolean);
+      const catalogFeatures = safeStringArray(item?.catalogFeatures)
+        .map(htmlToPlainText)
+        .filter(Boolean);
+
+      if (isHeatingOffer) {
+        const includeCustomerDetails = item?.includeDescriptionInOffer !== false;
+        const finalLongDescription = includeCustomerDetails
+          ? rowLongDescription ||
+            rowDescription ||
+            catalogLongDescription ||
+            catalogDescription
+          : "";
+
+        return {
+          position: index + 1,
+          category: safeString(item?.category ?? item?.kategorie),
+          brand: safeString(item?.brand ?? item?.marke),
+          model: safeString(item?.model),
+          name: safeString(item?.name ?? item?.label ?? item?.beschreibung),
+          quantity: safeNumber(item?.quantity ?? item?.qty ?? item?.stk, 0),
+          unit: safeString(item?.unit),
+          unitLabel: safeString(item?.unitLabel),
+          unitPriceNet: roundChf05(safeNumber(
+            item?.unitPriceNet ??
+              item?.unitPrice ??
+              item?.einzelpreis ??
+              item?.priceNet ??
+              item?.priceChf,
+            0,
+          )),
+          lineTotalNet: roundChf05(getItemLineTotal(item)),
+          catalogItemId: safeString(item?.catalogItemId),
+          pdfSection: safeString(item?.pdfSection),
+          description: "",
+          longDescription: finalLongDescription,
+          features: includeCustomerDetails
+            ? explicitFeatures.length > 0 ? explicitFeatures : catalogFeatures
+            : [],
+          warranty: item?.includeDescriptionInOffer === true
+            ? safeString(item?.catalogWarranty)
+            : "",
+          compatibility: item?.includeDescriptionInOffer === true
+            ? safeString(item?.catalogCompatibility)
+            : "",
+          notes: item?.includeDescriptionInOffer === true
+            ? htmlToPlainText(item?.notes) || htmlToPlainText(item?.catalogNotes)
+            : "",
+          optional: isOptionalItem(item),
+        };
+      }
+
+      const includeCustomerDetails = true;
       const fallbackFeatures =
         explicitFeatures.length > 0
           ? explicitFeatures
@@ -937,16 +1053,14 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
         catalogItemId: safeString(item?.catalogItemId),
         pdfSection: safeString(item?.pdfSection),
         description: includeCustomerDetails
-          ? htmlToPlainText(item?.catalogDescription)
+          ? catalogDescription
           : "",
         longDescription: includeCustomerDetails ? finalLongDescription : "",
         features:
           includeCustomerDetails
             ? fallbackFeatures.length > 0
               ? fallbackFeatures
-              : safeStringArray(item?.catalogFeatures)
-                  .map(htmlToPlainText)
-                  .filter(Boolean)
+              : catalogFeatures
             : [],
         warranty: includeCustomerDetails ? safeString(item?.catalogWarranty) : "",
         compatibility: includeCustomerDetails
