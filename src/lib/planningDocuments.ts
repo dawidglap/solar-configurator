@@ -986,6 +986,9 @@ export async function buildPlanningDocumentPdf(args: BuildPlanningDocumentPdfArg
 
         return {
           position: index + 1,
+          articleNumber: safeString(
+            item?.articleNumber ?? item?.artikelnummer ?? item?.articleNo,
+          ),
           category: safeString(item?.category ?? item?.kategorie),
           brand: safeString(item?.brand ?? item?.marke),
           model: safeString(item?.model),

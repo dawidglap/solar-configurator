@@ -529,11 +529,15 @@ test("heating offer PDF renders 65 rows and paginates long descriptions within h
   assert.match(text, /ZERO-PRICE-TECHNICAL-DESCRIPTION/);
   assert.match(text, /PRODUCTCODE-/);
   assert.match(text, /HeatingItem010/);
-  assert.match(text, /0[.,]00 CHF/);
-  assert.match(text, /Position 33 \(Fortsetzung\)/);
+  assert.match(text, /Preis CHF/);
+  assert.match(text, /Total CHF/);
+  assert.match(text, /HeatingItem010 1 Stk\. 0[.,]00 0[.,]00/);
+  assert.doesNotMatch(pages.slice(1).join(" "), /\d[.,]\d{2} CHF/);
+  assert.match(text, /Position 33 - Fortsetzung/);
+  assert.match(text, /Artikelnr\.: SUPPLIER-ARTICLE-33/);
   assert.doesNotMatch(
     text,
-    /NEVER-PRINT-SOURCE-DESCRIPTION|SUPPLIER-NOTE|SOURCE-POS|SUPPLIER-ARTICLE/,
+    /NEVER-PRINT-SOURCE-DESCRIPTION|SUPPLIER-NOTE|SOURCE-POS/,
   );
   assert.ok(loaded.getPageCount() > 4);
   assert.ok(loaded.getPageCount() < 15);

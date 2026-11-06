@@ -24,6 +24,7 @@ type CompanyLike = {
 
 type DetailItem = {
   position: number;
+  articleNumber?: string;
   category?: string;
   brand?: string;
   model?: string;
@@ -116,6 +117,62 @@ export const POSITION_COLUMN_LAYOUT = (() => {
     totalRight,
   });
 })();
+
+export const HEATING_POSITION_COLUMN_WIDTHS = {
+  pos: 28,
+  qtyW: 48,
+  priceW: 75,
+  totalW: 80,
+  numericGap: 7,
+  gapAfterDesc: 6,
+  cellInset: 4,
+} as const;
+
+export const HEATING_POSITION_COLUMN_LAYOUT = (() => {
+  const totalRight = POSITION_TABLE_BOUNDS.right;
+  const totalLeft = totalRight - HEATING_POSITION_COLUMN_WIDTHS.totalW;
+  const priceRight = totalLeft - HEATING_POSITION_COLUMN_WIDTHS.numericGap;
+  const priceLeft = priceRight - HEATING_POSITION_COLUMN_WIDTHS.priceW;
+  const qtyRight = priceLeft - HEATING_POSITION_COLUMN_WIDTHS.numericGap;
+  const qtyLeft = qtyRight - HEATING_POSITION_COLUMN_WIDTHS.qtyW;
+  const descRight = qtyLeft - HEATING_POSITION_COLUMN_WIDTHS.gapAfterDesc;
+  const descX = POSITION_TABLE_BOUNDS.left + HEATING_POSITION_COLUMN_WIDTHS.pos;
+
+  return Object.freeze({
+    posX: POSITION_TABLE_BOUNDS.left + HEATING_POSITION_COLUMN_WIDTHS.cellInset,
+    descX,
+    descWidth: Math.max(140, descRight - descX),
+    qtyLeft,
+    qtyRight,
+    priceLeft,
+    priceRight,
+    totalLeft,
+    totalRight,
+  });
+})();
+
+const HEATING_DETAIL_TYPOGRAPHY = Object.freeze({
+  positionSize: 8,
+  quantitySize: 8,
+  priceSize: 8,
+  totalSize: 8.2,
+  titleSize: 9,
+  titleLineHeight: 10.2,
+  articleSize: 7.4,
+  articleLineHeight: 9,
+  sublineSize: 7.5,
+  sublineLineHeight: 8.8,
+  descriptionSize: 7.8,
+  descriptionLineHeight: 9.3,
+  featureSize: 7.7,
+  featureLineHeight: 9.2,
+  extraSize: 7.6,
+  extraLineHeight: 9.1,
+  paragraphSpacing: 3,
+  headerSize: 7.3,
+  continuationSize: 7.8,
+  continuationLineHeight: 13,
+});
 
 export function rightAlignedTextX(rightEdge: number, textWidth: number) {
   return rightEdge - textWidth;
@@ -614,7 +671,8 @@ type BoundedLine = {
 };
 
 function buildBoundedItemLines(item: DetailItem, font: PDFFont, bold: PDFFont) {
-  const tableCol = POSITION_COLUMN_LAYOUT;
+  const tableCol = HEATING_POSITION_COLUMN_LAYOUT;
+  const type = HEATING_DETAIL_TYPOGRAPHY;
   const lines: BoundedLine[] = [];
   const pushWrapped = (args: {
     text: string;
@@ -645,7 +703,9 @@ function buildBoundedItemLines(item: DetailItem, font: PDFFont, bold: PDFFont) {
           color: args.color ?? COLOR_TEXT,
           lineHeight:
             args.lineHeight +
-            (args.preserveParagraphs && isLastLine && paragraphIndex < paragraphs.length - 1 ? 4 : 0),
+            (args.preserveParagraphs && isLastLine && paragraphIndex < paragraphs.length - 1
+              ? type.paragraphSpacing
+              : 0),
           bullet: args.bullet === true && index === 0,
         });
       });
@@ -654,32 +714,47 @@ function buildBoundedItemLines(item: DetailItem, font: PDFFont, bold: PDFFont) {
 
   pushWrapped({
     text: buildItemTitle(item),
-    size: 9.6,
-    lineHeight: 11,
+    size: type.titleSize,
+    lineHeight: type.titleLineHeight,
     font: bold,
   });
+
+  const articleNumber = safeString(item.articleNumber);
+  if (articleNumber) {
+    pushWrapped({
+      text: `Artikelnr.: ${articleNumber}`,
+      size: type.articleSize,
+      lineHeight: type.articleLineHeight,
+      color: COLOR_MUTED,
+    });
+  }
 
   const subline = buildItemSubline(item);
   if (subline) {
     pushWrapped({
       text: subline,
-      size: 8.2,
-      lineHeight: 10,
+      size: type.sublineSize,
+      lineHeight: type.sublineLineHeight,
       color: COLOR_MUTED,
     });
   }
 
   const description = plainText(item.description);
   if (description) {
-    pushWrapped({ text: description, size: 9.5, lineHeight: 11, preserveParagraphs: true });
+    pushWrapped({
+      text: description,
+      size: type.descriptionSize,
+      lineHeight: type.descriptionLineHeight,
+      preserveParagraphs: true,
+    });
   }
 
   const longDescription = plainText(item.longDescription);
   if (longDescription) {
     pushWrapped({
       text: longDescription,
-      size: 9.2,
-      lineHeight: 11,
+      size: type.descriptionSize,
+      lineHeight: type.descriptionLineHeight,
       color: COLOR_MUTED,
       preserveParagraphs: true,
     });
@@ -690,8 +765,8 @@ function buildBoundedItemLines(item: DetailItem, font: PDFFont, bold: PDFFont) {
       text: feature,
       x: tableCol.descX + 16,
       width: tableCol.descWidth - 16,
-      size: 8.8,
-      lineHeight: 10,
+      size: type.featureSize,
+      lineHeight: type.featureLineHeight,
       bullet: true,
     });
   }
@@ -702,7 +777,12 @@ function buildBoundedItemLines(item: DetailItem, font: PDFFont, bold: PDFFont) {
     plainText(item.notes) ? `Hinweise: ${plainText(item.notes)}` : "",
   ].filter(Boolean);
   for (const extra of extras) {
-    pushWrapped({ text: extra, size: 8.5, lineHeight: 10, color: COLOR_MUTED });
+    pushWrapped({
+      text: extra,
+      size: type.extraSize,
+      lineHeight: type.extraLineHeight,
+      color: COLOR_MUTED,
+    });
   }
 
   return lines;
@@ -730,6 +810,7 @@ async function addBoundedHeatingDetailPages(
     footerLines,
     documentTitle: args.documentTitle,
     documentNumberLabel: args.documentNumberLabel,
+    compactHeatingLayout: true,
   });
   let y = page.cursorY;
 
@@ -745,6 +826,7 @@ async function addBoundedHeatingDetailPages(
       footerLines,
       documentTitle: args.documentTitle,
       documentNumberLabel: args.documentNumberLabel,
+      compactHeatingLayout: true,
     });
     y = page.cursorY;
   };
@@ -765,39 +847,48 @@ async function addBoundedHeatingDetailPages(
       nextPage();
     }
 
-    const tableCol = POSITION_COLUMN_LAYOUT;
+    const tableCol = HEATING_POSITION_COLUMN_LAYOUT;
+    const type = HEATING_DETAIL_TYPOGRAPHY;
     const rowTopY = y;
     const qty = safeNumber(item.quantity, 0);
     const unitLabel = safeString(item.unitLabel) || safeString(item.unit) || "Stk.";
     const qtyText = qty > 0 ? `${qty} ${unitLabel}` : "-";
-    const unitPriceText = `${money(item.unitPriceNet)} CHF`;
-    const lineTotalText = `${money(item.lineTotalNet)} CHF`;
+    const unitPriceText = money(item.unitPriceNet);
+    const lineTotalText = money(item.lineTotalNet);
 
-    drawText(page.page, String(item.position || "-"), tableCol.posX, rowTopY, 9.2, font, COLOR_TEXT);
+    drawText(
+      page.page,
+      String(item.position || "-"),
+      tableCol.posX,
+      rowTopY,
+      type.positionSize,
+      font,
+      COLOR_TEXT,
+    );
     drawText(
       page.page,
       qtyText,
-      rightAlignedTextX(tableCol.qtyRight, font.widthOfTextAtSize(qtyText, 9)),
+      rightAlignedTextX(tableCol.qtyRight, font.widthOfTextAtSize(qtyText, type.quantitySize)),
       rowTopY,
-      9,
+      type.quantitySize,
       font,
       COLOR_TEXT,
     );
     drawText(
       page.page,
       unitPriceText,
-      rightAlignedTextX(tableCol.priceRight, font.widthOfTextAtSize(unitPriceText, 9)),
+      rightAlignedTextX(tableCol.priceRight, font.widthOfTextAtSize(unitPriceText, type.priceSize)),
       rowTopY,
-      9,
+      type.priceSize,
       font,
       COLOR_TEXT,
     );
     drawText(
       page.page,
       lineTotalText,
-      rightAlignedTextX(tableCol.totalRight, bold.widthOfTextAtSize(lineTotalText, 9.2)),
+      rightAlignedTextX(tableCol.totalRight, bold.widthOfTextAtSize(lineTotalText, type.totalSize)),
       rowTopY,
-      9.2,
+      type.totalSize,
       bold,
       COLOR_TEXT,
     );
@@ -819,21 +910,29 @@ async function addBoundedHeatingDetailPages(
       if (y - line.lineHeight < CONTENT_BOTTOM) {
         nextPage();
         continuation = true;
-        drawText(page.page, String(item.position || "-"), tableCol.posX, y, 9.2, font, COLOR_TEXT);
         drawText(
           page.page,
-          `Position ${item.position || "-"} (Fortsetzung)`,
+          String(item.position || "-"),
+          tableCol.posX,
+          y,
+          type.positionSize,
+          font,
+          COLOR_TEXT,
+        );
+        drawText(
+          page.page,
+          `Position ${item.position || "-"} - Fortsetzung`,
           tableCol.descX,
           y,
-          8.6,
+          type.continuationSize,
           bold,
           COLOR_MUTED,
         );
-        y -= 18;
+        y -= type.continuationLineHeight;
       }
 
       if (line.bullet) {
-        drawText(page.page, "•", tableCol.descX + 4, y, 9, bold, COLOR_TEXT);
+        drawText(page.page, "•", tableCol.descX + 4, y, type.featureSize, bold, COLOR_TEXT);
       }
       drawText(page.page, line.text, line.x, y, line.size, line.font, line.color);
       y -= line.lineHeight;
@@ -865,6 +964,8 @@ async function addBoundedHeatingDetailPages(
       label: "Positionen",
       font,
       bold,
+      columnLayout: HEATING_POSITION_COLUMN_LAYOUT,
+      compact: true,
     });
     for (const item of args.includedItems) drawItem(item);
   }
@@ -872,7 +973,11 @@ async function addBoundedHeatingDetailPages(
   if (!args.optionalItems.length) return;
 
   ensureSpace(OPTIONAL_HEADER_HEIGHT + 38);
-  y = drawOptionalSectionHeader(page.page, { y, bold });
+  y = drawOptionalSectionHeader(page.page, {
+    y,
+    bold,
+    columnLayout: HEATING_POSITION_COLUMN_LAYOUT,
+  });
   for (const item of args.optionalItems) drawItem(item, true);
 
   ensureSpace(OPTIONAL_SUMMARY_HEIGHT);
@@ -884,17 +989,24 @@ async function addBoundedHeatingDetailPages(
     total: optionalTotal,
     font,
     bold,
+    columnLayout: HEATING_POSITION_COLUMN_LAYOUT,
+    compactCurrency: true,
   });
 }
 
 function drawOptionalSectionHeader(
   page: PDFPage,
-  args: { y: number; bold: PDFFont },
+  args: {
+    y: number;
+    bold: PDFFont;
+    columnLayout?: typeof POSITION_COLUMN_LAYOUT;
+  },
 ) {
+  const columnLayout = args.columnLayout ?? POSITION_COLUMN_LAYOUT;
   drawText(
     page,
     "Optionale Positionen",
-    POSITION_COLUMN_LAYOUT.posX,
+    columnLayout.posX,
     args.y - 6,
     9.2,
     args.bold,
@@ -914,12 +1026,19 @@ function drawOptionalSectionHeader(
 
 function drawOptionalSummary(
   page: PDFPage,
-  args: { y: number; total: number; font: PDFFont; bold: PDFFont },
+  args: {
+    y: number;
+    total: number;
+    font: PDFFont;
+    bold: PDFFont;
+    columnLayout?: typeof POSITION_COLUMN_LAYOUT;
+    compactCurrency?: boolean;
+  },
 ) {
-  const tableCol = POSITION_COLUMN_LAYOUT;
+  const tableCol = args.columnLayout ?? POSITION_COLUMN_LAYOUT;
   let y = args.y + 1;
   drawText(page, "Total optionale Positionen", tableCol.descX, y, 9.2, args.bold, COLOR_TEXT);
-  const totalText = `${money(args.total)} CHF`;
+  const totalText = args.compactCurrency ? money(args.total) : `${money(args.total)} CHF`;
   drawText(
     page,
     totalText,
@@ -958,6 +1077,7 @@ function createPage(
     footerLines: string[];
     documentTitle?: string;
     documentNumberLabel?: string;
+    compactHeatingLayout?: boolean;
   }
 ) {
   const page = pdf.addPage([PAGE_W, PAGE_H]);
@@ -997,7 +1117,12 @@ function createPage(
 
   // Table head
   const headY = headerLineY - 22;
-  const tableCol = POSITION_COLUMN_LAYOUT;
+  const tableCol = args.compactHeatingLayout
+    ? HEATING_POSITION_COLUMN_LAYOUT
+    : POSITION_COLUMN_LAYOUT;
+  const tableHeaderSize = args.compactHeatingLayout
+    ? HEATING_DETAIL_TYPOGRAPHY.headerSize
+    : 9;
   page.drawRectangle({
     x: POSITION_TABLE_BOUNDS.left,
     y: headY - 14,
@@ -1006,19 +1131,19 @@ function createPage(
     color: COLOR_SOFT,
   });
 
-  drawText(page, "Pos.", tableCol.posX, headY - 6, 9, args.bold, COLOR_TEXT);
-  drawText(page, "Beschreibung", tableCol.descX, headY - 6, 9, args.bold, COLOR_TEXT);
+  drawText(page, "Pos.", tableCol.posX, headY - 6, tableHeaderSize, args.bold, COLOR_TEXT);
+  drawText(page, "Beschreibung", tableCol.descX, headY - 6, tableHeaderSize, args.bold, COLOR_TEXT);
   for (const [label, rightEdge] of [
     ["Menge", tableCol.qtyRight],
-    ["Preis", tableCol.priceRight],
-    ["Total", tableCol.totalRight],
+    [args.compactHeatingLayout ? "Preis CHF" : "Preis", tableCol.priceRight],
+    [args.compactHeatingLayout ? "Total CHF" : "Total", tableCol.totalRight],
   ] as const) {
     drawText(
       page,
       label,
-      rightAlignedTextX(rightEdge, args.bold.widthOfTextAtSize(label, 9)),
+      rightAlignedTextX(rightEdge, args.bold.widthOfTextAtSize(label, tableHeaderSize)),
       headY - 6,
-      9,
+      tableHeaderSize,
       args.bold,
       COLOR_TEXT,
     );
@@ -1061,9 +1186,12 @@ function drawSectionHeader(
     label: string;
     font: PDFFont;
     bold: PDFFont;
+    columnLayout?: typeof POSITION_COLUMN_LAYOUT;
+    compact?: boolean;
   }
 ) {
   const { y, label, bold } = args;
+  const columnLayout = args.columnLayout ?? POSITION_COLUMN_LAYOUT;
 
   page.drawRectangle({
     x: POSITION_TABLE_BOUNDS.left,
@@ -1073,8 +1201,16 @@ function drawSectionHeader(
     color: rgb(0.97, 0.97, 0.97),
   });
 
-  drawText(page, label, POSITION_COLUMN_LAYOUT.posX, y - 6, 9.2, bold, COLOR_TEXT);
-  return y - 26;
+  drawText(
+    page,
+    label,
+    columnLayout.posX,
+    y - 6,
+    args.compact ? 8.2 : 9.2,
+    bold,
+    COLOR_TEXT,
+  );
+  return y - (args.compact ? 23 : 26);
 }
 
 function drawDetailItem(

@@ -1,11 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  HEATING_POSITION_COLUMN_LAYOUT,
+  HEATING_POSITION_COLUMN_WIDTHS,
   POSITION_COLUMN_LAYOUT,
   POSITION_COLUMN_WIDTHS,
   POSITION_TABLE_BOUNDS,
   rightAlignedTextX,
 } from "../src/app/api/plannings/[planningId]/offer/pdf/detail-pages";
+
+test("heating position rows prioritize description width without moving page bounds", () => {
+  assert.deepEqual(HEATING_POSITION_COLUMN_WIDTHS, {
+    pos: 28,
+    qtyW: 48,
+    priceW: 75,
+    totalW: 80,
+    numericGap: 7,
+    gapAfterDesc: 6,
+    cellInset: 4,
+  });
+  assert.equal(HEATING_POSITION_COLUMN_LAYOUT.descX, POSITION_TABLE_BOUNDS.left + 28);
+  assert.equal(HEATING_POSITION_COLUMN_LAYOUT.totalRight, POSITION_TABLE_BOUNDS.right);
+  assert.ok(HEATING_POSITION_COLUMN_LAYOUT.descWidth >= POSITION_COLUMN_LAYOUT.descWidth * 1.35);
+  assert.equal(Object.isFrozen(HEATING_POSITION_COLUMN_LAYOUT), true);
+});
 
 test("standard and optional position rows share one immutable column geometry", () => {
   assert.equal(POSITION_COLUMN_WIDTHS.pos, 40);
